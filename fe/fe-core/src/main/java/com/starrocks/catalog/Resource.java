@@ -122,6 +122,7 @@ public abstract class Resource implements Writable {
     @Override
     public void write(DataOutput out) throws IOException {
         String json = GsonUtils.GSON.toJson(this);
+        System.out.printf("wirte: %s\n", json);
         Text.writeString(out, json);
     }
 
