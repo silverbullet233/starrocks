@@ -124,13 +124,9 @@ Status JDBCScanner::_init_jdbc_scanner() {
     _jdbc_scanner_cls = _jni_env->FindClass("com/starrocks/jdbcbridge/JDBCScanner");
     DCHECK(_jdbc_scanner_cls != nullptr);
 
+    // init method
     jmethodID scanner_open = _jni_env->GetMethodID(_jdbc_scanner_cls, "open", "()V");
     DCHECK(scanner_open != nullptr);
-
-    _jni_env->CallVoidMethod(_jdbc_scanner, scanner_open);
-    CHECK_JAVA_EXCEPTION("open JDBCScanner failed")
-
-    // init jmethod
     _scanner_has_next = _jni_env->GetMethodID(_jdbc_scanner_cls, "hasNext", "()Z");
     DCHECK(_scanner_has_next != nullptr);
     _scanner_get_next_chunk = _jni_env->GetMethodID(_jdbc_scanner_cls, "getNextChunk", "(I)Ljava/util/List;");
@@ -138,6 +134,8 @@ Status JDBCScanner::_init_jdbc_scanner() {
     _scanner_close = _jni_env->GetMethodID(_jdbc_scanner_cls, "close", "()V");
     DCHECK(_scanner_close != nullptr);
 
+    _jni_env->CallVoidMethod(_jdbc_scanner, scanner_open);
+    CHECK_JAVA_EXCEPTION("open JDBCScanner failed")
     return Status::OK();
 }
 

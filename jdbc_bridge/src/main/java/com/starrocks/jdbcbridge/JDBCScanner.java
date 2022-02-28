@@ -35,9 +35,6 @@ public class JDBCScanner {
         config.setPassword(scanContext.getPassword());
         // one connection per query, so just set max pool size to 1
         config.setMaximumPoolSize(1);
-        if (scanContext.getProperties() != null) {
-            config.setDataSourceProperties(scanContext.getProperties());
-        }
 
         dataSource = new HikariDataSource(config);
         connection = dataSource.getConnection();

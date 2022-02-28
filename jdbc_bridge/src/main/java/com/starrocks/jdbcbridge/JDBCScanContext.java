@@ -10,7 +10,6 @@ public class JDBCScanContext {
     private String user;
     private String password;
     private String sql;
-    private Properties properties;
 
     public JDBCScanContext() {}
     public JDBCScanContext(String driverClassName, String jdbcURL, String user, String password, String sql) {
@@ -40,10 +39,6 @@ public class JDBCScanContext {
         this.sql = sql;
     }
 
-    public void addProperties(String key, String value) {
-        this.properties.put(key, value);
-    }
-
     public String getDriverClassName() {
         return driverClassName;
     }
@@ -63,9 +58,4 @@ public class JDBCScanContext {
     public String getSql() {
         return sql;
     }
-
-    public Properties getProperties() {
-        return properties;
-    }
-
 }
