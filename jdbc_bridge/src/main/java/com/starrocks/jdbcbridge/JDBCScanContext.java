@@ -2,8 +2,6 @@
 
 package com.starrocks.jdbcbridge;
 
-import java.util.Properties;
-
 public class JDBCScanContext {
     private String driverClassName;
     private String jdbcURL;

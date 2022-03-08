@@ -90,6 +90,13 @@ public:
 
     void set_timeout_ms(int64_t timeout_ms) { curl_easy_setopt(_curl, CURLOPT_TIMEOUT_MS, timeout_ms); }
 
+    void set_ssl_verify_peer(bool verify) { 
+        curl_easy_setopt(_curl, CURLOPT_SSL_VERIFYPEER, 0L);
+        curl_easy_setopt(_curl, CURLOPT_PROXY_SSL_VERIFYPEER, 0L);
+        curl_easy_setopt(_curl, CURLOPT_SSL_VERIFYHOST, 0L);
+        curl_easy_setopt(_curl, CURLOPT_PROXY_SSL_VERIFYHOST, 0L);
+    }
+
     // used to get content length
     int64_t get_content_length() const {
         double cl = 0.0f;

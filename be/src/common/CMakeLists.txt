@@ -29,7 +29,6 @@ add_library(Common STATIC
   logconfig.cpp
   configbase.cpp
   s3_uri.cpp
-  jdbc_config.cpp
 )
 
 if ("${CMAKE_BUILD_TARGET_ARCH}" STREQUAL "x86" OR "${CMAKE_BUILD_TARGET_ARCH}" STREQUAL "x86_64")
