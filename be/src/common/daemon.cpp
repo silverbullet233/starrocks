@@ -33,7 +33,6 @@
 #include "runtime/memory/chunk_allocator.h"
 #include "runtime/user_function_cache.h"
 #include "runtime/vectorized/time_types.h"
-#include "runtime/jdbc_driver_manager.h"
 #include "storage/options.h"
 #include "storage/storage_engine.h"
 #include "util/cpu_info.h"
@@ -253,8 +252,6 @@ void Daemon::init(int argc, char** argv, const std::vector<StorePath>& paths) {
     init_glog("be", true);
 
     LOG(INFO) << get_version_string(false);
-
-    JDBCDriverManager::getInstance()->init(std::string(getenv("STARROCKS_HOME")) + "/lib/jdbc_drivers");
 
 
     init_thrift_logging();
