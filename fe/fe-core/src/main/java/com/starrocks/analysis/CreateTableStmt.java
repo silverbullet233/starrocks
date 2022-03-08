@@ -267,8 +267,8 @@ public class CreateTableStmt extends DdlStmt {
 
         // analyze key desc
         if (!(engineName.equals("mysql") || engineName.equals("broker") ||
-                engineName.equals("hive") || engineName.equals("iceberg")) ||
-                engineName.equals("hudi") || engineName.equals("jdbc")) {
+                engineName.equals("hive") || engineName.equals("iceberg") ||
+                engineName.equals("hudi") || engineName.equals("jdbc"))) {
             // olap table
             if (keysDesc == null) {
                 List<String> keysColumnNames = Lists.newArrayList();

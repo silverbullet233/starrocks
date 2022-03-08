@@ -12,6 +12,8 @@ namespace starrocks {
 
 struct JDBCDriverEntry;
 
+
+
 class JDBCDriverManager {
 public:
     using JDBCDriverEntryPtr = std::shared_ptr<JDBCDriverEntry>;
