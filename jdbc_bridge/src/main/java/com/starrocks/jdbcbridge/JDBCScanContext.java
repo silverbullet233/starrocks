@@ -9,13 +9,17 @@ public class JDBCScanContext {
     private String password;
     private String sql;
 
+    private int statementFetchSize;
+
     public JDBCScanContext() {}
-    public JDBCScanContext(String driverClassName, String jdbcURL, String user, String password, String sql) {
+    public JDBCScanContext(String driverClassName, String jdbcURL, String user, String password,
+                           String sql, int statementFetchSize) {
         this.driverClassName = driverClassName;
         this.jdbcURL = jdbcURL;
         this.user = user;
         this.password = password;
         this.sql = sql;
+        this.statementFetchSize = statementFetchSize;
     }
 
     public void setDriverClassName(String driverClassName) {
@@ -33,8 +37,13 @@ public class JDBCScanContext {
     public void setPassword(String password) {
         this.password = password;
     }
+
     public void setSql(String sql) {
         this.sql = sql;
+    }
+
+    public void setStatementFetchSize(int statementFetchSize) {
+        this.statementFetchSize = statementFetchSize;
     }
 
     public String getDriverClassName() {
@@ -55,5 +64,9 @@ public class JDBCScanContext {
 
     public String getSql() {
         return sql;
+    }
+
+    public int getStatementFetchSize() {
+        return statementFetchSize;
     }
 }
