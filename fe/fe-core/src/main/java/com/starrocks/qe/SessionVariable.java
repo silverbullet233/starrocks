@@ -196,6 +196,8 @@ public class SessionVariable implements Serializable, Writable, Cloneable {
 
     public static final String ENABLE_HIVE_COLUMN_STATS = "enable_hive_column_stats";
 
+    public static final String ENABLE_OPTIMIZER_TRACE_LOG = "enable_optimizer_trace_log";
+
     @VariableMgr.VarAttr(name = ENABLE_PIPELINE, alias = ENABLE_PIPELINE_ENGINE, show = ENABLE_PIPELINE_ENGINE)
     private boolean enablePipelineEngine = true;
 
@@ -498,6 +500,9 @@ public class SessionVariable implements Serializable, Writable, Cloneable {
 
     @VariableMgr.VarAttr(name = ENABLE_HIVE_COLUMN_STATS)
     private boolean enableHiveColumnStats = true;
+
+    @VariableMgr.VarAttr(name = ENABLE_OPTIMIZER_TRACE_LOG, flag = VariableMgr.INVISIBLE)
+    private boolean enableOptimizerTraceLog = false;
 
     public boolean enableHiveColumnStats() {
         return enableHiveColumnStats;
@@ -906,6 +911,10 @@ public class SessionVariable implements Serializable, Writable, Cloneable {
 
     public boolean isEnableSQLDigest() {
         return enableSQLDigest;
+    }
+
+    public boolean isEnableOptimizerTraceLog() {
+        return enableOptimizerTraceLog;
     }
 
     // Serialize to thrift object
