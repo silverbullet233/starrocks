@@ -212,7 +212,10 @@ add_library(leveldb STATIC IMPORTED)
 set_target_properties(leveldb PROPERTIES IMPORTED_LOCATION ${THIRDPARTY_DIR}/lib/libleveldb.a)
 
 add_library(jemalloc STATIC IMPORTED)
-set_target_properties(jemalloc PROPERTIES IMPORTED_LOCATION ${THIRDPARTY_DIR}/lib64/libjemalloc.a)
+set_target_properties(jemalloc PROPERTIES IMPORTED_LOCATION ${THIRDPARTY_DIR}/lib/libjemalloc.a)
+
+add_library(jemalloc_for_arrow STATIC IMPORTED)
+set_target_properties(jemalloc_for_arrow PROPERTIES IMPORTED_LOCATION ${THIRDPARTY_DIR}/lib64/libjemalloc_for_arrow.a)
 
 add_library(brotlicommon STATIC IMPORTED)
 set_target_properties(brotlicommon PROPERTIES IMPORTED_LOCATION ${THIRDPARTY_DIR}/lib64/libbrotlicommon.a)
@@ -528,7 +531,8 @@ set(STARROCKS_DEPENDENCIES
     leveldb
     bitshuffle
     roaring
-    jemalloc
+    # arrow compiles jemalloc with a specific prefix, we should keep it
+    jemalloc_for_arrow
     brotlicommon
     brotlidec
     brotlienc
@@ -569,13 +573,27 @@ set(STARROCKS_LINK_LIBS ${STARROCKS_LINK_LIBS}
 
 # Add sanitize static link flags or tcmalloc
 if ("${CMAKE_BUILD_TYPE}" STREQUAL "DEBUG" OR "${CMAKE_BUILD_TYPE}" STREQUAL "RELEASE")
-    set(STARROCKS_LINK_LIBS ${STARROCKS_LINK_LIBS} tcmalloc)
+    if (USE_JEMALLOC)
+        message("use jemalloc")
+        add_definitions(-DUSE_JEMALLOC)
+        set(STARROCKS_LINK_LIBS ${STARROCKS_LINK_LIBS} jemalloc)
+    else()
+        message("use tcmalloc")
+        set(STARROCKS_LINK_LIBS ${STARROCKS_LINK_LIBS} tcmalloc)
+    endif()
 elseif ("${CMAKE_BUILD_TYPE}" STREQUAL "ASAN")
     set(STARROCKS_LINK_LIBS ${STARROCKS_LINK_LIBS} -static-libasan)
 elseif ("${CMAKE_BUILD_TYPE}" STREQUAL "LSAN")
     set(STARROCKS_LINK_LIBS ${STARROCKS_LINK_LIBS} -static-liblsan)
 elseif ("${CMAKE_BUILD_TYPE}" STREQUAL "UBSAN")
-    set(STARROCKS_LINK_LIBS ${STARROCKS_LINK_LIBS} -static-libubsan tcmalloc)
+    if (USE_JEMALLOC)
+        message("use jemalloc")
+        add_definitions(-DUSE_JEMALLOC)
+        set(STARROCKS_LINK_LIBS ${STARROCKS_LINK_LIBS} -static-libubsan jemalloc)
+    else()
+        message("use tcmalloc")
+        set(STARROCKS_LINK_LIBS ${STARROCKS_LINK_LIBS} -static-libubsan tcmalloc)
+    endif()
 elseif ("${CMAKE_BUILD_TYPE}" STREQUAL "TSAN")
     set(STARROCKS_LINK_LIBS ${STARROCKS_LINK_LIBS} -static-libtsan)
 else()
