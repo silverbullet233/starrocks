@@ -866,7 +866,7 @@ build_jemalloc() {
     unset CFLAGS
     export CFLAGS="-O3 -fno-omit-frame-pointer -fPIC -g"
     cd $TP_SOURCE_DIR/$JEMALLOC_SOURCE
-    ./configure --prefix=${TP_INSTALL_DIR} --with-jemalloc-prefix=je --enable-prof --disable-cxx --disable-libdl
+    ./configure --prefix=${TP_INSTALL_DIR} --with-jemalloc-prefix=je --enable-prof --disable-cxx --disable-libdl --disable-shared
     make -j$PARALLEL
     make install
     export CFLAGS=$OLD_CFLAGS
@@ -877,44 +877,44 @@ export CPPFLAGS=$CXXFLAGS
 # https://stackoverflow.com/questions/42597685/storage-size-of-timespec-isnt-known
 export CFLAGS="-O3 -fno-omit-frame-pointer -std=c99 -fPIC -g -D_POSIX_C_SOURCE=199309L -I${TP_INCLUDE_DIR}"
 
-build_libevent
-build_zlib
-build_lz4
-build_bzip
-build_openssl
-build_boost # must before thrift
-build_protobuf
-build_gflags
-build_gtest
-build_glog
-build_rapidjson
-build_simdjson
-build_snappy
-build_gperftools
-build_curl
-build_re2
-build_thrift
-build_leveldb
-build_brpc
-build_rocksdb
-build_librdkafka
-build_flatbuffers
-build_arrow
-build_s2
-build_bitshuffle
-build_croaringbitmap
-build_cctz
-build_fmt
-build_ryu
-build_hadoop
-build_jdk
-build_ragel
-build_hyperscan
-build_mariadb
-build_aliyun_oss_jars
-build_aws_cpp_sdk
-build_vpack
-build_opentelemetry
+# build_libevent
+# build_zlib
+# build_lz4
+# build_bzip
+# build_openssl
+# build_boost # must before thrift
+# build_protobuf
+# build_gflags
+# build_gtest
+# build_glog
+# build_rapidjson
+# build_simdjson
+# build_snappy
+# build_gperftools
+# build_curl
+# build_re2
+# build_thrift
+# build_leveldb
+# build_brpc
+# build_rocksdb
+# build_librdkafka
+# build_flatbuffers
+# build_arrow
+# build_s2
+# build_bitshuffle
+# build_croaringbitmap
+# build_cctz
+# build_fmt
+# build_ryu
+# build_hadoop
+# build_jdk
+# build_ragel
+# build_hyperscan
+# build_mariadb
+# build_aliyun_oss_jars
+# build_aws_cpp_sdk
+# build_vpack
+# build_opentelemetry
 build_jemalloc
 
 if [[ "${MACHINE_TYPE}" != "aarch64" ]]; then
