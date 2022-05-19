@@ -91,7 +91,7 @@ void gc_tcmalloc_memory(void* arg_this) {
         LOG_IF(INFO, releaser.freed_bytes() > 0) << "Released " << releaser.freed_bytes() << " bytes from column pool";
 
 #ifdef USE_JEMALLOC
-        je_malloc_stats_print(nullptr, nullptr, nullptr);
+        // je_malloc_stats_print(nullptr, nullptr, nullptr);
 #endif
 
 #if !defined(ADDRESS_SANITIZER) && !defined(LEAK_SANITIZER) && !defined(THREAD_SANITIZER) && !defined(USE_JEMALLOC)
@@ -276,6 +276,9 @@ void Daemon::init(int argc, char** argv, const std::vector<StorePath>& paths) {
 
     TimezoneUtils::init_time_zones();
 
+#ifdef USE_JEMALLOC
+    je_malloc_stats_print(nullptr, nullptr, nullptr);
+#endif
     // @TODO change name
     std::thread tcmalloc_gc_thread(gc_tcmalloc_memory, this);
     Thread::set_thread_name(tcmalloc_gc_thread, "tcmalloc_daemon");
