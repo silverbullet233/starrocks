@@ -20,8 +20,10 @@
 // under the License.
 
 #include "util/system_metrics.h"
-
+#ifdef USE_JEMALLOC
+#else
 #include <gperftools/malloc_extension.h>
+#endif
 #include <runtime/exec_env.h>
 #include <runtime/mem_tracker.h>
 
@@ -181,7 +183,7 @@ void SystemMetrics::install(MetricRegistry* registry, const std::set<std::string
 
 void SystemMetrics::update() {
     _update_cpu_metrics();
-    _update_memory_metrics();
+    // _update_memory_metrics();
     _update_disk_metrics();
     _update_net_metrics();
     _update_fd_metrics();
