@@ -146,6 +146,7 @@ private:
     ChunkQueue _chunk_queue;
     bool _is_pipeline_level_shuffle = false;
     std::vector<bool> _has_chunks_per_driver_sequence;
+    std::vector<std::deque<ChunkQueue::iterator>> _chunk_locations_per_driver_sequence;
     serde::ProtobufChunkMeta _chunk_meta;
 
     std::unordered_set<int> _sender_eos_set;          // sender_id
@@ -168,22 +169,22 @@ DataStreamRecvr::SenderQueue::SenderQueue(DataStreamRecvr* parent_recvr, int32_t
         : _recvr(parent_recvr),
           _is_cancelled(false),
           _num_remaining_senders(num_senders),
-          _has_chunks_per_driver_sequence(degree_of_parallelism, false) {}
+          _has_chunks_per_driver_sequence(degree_of_parallelism, false),
+          _chunk_locations_per_driver_sequence(degree_of_parallelism, std::deque<ChunkQueue::iterator>{}) {}
 
 void DataStreamRecvr::SenderQueue::short_circuit_for_pipeline(const int32_t driver_sequence) {
     std::lock_guard<std::mutex> l(_lock);
     _short_circuit_driver_sequences.insert(driver_sequence);
 
-    auto iter = _chunk_queue.begin();
-    while (iter != _chunk_queue.end()) {
-        if (_is_pipeline_level_shuffle && iter->driver_sequence == driver_sequence) {
+    if (_is_pipeline_level_shuffle) {
+        auto& locations = _chunk_locations_per_driver_sequence[driver_sequence];
+        for (auto& iter : locations) {
             if (iter->closure != nullptr) {
                 iter->closure->Run();
             }
-            iter = _chunk_queue.erase(iter);
-        } else {
-            ++iter;
+            _chunk_queue.erase(iter);
         }
+        locations.clear();
     }
 }
 
@@ -197,7 +198,10 @@ bool DataStreamRecvr::SenderQueue::has_output_for_pipeline(const int32_t driver_
         if (_is_cancelled) {
             return false;
         }
-        if (_is_pipeline_level_shuffle && !_has_chunks_per_driver_sequence[driver_sequence]) {
+        // if (_is_pipeline_level_shuffle && !_has_chunks_per_driver_sequence[driver_sequence]) {
+        //     return false;
+        // }
+        if (_is_pipeline_level_shuffle && _chunk_locations_per_driver_sequence[driver_sequence].empty()) {
             return false;
         }
         if (_chunk_queue.empty()) {
@@ -212,8 +216,9 @@ bool DataStreamRecvr::SenderQueue::has_output_for_pipeline(const int32_t driver_
         if (_is_cancelled) {
             return false;
         }
-        if (_is_pipeline_level_shuffle && !_has_chunks_per_driver_sequence[driver_sequence]) {
-            return false;
+
+        if (_is_pipeline_level_shuffle) {
+            return !_chunk_locations_per_driver_sequence[driver_sequence].empty();
         }
 
         if (_chunk_queue.empty()) {
@@ -226,9 +231,6 @@ bool DataStreamRecvr::SenderQueue::has_output_for_pipeline(const int32_t driver_
             }
         }
 
-        if (_is_pipeline_level_shuffle) {
-            _has_chunks_per_driver_sequence[driver_sequence] = false;
-        }
         return false;
     }
 }
@@ -316,40 +318,40 @@ Status DataStreamRecvr::SenderQueue::get_chunk(vectorized::Chunk** chunk) {
 
 Status DataStreamRecvr::SenderQueue::get_chunk_for_pipeline(vectorized::Chunk** chunk, const int32_t driver_sequence) {
     std::lock_guard<std::mutex> l(_lock);
-
     if (_is_cancelled) {
         return Status::Cancelled("Cancelled SenderQueue::get_chunk");
     }
-
     if (_chunk_queue.empty()) {
         return Status::OK();
     }
 
     auto iter = _chunk_queue.begin();
-    while (iter != _chunk_queue.end()) {
-        if (!_is_pipeline_level_shuffle || iter->driver_sequence == driver_sequence) {
-            *chunk = iter->chunk_ptr.release();
-            auto* closure = iter->closure;
-            _recvr->_num_buffered_bytes -= iter->chunk_bytes;
-            VLOG_ROW << "DataStreamRecvr fetched #rows=" << (*chunk)->num_rows();
-            _chunk_queue.erase(iter);
-
-            if (closure != nullptr) {
-                // When the execution thread is blocked and the Chunk queue exceeds the memory limit,
-                // the execution thread will hold done and will not return, block brpc from sending packets,
-                // and the execution thread will call run() to let brpc continue to send packets,
-                // and there will be memory release
-#ifndef BE_TEST
-                MemTracker* prev_tracker =
-                        tls_thread_status.set_mem_tracker(ExecEnv::GetInstance()->process_mem_tracker());
-                DeferOp op([&] { tls_thread_status.set_mem_tracker(prev_tracker); });
-#endif
-
-                closure->Run();
-            }
+    if (_is_pipeline_level_shuffle) {
+        if (_chunk_locations_per_driver_sequence[driver_sequence].empty()) {
             return Status::OK();
         }
-        ++iter;
+        iter = _chunk_locations_per_driver_sequence[driver_sequence].front();
+        _chunk_locations_per_driver_sequence[driver_sequence].pop_front();
+    }
+
+    *chunk = iter->chunk_ptr.release();
+    auto* closure = iter->closure;
+    _recvr->_num_buffered_bytes -= iter->chunk_bytes;
+    VLOG_ROW << "DataStreamRecvr fetched #rows=" << (*chunk)->num_rows();
+    _chunk_queue.erase(iter);
+
+    if (closure != nullptr) {
+        // When the execution thread is blocked and the Chunk queue exceeds the memory limit,
+        // the execution thread will hold done and will not return, block brpc from sending packets,
+        // and the execution thread will call run() to let brpc continue to send packets,
+        // and there will be memory release
+#ifndef BE_TEST
+        MemTracker* prev_tracker =
+                tls_thread_status.set_mem_tracker(ExecEnv::GetInstance()->process_mem_tracker());
+        DeferOp op([&] { tls_thread_status.set_mem_tracker(prev_tracker); });
+#endif
+
+        closure->Run();
     }
 
     return Status::OK();
@@ -501,7 +503,6 @@ Status DataStreamRecvr::SenderQueue::add_chunks(const PTransmitChunkParams& requ
     {
         std::lock_guard<std::mutex> l(_lock);
         wait_timer.stop();
-
         // _is_cancelled may be modified after checking _is_cancelled above,
         // because lock is release temporarily when deserializing chunk.
         if (_is_cancelled) {
@@ -517,9 +518,12 @@ Status DataStreamRecvr::SenderQueue::add_chunks(const PTransmitChunkParams& requ
                     _short_circuit_driver_sequences.end()) {
                     continue;
                 }
-                _has_chunks_per_driver_sequence[item.driver_sequence] = true;
+                // _has_chunks_per_driver_sequence[item.driver_sequence] = true;
             }
             _chunk_queue.emplace_back(std::move(item));
+            if (_is_pipeline_level_shuffle) {
+                _chunk_locations_per_driver_sequence[item.driver_sequence].emplace_back(std::prev(_chunk_queue.end()));
+            }
         }
         bool has_new_chunks = _chunk_queue.size() > original_size;
         if (has_new_chunks && done != nullptr && _recvr->exceeds_limit(total_chunk_bytes)) {
@@ -675,9 +679,12 @@ Status DataStreamRecvr::SenderQueue::add_chunks_and_keep_order(const PTransmitCh
                         }
                         continue;
                     }
-                    _has_chunks_per_driver_sequence[item.driver_sequence] = true;
+                    // _has_chunks_per_driver_sequence[item.driver_sequence] = true;
                 }
                 _chunk_queue.emplace_back(std::move(item));
+                if (_is_pipeline_level_shuffle) {
+                    _chunk_locations_per_driver_sequence[item.driver_sequence].emplace_back(std::prev(_chunk_queue.end()));
+                }
             }
 
             chunk_queues.erase(it);
