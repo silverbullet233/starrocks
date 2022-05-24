@@ -30,17 +30,20 @@
 #include "runtime/raw_value.h"
 #include "runtime/runtime_state.h"
 #include "util/starrocks_metrics.h"
+#include "util/stopwatch.hpp"
 
 namespace starrocks {
 
 DataStreamMgr::DataStreamMgr() {
     REGISTER_GAUGE_STARROCKS_METRIC(data_stream_receiver_count, [this]() {
-        std::lock_guard<std::mutex> l(_lock);
-        return _receiver_map.size();
+        return _receiver_count.load();
+        // std::lock_guard<std::mutex> l(_lock);
+        // return _receiver_map.size();
     });
     REGISTER_GAUGE_STARROCKS_METRIC(fragment_endpoint_count, [this]() {
-        std::lock_guard<std::mutex> l(_lock);
-        return _fragment_stream_set.size();
+        return _fragment_count.load();
+        // std::lock_guard<std::mutex> l(_lock);
+        // return _fragment_stream_set.size();
     });
 }
 
@@ -49,6 +52,20 @@ inline uint32_t DataStreamMgr::get_hash_value(const TUniqueId& fragment_instance
     value = RawValue::get_hash_value(&fragment_instance_id.hi, TYPE_BIGINT, value);
     value = RawValue::get_hash_value(&node_id, TYPE_INT, value);
     return value;
+}
+
+inline uint32_t DataStreamMgr::get_hash_value(const TUniqueId& fragment_instance_id, PlanNodeId node_id, uint32_t* bucket) {
+    uint32_t value = RawValue::get_hash_value(&fragment_instance_id.lo, TYPE_BIGINT, 0);
+    value = RawValue::get_hash_value(&fragment_instance_id.hi, TYPE_BIGINT, value);
+    *bucket = value % BUCKET_NUM;
+    value = RawValue::get_hash_value(&node_id, TYPE_INT, value);
+    return value;
+}
+
+inline uint32_t DataStreamMgr::get_bucket(const TUniqueId& fragment_instance_id) {
+    uint32_t value = RawValue::get_hash_value(&fragment_instance_id.lo, TYPE_BIGINT, 0);
+    value = RawValue::get_hash_value(&fragment_instance_id.hi, TYPE_BIGINT, value);
+    return value % BUCKET_NUM;
 }
 
 std::shared_ptr<DataStreamRecvr> DataStreamMgr::create_recvr(
@@ -64,33 +81,67 @@ std::shared_ptr<DataStreamRecvr> DataStreamMgr::create_recvr(
             new DataStreamRecvr(this, state, row_desc, fragment_instance_id, dest_node_id, num_senders, is_merging,
                                 buffer_size, profile, std::move(sub_plan_query_statistics_recvr), is_pipeline,
                                 degree_of_parallelism, keep_order, pass_through_chunk_buffer));
-    uint32_t hash_value = get_hash_value(fragment_instance_id, dest_node_id);
-    std::lock_guard<std::mutex> l(_lock);
-    _fragment_stream_set.emplace(fragment_instance_id, dest_node_id);
-    _receiver_map.insert(std::make_pair(hash_value, recvr));
+    // uint32_t hash_value = get_hash_value(fragment_instance_id, dest_node_id);
+    // uint32_t bucket;
+    // uint32_t hash_value = get_hash_value(fragment_instance_id, dest_node_id, &bucket);
+    uint32_t bucket = get_bucket(fragment_instance_id);
+    std::lock_guard<Mutex> l(_lock[bucket]);
+    auto iter = _receiver_map[bucket].find(fragment_instance_id);
+    if (iter == _receiver_map[bucket].end()) {
+        _receiver_map[bucket].insert(std::make_pair(fragment_instance_id, std::make_shared<RecvrMap>()));
+        // _receiver_map[bucket].insert(std::make_pair(fragment_instance_id, {}));
+        iter = _receiver_map[bucket].find(fragment_instance_id);
+        _fragment_count += 1;
+    }
+    iter->second->insert(std::make_pair(dest_node_id, recvr));
+    _receiver_count += 1;
+    // _fragment_stream_set[bucket].emplace(fragment_instance_id, dest_node_id);
+    // _receiver_map[bucket].insert(std::make_pair(hash_value, recvr));
+    // _fragment_stream_set.emplace(fragment_instance_id, dest_node_id);
+    // _receiver_map.insert(std::make_pair(hash_value, recvr));
     return recvr;
 }
 
 std::shared_ptr<DataStreamRecvr> DataStreamMgr::find_recvr(const TUniqueId& fragment_instance_id, PlanNodeId node_id,
                                                            bool acquire_lock) {
     VLOG_ROW << "looking up fragment_instance_id=" << fragment_instance_id << ", node=" << node_id;
-    size_t hash_value = get_hash_value(fragment_instance_id, node_id);
+    // size_t hash_value = get_hash_value(fragment_instance_id, node_id);
+    // uint32_t bucket;
+    // size_t hash_value = get_hash_value(fragment_instance_id, node_id, &bucket);
+    uint32_t bucket = get_bucket(fragment_instance_id);
     if (acquire_lock) {
-        _lock.lock();
+        // MonotonicStopWatch sw;
+        // sw.start();
+        // _lock[bucket].lock();
+        _lock[bucket].lock_shared();
+        // LOG(INFO) << "find_recvr get lock cost " << sw.elapsed_time() << "ns, bucket_num:" << BUCKET_NUM << ", bucket: " << bucket;
     }
-    std::pair<StreamMap::iterator, StreamMap::iterator> range = _receiver_map.equal_range(hash_value);
-    while (range.first != range.second) {
-        std::shared_ptr<DataStreamRecvr> recvr = range.first->second;
-        if (recvr->fragment_instance_id() == fragment_instance_id && recvr->dest_node_id() == node_id) {
+    auto iter = _receiver_map[bucket].find(fragment_instance_id);
+    if (iter != _receiver_map[bucket].end()) {
+        auto sub_iter = iter->second->find(node_id);
+        if (sub_iter != iter->second->end()) {
+            std::shared_ptr<DataStreamRecvr> recvr = sub_iter->second;
             if (acquire_lock) {
-                _lock.unlock();
+                // _lock[bucket].unlock();
+                _lock[bucket].unlock_shared();
             }
             return recvr;
         }
-        ++range.first;
     }
+    // std::pair<StreamMap::iterator, StreamMap::iterator> range = _receiver_map[bucket].equal_range(hash_value);
+    // while (range.first != range.second) {
+    //     std::shared_ptr<DataStreamRecvr> recvr = range.first->second;
+    //     if (recvr->fragment_instance_id() == fragment_instance_id && recvr->dest_node_id() == node_id) {
+    //         if (acquire_lock) {
+    //             _lock[bucket].unlock();
+    //         }
+    //         return recvr;
+    //     }
+    //     ++range.first;
+    // }
     if (acquire_lock) {
-        _lock.unlock();
+        // _lock[bucket].unlock();
+        _lock[bucket].unlock_shared();
     }
     return std::shared_ptr<DataStreamRecvr>();
 }
@@ -170,20 +221,36 @@ Status DataStreamMgr::transmit_chunk(const PTransmitChunkParams& request, ::goog
 Status DataStreamMgr::deregister_recvr(const TUniqueId& fragment_instance_id, PlanNodeId node_id) {
     std::shared_ptr<DataStreamRecvr> target_recvr;
     VLOG_QUERY << "deregister_recvr(): fragment_instance_id=" << fragment_instance_id << ", node=" << node_id;
-    size_t hash_value = get_hash_value(fragment_instance_id, node_id);
+    // uint32_t bucket;
+    // size_t hash_value = get_hash_value(fragment_instance_id, node_id, &bucket);
+    uint32_t bucket = get_bucket(fragment_instance_id);
     {
-        std::lock_guard<std::mutex> l(_lock);
-        std::pair<StreamMap::iterator, StreamMap::iterator> range = _receiver_map.equal_range(hash_value);
-        while (range.first != range.second) {
-            const std::shared_ptr<DataStreamRecvr>& recvr = range.first->second;
-            if (recvr->fragment_instance_id() == fragment_instance_id && recvr->dest_node_id() == node_id) {
-                target_recvr = recvr;
-                _fragment_stream_set.erase(std::make_pair(recvr->fragment_instance_id(), recvr->dest_node_id()));
-                _receiver_map.erase(range.first);
-                break;
+        std::lock_guard<Mutex> l(_lock[bucket]);
+        auto iter = _receiver_map[bucket].find(fragment_instance_id);
+        if (iter != _receiver_map[bucket].end()) {
+            auto sub_iter = iter->second->find(node_id);
+            if (sub_iter != iter->second->end()) {
+                target_recvr = sub_iter->second;
+                iter->second->erase(sub_iter);
+                _receiver_count -= 1;
+                if (iter->second->empty()) {
+                    _receiver_map[bucket].erase(iter);
+                    _fragment_count -= 1;
+                }
             }
-            ++range.first;
         }
+
+        // std::pair<StreamMap::iterator, StreamMap::iterator> range = _receiver_map[bucket].equal_range(hash_value);
+        // while (range.first != range.second) {
+        //     const std::shared_ptr<DataStreamRecvr>& recvr = range.first->second;
+        //     if (recvr->fragment_instance_id() == fragment_instance_id && recvr->dest_node_id() == node_id) {
+        //         target_recvr = recvr;
+        //         _fragment_stream_set[bucket].erase(std::make_pair(recvr->fragment_instance_id(), recvr->dest_node_id()));
+        //         _receiver_map[bucket].erase(range.first);
+        //         break;
+        //     }
+        //     ++range.first;
+        // }
     }
 
     // Notify concurrent add_data() requests that the stream has been terminated.
@@ -202,21 +269,31 @@ Status DataStreamMgr::deregister_recvr(const TUniqueId& fragment_instance_id, Pl
 void DataStreamMgr::cancel(const TUniqueId& fragment_instance_id) {
     VLOG_QUERY << "cancelling all streams for fragment=" << fragment_instance_id;
     std::vector<std::shared_ptr<DataStreamRecvr>> recvrs;
+    // uint32_t bucket;
+    // get_hash_value(fragment_instance_id, 0, &bucket);
+    uint32_t bucket = get_bucket(fragment_instance_id);
     {
-        std::lock_guard<std::mutex> l(_lock);
-        FragmentStreamSet::iterator i = _fragment_stream_set.lower_bound(std::make_pair(fragment_instance_id, 0));
-        while (i != _fragment_stream_set.end() && i->first == fragment_instance_id) {
-            std::shared_ptr<DataStreamRecvr> recvr = find_recvr(i->first, i->second, false);
-            if (recvr == nullptr) {
-                // keep going but at least log it
-                std::stringstream err;
-                err << "cancel(): missing in stream_map: fragment=" << i->first << " node=" << i->second;
-                LOG(ERROR) << err.str();
-            } else {
-                recvrs.push_back(recvr);
+        std::lock_guard<Mutex> l(_lock[bucket]);
+        auto iter = _receiver_map[bucket].find(fragment_instance_id);
+        if (iter != _receiver_map[bucket].end()) {
+            // all of the value should collect
+            for (auto sub_iter = iter->second->begin(); sub_iter != iter->second->end(); sub_iter ++) {
+                recvrs.push_back(sub_iter->second);
             }
-            ++i;
         }
+        // FragmentStreamSet::iterator i = _fragment_stream_set[bucket].lower_bound(std::make_pair(fragment_instance_id, 0));
+        // while (i != _fragment_stream_set[bucket].end() && i->first == fragment_instance_id) {
+        //     std::shared_ptr<DataStreamRecvr> recvr = find_recvr(i->first, i->second, false);
+        //     if (recvr == nullptr) {
+        //         // keep going but at least log it
+        //         std::stringstream err;
+        //         err << "cancel(): missing in stream_map: fragment=" << i->first << " node=" << i->second;
+        //         LOG(ERROR) << err.str();
+        //     } else {
+        //         recvrs.push_back(recvr);
+        //     }
+        //     ++i;
+        // }
     }
 
     // cancel_stream maybe take a long time, so we handle it out of lock.

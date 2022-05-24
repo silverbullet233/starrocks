@@ -35,6 +35,8 @@
 #include "runtime/mem_tracker.h"
 #include "runtime/query_statistics.h"
 #include "util/runtime_profile.h"
+#include "util/phmap/phmap.h"
+#include "bthread/mutex.h"
 
 namespace google {
 namespace protobuf {
@@ -95,17 +97,25 @@ public:
 
 private:
     friend class DataStreamRecvr;
+    static const uint32_t BUCKET_NUM = 127;
 
     // protects all fields below
-    std::mutex _lock;
+    // typedef bthread::Mutex Mutex;
+    typedef std::shared_mutex Mutex;
+    Mutex _lock[BUCKET_NUM];
 
     // map from hash value of fragment instance id/node id pair to stream receivers;
     // Ownership of the stream revcr is shared between this instance and the caller of
     // create_recvr().
     // we don't want to create a map<pair<TUniqueId, PlanNodeId>, DataStreamRecvr*>,
     // because that requires a bunch of copying of ids for lookup
-    typedef std::unordered_multimap<uint32_t, std::shared_ptr<DataStreamRecvr> > StreamMap;
-    StreamMap _receiver_map;
+    typedef phmap::flat_hash_map<PlanNodeId, std::shared_ptr<DataStreamRecvr>> RecvrMap;
+    // typedef std::unordered_map<PlanNodeId, std::shared_ptr<DataStreamRecvr>> RecvrMap;
+    typedef phmap::flat_hash_map<TUniqueId, std::shared_ptr<RecvrMap>> StreamMap;
+    // typedef std::unordered_map<TUniqueId, std::unordered_map<PlanNodeId, std::shared_ptr<DataStreamRecvr>>> StreamMap;
+    StreamMap _receiver_map[BUCKET_NUM];
+    // typedef std::unordered_multimap<uint32_t, std::shared_ptr<DataStreamRecvr> > StreamMap;
+    std::atomic<uint32_t> _receiver_count{0};
 
     // less-than ordering for pair<TUniqueId, PlanNodeId>
     struct ComparisonOp {
@@ -125,8 +135,9 @@ private:
     };
 
     // ordered set of registered streams' fragment instance id/node id
-    typedef std::set<std::pair<TUniqueId, PlanNodeId>, ComparisonOp> FragmentStreamSet;
-    FragmentStreamSet _fragment_stream_set;
+    // typedef std::set<std::pair<TUniqueId, PlanNodeId>, ComparisonOp> FragmentStreamSet;
+    // FragmentStreamSet _fragment_stream_set[BUCKET_NUM];
+    std::atomic<uint32_t> _fragment_count{0};
 
     // Return the receiver for given fragment_instance_id/node_id,
     // or NULL if not found. If 'acquire_lock' is false, assumes _lock is already being
@@ -139,7 +150,12 @@ private:
 
     inline uint32_t get_hash_value(const TUniqueId& fragment_instance_id, PlanNodeId node_id);
 
+    inline uint32_t get_hash_value(const TUniqueId& fragment_instance_id, PlanNodeId node_id, uint32_t* bucket);
+
+    inline uint32_t get_bucket(const TUniqueId& fragment_instance_id);
+
     PassThroughChunkBufferManager _pass_through_chunk_buffer_manager;
-};
+
+ };
 
 } // namespace starrocks
