@@ -112,8 +112,7 @@ std::shared_ptr<DataStreamRecvr> DataStreamMgr::find_recvr(const TUniqueId& frag
     if (acquire_lock) {
         // MonotonicStopWatch sw;
         // sw.start();
-        // _lock[bucket].lock();
-        _lock[bucket].lock_shared();
+        _lock[bucket].lock();
         // LOG(INFO) << "find_recvr get lock cost " << sw.elapsed_time() << "ns, bucket_num:" << BUCKET_NUM << ", bucket: " << bucket;
     }
     auto iter = _receiver_map[bucket].find(fragment_instance_id);
@@ -122,8 +121,7 @@ std::shared_ptr<DataStreamRecvr> DataStreamMgr::find_recvr(const TUniqueId& frag
         if (sub_iter != iter->second->end()) {
             std::shared_ptr<DataStreamRecvr> recvr = sub_iter->second;
             if (acquire_lock) {
-                // _lock[bucket].unlock();
-                _lock[bucket].unlock_shared();
+                _lock[bucket].unlock();
             }
             return recvr;
         }
@@ -140,8 +138,7 @@ std::shared_ptr<DataStreamRecvr> DataStreamMgr::find_recvr(const TUniqueId& frag
     //     ++range.first;
     // }
     if (acquire_lock) {
-        // _lock[bucket].unlock();
-        _lock[bucket].unlock_shared();
+        _lock[bucket].unlock();
     }
     return std::shared_ptr<DataStreamRecvr>();
 }
