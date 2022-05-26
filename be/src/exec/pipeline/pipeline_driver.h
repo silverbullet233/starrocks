@@ -413,7 +413,6 @@ private:
     RuntimeProfile::Counter* _block_by_precondition_counter = nullptr;
     RuntimeProfile::Counter* _block_by_output_full_counter = nullptr;
     RuntimeProfile::Counter* _block_by_input_empty_counter = nullptr;
-
     RuntimeProfile::Counter* _pending_timer = nullptr;
     RuntimeProfile::Counter* _precondition_block_timer = nullptr;
     RuntimeProfile::Counter* _input_empty_timer = nullptr;
