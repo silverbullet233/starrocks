@@ -115,6 +115,7 @@ public:
 private:
     friend class DataStreamMgr;
     class SenderQueue;
+    class SenderQueueForPipeline;
 
     DataStreamRecvr(DataStreamMgr* stream_mgr, RuntimeState* runtime_state, const RowDescriptor& row_desc,
                     const TUniqueId& fragment_instance_id, PlanNodeId dest_node_id, int num_senders, bool is_merging,
@@ -163,6 +164,8 @@ private:
     // are placed in the same SenderQueue. The SenderQueue instances are owned by the
     // receiver and placed in _sender_queue_pool.
     std::vector<SenderQueue*> _sender_queues;
+    // only used in pipeline, for testing
+    std::vector<SenderQueueForPipeline*> _sender_queues_for_pipeline;
 
     // vectorized::SortedChunksMerger merges chunks from different senders.
     std::unique_ptr<vectorized::SortedChunksMerger> _chunks_merger;
