@@ -156,7 +156,8 @@ public:
     // if filter_ptr is not null, save filter to filter_ptr.
     // then running filter on chunk.
     static Status eval_conjuncts(const std::vector<ExprContext*>& ctxs, vectorized::Chunk* chunk,
-                                 vectorized::FilterPtr* filter_ptr = nullptr);
+                                 vectorized::FilterPtr* filter_ptr = nullptr,
+                                 RuntimeProfile::Counter* eval_timer = nullptr, RuntimeProfile::Counter* filter_timer = nullptr);
     static StatusOr<size_t> eval_conjuncts_into_filter(const std::vector<ExprContext*>& ctxs, vectorized::Chunk* chunk,
                                                        vectorized::Filter* filter);
 

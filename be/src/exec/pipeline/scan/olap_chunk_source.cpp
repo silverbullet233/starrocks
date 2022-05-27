@@ -263,6 +263,15 @@ Status OlapChunkSource::_init_olap_reader(RuntimeState* runtime_state) {
 
     if (!_scan_ctx->not_push_down_conjuncts().empty() || !_not_push_down_predicates.empty()) {
         _expr_filter_timer = ADD_TIMER(_runtime_profile, "ExprFilterTime");
+        if (!_not_push_down_predicates.empty()) {
+            _not_push_down_predicates_eval_timer = ADD_TIMER(_runtime_profile, "NotPushDownPredicatesEvalTime");
+            _not_push_down_predicates_filter_timer = ADD_TIMER(_runtime_profile, "NotPushDownPredicatesFilterTime");
+        }
+        if (!_scan_ctx->not_push_down_conjuncts().empty()) {
+            _not_push_down_conjuncts_eval_timer = ADD_TIMER(_runtime_profile, "NotPushDownConjunctsEvalTime");
+            _not_push_down_conjuncts_filter_timer = ADD_TIMER(_runtime_profile, "NotPushDownConjunctsFilterTime");
+        }
+
     }
 
     DCHECK(_params.global_dictmaps != nullptr);
@@ -404,13 +413,19 @@ Status OlapChunkSource::_read_chunk_from_storage(RuntimeState* state, vectorized
             SCOPED_TIMER(_expr_filter_timer);
             size_t nrows = chunk->num_rows();
             _selection.resize(nrows);
-            _not_push_down_predicates.evaluate(chunk, _selection.data(), 0, nrows);
-            chunk->filter(_selection);
+            {
+                SCOPED_TIMER(_not_push_down_predicates_eval_timer);
+                _not_push_down_predicates.evaluate(chunk, _selection.data(), 0, nrows);
+            }
+            {
+                SCOPED_TIMER(_not_push_down_predicates_filter_timer);
+                chunk->filter(_selection);
+            }
             DCHECK_CHUNK(chunk);
         }
         if (!_scan_ctx->not_push_down_conjuncts().empty()) {
             SCOPED_TIMER(_expr_filter_timer);
-            RETURN_IF_ERROR(ExecNode::eval_conjuncts(_scan_ctx->not_push_down_conjuncts(), chunk));
+            RETURN_IF_ERROR(ExecNode::eval_conjuncts(_scan_ctx->not_push_down_conjuncts(), chunk, nullptr, _not_push_down_conjuncts_eval_timer, _not_push_down_conjuncts_filter_timer));
             DCHECK_CHUNK(chunk);
         }
         TRY_CATCH_ALLOC_SCOPE_END()

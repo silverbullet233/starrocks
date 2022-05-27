@@ -121,6 +121,10 @@ private:
     RuntimeProfile::Counter* _rows_read_counter = nullptr;
 
     RuntimeProfile::Counter* _expr_filter_timer = nullptr;
+    RuntimeProfile::Counter* _not_push_down_predicates_eval_timer = nullptr;
+    RuntimeProfile::Counter* _not_push_down_predicates_filter_timer = nullptr;
+    RuntimeProfile::Counter* _not_push_down_conjuncts_eval_timer = nullptr;
+    RuntimeProfile::Counter* _not_push_down_conjuncts_filter_timer = nullptr;
     RuntimeProfile::Counter* _scan_timer = nullptr;
     RuntimeProfile::Counter* _create_seg_iter_timer = nullptr;
     RuntimeProfile::Counter* _tablet_counter = nullptr;

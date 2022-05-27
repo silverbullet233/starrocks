@@ -33,6 +33,7 @@
 #include "exec/exchange_node.h"
 #include "exec/pipeline/pipeline_builder.h"
 #include "exec/pipeline/runtime_filter_types.h"
+#include "exec/pipeline/scan/olap_chunk_source.h"
 #include "exec/select_node.h"
 #include "exec/vectorized/aggregate/aggregate_blocking_node.h"
 #include "exec/vectorized/aggregate/aggregate_streaming_node.h"
@@ -531,7 +532,9 @@ void ExecNode::debug_string(int indentation_level, std::stringstream* out) const
     }
 }
 
-Status eager_prune_eval_conjuncts(const std::vector<ExprContext*>& ctxs, vectorized::Chunk* chunk) {
+Status eager_prune_eval_conjuncts(const std::vector<ExprContext*>& ctxs, vectorized::Chunk* chunk, 
+                                RuntimeProfile::Counter* eval_timer = nullptr,
+                                RuntimeProfile::Counter* filter_timer = nullptr) {
     vectorized::Column::Filter filter(chunk->num_rows(), 1);
     vectorized::Column::Filter* raw_filter = &filter;
 
@@ -550,7 +553,9 @@ Status eager_prune_eval_conjuncts(const std::vector<ExprContext*>& ctxs, vectori
     int zero_count = 0;
 
     for (auto* ctx : ctxs) {
+        ScopedTimer<MonotonicStopWatch> timer(eval_timer);
         ASSIGN_OR_RETURN(ColumnPtr column, ctx->evaluate(chunk));
+        timer.stop();
         size_t true_count = vectorized::ColumnHelper::count_true_with_notnull(column);
 
         if (true_count == column->size()) {
@@ -578,12 +583,16 @@ Status eager_prune_eval_conjuncts(const std::vector<ExprContext*>& ctxs, vectori
     if (zero_count == 0) {
         return Status::OK();
     }
-    chunk->filter(*raw_filter, true);
+    {
+        SCOPED_TIMER(filter_timer)
+        chunk->filter(*raw_filter, true);
+    }
     return Status::OK();
 }
 
 Status ExecNode::eval_conjuncts(const std::vector<ExprContext*>& ctxs, vectorized::Chunk* chunk,
-                                vectorized::FilterPtr* filter_ptr) {
+                                vectorized::FilterPtr* filter_ptr, RuntimeProfile::Counter* eval_timer,
+                                RuntimeProfile::Counter* filter_timer) {
     // No need to do expression if none rows
     DCHECK(chunk != nullptr);
     if (chunk->num_rows() == 0) {
@@ -601,7 +610,7 @@ Status ExecNode::eval_conjuncts(const std::vector<ExprContext*>& ctxs, vectorize
     TRY_CATCH_ALLOC_SCOPE_START()
     const int eager_prune_max_column_number = 5;
     if (filter_ptr == nullptr && chunk->num_columns() <= eager_prune_max_column_number) {
-        return eager_prune_eval_conjuncts(ctxs, chunk);
+        return eager_prune_eval_conjuncts(ctxs, chunk, eval_timer, filter_timer);
     }
 
     vectorized::FilterPtr filter(new vectorized::Column::Filter(chunk->num_rows(), 1));
@@ -611,7 +620,9 @@ Status ExecNode::eval_conjuncts(const std::vector<ExprContext*>& ctxs, vectorize
     vectorized::Column::Filter* raw_filter = filter.get();
 
     for (auto* ctx : ctxs) {
+        ScopedTimer<MonotonicStopWatch> timer(eval_timer);
         ASSIGN_OR_RETURN(ColumnPtr column, ctx->evaluate(chunk));
+        timer.stop();
         size_t true_count = vectorized::ColumnHelper::count_true_with_notnull(column);
 
         if (true_count == column->size()) {
@@ -631,7 +642,10 @@ Status ExecNode::eval_conjuncts(const std::vector<ExprContext*>& ctxs, vectorize
         }
     }
 
-    chunk->filter(*raw_filter);
+    {
+        SCOPED_TIMER(filter_timer);
+        chunk->filter(*raw_filter);
+    }
     TRY_CATCH_ALLOC_SCOPE_END()
     return Status::OK();
 }
