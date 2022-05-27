@@ -257,12 +257,12 @@ Status ScanOperator::_trigger_next_scan(RuntimeState* state, int chunk_source_in
                 _is_io_task_running[chunk_source_index] = false;
             }
         });
-
-        if (dynamic_cast<ConnectorScanOperator*>(this) != nullptr) {
-            offer_task_success = ExecEnv::GetInstance()->hdfs_scan_executor()->submit(std::move(task));
-        } else {
-            offer_task_success = ExecEnv::GetInstance()->scan_executor()->submit(std::move(task));
-        }
+        task.work_function(_workgroup->id());
+        // if (dynamic_cast<ConnectorScanOperator*>(this) != nullptr) {
+        //     offer_task_success = ExecEnv::GetInstance()->hdfs_scan_executor()->submit(std::move(task));
+        // } else {
+        //     offer_task_success = ExecEnv::GetInstance()->scan_executor()->submit(std::move(task));
+        // }
     } else {
         PriorityThreadPool::Task task;
         task.work_function = [wp = _query_ctx, this, state, chunk_source_index]() {
@@ -286,22 +286,25 @@ Status ScanOperator::_trigger_next_scan(RuntimeState* state, int chunk_source_in
         };
         // TODO(by satanson): set a proper priority
         task.priority = 20;
-
-        offer_task_success = _io_threads->try_offer(task);
+        task.work_function();
+        // offer_task_success = _io_threads->try_offer(task);
     }
 
-    if (offer_task_success) {
-        _io_task_retry_cnt = 0;
-    } else {
-        _num_running_io_tasks--;
-        _is_io_task_running[chunk_source_index] = false;
-        // TODO(hcf) set a proper retry times
-        LOG(WARNING) << "ScanOperator failed to offer io task due to thread pool overload, retryCnt="
-                     << _io_task_retry_cnt;
-        if (++_io_task_retry_cnt > 100) {
-            return Status::RuntimeError("ScanOperator failed to offer io task due to thread pool overload");
-        }
-    }
+    _num_running_io_tasks--;
+    _is_io_task_running[chunk_source_index] = false;
+
+    // if (offer_task_success) {
+    //     _io_task_retry_cnt = 0;
+    // } else {
+    //     _num_running_io_tasks--;
+    //     _is_io_task_running[chunk_source_index] = false;
+    //     // TODO(hcf) set a proper retry times
+    //     LOG(WARNING) << "ScanOperator failed to offer io task due to thread pool overload, retryCnt="
+    //                  << _io_task_retry_cnt;
+    //     if (++_io_task_retry_cnt > 100) {
+    //         return Status::RuntimeError("ScanOperator failed to offer io task due to thread pool overload");
+    //     }
+    // }
 
     return Status::OK();
 }
