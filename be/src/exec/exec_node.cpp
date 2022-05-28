@@ -584,7 +584,7 @@ Status eager_prune_eval_conjuncts(const std::vector<ExprContext*>& ctxs, vectori
         return Status::OK();
     }
     {
-        SCOPED_TIMER(filter_timer)
+        SCOPED_TIMER(filter_timer);
         chunk->filter(*raw_filter, true);
     }
     return Status::OK();
