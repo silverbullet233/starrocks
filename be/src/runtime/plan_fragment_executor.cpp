@@ -82,12 +82,12 @@ Status PlanFragmentExecutor::prepare(const TExecPlanFragmentParams& request) {
     }
 
     // Reserve one main thread from the pool
-    _runtime_state->resource_pool()->acquire_thread_token();
-    _has_thread_token = true;
+    // _runtime_state->resource_pool()->acquire_thread_token();
+    // _has_thread_token = true;
 
-    _average_thread_tokens = profile()->add_sampling_counter(
-            "AverageThreadTokens", std::bind<int64_t>(std::mem_fn(&ThreadResourceMgr::ResourcePool::num_threads),
-                                                      _runtime_state->resource_pool()));
+    // _average_thread_tokens = profile()->add_sampling_counter(
+    //         "AverageThreadTokens", std::bind<int64_t>(std::mem_fn(&ThreadResourceMgr::ResourcePool::num_threads),
+    //                                                   _runtime_state->resource_pool()));
 
     // set up desc tbl
     DescriptorTbl* desc_tbl = nullptr;
@@ -395,11 +395,11 @@ void PlanFragmentExecutor::report_profile_once() {
 }
 
 void PlanFragmentExecutor::release_thread_token() {
-    if (_has_thread_token) {
-        _has_thread_token = false;
-        _runtime_state->resource_pool()->release_thread_token(true);
-        profile()->stop_sampling_counters_updates(_average_thread_tokens);
-    }
+    // if (_has_thread_token) {
+    //     _has_thread_token = false;
+    //     _runtime_state->resource_pool()->release_thread_token(true);
+    //     profile()->stop_sampling_counters_updates(_average_thread_tokens);
+    // }
 }
 
 void PlanFragmentExecutor::close() {
