@@ -10,6 +10,7 @@
 #include <random>
 
 #include "exec/pipeline/exchange/sink_buffer.h"
+#include "exec/pipeline/exchange/exchange_buffer.h"
 #include "exprs/expr.h"
 #include "gen_cpp/Types_types.h"
 #include "runtime/data_stream_mgr.h"
@@ -265,7 +266,7 @@ void ExchangeSinkOperator::Channel::close(RuntimeState* state, FragmentContext* 
 }
 
 ExchangeSinkOperator::ExchangeSinkOperator(OperatorFactory* factory, int32_t id, int32_t plan_node_id,
-                                           int32_t driver_sequence, const std::shared_ptr<SinkBuffer>& buffer,
+                                           int32_t driver_sequence, const std::shared_ptr<BufferType>& buffer,
                                            TPartitionType::type part_type,
                                            const std::vector<TPlanFragmentDestination>& destinations,
                                            bool is_pipeline_level_shuffle, const int32_t num_shuffles,
@@ -612,7 +613,7 @@ void ExchangeSinkOperator::construct_brpc_attachment(PTransmitChunkParamsPtr chu
 }
 
 ExchangeSinkOperatorFactory::ExchangeSinkOperatorFactory(
-        int32_t id, int32_t plan_node_id, std::shared_ptr<SinkBuffer> buffer, TPartitionType::type part_type,
+        int32_t id, int32_t plan_node_id, std::shared_ptr<BufferType> buffer, TPartitionType::type part_type,
         const std::vector<TPlanFragmentDestination>& destinations, bool is_pipeline_level_shuffle, int32_t num_shuffles,
         int32_t sender_id, PlanNodeId dest_node_id, std::vector<ExprContext*> partition_expr_ctxs,
         bool enable_exchange_pass_through, FragmentContext* const fragment_ctx,

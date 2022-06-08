@@ -371,7 +371,7 @@ if (WITH_GCOV)
 endif()
 
 # to compresss debug section. https://gcc.gnu.org/onlinedocs/gcc/Debugging-Options.html
-set(CXX_COMMON_FLAGS "${CXX_COMMON_FLAGS} -gz=zlib")
+#set(CXX_COMMON_FLAGS "${CXX_COMMON_FLAGS} -gz=zlib")
 
 # For CMAKE_BUILD_TYPE=Debug
 #   -ggdb: Enable gdb debugging

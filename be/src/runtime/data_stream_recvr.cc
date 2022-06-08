@@ -1714,7 +1714,8 @@ Status DataStreamRecvr::get_chunk(std::unique_ptr<vectorized::Chunk>* chunk) {
 Status DataStreamRecvr::get_chunk_for_pipeline(std::unique_ptr<vectorized::Chunk>* chunk,
                                                const int32_t driver_sequence) {
     DCHECK(!_is_merging);
-    DCHECK_EQ(_sender_queues.size(), 1);
+    // DCHECK_EQ(_sender_queues.size(), 1);
+    DCHECK_EQ(_sender_queues_for_pipeline.size(), 1);
     vectorized::Chunk* tmp_chunk = nullptr;
     Status status = _sender_queues_for_pipeline[0]->get_chunk(&tmp_chunk, driver_sequence);
     // Status status = _sender_queues[0]->get_chunk_for_pipeline(&tmp_chunk, driver_sequence);

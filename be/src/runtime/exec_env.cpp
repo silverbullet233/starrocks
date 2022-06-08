@@ -171,6 +171,7 @@ Status ExecEnv::_init(const std::vector<StorePath>& store_paths) {
                             .build(&driver_executor_thread_pool));
     _driver_executor = new pipeline::GlobalDriverExecutor("pip_exe", std::move(driver_executor_thread_pool), false);
     _driver_executor->initialize(_max_executor_threads);
+    _exchange_schedule_thread_pool = new PriorityThreadPool("exchange_schedule", _max_executor_threads, 100000);
 
     _driver_limiter =
             new pipeline::DriverLimiter(_max_executor_threads * config::pipeline_max_num_drivers_per_exec_thread);

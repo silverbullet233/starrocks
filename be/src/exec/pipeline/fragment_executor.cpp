@@ -455,9 +455,9 @@ void FragmentExecutor::_decompose_data_sink_to_operator(RuntimeState* runtime_st
             }
             DCHECK_GT(dest_dop, 0);
         }
-
-        std::shared_ptr<SinkBuffer> sink_buffer =
-                std::make_shared<SinkBuffer>(fragment_ctx, sender->destinations(), is_dest_merge, dop);
+        typedef MultiExchangeBuffer BufferType;
+        std::shared_ptr<BufferType> sink_buffer =
+                std::make_shared<BufferType>(fragment_ctx, sender->destinations(), is_dest_merge, dop);
 
         OpFactoryPtr exchange_sink = std::make_shared<ExchangeSinkOperatorFactory>(
                 context->next_operator_id(), t_stream_sink.dest_node_id, sink_buffer, sender->get_partition_type(),
@@ -514,7 +514,8 @@ void FragmentExecutor::_decompose_data_sink_to_operator(RuntimeState* runtime_st
             source_op->set_degree_of_parallelism(dop);
 
             // sink op
-            auto sink_buffer = std::make_shared<SinkBuffer>(fragment_ctx, sender->destinations(), is_dest_merge, dop);
+            typedef MultiExchangeBuffer BufferType;
+            auto sink_buffer = std::make_shared<BufferType>(fragment_ctx, sender->destinations(), is_dest_merge, dop);
             auto sink_op = std::make_shared<ExchangeSinkOperatorFactory>(
                     context->next_operator_id(), t_stream_sink.dest_node_id, sink_buffer, sender->get_partition_type(),
                     sender->destinations(), is_pipeline_level_shuffle, dest_dop, sender->sender_id(),
