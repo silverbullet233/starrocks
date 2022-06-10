@@ -25,10 +25,12 @@
 #include <atomic>
 #include <boost/thread.hpp>
 #include <functional>
+#include <bvar/bvar.h>
 
 #include "common/logging.h"
 #include "util/blocking_priority_queue.hpp"
 #include "util/thread.h"
+#include "util/stopwatch.hpp"
 
 namespace starrocks {
 
@@ -60,7 +62,10 @@ public:
     //     capacity available.
     //  -- work_function: the function to run every time an item is consumed from the queue
     PriorityThreadPool(std::string name, uint32_t num_threads, uint32_t queue_size)
-            : _name(std::move(name)), _work_queue(queue_size), _shutdown(false) {
+            : _name(std::move(name)), _work_queue(queue_size), _shutdown(false),
+            _num_running_task(_name + "_threadpool", "running_task_num"),
+            _num_pending_task(_name + "_threadpool", "pending_task_num"),
+            _task_execute(_name + "_threadpool", "task_execute") {
         for (int i = 0; i < num_threads; ++i) {
             new_thread(++_current_thread_id);
         }
@@ -84,13 +89,23 @@ public:
     //
     // Returns true if the work item was successfully added to the queue, false otherwise
     // (which typically means that the thread pool has already been shut down).
-    bool offer(const Task& task) { return _work_queue.blocking_put(task); }
+    bool offer(const Task& task) {
+        bool ret = _work_queue.blocking_put(task);
+        _num_pending_task << ret;
+        return ret;
+    }
 
-    bool try_offer(const Task& task) { return _work_queue.try_put(task); }
+    bool try_offer(const Task& task) {
+        bool ret = _work_queue.try_put(task);
+        _num_pending_task << ret;
+        return ret;
+    }
 
     bool offer(WorkFunction func) {
         PriorityThreadPool::Task task = {0, std::move(func)};
-        return _work_queue.blocking_put(std::move(task));
+        bool ret = _work_queue.blocking_put(std::move(task));
+        _num_pending_task << ret;
+        return ret;
     }
 
     // Shuts the thread pool down, causing the work queue to cease accepting offered work
@@ -177,7 +192,13 @@ private:
         while (!is_shutdown()) {
             Task task;
             if (_work_queue.blocking_get(&task)) {
+                _num_pending_task << -1;
+                _num_running_task << 1;
+                MonotonicStopWatch sw;
+                sw.start();
                 task.work_function();
+                _task_execute << sw.elapsed_time();
+                _num_running_task << -1;
             }
             if (_work_queue.get_size() == 0) {
                 _empty_cv.notify_all();
@@ -233,6 +254,10 @@ private:
     std::atomic<int32_t> _should_decrease = 0;
 
     std::atomic<int32_t> _current_thread_id = 0;
+
+    bvar::Adder<int32_t> _num_running_task;
+    bvar::Adder<int32_t> _num_pending_task;
+    bvar::LatencyRecorder _task_execute;
 };
 
 } // namespace starrocks

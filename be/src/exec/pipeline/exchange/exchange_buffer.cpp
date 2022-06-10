@@ -23,7 +23,7 @@ public:
             bool has_new_response = _buffer->process_rpc_result();
             bool has_sent_new_request = _buffer->try_to_send_rpc();
             if (_buffer->is_finished()) {
-                LOG(INFO) << _buffer->log_prefix() << " is finished, stop schedule";
+                // LOG(INFO) << _buffer->log_prefix() << " is finished, stop schedule";
                 return false;
             }
             if (!has_new_response && !has_sent_new_request) {

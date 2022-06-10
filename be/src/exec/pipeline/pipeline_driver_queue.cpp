@@ -1,12 +1,18 @@
 // This file is licensed under the Elastic License 2.0. Copyright 2021-present, StarRocks Limited.
 
 #include "exec/pipeline/pipeline_driver_queue.h"
+#include <bvar/bvar.h>
 
 #include "exec/pipeline/source_operator.h"
 #include "exec/workgroup/work_group.h"
 #include "gutil/strings/substitute.h"
+#include "util/stopwatch.hpp"
 
 namespace starrocks::pipeline {
+
+bvar::Adder<int64_t> queue_size("pipeline_driver_queue", "len");
+// latency means task pending time
+bvar::LatencyRecorder pending_time_percentile("pipeline_driver_queue", "pending_time_percentile");
 
 QuerySharedDriverQueue::QuerySharedDriverQueue() {
     double factor = 1;
@@ -35,9 +41,15 @@ void QuerySharedDriverQueue::put_back(const DriverRawPtr driver) {
     int level = _compute_driver_level(driver);
     driver->set_driver_queue_level(level);
     {
+        MonotonicStopWatch sw;
+        sw.start();
         std::lock_guard<std::mutex> lock(_global_mutex);
+        sw.stop();
+        driver->update_wait_put_queue_lock_time(sw.elapsed_time());
         _queues[level].put(driver);
+        driver->_wait_in_ready_queue_timer_sw->start();
         driver->set_in_ready_queue(true);
+        queue_size << 1;
         _cv.notify_one();
     }
 }
@@ -48,10 +60,16 @@ void QuerySharedDriverQueue::put_back(const std::vector<DriverRawPtr>& drivers) 
         levels[i] = _compute_driver_level(drivers[i]);
         drivers[i]->set_driver_queue_level(levels[i]);
     }
+    MonotonicStopWatch sw;
+    sw.start();
     std::lock_guard<std::mutex> lock(_global_mutex);
+    sw.stop();
     for (int i = 0; i < drivers.size(); i++) {
+        drivers[i]->update_wait_put_queue_lock_time(sw.elapsed_time());
         _queues[levels[i]].put(drivers[i]);
+        drivers[i]->_wait_in_ready_queue_timer_sw->start();
         drivers[i]->set_in_ready_queue(true);
+        queue_size << 1;
         _cv.notify_one();
     }
 }
@@ -99,6 +117,9 @@ StatusOr<DriverRawPtr> QuerySharedDriverQueue::take(int worker_id) {
         // record queue's index to accumulate time for it.
         driver_ptr = _queues[queue_idx].take();
         driver_ptr->set_in_ready_queue(false);
+        queue_size << -1;
+        pending_time_percentile << driver_ptr->_wait_in_ready_queue_timer_sw->elapsed_time();
+        driver_ptr->_wait_in_ready_queue_timer_sw->stop();
     }
 
     // next pipeline driver to execute.

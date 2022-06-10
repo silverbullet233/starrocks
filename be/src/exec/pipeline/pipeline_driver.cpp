@@ -4,6 +4,7 @@
 #include "exec/pipeline/pipeline_driver.h"
 
 #include <sstream>
+#include <bvar/bvar.h>
 
 #include "column/chunk.h"
 #include "common/statusor.h"
@@ -15,6 +16,8 @@
 #include "runtime/runtime_state.h"
 
 namespace starrocks::pipeline {
+
+bvar::LatencyRecorder process_time_percentile("pipeline_driver", "process_time_percentile");
 
 PipelineDriver::~PipelineDriver() noexcept {
     if (_workgroup != nullptr) {
@@ -31,6 +34,10 @@ Status PipelineDriver::prepare(RuntimeState* runtime_state) {
     _overhead_timer = ADD_TIMER(_runtime_profile, "OverheadTime");
 
     _schedule_timer = ADD_TIMER(_runtime_profile, "ScheduleTime");
+    _wait_poller_lock_timer = ADD_TIMER(_runtime_profile, "WaitPollerLockTime");
+    _wait_put_queue_lock_timer = ADD_TIMER(_runtime_profile, "WaitPutQueueLockTime");
+    _wait_in_ready_queue_timer = ADD_TIMER(_runtime_profile, "WaitInReadyQueueTime");
+
     _schedule_counter = ADD_COUNTER(_runtime_profile, "ScheduleCount", TUnit::UNIT);
     _yield_by_time_limit_counter = ADD_COUNTER(_runtime_profile, "YieldByTimeLimit", TUnit::UNIT);
     _block_by_precondition_counter = ADD_COUNTER(_runtime_profile, "BlockByPrecondition", TUnit::UNIT);
@@ -91,6 +98,8 @@ Status PipelineDriver::prepare(RuntimeState* runtime_state) {
     _precondition_block_timer_sw = runtime_state->obj_pool()->add(new MonotonicStopWatch());
     _input_empty_timer_sw = runtime_state->obj_pool()->add(new MonotonicStopWatch());
     _output_full_timer_sw = runtime_state->obj_pool()->add(new MonotonicStopWatch());
+    _wait_poller_lock_timer_sw = runtime_state->obj_pool()->add(new MonotonicStopWatch());
+    _wait_in_ready_queue_timer_sw = runtime_state->obj_pool()->add(new MonotonicStopWatch());
     _total_timer_sw->start();
     _pending_timer_sw->start();
     _precondition_block_timer_sw->start();
@@ -111,6 +120,7 @@ StatusOr<DriverState> PipelineDriver::process(RuntimeState* runtime_state, int w
     DeferOp defer([&]() {
         if (return_status.ok()) {
             _update_statistics(total_chunks_moved, total_rows_moved, time_spent);
+            process_time_percentile << time_spent;
         }
     });
     while (true) {
@@ -318,6 +328,9 @@ void PipelineDriver::finalize(RuntimeState* runtime_state, DriverState state) {
 
     COUNTER_UPDATE(_total_timer, _total_timer_sw->elapsed_time());
     COUNTER_UPDATE(_schedule_timer, _total_timer->value() - _active_timer->value() - _pending_timer->value());
+    COUNTER_UPDATE(_wait_poller_lock_timer, _wait_poller_lock_timer_sw->elapsed_time());
+    COUNTER_UPDATE(_wait_put_queue_lock_timer, _wait_put_queue_lock_time);
+    COUNTER_UPDATE(_wait_in_ready_queue_timer, _wait_in_ready_queue_timer_sw->elapsed_time());
     _update_overhead_timer();
 
     // last finished driver notify FE the fragment's completion again and

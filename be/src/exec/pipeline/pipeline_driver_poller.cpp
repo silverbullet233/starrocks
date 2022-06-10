@@ -3,7 +3,22 @@
 #include "pipeline_driver_poller.h"
 
 #include <chrono>
+#include <bvar/bvar.h>
+
+#include "util/stopwatch.hpp"
+
 namespace starrocks::pipeline {
+
+// schedule latency/max latency/qps/count
+bvar::LatencyRecorder schedule("pipeline_poller", "schedule");
+
+// blocked driver num per schedule
+// only latency is meaningful
+// brpc doesn't provide a percentile bvar
+bvar::LatencyRecorder processed_driver_num_percentile("pipeline_poller", "processed_driver_num_percentile");
+
+bvar::LatencyRecorder newly_ready_driver_num_percentile("pipeline_poller", "newly_ready_driver_num_percentile");
+
 
 void PipelineDriverPoller::start() {
     DCHECK(this->_polling_thread.get() == nullptr);
@@ -48,6 +63,10 @@ void PipelineDriverPoller::run_internal() {
                 local_blocked_drivers.splice(local_blocked_drivers.end(), _blocked_drivers);
             }
         }
+
+        MonotonicStopWatch sw;
+        sw.start();
+        size_t processed_blocked_drivers = local_blocked_drivers.size();
 
         auto driver_it = local_blocked_drivers.begin();
         while (driver_it != local_blocked_drivers.end()) {
@@ -111,11 +130,16 @@ void PipelineDriverPoller::run_internal() {
                 ++driver_it;
             }
         }
+        sw.stop();
+        schedule << sw.elapsed_time();
+        processed_driver_num_percentile << processed_blocked_drivers;
+        newly_ready_driver_num_percentile << ready_drivers.size();
 
         if (ready_drivers.empty()) {
             spin_count += 1;
         } else {
             spin_count = 0;
+
 
             _driver_queue->put_back(ready_drivers);
             ready_drivers.clear();
@@ -137,7 +161,9 @@ void PipelineDriverPoller::run_internal() {
 }
 
 void PipelineDriverPoller::add_blocked_driver(const DriverRawPtr driver) {
+    driver->_wait_poller_lock_timer_sw->start();
     std::unique_lock<std::mutex> lock(this->_mutex);
+    driver->_wait_poller_lock_timer_sw->stop();
     this->_blocked_drivers.push_back(driver);
     driver->_pending_timer_sw->reset();
     this->_cond.notify_one();

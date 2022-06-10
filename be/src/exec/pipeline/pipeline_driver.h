@@ -137,6 +137,7 @@ enum OperatorStage {
 
 class PipelineDriver {
     friend class PipelineDriverPoller;
+    friend class QuerySharedDriverQueue;
 
 public:
     PipelineDriver(const Operators& operators, QueryContext* query_ctx, FragmentContext* fragment_ctx,
@@ -349,6 +350,10 @@ public:
     inline bool is_in_ready_queue() const { return _in_ready_queue.load(std::memory_order_acquire); }
     void set_in_ready_queue(bool v) { _in_ready_queue.store(v, std::memory_order_release); }
 
+    inline void update_wait_put_queue_lock_time(int64_t val) {
+        _wait_put_queue_lock_time += val;
+    }
+
 private:
     // Yield PipelineDriver when maximum time in nano-seconds has spent in current execution round.
     static constexpr int64_t YIELD_MAX_TIME_SPENT = 100'000'000L;
@@ -406,6 +411,9 @@ private:
     RuntimeProfile::Counter* _active_timer = nullptr;
     RuntimeProfile::Counter* _overhead_timer = nullptr;
     RuntimeProfile::Counter* _schedule_timer = nullptr;
+    RuntimeProfile::Counter* _wait_poller_lock_timer = nullptr;
+    RuntimeProfile::Counter* _wait_put_queue_lock_timer = nullptr;
+    RuntimeProfile::Counter* _wait_in_ready_queue_timer = nullptr;
 
     // Schedule counters
     RuntimeProfile::Counter* _schedule_counter = nullptr;
@@ -425,6 +433,9 @@ private:
     MonotonicStopWatch* _precondition_block_timer_sw = nullptr;
     MonotonicStopWatch* _input_empty_timer_sw = nullptr;
     MonotonicStopWatch* _output_full_timer_sw = nullptr;
+    MonotonicStopWatch* _wait_poller_lock_timer_sw = nullptr;
+    MonotonicStopWatch* _wait_in_ready_queue_timer_sw = nullptr;
+    int64_t _wait_put_queue_lock_time = 0;
 };
 
 } // namespace pipeline

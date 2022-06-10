@@ -3,6 +3,7 @@
 #include "exec/pipeline/pipeline_driver_executor.h"
 
 #include <memory>
+#include <bvar/bvar.h>
 
 #include "exec/workgroup/work_group.h"
 #include "gutil/strings/substitute.h"
@@ -10,6 +11,8 @@
 #include "util/defer_op.h"
 
 namespace starrocks::pipeline {
+
+bvar::Adder<int32_t> num_running_pipeline_driver("pipeline", "running_drivers");
 
 GlobalDriverExecutor::GlobalDriverExecutor(std::string name, std::unique_ptr<ThreadPool> thread_pool,
                                            bool enable_resource_group)
@@ -85,7 +88,10 @@ void GlobalDriverExecutor::_worker_thread() {
         }
         auto driver = maybe_driver.value();
         DCHECK(driver != nullptr);
-
+        num_running_pipeline_driver << 1;
+        DeferOp defer([&num_running_pipeline_driver] () {
+            num_running_pipeline_driver << -1;
+        });
         auto* query_ctx = driver->query_ctx();
         auto* fragment_ctx = driver->fragment_ctx();
         tls_thread_status.set_query_id(query_ctx->query_id());
