@@ -250,6 +250,8 @@ public class SessionVariable implements Serializable, Writable, Cloneable {
 
     public static final String ENABLE_QUERY_DEBUG_TRACE = "enable_query_debug_trace";
 
+    public static final String FORCE_GATHER_SECOND_AGG = "force_gather_second_agg";
+
     public static final List<String> DEPRECATED_VARIABLES = ImmutableList.<String>builder()
             .add(CODEGEN_LEVEL)
             .add(ENABLE_SPILLING)
@@ -594,6 +596,9 @@ public class SessionVariable implements Serializable, Writable, Cloneable {
 
     @VarAttr(name = CBO_PRUNE_SHUFFLE_COLUMN_RATE, flag = VariableMgr.INVISIBLE)
     private double cboPruneShuffleColumnRate = 0.1;
+
+    @VarAttr(name = FORCE_GATHER_SECOND_AGG, flag = VariableMgr.INVISIBLE)
+    private boolean forceGatherSecondAgg = false;
 
     public double getCboPruneShuffleColumnRate() {
         return cboPruneShuffleColumnRate;
@@ -1071,6 +1076,9 @@ public class SessionVariable implements Serializable, Writable, Cloneable {
         return loadTransmissionCompressionType;
     }
 
+    public boolean isForceGatherSecondAgg() {
+        return forceGatherSecondAgg;
+    }
     // Serialize to thrift object
     // used for rest api
     public TQueryOptions toThrift() {
