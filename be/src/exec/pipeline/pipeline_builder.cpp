@@ -15,6 +15,9 @@
 #include "exec/pipeline/pipeline_builder.h"
 
 #include "exec/exec_node.h"
+#include "exec/pipeline/adaptive/collect_stats_context.h"
+#include "exec/pipeline/adaptive/collect_stats_sink_operator.h"
+#include "exec/pipeline/adaptive/collect_stats_source_operator.h"
 #include "exec/query_cache/cache_manager.h"
 #include "exec/query_cache/cache_operator.h"
 #include "exec/query_cache/conjugate_operator.h"
@@ -34,6 +37,7 @@ OpFactories PipelineBuilderContext::maybe_interpolate_local_broadcast_exchange(R
     auto pseudo_plan_node_id = next_pseudo_plan_node_id();
     auto mem_mgr = std::make_shared<LocalExchangeMemoryManager>(state->chunk_size() * num_receivers *
                                                                 kLocalExchangeBufferChunks);
+
     auto local_exchange_source =
             std::make_shared<LocalExchangeSourceOperatorFactory>(next_operator_id(), pseudo_plan_node_id, mem_mgr);
     local_exchange_source->set_runtime_state(state);
@@ -44,12 +48,12 @@ OpFactories PipelineBuilderContext::maybe_interpolate_local_broadcast_exchange(R
     auto local_exchange = std::make_shared<BroadcastExchanger>(mem_mgr, local_exchange_source.get());
     auto local_exchange_sink =
             std::make_shared<LocalExchangeSinkOperatorFactory>(next_operator_id(), pseudo_plan_node_id, local_exchange);
-    // Add LocalExchangeSinkOperator to predecessor pipeline.
     pred_operators.emplace_back(std::move(local_exchange_sink));
-    // predecessor pipeline comes to end.
     add_pipeline(pred_operators);
 
-    return {std::move(local_exchange_source)};
+    OpFactories operators_source_with_local_exchange;
+    operators_source_with_local_exchange.emplace_back(std::move(local_exchange_source));
+    return operators_source_with_local_exchange;
 }
 
 OpFactories PipelineBuilderContext::maybe_interpolate_local_passthrough_exchange(RuntimeState* state,
@@ -73,6 +77,7 @@ OpFactories PipelineBuilderContext::maybe_interpolate_local_passthrough_exchange
     int buffer_size =
             std::max(num_receivers, static_cast<int>(source_op->degree_of_parallelism())) * kLocalExchangeBufferChunks;
     auto mem_mgr = std::make_shared<LocalExchangeMemoryManager>(state->chunk_size() * buffer_size);
+
     auto local_exchange_source =
             std::make_shared<LocalExchangeSourceOperatorFactory>(next_operator_id(), pseudo_plan_node_id, mem_mgr);
     local_exchange_source->set_runtime_state(state);
@@ -83,12 +88,12 @@ OpFactories PipelineBuilderContext::maybe_interpolate_local_passthrough_exchange
     auto local_exchange = std::make_shared<PassthroughExchanger>(mem_mgr, local_exchange_source.get());
     auto local_exchange_sink =
             std::make_shared<LocalExchangeSinkOperatorFactory>(next_operator_id(), pseudo_plan_node_id, local_exchange);
-    // Add LocalExchangeSinkOperator to predecessor pipeline.
     pred_operators.emplace_back(std::move(local_exchange_sink));
-    // predecessor pipeline comes to end.
     add_pipeline(pred_operators);
 
-    return {std::move(local_exchange_source)};
+    OpFactories operators_source_with_local_exchange;
+    operators_source_with_local_exchange.emplace_back(std::move(local_exchange_source));
+    return operators_source_with_local_exchange;
 }
 
 OpFactories PipelineBuilderContext::maybe_interpolate_local_shuffle_exchange(
@@ -131,6 +136,7 @@ OpFactories PipelineBuilderContext::_do_maybe_interpolate_local_shuffle_exchange
     auto pseudo_plan_node_id = next_pseudo_plan_node_id();
     auto mem_mgr = std::make_shared<LocalExchangeMemoryManager>(shuffle_partitions_num * state->chunk_size() *
                                                                 kLocalExchangeBufferChunks);
+
     auto local_shuffle_source =
             std::make_shared<LocalExchangeSourceOperatorFactory>(next_operator_id(), pseudo_plan_node_id, mem_mgr);
     local_shuffle_source->set_runtime_state(state);
@@ -140,14 +146,14 @@ OpFactories PipelineBuilderContext::_do_maybe_interpolate_local_shuffle_exchange
 
     auto local_shuffle =
             std::make_shared<PartitionExchanger>(mem_mgr, local_shuffle_source.get(), part_type, partition_expr_ctxs);
-
-    // Append local shuffle sink to the tail of the current pipeline, which comes to end.
     auto local_shuffle_sink =
             std::make_shared<LocalExchangeSinkOperatorFactory>(next_operator_id(), pseudo_plan_node_id, local_shuffle);
     pred_operators.emplace_back(std::move(local_shuffle_sink));
     add_pipeline(pred_operators);
 
-    return {std::move(local_shuffle_source)};
+    OpFactories operators_source_with_local_shuffle;
+    operators_source_with_local_shuffle.emplace_back(std::move(local_shuffle_source));
+    return operators_source_with_local_shuffle;
 }
 
 OpFactories PipelineBuilderContext::maybe_gather_pipelines_to_one(RuntimeState* state,
@@ -174,8 +180,6 @@ OpFactories PipelineBuilderContext::maybe_gather_pipelines_to_one(RuntimeState* 
     local_exchange_source->set_degree_of_parallelism(degree_of_parallelism());
 
     auto exchanger = std::make_shared<PassthroughExchanger>(mem_mgr, local_exchange_source.get());
-
-    // Append a local exchange sink to the tail of each pipeline, which comes to end.
     for (auto& pred_operators : pred_operators_list) {
         auto local_exchange_sink =
                 std::make_shared<LocalExchangeSinkOperatorFactory>(next_operator_id(), pseudo_plan_node_id, exchanger);
@@ -183,7 +187,41 @@ OpFactories PipelineBuilderContext::maybe_gather_pipelines_to_one(RuntimeState* 
         add_pipeline(pred_operators);
     }
 
-    return {std::move(local_exchange_source)};
+    OpFactories operators_source_with_local_exchange;
+    operators_source_with_local_exchange.emplace_back(std::move(local_exchange_source));
+    return operators_source_with_local_exchange;
+}
+
+OpFactories PipelineBuilderContext::maybe_interpolate_collect_stats(RuntimeState* state, OpFactories& pred_operators) {
+    if (_force_disable_adaptive_dop || !_fragment_context->enable_adaptive_dop()) {
+        return pred_operators;
+    }
+
+    if (pred_operators.empty()) {
+        return pred_operators;
+    }
+
+    auto* pred_source_op = source_operator(pred_operators);
+    size_t dop = pred_source_op->degree_of_parallelism();
+    CollectStatsContextPtr collect_stats_ctx =
+            std::make_shared<CollectStatsContext>(state, dop, _fragment_context->adaptive_dop_param());
+
+    auto last_plan_node_id = pred_operators[pred_operators.size() - 1]->plan_node_id();
+    pred_operators.emplace_back(std::make_shared<CollectStatsSinkOperatorFactory>(next_operator_id(), last_plan_node_id,
+                                                                                  collect_stats_ctx));
+    add_pipeline(std::move(pred_operators));
+
+    auto downstream_source_op = std::make_shared<CollectStatsSourceOperatorFactory>(
+            next_operator_id(), last_plan_node_id, std::move(collect_stats_ctx));
+    inherit_upstream_source_properties(downstream_source_op.get(), pred_source_op);
+    downstream_source_op->set_degree_of_parallelism(1);
+    downstream_source_op->set_partition_exprs(pred_source_op->partition_exprs());
+
+    for (const auto& pipeline : _dependent_pipelines) {
+        downstream_source_op->add_group_dependent_pipeline(pipeline);
+    }
+
+    return {std::move(downstream_source_op)};
 }
 
 size_t PipelineBuilderContext::dop_of_source_operator(int source_node_id) {
@@ -269,9 +307,18 @@ void PipelineBuilderContext::inherit_upstream_source_properties(SourceOperatorFa
     downstream_source->set_degree_of_parallelism(upstream_source->degree_of_parallelism());
     downstream_source->set_could_local_shuffle(upstream_source->could_local_shuffle());
     downstream_source->set_partition_type(upstream_source->partition_type());
-    if (!upstream_source->partition_exprs().empty() || !downstream_source->partition_exprs().empty()) {
-        downstream_source->set_partition_exprs(upstream_source->partition_exprs());
+    if (downstream_source->adaptive_state() != SourceOperatorFactory::AdaptiveState::INHERIT) {
+        downstream_source->set_group_leader(downstream_source);
+    } else {
+        downstream_source->set_group_leader(upstream_source);
     }
+}
+
+void PipelineBuilderContext::push_dependent_pipeline(const Pipeline* pipeline) {
+    _dependent_pipelines.emplace_back(pipeline);
+}
+void PipelineBuilderContext::pop_dependent_pipeline() {
+    _dependent_pipelines.pop_back();
 }
 
 /// PipelineBuilder.

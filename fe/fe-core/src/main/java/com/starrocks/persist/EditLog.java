@@ -985,8 +985,8 @@ public class EditLog {
                     break;
                 }
                 case OperationType.OP_AUTH_UPGRADE_V2: {
-                    AuthUpgradeInfo info = (AuthUpgradeInfo) journal.getData();
-                    globalStateMgr.replayAuthUpgrade(info);
+                    // AuthUpgradeInfo info = (AuthUpgradeInfo) journal.getData();
+                    // globalStateMgr.replayAuthUpgrade(info);
                     break;
                 }
                 case OperationType.OP_MV_JOB_STATE: {

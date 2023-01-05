@@ -236,15 +236,13 @@ pipeline::OpFactories AggregateStreamingNode::decompose_to_pipeline(pipeline::Pi
     };
 
     auto [agg_sink_op, agg_source_op] = operators_generator(false);
-    // Create a shared RefCountedRuntimeFilterCollector
-    auto&& rc_rf_probe_collector = std::make_shared<RcRfProbeCollector>(2, std::move(this->runtime_filter_collector()));
-    // Initialize OperatorFactory's fields involving runtime filters.
-    this->init_runtime_filter_for_operator(agg_sink_op.get(), context, rc_rf_probe_collector);
-    ops_with_sink.emplace_back(std::move(agg_sink_op));
 
-    OpFactories ops_with_source;
-    // Initialize OperatorFactory's fields involving runtime filters.
+    auto&& rc_rf_probe_collector = std::make_shared<RcRfProbeCollector>(2, std::move(this->runtime_filter_collector()));
+    this->init_runtime_filter_for_operator(agg_sink_op.get(), context, rc_rf_probe_collector);
     this->init_runtime_filter_for_operator(agg_source_op.get(), context, rc_rf_probe_collector);
+
+    ops_with_sink.emplace_back(std::move(agg_sink_op));
+    OpFactories ops_with_source;
     ops_with_source.push_back(std::move(agg_source_op));
 
     if (should_cache) {
