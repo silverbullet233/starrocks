@@ -119,6 +119,10 @@ protected:
 
     RuntimeState* _state = nullptr;
 
+    // some debug variables
+    std::atomic_int64_t _num_processed_chunks = 0;
+    std::atomic_bool _is_prepare_done = false;
+
     static const int32_t kExecutionQueueSizeLimit = 64;
 };
 

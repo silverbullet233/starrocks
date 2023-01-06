@@ -58,6 +58,7 @@ Status ExportSinkIOBuffer::prepare(RuntimeState* state, RuntimeProfile* parent_p
         _exec_queue_id.reset();
         return Status::InternalError("start execution queue error");
     }
+    _is_prepare_done = true;
 
     return Status::OK();
 }
@@ -72,6 +73,7 @@ void ExportSinkIOBuffer::close(RuntimeState* state) {
 
 void ExportSinkIOBuffer::_process_chunk(bthread::TaskIterator<ChunkPtr>& iter) {
     --_num_pending_chunks;
+    ++_num_processed_chunks;
     if (_is_finished) {
         return;
     }
