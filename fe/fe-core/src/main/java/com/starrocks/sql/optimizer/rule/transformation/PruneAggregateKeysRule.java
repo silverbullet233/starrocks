@@ -1,0 +1,159 @@
+// Copyright 2021-present StarRocks, Inc. All rights reserved.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     https://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+package com.starrocks.sql.optimizer.rule.transformation;
+
+import com.google.common.base.Preconditions;
+import com.google.common.collect.Lists;
+import com.google.common.collect.Maps;
+import com.starrocks.sql.optimizer.OptExpression;
+import com.starrocks.sql.optimizer.OptimizerContext;
+import com.starrocks.sql.optimizer.base.ColumnRefFactory;
+import com.starrocks.sql.optimizer.base.ColumnRefSet;
+import com.starrocks.sql.optimizer.operator.AggType;
+import com.starrocks.sql.optimizer.operator.OperatorType;
+import com.starrocks.sql.optimizer.operator.logical.LogicalAggregationOperator;
+import com.starrocks.sql.optimizer.operator.logical.LogicalProjectOperator;
+import com.starrocks.sql.optimizer.operator.pattern.Pattern;
+import com.starrocks.sql.optimizer.operator.scalar.CallOperator;
+import com.starrocks.sql.optimizer.operator.scalar.ColumnRefOperator;
+import com.starrocks.sql.optimizer.operator.scalar.ScalarOperator;
+import com.starrocks.sql.optimizer.rule.RuleType;
+
+import java.util.HashSet;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import java.util.stream.Collectors;
+
+// group by a,expr(a),expr(a) => group by a
+// for queries like `select col, expr1(col), expr2(col), count() from tables group by col, expr1(col), expr2(col)`
+
+public class PruneAggregateKeysRule extends TransformationRule {
+    public PruneAggregateKeysRule() {
+        super(RuleType.TF_PRUNE_AGG_KEYS, Pattern.create(OperatorType.LOGICAL_AGGR)
+                .addChildren(Pattern.create(OperatorType.LOGICAL_PROJECT, OperatorType.PATTERN_LEAF)));
+    }
+
+    @Override
+    public boolean check(final OptExpression input, OptimizerContext context) {
+        if (!context.getSessionVariable().isEnablePruneAggregateKeys()) {
+            return false;
+        }
+        LogicalAggregationOperator aggOperator = (LogicalAggregationOperator) input.getOp();
+        List<ColumnRefOperator> groupingKeys = aggOperator.getGroupingKeys();
+        if (groupingKeys == null || groupingKeys.isEmpty()) {
+            return false;
+        }
+        Map<ColumnRefOperator, CallOperator> aggregations = aggOperator.getAggregations();
+        if (aggregations == null || aggregations.isEmpty()) {
+            return false;
+        }
+        return true;
+    }
+
+    @Override
+    public List<OptExpression> transform(OptExpression input, OptimizerContext context) {
+        System.out.println("transform PruneAggKeysRule");
+        LogicalAggregationOperator aggOperator = (LogicalAggregationOperator) input.getOp();
+        LogicalProjectOperator projectOperator = (LogicalProjectOperator) input.getInputs().get(0).getOp();
+
+        List<ColumnRefOperator> groupingKeys = aggOperator.getGroupingKeys();
+        Map<ColumnRefOperator, CallOperator> aggregations = aggOperator.getAggregations();
+        Map<ColumnRefOperator, ScalarOperator> projections = projectOperator.getColumnRefMap();
+
+        ColumnRefFactory columnRefFactory = context.getColumnRefFactory();
+
+        List<ColumnRefOperator> newGroupingKeys = Lists.newArrayList();
+
+        Map<ColumnRefOperator, ScalarOperator> newProjections = Maps.newHashMap();
+        Map<ColumnRefOperator, ScalarOperator> newPostAggProjections = Maps.newHashMap();
+
+        Set<ColumnRefOperator> removedGroupingKeys = new HashSet<>();
+        Set<Integer> existedColumnIds = new HashSet<>();
+        for (ColumnRefOperator groupingKey : groupingKeys) {
+            ScalarOperator groupingExpr = projections.get(groupingKey);
+            Preconditions.checkState(groupingExpr != null,
+                    "cannot find grouping key from projections");
+            if (groupingExpr.isColumnRef()) {
+                int columnId = ((ColumnRefOperator) groupingExpr).getId();
+                if (!existedColumnIds.contains(columnId)) {
+                    newGroupingKeys.add(groupingKey);
+                    existedColumnIds.add(columnId);
+                    newProjections.put(groupingKey, groupingExpr);
+                    continue;
+                }
+            } else if (!groupingExpr.isConstant()) { // just ignore the constant in group by keys
+                ColumnRefSet usedColumns = groupingExpr.getUsedColumns();
+                if (usedColumns.size() == 1) {
+                    int columnId = usedColumns.getColumnIds()[0];
+                    if (!existedColumnIds.contains(columnId)) {
+                        newGroupingKeys.add(groupingKey);
+                        newProjections.put(groupingKey, groupingExpr);
+                        continue;
+                    }
+                }
+            }
+            removedGroupingKeys.add(groupingKey);
+            newPostAggProjections.put(groupingKey, groupingExpr);
+        }
+        System.out.println("new group key size: " + newGroupingKeys.size() + ", old " + groupingKeys.size());
+        if (newGroupingKeys.size() == groupingKeys.size()) {
+            System.out.println("skip rewrite");
+            return Lists.newArrayList();
+        }
+        // update projection by aggregation
+        for (Map.Entry<ColumnRefOperator, CallOperator> aggregation : aggregations.entrySet()) {
+            CallOperator aggExpr = aggregation.getValue();
+            ColumnRefSet usedColumns = aggExpr.getUsedColumns();
+            Set<ColumnRefOperator> columnRefOperators = columnRefFactory.getColumnRefs(usedColumns);
+            for (ColumnRefOperator columnRefOperator : columnRefOperators) {
+                ScalarOperator scalarOperator = projections.get(columnRefOperator);
+                Preconditions.checkState(scalarOperator != null, "cannot find column ref");
+                newProjections.put(columnRefOperator, scalarOperator);
+            }
+        }
+        // add a post agg project, all removed group by key should be here
+        LogicalProjectOperator newPostAggProjectOperator = new LogicalProjectOperator(newPostAggProjections);
+
+        List<ColumnRefOperator> newPartitionColumns = aggOperator.getPartitionByColumns()
+                .stream().filter(columnRefOperator -> !removedGroupingKeys.contains(columnRefOperator))
+                .collect(Collectors.toList());
+
+        LogicalAggregationOperator newAggOperator = new LogicalAggregationOperator.Builder().withOperator(aggOperator)
+                .setType(AggType.GLOBAL)
+                .setGroupingKeys(newGroupingKeys)
+                .setPartitionByColumns(newPartitionColumns).build();
+        //        .setPartitionByColumns(newGroupingKeys).build();
+        // @TODO set error partition by columns
+
+        OptExpression result;
+        if (newProjections.isEmpty()) {
+            // for queries like `select 1,count(*) from table group by 1;`,
+            // we don't need the original project operator under agg operator
+            result = OptExpression.create(newPostAggProjectOperator,
+                    OptExpression.create(newAggOperator, input.getInputs().get(0).getInputs()));
+        } else {
+            LogicalProjectOperator newProjectOperator = new LogicalProjectOperator(newProjections);
+            result = OptExpression.create(newPostAggProjectOperator,
+                    OptExpression.create(newAggOperator,
+                            OptExpression.create(newProjectOperator, input.getInputs().get(0).getInputs())));
+        }
+        System.out.println("generate new plan");
+        // return Lists.newArrayList();
+        System.out.printf("origin plan:\n" + input.explain());
+        System.out.printf("new plan:\n" + result.explain());
+        return Lists.newArrayList(result);
+    }
+}

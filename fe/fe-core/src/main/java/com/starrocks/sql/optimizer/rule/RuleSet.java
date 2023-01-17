@@ -76,6 +76,7 @@ import com.starrocks.sql.optimizer.rule.transformation.MergeTwoProjectRule;
 import com.starrocks.sql.optimizer.rule.transformation.PartitionPredicatePrune;
 import com.starrocks.sql.optimizer.rule.transformation.PartitionPruneRule;
 import com.starrocks.sql.optimizer.rule.transformation.PruneAggregateColumnsRule;
+import com.starrocks.sql.optimizer.rule.transformation.PruneAggregateKeysRule;
 import com.starrocks.sql.optimizer.rule.transformation.PruneAssertOneRowRule;
 import com.starrocks.sql.optimizer.rule.transformation.PruneCTEConsumeColumnsRule;
 import com.starrocks.sql.optimizer.rule.transformation.PruneCTEProduceRule;
@@ -255,6 +256,7 @@ public class RuleSet {
                 new PruneProjectColumnsRule(),
                 new PruneFilterColumnsRule(),
                 new PruneAggregateColumnsRule(),
+                new PruneAggregateKeysRule(),
                 new PruneTopNColumnsRule(),
                 new PruneJoinColumnsRule(),
                 new PruneWindowColumnsRule(),
