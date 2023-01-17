@@ -37,9 +37,8 @@ import java.util.Map;
 import java.util.Set;
 import java.util.stream.Collectors;
 
-// group by a,expr(a),expr(a) => group by a
-// for queries like `select col, expr1(col), expr2(col), count() from tables group by col, expr1(col), expr2(col)`
-
+// for aggregate queries with group by keys like `group by col,expr(col),constant` or `group by constant`,
+// these expr and constant won't affect the effect of aggregation grouping, we can remove them
 public class PruneAggregateKeysRule extends TransformationRule {
     public PruneAggregateKeysRule() {
         super(RuleType.TF_PRUNE_AGG_KEYS, Pattern.create(OperatorType.LOGICAL_AGGR)
@@ -48,9 +47,6 @@ public class PruneAggregateKeysRule extends TransformationRule {
 
     @Override
     public boolean check(final OptExpression input, OptimizerContext context) {
-        if (!context.getSessionVariable().isEnablePruneAggregateKeys()) {
-            return false;
-        }
         LogicalAggregationOperator aggOperator = (LogicalAggregationOperator) input.getOp();
         List<ColumnRefOperator> groupingKeys = aggOperator.getGroupingKeys();
         if (groupingKeys == null || groupingKeys.isEmpty()) {
@@ -65,7 +61,6 @@ public class PruneAggregateKeysRule extends TransformationRule {
 
     @Override
     public List<OptExpression> transform(OptExpression input, OptimizerContext context) {
-        System.out.println("transform PruneAggKeysRule");
         LogicalAggregationOperator aggOperator = (LogicalAggregationOperator) input.getOp();
         LogicalProjectOperator projectOperator = (LogicalProjectOperator) input.getInputs().get(0).getOp();
 
@@ -79,8 +74,8 @@ public class PruneAggregateKeysRule extends TransformationRule {
 
         Map<ColumnRefOperator, ScalarOperator> newProjections = Maps.newHashMap();
         Map<ColumnRefOperator, ScalarOperator> newPostAggProjections = Maps.newHashMap();
-
         Set<ColumnRefOperator> removedGroupingKeys = new HashSet<>();
+
         Set<Integer> existedColumnIds = new HashSet<>();
         for (ColumnRefOperator groupingKey : groupingKeys) {
             ScalarOperator groupingExpr = projections.get(groupingKey);
@@ -88,6 +83,7 @@ public class PruneAggregateKeysRule extends TransformationRule {
                     "cannot find grouping key from projections");
             if (groupingExpr.isColumnRef()) {
                 int columnId = ((ColumnRefOperator) groupingExpr).getId();
+                // if this column already exists, ignore it, otherwise, add it into new grouping key
                 if (!existedColumnIds.contains(columnId)) {
                     newGroupingKeys.add(groupingKey);
                     existedColumnIds.add(columnId);
@@ -96,6 +92,9 @@ public class PruneAggregateKeysRule extends TransformationRule {
                 }
             } else if (!groupingExpr.isConstant()) { // just ignore the constant in group by keys
                 ColumnRefSet usedColumns = groupingExpr.getUsedColumns();
+                // if this expr contains only one column that already exists in the grouping key,
+                // it won't affect the grouping result, just remove it.
+                // Otherwise, we should reserve it.
                 if (usedColumns.size() == 1) {
                     int columnId = usedColumns.getColumnIds()[0];
                     if (!existedColumnIds.contains(columnId)) {
@@ -108,9 +107,8 @@ public class PruneAggregateKeysRule extends TransformationRule {
             removedGroupingKeys.add(groupingKey);
             newPostAggProjections.put(groupingKey, groupingExpr);
         }
-        System.out.println("new group key size: " + newGroupingKeys.size() + ", old " + groupingKeys.size());
+
         if (newGroupingKeys.size() == groupingKeys.size()) {
-            System.out.println("skip rewrite");
             return Lists.newArrayList();
         }
         // update projection by aggregation
@@ -135,8 +133,6 @@ public class PruneAggregateKeysRule extends TransformationRule {
                 .setType(AggType.GLOBAL)
                 .setGroupingKeys(newGroupingKeys)
                 .setPartitionByColumns(newPartitionColumns).build();
-        //        .setPartitionByColumns(newGroupingKeys).build();
-        // @TODO set error partition by columns
 
         OptExpression result;
         if (newProjections.isEmpty()) {
@@ -150,10 +146,7 @@ public class PruneAggregateKeysRule extends TransformationRule {
                     OptExpression.create(newAggOperator,
                             OptExpression.create(newProjectOperator, input.getInputs().get(0).getInputs())));
         }
-        System.out.println("generate new plan");
-        // return Lists.newArrayList();
-        System.out.printf("origin plan:\n" + input.explain());
-        System.out.printf("new plan:\n" + result.explain());
+
         return Lists.newArrayList(result);
     }
 }
