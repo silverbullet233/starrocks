@@ -135,7 +135,10 @@ public class AggregateTest extends PlanTestBase {
     public void testGroupByAsAnalyze() throws Exception {
         String sql = "select BITOR(825279661, 1960775729) as a from test_all_type group by a";
         String plan = getFragmentPlan(sql);
-        assertContains(plan, "group by: 11: expr");
+        assertContains(plan, "  1:Project\n" +
+                "  |  <slot 11> : 1979700413");
+        assertContains(plan, "  2:EXCHANGE\n" +
+                "     limit: 1");
     }
 
     @Test
@@ -275,18 +278,12 @@ public class AggregateTest extends PlanTestBase {
     public void testAggregateAllConst() throws Exception {
         String sql = "select 'a', 'b' from t0 group by 'a', 'b'; ";
         String plan = getFragmentPlan(sql);
-        assertContains(plan, "  3:Project\n"
-                + "  |  <slot 4> : 4: expr\n"
-                + "  |  <slot 6> : 'b'\n"
-                + "  |  \n"
-                + "  2:AGGREGATE (update finalize)\n"
-                + "  |  group by: 4: expr\n"
-                + "  |  \n"
-                + "  1:Project\n"
-                + "  |  <slot 4> : 'a'\n"
-                + "  |  \n"
-                + "  0:OlapScanNode\n"
-                + "     TABLE: t0");
+        // aggregate node will be pruned by PruneGroupByKeysRule
+        assertContains(plan, "  1:Project\n" +
+                "  |  <slot 4> : 'a'\n" +
+                "  |  <slot 6> : 'b'");
+        assertContains(plan, "  2:EXCHANGE\n" +
+                "     limit: 1");
     }
 
     @Test
@@ -1886,7 +1883,7 @@ public class AggregateTest extends PlanTestBase {
     public void testGroupByLiteral() throws Exception {
         String sql = "select -9223372036854775808 group by TRUE;";
         String plan = getFragmentPlan(sql);
-        assertContains(plan, "  3:Project\n" +
+        assertContains(plan, "  1:Project\n" +
                 "  |  <slot 3> : -9223372036854775808");
     }
 
@@ -2037,5 +2034,26 @@ public class AggregateTest extends PlanTestBase {
                 "  1:AGGREGATE (update finalize)\n" +
                 "  |  output: count(*)\n" +
                 "  |  group by: 2: t1b, 3: t1c");
+        sql = "select 1 from test_all_type group by t1b+rand(), t1b+rand()+1";
+        plan = getFragmentPlan(sql);
+        assertContains(plan, "  3:Project\n" +
+                "  |  <slot 13> : 1\n" +
+                "  |  \n" +
+                "  2:AGGREGATE (update finalize)\n" +
+                "  |  group by: 11: expr, 12: expr\n" +
+                "  |  \n" +
+                "  1:Project\n" +
+                "  |  <slot 11> : 14: cast + rand()\n" +
+                "  |  <slot 12> : 14: cast + rand() + 1.0\n" +
+                "  |  common expressions:\n" +
+                "  |  <slot 14> : CAST(2: t1b AS DOUBLE)");
+        sql = "select cast(id_decimal as decimal(38,2)),cast(id_decimal as decimal(37,2)) from test_all_type group by 1, 2";
+        plan = getFragmentPlan(sql);
+        assertContains(plan, "  2:AGGREGATE (update finalize)\n" +
+                "  |  group by: 11: cast, 12: cast\n" +
+                "  |  \n" +
+                "  1:Project\n" +
+                "  |  <slot 11> : CAST(10: id_decimal AS DECIMAL128(38,2))\n" +
+                "  |  <slot 12> : CAST(10: id_decimal AS DECIMAL128(37,2))");
     }
 }

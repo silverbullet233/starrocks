@@ -24,6 +24,7 @@ import com.starrocks.sql.optimizer.base.ColumnRefSet;
 import com.starrocks.sql.optimizer.operator.AggType;
 import com.starrocks.sql.optimizer.operator.OperatorType;
 import com.starrocks.sql.optimizer.operator.logical.LogicalAggregationOperator;
+import com.starrocks.sql.optimizer.operator.logical.LogicalLimitOperator;
 import com.starrocks.sql.optimizer.operator.logical.LogicalProjectOperator;
 import com.starrocks.sql.optimizer.operator.pattern.Pattern;
 import com.starrocks.sql.optimizer.operator.scalar.CallOperator;
@@ -39,9 +40,9 @@ import java.util.stream.Collectors;
 
 // for aggregate queries with group by keys like `group by col,expr(col),constant` or `group by constant`,
 // these expr and constant won't affect the effect of aggregation grouping, we can remove them
-public class PruneAggregateKeysRule extends TransformationRule {
-    public PruneAggregateKeysRule() {
-        super(RuleType.TF_PRUNE_AGG_KEYS, Pattern.create(OperatorType.LOGICAL_AGGR)
+public class PruneGroupByKeysRule extends TransformationRule {
+    public PruneGroupByKeysRule() {
+        super(RuleType.TF_PRUNE_GROUP_BY_KEYS, Pattern.create(OperatorType.LOGICAL_AGGR)
                 .addChildren(Pattern.create(OperatorType.LOGICAL_PROJECT, OperatorType.PATTERN_LEAF)));
     }
 
@@ -52,10 +53,11 @@ public class PruneAggregateKeysRule extends TransformationRule {
         if (groupingKeys == null || groupingKeys.isEmpty()) {
             return false;
         }
+        /*
         Map<ColumnRefOperator, CallOperator> aggregations = aggOperator.getAggregations();
         if (aggregations == null || aggregations.isEmpty()) {
             return false;
-        }
+        }*/
         return true;
     }
 
@@ -102,6 +104,10 @@ public class PruneAggregateKeysRule extends TransformationRule {
                         newProjections.put(groupingKey, groupingExpr);
                         continue;
                     }
+                } else {
+                    newGroupingKeys.add(groupingKey);
+                    newProjections.put(groupingKey, groupingExpr);
+                    continue;
                 }
             }
             removedGroupingKeys.add(groupingKey);
@@ -110,6 +116,17 @@ public class PruneAggregateKeysRule extends TransformationRule {
 
         if (newGroupingKeys.size() == groupingKeys.size()) {
             return Lists.newArrayList();
+        }
+
+        if (newGroupingKeys.isEmpty() && aggregations.isEmpty()) {
+            // for queries with all constant in project and group by keys,
+            // like `select 'a','b' from table group by 'c','d'`,
+            // we can remove agg node and rewrite it to `select 'a','b' from table limit 1`
+            OptExpression result = OptExpression.create(
+                    new LogicalLimitOperator(1, 0, LogicalLimitOperator.Phase.GLOBAL),
+                    OptExpression.create(
+                            projectOperator, input.getInputs().get(0).getInputs()));
+            return Lists.newArrayList(result);
         }
         // update projection by aggregation
         for (Map.Entry<ColumnRefOperator, CallOperator> aggregation : aggregations.entrySet()) {
