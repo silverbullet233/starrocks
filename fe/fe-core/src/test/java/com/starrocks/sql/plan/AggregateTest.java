@@ -118,7 +118,7 @@ public class AggregateTest extends PlanTestBase {
     public void testGroupByNull() throws Exception {
         String sql = "select count(*) from test_all_type group by null";
         String plan = getFragmentPlan(sql);
-        // null will be pruned from grouping keys by PruneAggregateKeysRule
+        // null will be pruned from grouping keys by PruneGroupByKeysRule
         assertContains(plan, "  1:AGGREGATE (update finalize)\n" +
                 "  |  output: count(*)\n" +
                 "  |  group by:");
@@ -1552,7 +1552,7 @@ public class AggregateTest extends PlanTestBase {
         connectContext.getSessionVariable().setNewPlanerAggStage(4);
         String sql = "select count(distinct L_PARTKEY) from lineitem group by 1.0001";
         String plan = getFragmentPlan(sql);
-        // constant will be pruned from grouping keys by PruneAggregateKeysRule,
+        // constant will be pruned from grouping keys by PruneGroupByKeysRule,
         // and four phase aggregate will be rewrote to three phase aggregaete
         assertContains(plan, "  6:AGGREGATE (merge finalize)\n" +
                 "  |  output: count(19: count)\n" +
@@ -1560,7 +1560,7 @@ public class AggregateTest extends PlanTestBase {
 
         sql = "select count(distinct L_PARTKEY) from lineitem group by 1.0001, 2.0001";
         plan = getFragmentPlan(sql);
-        // constant will be pruned from grouping keys by PruneAggregateKeysRule,
+        // constant will be pruned from grouping keys by PruneGroupByKeysRule,
         // and four phase aggregate will be rewrote to three phase aggregaete
         assertContains(plan, " 6:AGGREGATE (merge finalize)\n" +
                 "  |  output: count(20: count)\n" +
@@ -1568,7 +1568,7 @@ public class AggregateTest extends PlanTestBase {
 
         sql = "select count(distinct L_PARTKEY + 1) from lineitem group by 1.0001";
         plan = getFragmentPlan(sql);
-        // constant will be pruned from grouping keys by PruneAggregateKeysRule,
+        // constant will be pruned from grouping keys by PruneGroupByKeysRule,
         // and four phase aggregate will be rewrote to three phase aggregaete
         assertContains(plan, " 7:AGGREGATE (merge finalize)\n" +
                 "  |  output: count(20: count)\n" +
@@ -1576,7 +1576,7 @@ public class AggregateTest extends PlanTestBase {
 
         sql = "select count(distinct L_SUPPKEY), count(L_PARTKEY) from lineitem group by 1.0001";
         plan = getFragmentPlan(sql);
-        // constant will be pruned from grouping keys by PruneAggregateKeysRule,
+        // constant will be pruned from grouping keys by PruneGroupByKeysRule,
         // and four phase aggregate will be rewrote to three phase aggregaete
         assertContains(plan, "  4:AGGREGATE (update serialize)\n" +
                 "  |  output: count(3: L_SUPPKEY), count(20: count)\n" +
@@ -1997,7 +1997,7 @@ public class AggregateTest extends PlanTestBase {
     }
 
     @Test
-    public void testPruneAggregateKeysRule() throws Exception {
+    public void testPruneGroupByKeysRule() throws Exception {
         String sql = "select t1b,t1b+1,count(*) from test_all_type group by 1,2";
         String plan = getFragmentPlan(sql);
         // t1b+1 will be pruned
@@ -2034,6 +2034,7 @@ public class AggregateTest extends PlanTestBase {
                 "  1:AGGREGATE (update finalize)\n" +
                 "  |  output: count(*)\n" +
                 "  |  group by: 2: t1b, 3: t1c");
+        // the first group by key is not simple column ref, can't be pruned
         sql = "select 1 from test_all_type group by t1b+rand(), t1b+rand()+1";
         plan = getFragmentPlan(sql);
         assertContains(plan, "  3:Project\n" +
@@ -2055,5 +2056,22 @@ public class AggregateTest extends PlanTestBase {
                 "  1:Project\n" +
                 "  |  <slot 11> : CAST(10: id_decimal AS DECIMAL128(38,2))\n" +
                 "  |  <slot 12> : CAST(10: id_decimal AS DECIMAL128(37,2))");
+        // complex projections, aggregations and group by keys
+        sql = "select v4,abs(v4),cast(v5 as largeint),max(v4+v5+v6) from t1 group by v4,abs(v4),cast(v5 as largeint);";
+        plan = getFragmentPlan(sql);
+        assertContains(plan, "  3:Project\n" +
+                "  |  <slot 1> : 1: v4\n" +
+                "  |  <slot 4> : abs(1: v4)\n" +
+                "  |  <slot 5> : 5: cast\n" +
+                "  |  <slot 7> : 7: max\n" +
+                "  |  \n" +
+                "  2:AGGREGATE (update finalize)\n" +
+                "  |  output: max(6: expr)\n" +
+                "  |  group by: 1: v4, 5: cast\n" +
+                "  |  \n" +
+                "  1:Project\n" +
+                "  |  <slot 1> : 1: v4\n" +
+                "  |  <slot 5> : CAST(2: v5 AS LARGEINT)\n" +
+                "  |  <slot 6> : 1: v4 + 2: v5 + 3: v6");
     }
 }
