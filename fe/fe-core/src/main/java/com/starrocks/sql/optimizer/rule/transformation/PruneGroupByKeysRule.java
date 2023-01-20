@@ -53,11 +53,6 @@ public class PruneGroupByKeysRule extends TransformationRule {
         if (groupingKeys == null || groupingKeys.isEmpty()) {
             return false;
         }
-        /*
-        Map<ColumnRefOperator, CallOperator> aggregations = aggOperator.getAggregations();
-        if (aggregations == null || aggregations.isEmpty()) {
-            return false;
-        }*/
         return true;
     }
 
@@ -90,6 +85,7 @@ public class PruneGroupByKeysRule extends TransformationRule {
                     newGroupingKeys.add(groupingKey);
                     existedColumnIds.add(columnId);
                     newProjections.put(groupingKey, groupingExpr);
+                    newPostAggProjections.put(groupingKey, groupingKey);
                     continue;
                 }
             } else if (!groupingExpr.isConstant()) { // just ignore the constant in group by keys
@@ -102,11 +98,13 @@ public class PruneGroupByKeysRule extends TransformationRule {
                     if (!existedColumnIds.contains(columnId)) {
                         newGroupingKeys.add(groupingKey);
                         newProjections.put(groupingKey, groupingExpr);
+                        newPostAggProjections.put(groupingKey, groupingKey);
                         continue;
                     }
                 } else {
                     newGroupingKeys.add(groupingKey);
                     newProjections.put(groupingKey, groupingExpr);
+                    newPostAggProjections.put(groupingKey, groupingKey);
                     continue;
                 }
             }
@@ -138,6 +136,7 @@ public class PruneGroupByKeysRule extends TransformationRule {
                 Preconditions.checkState(scalarOperator != null, "cannot find column ref");
                 newProjections.put(columnRefOperator, scalarOperator);
             }
+            newPostAggProjections.put(aggregation.getKey(), aggregation.getKey());
         }
         // add a post agg project, all removed group by key should be here
         LogicalProjectOperator newPostAggProjectOperator = new LogicalProjectOperator(newPostAggProjections);
