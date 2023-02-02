@@ -190,6 +190,7 @@ public class SessionVariable implements Serializable, Writable, Cloneable {
     public static final String TABLET_INTERNAL_PARALLEL_MODE = "tablet_internal_parallel_mode";
     public static final String ENABLE_SHARED_SCAN = "enable_shared_scan";
     public static final String PIPELINE_DOP = "pipeline_dop";
+    public static final String MAX_PIPELINE_DOP = "max_pipeline_dop";
 
     public static final String PROFILE_TIMEOUT = "profile_timeout";
     public static final String PROFILE_LIMIT_FOLD = "profile_limit_fold";
@@ -579,6 +580,9 @@ public class SessionVariable implements Serializable, Writable, Cloneable {
 
     @VariableMgr.VarAttr(name = PIPELINE_DOP)
     private int pipelineDop = 0;
+
+    @VariableMgr.VarAttr(name = MAX_PIPELINE_DOP)
+    private int maxPipelineDop = 64;
 
     @VariableMgr.VarAttr(name = PROFILE_TIMEOUT, flag = VariableMgr.INVISIBLE)
     private int profileTimeout = 2;
@@ -1011,7 +1015,7 @@ public class SessionVariable implements Serializable, Writable, Cloneable {
             if (pipelineDop > 0) {
                 return pipelineDop;
             }
-            return BackendCoreStat.getDefaultDOP();
+            return Math.min(maxPipelineDop, BackendCoreStat.getDefaultDOP());
         } else {
             return parallelExecInstanceNum;
         }
@@ -1275,6 +1279,14 @@ public class SessionVariable implements Serializable, Writable, Cloneable {
 
     public int getPipelineDop() {
         return this.pipelineDop;
+    }
+
+    public void setMaxPipelineDop(int maxPipelineDop) {
+        this.maxPipelineDop = maxPipelineDop;
+    }
+
+    public int getMaxPipelineDop() {
+        return this.maxPipelineDop;
     }
 
     public boolean isEnableSharedScan() {
