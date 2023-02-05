@@ -448,6 +448,11 @@ pipeline::OpFactories HashJoinNode::decompose_to_pipeline(pipeline::PipelineBuil
             // 2. Otherwise, add LocalExchangeOperator
             // to shuffle multi-stream into #degree_of_parallelism# streams each of that pipes into HashJoin{Build, Probe}Operator.
             auto* rhs_source_op = context->source_operator(rhs_operators);
+            TPartitionType::type part_type = rhs_source_op->partition_type();
+
+            const auto& rhs_partition_exprs = part_type == TPartitionType::BUCKET_SHUFFLE_HASH_PARTITIONED
+                                                      ? _build_equivalence_partition_expr_ctxs
+                                                      : _build_expr_ctxs;
             rhs_operators = context->maybe_interpolate_local_shuffle_exchange(runtime_state(), rhs_operators,
                                                                               rhs_partition_exprs);
         }
