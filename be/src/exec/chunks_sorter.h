@@ -143,6 +143,8 @@ public:
     size_t revocable_mem_bytes() const { return _revocable_mem_bytes; }
     void set_spill_stragety(SpillStrategy stragety) { _spill_strategy = stragety; }
 
+    virtual void cancel() {}
+
 protected:
     size_t _get_number_of_order_by_columns() const { return _sort_exprs->size(); }
 

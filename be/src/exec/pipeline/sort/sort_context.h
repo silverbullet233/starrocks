@@ -58,6 +58,7 @@ public:
     bool is_partition_sort_finished() const;
     bool is_output_finished() const;
     bool is_partition_ready() const;
+    void cancel();
 
     StatusOr<ChunkPtr> pull_chunk();
 
