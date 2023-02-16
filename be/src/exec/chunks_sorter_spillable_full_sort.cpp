@@ -124,6 +124,7 @@ std::function<StatusOr<ChunkPtr>()> ChunksSorterSpillableFullSort::_spill_proces
 
 Status ChunksSorterSpillableFullSort::_get_result_from_spiller(ChunkPtr* chunk, bool* eos) {
     SCOPED_TIMER(_spill_timer);
+    // @TODO restore time
     auto chunk_st = _spiller->restore(_state, io_executor(), MemTrackerGuard(tls_mem_tracker));
     if (chunk_st.status().is_end_of_file()) {
         *eos = true;

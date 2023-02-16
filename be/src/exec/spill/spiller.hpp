@@ -40,6 +40,7 @@ Status Spiller::spill(RuntimeState* state, ChunkPtr chunk, TaskExecutor&& execut
     _spilled_append_rows += chunk->num_rows();
     TRACE_SPILL_LOG << "spilled rows:" << chunk->num_rows() << ",cumulative:" << _spilled_append_rows
                     << ",spiller:" << this << "," << _mem_table.get();
+    // LOG(INFO) << "spill run, all spilled rows: " << _spilled_append_rows;
     RETURN_IF_ERROR(_mem_table->append(std::move(chunk)));
     if (_mem_table->is_full()) {
         RETURN_IF_ERROR(flush(state, std::forward<TaskExecutor>(executor), std::forward<MemGuard>(guard)));
@@ -62,7 +63,8 @@ Status Spiller::flush(RuntimeState* state, TaskExecutor&& executor, MemGuard&& g
         DCHECK_GT(_running_flush_tasks, 0);
         DCHECK(has_pending_data());
         guard.scoped_begin();
-        //
+        MonotonicStopWatch sw;
+        sw.start();
         auto defer = DeferOp([&]() {
             {
                 std::lock_guard guard(_mutex);
@@ -70,6 +72,8 @@ Status Spiller::flush(RuntimeState* state, TaskExecutor&& executor, MemGuard&& g
             }
 
             _update_spilled_task_status(_decrease_running_flush_tasks());
+            sw.stop();
+            LOG(INFO) << "flush task cost: " << sw.elapsed_time() << "ns";
         });
 
         auto status_task = [state, this, mem_table]() -> Status { return _run_flush_task(state, mem_table); };

@@ -74,6 +74,7 @@ Status ColumnSpillFormater::spill_as_fmt(SpillFormatContext& context, std::uniqu
     }
 
     RETURN_IF_ERROR(writable->append(context.io_buffer));
+    // @TODO record spill bytes
     return Status::OK();
 }
 
@@ -152,6 +153,10 @@ Status Spiller::_flush_and_closed(std::unique_ptr<WritableFile>& writable) {
 }
 
 Status Spiller::_run_flush_task(RuntimeState* state, const MemTablePtr& mem_table) {
+    if (state->is_cancelled()) {
+        LOG(INFO) << "query cancelled, just return";
+        return Status::OK();
+    }
     RETURN_IF_ERROR(this->_open(state));
     // prepare current file
     ASSIGN_OR_RETURN(auto file, _path_provider->get_file());
