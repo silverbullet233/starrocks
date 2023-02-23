@@ -40,6 +40,8 @@ namespace starrocks {
 class ColumnSpillFormater : public SpillFormater {
 public:
     ColumnSpillFormater(ChunkBuilder chunk_builder) : _chunk_builder(std::move(chunk_builder)) {}
+    ColumnSpillFormater(ChunkBuilder chunk_builder, const BlockCompressionCodec* compress_codec):
+        _chunk_builder(std::move(chunk_builder)), _compress_codec(compress_codec) {}
     Status spill_as_fmt(SpillFormatContext& context, std::unique_ptr<WritableFile>& writable,
                         const ChunkPtr& chunk) const noexcept override;
     StatusOr<ChunkUniquePtr> restore_from_fmt(SpillFormatContext& context,
@@ -49,6 +51,7 @@ public:
 private:
     size_t _spill_size(const ChunkPtr& chunk) const;
     ChunkBuilder _chunk_builder;
+    const BlockCompressionCodec* _compress_codec = nullptr;
 };
 
 size_t ColumnSpillFormater::_spill_size(const ChunkPtr& chunk) const {
@@ -62,36 +65,103 @@ size_t ColumnSpillFormater::_spill_size(const ChunkPtr& chunk) const {
 Status ColumnSpillFormater::spill_as_fmt(SpillFormatContext& context, std::unique_ptr<WritableFile>& writable,
                                          const ChunkPtr& chunk) const noexcept {
     size_t serialize_sz = _spill_size(chunk);
-    context.io_buffer.resize(serialize_sz);
+    // @TODO serialize_sz may be larger than real size
+    context.uncompressed_buffer.resize(serialize_sz);
     DCHECK_GT(serialize_sz, 4);
 
-    auto* buff = reinterpret_cast<uint8_t*>(context.io_buffer.data());
-    UNALIGNED_STORE64(buff, serialize_sz);
-    buff += sizeof(serialize_sz);
+    auto* buff = reinterpret_cast<uint8_t*>(context.uncompressed_buffer.data());
+    uint8_t* begin = buff;
+    // UNALIGNED_STORE64(buff, serialize_sz);
+    // @TODO record compressed size and decompressed size
+    // buff += sizeof(serialize_sz);
+    // uint8_t* start = buff;
+    // buff += sizeof(size_t) * 2;
 
     for (const auto& column : chunk->columns()) {
         buff = serde::ColumnArraySerde::serialize(*column, buff);
     }
+    size_t uncompressed_size = buff - begin;
+    context.uncompressed_buffer.resize(uncompressed_size);
+    LOG(INFO) << "max_serialize_sz: " << serialize_sz << ", real size: " << uncompressed_size;
+    Slice compress_input(context.uncompressed_buffer.data(), uncompressed_size);
+    Slice compressed_slice;
 
-    RETURN_IF_ERROR(writable->append(context.io_buffer));
+    // @TODO fix compression pool issue
+    // if (!use_compression_pool(_compress_codec->type())) {
+    //     RETURN_IF_ERROR(_compress_codec->compress(compress_input, &compressed_slice,
+    //         true, uncompressed_size, nullptr, &context.compressed_buffer));
+    // } else {
+        int max_compressed_size = _compress_codec->max_compressed_len(uncompressed_size);
+        if (context.compressed_buffer.size() < max_compressed_size) {
+            context.compressed_buffer.resize(max_compressed_size);
+        }
+        compressed_slice = Slice(context.compressed_buffer.data(), context.compressed_buffer.size());
+        RETURN_IF_ERROR(_compress_codec->compress(compress_input, &compressed_slice));
+        context.compressed_buffer.resize(compressed_slice.size);
+    // }
+    LOG(INFO) << "uncompressed size: " << uncompressed_size << ", compressed size: " << compressed_slice.size
+        << "," << context.compressed_buffer.size();
+
+    uint8_t tmp_buff[sizeof(size_t) * 2];
+    UNALIGNED_STORE64(tmp_buff, compressed_slice.size);
+    UNALIGNED_STORE64(tmp_buff + sizeof(size_t), uncompressed_size);
+
+    RETURN_IF_ERROR(writable->append(Slice(tmp_buff, sizeof(size_t) * 2)));
+    RETURN_IF_ERROR(writable->append(compressed_slice));
+    {
+        // @TODO multi-thread issue?
+        std::string tmp;
+        tmp.resize(uncompressed_size);
+        Slice output{tmp.data(), uncompressed_size};
+        if (Status st = _compress_codec->decompress(compressed_slice, &output);!st.ok()) {
+            LOG(INFO) << "cannot decompress, error: " << st.to_string();
+            DCHECK(false);
+        }
+    }
+
+    // RETURN_IF_ERROR(writable->append(context.io_buffer));
     // @TODO record spill bytes
     return Status::OK();
 }
 
 StatusOr<ChunkUniquePtr> ColumnSpillFormater::restore_from_fmt(SpillFormatContext& context,
                                                                std::unique_ptr<RawInputStreamWrapper>& readable) const {
-    size_t serialize_sz;
-    RETURN_IF_ERROR(readable->read_fully(&serialize_sz, sizeof(serialize_sz)));
-    DCHECK_GT(serialize_sz, sizeof(serialize_sz));
-    context.io_buffer.resize(serialize_sz);
-    auto buff = reinterpret_cast<uint8_t*>(context.io_buffer.data());
-    RETURN_IF_ERROR(readable->read_fully(buff, serialize_sz - sizeof(serialize_sz)));
+    // size_t serialize_sz;
+    size_t compressed_size, uncompressed_size;
+    RETURN_IF_ERROR(readable->read_fully(&compressed_size, sizeof(size_t)));
+    RETURN_IF_ERROR(readable->read_fully(&uncompressed_size, sizeof(size_t)));
+    // RETURN_IF_ERROR(readable->read_fully(&serialize_sz, sizeof(serialize_sz)));
+    // DCHECK_GT(serialize_sz, sizeof(serialize_sz));
+    LOG(INFO) << "read compressed size: " << compressed_size << ", uncompressed size: " << uncompressed_size;
+    // context.io_buffer.resize(serialize_sz);
+    context.compressed_buffer.resize(compressed_size);
+    context.uncompressed_buffer.resize(uncompressed_size);
 
+
+    auto buf = reinterpret_cast<uint8_t*>(context.compressed_buffer.data());
+    RETURN_IF_ERROR(readable->read_fully(buf, compressed_size));
+    LOG(INFO) << "read compressed data done";
+    // decompress
+    Slice input_slice(context.compressed_buffer.data(), compressed_size);
+    Slice uncompressed_slice(context.uncompressed_buffer.data(), uncompressed_size);
+    RETURN_IF_ERROR(_compress_codec->decompress(input_slice, &uncompressed_slice));
+    LOG(INFO) << "decompress done";
+
+    // deserialize
     auto chunk = _chunk_builder();
-    const uint8_t* read_cursor = buff;
-    for (const auto& column : chunk->columns()) {
+    const uint8_t* read_cursor = reinterpret_cast<uint8_t*>(context.uncompressed_buffer.data());
+    for (const auto& column: chunk->columns()) {
         read_cursor = serde::ColumnArraySerde::deserialize(read_cursor, column.get());
     }
+    LOG(INFO) << "return chunk";
+    // auto buff = reinterpret_cast<uint8_t*>(context.io_buffer.data());
+    // RETURN_IF_ERROR(readable->read_fully(buff, serialize_sz - sizeof(serialize_sz)));
+
+    // auto chunk = _chunk_builder();
+    // const uint8_t* read_cursor = buff;
+    // for (const auto& column : chunk->columns()) {
+    //     read_cursor = serde::ColumnArraySerde::deserialize(read_cursor, column.get());
+    // }
     return chunk;
 }
 
@@ -109,9 +179,24 @@ StatusOr<std::unique_ptr<SpillFormater>> SpillFormater::create(SpillFormaterType
     }
 }
 
+
+StatusOr<std::unique_ptr<SpillFormater>> SpillFormater::create(SpilledOptions& options) {
+    auto format_type = options.spill_type;
+    if (format_type == SpillFormaterType::SPILL_BY_COLUMN) {
+        auto compress_type = options.compress_type;
+        const BlockCompressionCodec* codec = nullptr;
+        RETURN_IF_ERROR(get_block_compression_codec(compress_type, &codec));
+        return std::make_unique<ColumnSpillFormater>(std::move(options.chunk_builder), codec);
+    } else {
+        return Status::InternalError(fmt::format("unsupported spill type:{}", format_type));
+    }
+}
+
+
 Status Spiller::prepare(RuntimeState* state) {
     // prepare
-    ASSIGN_OR_RETURN(_spill_fmt, SpillFormater::create(_opts.spill_type, _opts.chunk_builder));
+    // ASSIGN_OR_RETURN(_spill_fmt, SpillFormater::create(_opts.spill_type, _opts.chunk_builder));
+    ASSIGN_OR_RETURN(_spill_fmt, SpillFormater::create(_opts));
 
     for (size_t i = 0; i < _opts.mem_table_pool_size; ++i) {
         if (_opts.is_unordered) {
@@ -134,6 +219,8 @@ Status Spiller::_open(RuntimeState* state) {
     if (_has_opened) {
         return Status::OK();
     }
+
+    RETURN_IF_ERROR(get_block_compression_codec(_opts.compress_type, &_compress_codec));
 
     // init path provider
     ASSIGN_OR_RETURN(_path_provider, _opts.path_provider_factory());
@@ -158,6 +245,7 @@ Status Spiller::_run_flush_task(RuntimeState* state, const MemTablePtr& mem_tabl
         return Status::OK();
     }
     RETURN_IF_ERROR(this->_open(state));
+    // @TODO cache a file and write multi times
     // prepare current file
     ASSIGN_OR_RETURN(auto file, _path_provider->get_file());
     ASSIGN_OR_RETURN(auto writable, file->as<WritableFile>());

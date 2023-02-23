@@ -78,6 +78,8 @@ StatusOr<ChunkUniquePtr> SequentialFileStream<Container>::read(SpillFormatContex
             _readable.reset();
             TRACE_SPILL_LOG << "read chunk size" << output_chunks - 1;
             output_chunks = 0;
+        } else if (!res.status().ok()) {
+            LOG(INFO) << "restore_from_fmt error, " << res.status().to_string();
         }
 
         RETURN_IF(!res.status().is_end_of_file(), res);

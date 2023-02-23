@@ -118,6 +118,7 @@ Status SpillablePartitionSortSinkOperatorFactory::prepare(RuntimeState* state) {
     _spill_options->chunk_builder = [&]() {
         return ChunkHelper::new_chunk(*_materialized_tuple_desc, _state->chunk_size());
     };
+    // @TODO add driver id
     _spill_options->path_provider_factory = spill_manager->provider(fmt::format("local-sort-spill-{}", _plan_node_id));
 
     return Status::OK();

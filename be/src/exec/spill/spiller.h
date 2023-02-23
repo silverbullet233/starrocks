@@ -29,8 +29,10 @@
 #include "exec/spill/spiller_factory.h"
 #include "exec/spill/spiller_path_provider.h"
 #include "fs/fs.h"
+#include "gen_cpp/types.pb.h"
 #include "runtime/runtime_state.h"
 #include "util/blocking_queue.hpp"
+#include "util/compression/block_compression.h"
 
 namespace starrocks {
 enum class SpillFormaterType { NONE, SPILL_BY_COLUMN };
@@ -55,10 +57,15 @@ struct SpilledOptions {
     SpillFormaterType spill_type{};
     SpillPathProviderFactory path_provider_factory;
     ChunkBuilder chunk_builder;
+    // compress type
+    CompressionTypePB compress_type = CompressionTypePB::LZ4;
 };
 
 struct SpillFormatContext {
-    std::string io_buffer;
+    // @TODO use io buf to avoid large memory allocation?
+    std::string uncompressed_buffer;
+    // std::string compressed_buffer;
+    raw::RawString compressed_buffer;
 };
 
 enum class SpillStrategy {
@@ -75,7 +82,9 @@ public:
     virtual StatusOr<ChunkUniquePtr> restore_from_fmt(SpillFormatContext& context,
                                                       std::unique_ptr<RawInputStreamWrapper>& readable) const = 0;
     virtual Status flush(std::unique_ptr<WritableFile>& writable) const = 0;
+    // @TODO remove
     static StatusOr<std::unique_ptr<SpillFormater>> create(SpillFormaterType type, ChunkBuilder chunk_builder);
+    static StatusOr<std::unique_ptr<SpillFormater>> create(SpilledOptions& options);
 };
 
 class Spiller {
@@ -211,5 +220,6 @@ private:
     size_t _spilled_append_rows{};
     size_t _restore_read_rows{};
     SpillFormatContext _spill_read_ctx;
+    const BlockCompressionCodec* _compress_codec = nullptr;
 };
 } // namespace starrocks
