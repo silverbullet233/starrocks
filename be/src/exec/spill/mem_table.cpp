@@ -35,6 +35,13 @@ Status UnorderedMemTable::flush(FlushCallBack callback) {
     return Status::OK();
 }
 
+// Status UnorderedMemTable::flush(FlushBackCallBack callback) {
+//     RETURN_IF_ERROR(callback(_chunks));
+//     _tracker->release(_tracker->consumption());
+//     _chunks.clear();
+//     return Status::OK();
+// }
+
 Status OrderedMemTable::append(ChunkPtr chunk) {
     if (_chunk == nullptr) {
         _chunk = chunk->clone_empty();
@@ -54,6 +61,19 @@ Status OrderedMemTable::flush(FlushCallBack callback) {
     _chunk.reset();
     return Status::OK();
 }
+
+// Status OrderedMemTable::flush(FlushBatchCallBack callback) {
+//     std::vector<ChunkPtr> chunks;
+//     while (!_chunk_slice.empty()) {
+//         auto chunk = _chunk_slice.cutoff(_runtime_state->chunk_size());
+//         chunks.push_back(chunk);
+//     }
+//     RETURN_IF_ERROR(callback(chunks));
+//     _chunk_slice.reset(nullptr);
+//     _tracker->release(_tracker->consumption());
+//     _chunk.reset();
+//     return Status::OK();
+// }
 
 Status OrderedMemTable::done() {
     // do sort

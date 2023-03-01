@@ -39,10 +39,13 @@ namespace starrocks {
 // some config
 const size_t chunk_buffer_max_size = 2;
 
+// @TODO rename to BlockStream
+
 // read column one-by-one
 template <class Container>
 class SequentialFileStream final : public SpilledInputStream {
 public:
+    // @TODO use block
     SequentialFileStream(const SpillFormater& formater, Container spilled_files)
             : _formater(formater), _spilled_files(std::move(spilled_files)) {}
     ~SequentialFileStream() override = default;
@@ -52,6 +55,7 @@ public:
 
 private:
     size_t _current_idx{};
+    // @TODO no need
     std::unique_ptr<RawInputStreamWrapper> _readable;
     const SpillFormater& _formater;
     const Container _spilled_files;
@@ -148,6 +152,7 @@ Status BufferedSpilledStream::read_to_buffer(SpillFormatContext& context) {
     DCHECK(!buffer_fulled());
 
     // get chunk from stream
+    // @TODO remove row_input_stream, use block instead
     auto res = _raw_input_stream->read(context);
     if (res.ok()) {
         // put it to chunk buffer
@@ -288,6 +293,7 @@ auto SpilledFileGroup::as_sorted_stream(std::weak_ptr<SpillerFactory> factory, R
     std::vector<std::shared_ptr<SpilledInputStream>> res;
     for (auto& file : _files) {
         using ContainerType = std::array<std::shared_ptr<SpillFile>, 1>;
+        // @TODO use block
         auto stream = std::make_shared<SequentialFileStream<ContainerType>>(_formater, std::array{file});
         res.emplace_back(std::move(stream));
     }

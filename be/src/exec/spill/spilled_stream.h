@@ -58,6 +58,7 @@ private:
 };
 using SpillRestoreTaskPtr = std::shared_ptr<SpillRestoreTask>;
 
+// @TODO change to block group? no need expose file sematic
 class SpilledFileGroup {
 public:
     SpilledFileGroup(const SpillFormater& formater) : _formater(formater) {}

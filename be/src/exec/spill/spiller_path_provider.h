@@ -102,6 +102,7 @@ public:
     };
     ~LocalPathProvider() noexcept override;
     Status open(RuntimeState* state) override;
+    // @TODO
     StatusOr<SpillFilePtr> get_file() override;
 
 private:
@@ -110,5 +111,12 @@ private:
     std::string _prefix;
     FileSystem* _fs;
     std::atomic_int _next_id = 0;
+    // @TODO cache some files
+
+    // @TODO cache some file
+    // 1. when acquire file, random get one from cache
+    // 2. if no file in cache, create one
+
+    std::vector<SpillFilePtr> _file_cache;
 };
 } // namespace starrocks

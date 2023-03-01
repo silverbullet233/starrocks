@@ -123,6 +123,9 @@ set(EXEC_FILES
     spill/spiller_factory.cpp
     spill/spilled_stream.cpp
     spill/mem_table.cpp
+    spill/log_block_manager.cpp
+    spill/input_stream.cpp
+    spill/formatter.cpp
     jdbc_scanner.cpp
     sorting/compare_column.cpp
     sorting/merge_column.cpp

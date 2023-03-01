@@ -30,7 +30,7 @@ Status QuerySpillManager::init(const TUniqueId& uid) {
     for (const auto& path : paths) {
         _spill_root_paths.emplace_back(path.path + "/" + config::spill_local_storage_dir);
     }
-
+    // @TODO clean path
     if (_spill_root_paths.empty()) {
         return Status::InternalError("Not Found Spill Path");
     }
@@ -61,6 +61,7 @@ size_t QuerySpillManager::spill_mem_table_pool_size() const {
 }
 
 SpillPathProviderFactory QuerySpillManager::provider(const std::string& prefix) {
+    // @TODO pick path by size
     auto paths = _spill_paths(_uid);
     std::lock_guard guard(_mutex);
     if (auto iter = _spill_provider_factorys.find(prefix); iter == _spill_provider_factorys.end()) {

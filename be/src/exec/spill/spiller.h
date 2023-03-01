@@ -28,6 +28,9 @@
 #include "exec/spill/spilled_stream.h"
 #include "exec/spill/spiller_factory.h"
 #include "exec/spill/spiller_path_provider.h"
+#include "exec/spill/formatter.h"
+#include "exec/spill/input_stream.h"
+#include "exec/spill/block_manager.h"
 #include "fs/fs.h"
 #include "gen_cpp/types.pb.h"
 #include "runtime/runtime_state.h"
@@ -56,7 +59,10 @@ struct SpilledOptions {
     size_t spill_file_size{};
     SpillFormaterType spill_type{};
     SpillPathProviderFactory path_provider_factory;
+    std::string name;
+    int32_t plan_node_id;
     ChunkBuilder chunk_builder;
+    std::shared_ptr<spill::BlockManager> block_manager;
     // compress type
     CompressionTypePB compress_type = CompressionTypePB::LZ4;
 };
@@ -144,7 +150,11 @@ public:
         return _decrease_running_flush_tasks();
     }
 
-    bool has_output_data() { return _current_stream && _current_stream->is_ready(); }
+    // bool has_output_data() { return _current_stream && _current_stream->is_ready(); }
+    // refactor
+    bool has_output_data() {
+        return _input_stream && _input_stream->is_ready();
+    }
 
     size_t spilled_append_rows() { return _spilled_append_rows; }
 
@@ -187,6 +197,19 @@ private:
     StatusOr<std::shared_ptr<SpilledInputStream>> _acquire_input_stream(RuntimeState* state);
 
     Status _decrease_running_flush_tasks();
+// refactor begin
+    // instead of _run_flush_task
+    Status flush_mem_table(RuntimeState* state,  const MemTablePtr& mem_table);
+
+    StatusOr<std::shared_ptr<spill::InputStream>> _acquire_input_stream_v2(RuntimeState* state);
+
+    template <class TaskExecutor, class MemGuard>
+    StatusOr<ChunkPtr> restore_v2(RuntimeState* state, TaskExecutor&& executor, MemGuard&& guard);
+
+    template <class TaskExecutor, class MemGuard>
+    Status trigger_restore_v2(RuntimeState* state, TaskExecutor&& executor, MemGuard&& guard);
+// refactor end
+
 
 private:
     SpilledOptions _opts;
@@ -221,5 +244,13 @@ private:
     size_t _restore_read_rows{};
     SpillFormatContext _spill_read_ctx;
     const BlockCompressionCodec* _compress_codec = nullptr;
+
+    // refactor begin
+    std::shared_ptr<spill::Formatter> _formatter;// @TODO make unique
+    std::shared_ptr<spill::BlockManager> _block_manager;
+    std::shared_ptr<spill::BlockGroup> _block_group;
+    std::shared_ptr<spill::InputStream> _input_stream;
+    // refactor end
+
 };
 } // namespace starrocks

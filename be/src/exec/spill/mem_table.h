@@ -29,6 +29,7 @@
 
 namespace starrocks {
 using FlushCallBack = std::function<Status(const ChunkPtr&)>;
+// using FlushBatchCallBack = std::function<Status(const std::vector<ChunkPtr>&)>;
 
 class SpilledMemTable {
 public:
@@ -41,6 +42,7 @@ public:
     virtual Status append(ChunkPtr chunk) = 0;
     virtual Status done() = 0;
     virtual Status flush(FlushCallBack callback) = 0;
+    // virtual Status flush(FlushBatchCallBack callback) = 0;
 
 protected:
     RuntimeState* _runtime_state;
@@ -59,6 +61,7 @@ public:
     Status append(ChunkPtr chunk) override;
     Status done() override { return Status::OK(); };
     Status flush(FlushCallBack callback) override;
+    // Status flush(FlushBatchCallBack callback) override;
 
 private:
     std::vector<ChunkPtr> _chunks;
@@ -74,6 +77,7 @@ public:
     Status append(ChunkPtr chunk) override;
     Status done() override;
     Status flush(FlushCallBack callback) override;
+    // Status flush(FlushCallBack callback) override;
 
 private:
     StatusOr<ChunkPtr> _do_sort(const ChunkPtr& chunk);

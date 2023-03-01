@@ -76,7 +76,9 @@ Status Spiller::flush(RuntimeState* state, TaskExecutor&& executor, MemGuard&& g
             LOG(INFO) << "flush task cost: " << sw.elapsed_time() << "ns";
         });
 
-        auto status_task = [state, this, mem_table]() -> Status { return _run_flush_task(state, mem_table); };
+        // auto status_task = [state, this, mem_table]() -> Status { return _run_flush_task(state, mem_table); };
+        auto status_task = [state, this, mem_table]() -> Status { return flush_mem_table(state, mem_table); };
+
         _update_spilled_task_status(status_task());
         guard.scoped_end();
     };
@@ -88,65 +90,115 @@ Status Spiller::flush(RuntimeState* state, TaskExecutor&& executor, MemGuard&& g
 
 template <class TaskExecutor, class MemGuard>
 StatusOr<ChunkPtr> Spiller::restore(RuntimeState* state, TaskExecutor&& executor, MemGuard&& guard) {
-    RETURN_IF_ERROR(_spilled_task_status);
-    ChunkPtr chunk;
+    return restore_v2(state, std::forward<TaskExecutor>(executor), std::forward<MemGuard>(guard));
+    // RETURN_IF_ERROR(_spilled_task_status);
+    // ChunkPtr chunk;
 
-    if (_current_stream == nullptr) {
-        ASSIGN_OR_RETURN(_current_stream, _acquire_input_stream(state));
-    }
+    // if (_current_stream == nullptr) {
+    //     ASSIGN_OR_RETURN(_current_stream, _acquire_input_stream(state));
+    // }
 
-    DCHECK(has_output_data());
-    // read chunk from buffer
-    ASSIGN_OR_RETURN(chunk, _current_stream->read(_spill_read_ctx));
-    _restore_read_rows += chunk->num_rows();
+    // DCHECK(has_output_data());
+    // // read chunk from buffer
+    // ASSIGN_OR_RETURN(chunk, _current_stream->read(_spill_read_ctx));
+    // _restore_read_rows += chunk->num_rows();
 
-    RETURN_IF_ERROR(trigger_restore(state, std::forward<TaskExecutor>(executor), std::forward<MemGuard>(guard)));
+    // RETURN_IF_ERROR(trigger_restore(state, std::forward<TaskExecutor>(executor), std::forward<MemGuard>(guard)));
 
-    return chunk;
+    // return chunk;
 }
 
 template <class TaskExecutor, class MemGuard>
 Status Spiller::trigger_restore(RuntimeState* state, TaskExecutor&& executor, MemGuard&& guard) {
-    if (_current_stream == nullptr) {
-        ASSIGN_OR_RETURN(_current_stream, _acquire_input_stream(state));
-    }
+    return trigger_restore_v2(state, std::forward<TaskExecutor>(executor), std::forward<MemGuard>(guard));
+    // if (_current_stream == nullptr) {
+    //     ASSIGN_OR_RETURN(_current_stream, _acquire_input_stream(state));
+    // }
 
-    std::queue<SpillRestoreTaskPtr> capature_restore_tasks;
-    {
-        std::lock_guard guard(_mutex);
-        capature_restore_tasks = std::move(_restore_tasks);
-    }
-    // submit restore task
-    while (!capature_restore_tasks.empty()) {
-        DCHECK(capature_restore_tasks.front() != nullptr);
-        auto task = std::move(capature_restore_tasks.front());
-        RETURN_IF_ERROR(executor.submit([this, state, guard, task = std::move(task)]() {
-            _running_restore_tasks++;
-            guard.scoped_begin();
+    // std::queue<SpillRestoreTaskPtr> capature_restore_tasks;
+    // {
+    //     std::lock_guard guard(_mutex);
+    //     capature_restore_tasks = std::move(_restore_tasks);
+    // }
+    // // submit restore task
+    // while (!capature_restore_tasks.empty()) {
+    //     DCHECK(capature_restore_tasks.front() != nullptr);
+    //     auto task = std::move(capature_restore_tasks.front());
+    //     RETURN_IF_ERROR(executor.submit([this, state, guard, task = std::move(task)]() {
+    //         _running_restore_tasks++;
+    //         guard.scoped_begin();
 
-            auto caller = [state, this, task]() -> Status {
-                SpillFormatContext spill_ctx;
-                RETURN_IF_ERROR(task->do_read(spill_ctx));
-                return Status::OK();
-            };
+    //         auto caller = [state, this, task]() -> Status {
+    //             SpillFormatContext spill_ctx;
+    //             RETURN_IF_ERROR(task->do_read(spill_ctx));
+    //             return Status::OK();
+    //         };
 
-            auto res = caller();
+    //         auto res = caller();
 
-            _update_spilled_task_status(res.is_end_of_file() ? Status::OK() : res);
-            if (!res.ok()) {
-                _finished_restore_tasks++;
-            } else {
-                std::lock_guard guard(_mutex);
-                _restore_tasks.push(std::move(task));
-            }
+    //         _update_spilled_task_status(res.is_end_of_file() ? Status::OK() : res);
+    //         if (!res.ok()) {
+    //             _finished_restore_tasks++;
+    //         } else {
+    //             std::lock_guard guard(_mutex);
+    //             _restore_tasks.push(std::move(task));
+    //         }
 
-            guard.scoped_end();
-            _running_restore_tasks--;
-            return Status::OK();
-        }));
-        capature_restore_tasks.pop();
-    }
-    return Status::OK();
+    //         guard.scoped_end();
+    //         _running_restore_tasks--;
+    //         return Status::OK();
+    //     }));
+    //     capature_restore_tasks.pop();
+    // }
+    // return Status::OK();
 }
 
+template<class TaskExecutor, class MemGuard>
+StatusOr<ChunkPtr> Spiller::restore_v2(RuntimeState* state, TaskExecutor&& executor, MemGuard&& guard) {
+    LOG(INFO) << "restore_v2";
+    RETURN_IF_ERROR(_spilled_task_status);
+    ChunkPtr chunk;
+    if (_input_stream == nullptr) {
+        ASSIGN_OR_RETURN(_input_stream, _acquire_input_stream_v2(state));
+        LOG(INFO) << "acquire input stream done";
+    }
+    DCHECK(has_output_data());
+    ASSIGN_OR_RETURN(chunk, _input_stream->get_next());
+    _restore_read_rows += chunk->num_rows();
+    RETURN_IF_ERROR(trigger_restore_v2(state, std::forward<TaskExecutor>(executor), std::forward<MemGuard>(guard)));
+    return chunk;
+}
+
+template <class TaskExecutor, class MemGuard>
+Status Spiller::trigger_restore_v2(RuntimeState* state, TaskExecutor&& executor, MemGuard&& guard) {
+    RETURN_IF_ERROR(_spilled_task_status);
+    // @TODO why
+    if (_input_stream == nullptr) {
+        ASSIGN_OR_RETURN(_input_stream, _acquire_input_stream_v2(state));
+    }
+    // if all is well and input stream enable prefetch and not eof
+    if (_input_stream->enable_prefetch() && !_input_stream->eof()) {
+        auto restore_task = [this, state, guard] () {
+            LOG(INFO) << "run restore task";
+            _running_restore_tasks++;
+            guard.scoped_begin();
+            auto res = _input_stream->prefetch();
+            // @TODO if not ok, no push
+            _update_spilled_task_status(res.is_end_of_file() ? Status::OK(): res);
+            guard.scoped_end();
+            _running_restore_tasks--;
+            LOG(INFO) << "restore task finish, eof: " << _input_stream->eof();
+            if (!res.ok()) {
+                _finished_restore_tasks++;
+                return;
+            }
+            // @TODO what if submit failed
+            // trigger_restore_v2(state, std::forward<TaskExecutor>(executor), std::forward<MemGuard>(guard));
+        };
+        RETURN_IF_ERROR(executor.submit(std::move(restore_task)));
+        // executor.submit(std::move(restore_task));
+    }
+    return Status::OK();
+    
+}
 } // namespace starrocks

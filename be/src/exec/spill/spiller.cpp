@@ -31,6 +31,7 @@
 #include "exec/spill/mem_table.h"
 #include "exec/spill/spilled_stream.h"
 #include "exec/spill/spiller_path_provider.h"
+#include "exec/spill/log_block_manager.h"
 #include "gutil/port.h"
 #include "runtime/runtime_state.h"
 #include "serde/column_array_serde.h"
@@ -196,7 +197,7 @@ StatusOr<std::unique_ptr<SpillFormater>> SpillFormater::create(SpilledOptions& o
 Status Spiller::prepare(RuntimeState* state) {
     // prepare
     // ASSIGN_OR_RETURN(_spill_fmt, SpillFormater::create(_opts.spill_type, _opts.chunk_builder));
-    ASSIGN_OR_RETURN(_spill_fmt, SpillFormater::create(_opts));
+    // ASSIGN_OR_RETURN(_spill_fmt, SpillFormater::create(_opts));
 
     for (size_t i = 0; i < _opts.mem_table_pool_size; ++i) {
         if (_opts.is_unordered) {
@@ -210,6 +211,12 @@ Status Spiller::prepare(RuntimeState* state) {
     }
 
     _file_group = std::make_shared<SpilledFileGroup>(*_spill_fmt);
+
+    ASSIGN_OR_RETURN(_formatter, spill::create_formatter(&_opts));
+    _block_group = std::make_shared<spill::BlockGroup>(_formatter.get());
+    _block_manager = _opts.block_manager;
+    // _block_manager = std::make_shared<spill::LogBlockManager>();
+    // RETURN_IF_ERROR(_block_manager->open());
 
     return Status::OK();
 }
@@ -305,6 +312,13 @@ StatusOr<std::shared_ptr<SpilledInputStream>> Spiller::_acquire_input_stream(Run
     return input_stream;
 }
 
+StatusOr<std::shared_ptr<spill::InputStream>> Spiller::_acquire_input_stream_v2(RuntimeState* state) {
+    if (_opts.is_unordered) {
+        return _block_group->as_unordered_stream();
+    }
+    return _block_group->as_ordered_stream(state, _opts.sort_exprs, _opts.sort_desc);
+}
+
 Status Spiller::_decrease_running_flush_tasks() {
     if (_running_flush_tasks.fetch_sub(1) == 1) {
         if (_flush_all_callback) {
@@ -316,5 +330,44 @@ Status Spiller::_decrease_running_flush_tasks() {
     }
     return Status::OK();
 }
+
+// refactor begin
+
+Status Spiller::flush_mem_table(RuntimeState* state, const MemTablePtr& mem_table) {
+    if (state->is_cancelled()) {
+        LOG(INFO) << "query is cancelled, just return";
+        return Status::OK();
+    }
+    // LOG(INFO) << "invoke flush_mem_table";
+    // flush mem table
+    // acuire block
+    spill::AcquireBlockOptions opts;
+    opts.query_id = state->query_id();
+    opts.plan_node_id = _opts.plan_node_id;
+    opts.name = _opts.name;
+    // @TODO plan node id, name
+    ASSIGN_OR_RETURN(auto block, _block_manager->acquire_block(opts));
+    // LOG(INFO) << "get block";
+    spill::FormatterContext ctx;
+
+    size_t num_rows_flushed = 0;
+    // @TODO remove callback
+    RETURN_IF_ERROR(mem_table->flush([&] (const auto& chunk) {
+        num_rows_flushed += chunk->num_rows();
+        // LOG(INFO) << "serialize chunk";
+        RETURN_IF_ERROR(_formatter->serialize(ctx, chunk, block));
+        return Status::OK();
+    }));
+    // LOG(INFO) << "flush block begin";
+    RETURN_IF_ERROR(block->flush());
+    _block_manager->release_block(block);
+    // LOG(INFO) << "flush block end";
+    std::lock_guard<std::mutex> l(_mutex);
+    _block_group->append(block);
+    LOG(INFO) << "append block: " << block->debug_string();
+    return Status::OK();
+}
+// refactor end
+
 
 } // namespace starrocks

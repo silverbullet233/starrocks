@@ -21,6 +21,7 @@
 #include "exec/spill/common.h"
 #include "exec/spill/executor.h"
 #include "exec/spill/spiller.hpp"
+#include "exec/spill/log_block_manager.h"
 #include "storage/chunk_helper.h"
 
 namespace starrocks::pipeline {
@@ -118,7 +119,12 @@ Status SpillablePartitionSortSinkOperatorFactory::prepare(RuntimeState* state) {
     _spill_options->chunk_builder = [&]() {
         return ChunkHelper::new_chunk(*_materialized_tuple_desc, _state->chunk_size());
     };
+    _spill_options->name = "local-sort-spill";
+    _spill_options->plan_node_id = _plan_node_id;
+    _spill_options->block_manager = std::make_shared<spill::LogBlockManager>();
+    RETURN_IF_ERROR(_spill_options->block_manager->open());
     // @TODO add driver id
+    // @TODO make block manager global in a query
     _spill_options->path_provider_factory = spill_manager->provider(fmt::format("local-sort-spill-{}", _plan_node_id));
 
     return Status::OK();
