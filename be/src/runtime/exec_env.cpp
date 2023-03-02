@@ -330,6 +330,9 @@ Status ExecEnv::_init(const std::vector<StorePath>& store_paths) {
     _heartbeat_flags = new HeartbeatFlags();
     auto capacity = std::max<size_t>(config::query_cache_capacity, 4L * 1024 * 1024);
     _cache_mgr = new query_cache::CacheManager(capacity);
+
+    _spill_dir_mgr = std::make_shared<spill::DirManager>();
+    RETURN_IF_ERROR(_spill_dir_mgr->init());
     return Status::OK();
 }
 

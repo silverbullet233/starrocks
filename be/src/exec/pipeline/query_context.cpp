@@ -21,6 +21,7 @@
 #include "exec/pipeline/fragment_context.h"
 #include "exec/pipeline/pipeline_fwd.h"
 #include "exec/workgroup/work_group.h"
+#include "exec/spill/log_block_manager.h"
 #include "runtime/client_cache.h"
 #include "runtime/current_thread.h"
 #include "runtime/data_stream_mgr.h"
@@ -145,6 +146,7 @@ Status QueryContext::init_query_once(workgroup::WorkGroup* wg) {
             _spill_manager = std::make_unique<QuerySpillManager>();
             auto res = _spill_manager->init(_query_id);
             st = st.ok() ? res : st;
+            _spill_block_manager = std::make_shared<spill::LogBlockManager>(_query_id);
         });
     }
 

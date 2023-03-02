@@ -23,14 +23,17 @@
 #include "common/config.h"
 #include "io/input_stream.h"
 #include "util/uid_util.h"
+#include "runtime/exec_env.h"
 
 namespace starrocks {
 namespace spill {
 
 class LogBlockContainer {
 public:
-    LogBlockContainer(const std::string& path, uint64_t id, std::shared_ptr<FileSystem> fs):
-        _path(path), _id(id), _fs(std::move(fs)) {}
+    // LogBlockContainer(const std::string& path, uint64_t id, std::shared_ptr<FileSystem> fs):
+    //     _path(path), _id(id), _fs(std::move(fs)) {}
+    LogBlockContainer(Dir* dir, TUniqueId query_id, int32_t plan_node_id, const std::string& plan_node_name, uint64_t id):
+        _dir(dir), _query_id(query_id), _plan_node_id(plan_node_id), _plan_node_name(plan_node_name),_id(id) {}
 
     ~LogBlockContainer() = default;
 
@@ -38,12 +41,24 @@ public:
 
     Status close();
 
+    Dir* dir() const {
+        return _dir;
+    }
+    int32_t plan_node_id() const {
+        return _plan_node_id;
+    }
+    std::string plan_node_name() const {
+        return _plan_node_name;
+    }
+
     size_t size() const {
         DCHECK(_writable_file!= nullptr);
         return _writable_file->size();
     }
     std::string path() const {
-        return _path;
+        std::ostringstream oss;
+        oss << _dir->dir() << "/" << print_id(_query_id) << "/" << _plan_node_name << "-" << _plan_node_id << "-" << _id;
+        return oss.str();
     }
     uint64_t id() const {
         return _id;
@@ -55,30 +70,32 @@ public:
 
     Status flush_data(size_t offset, size_t length);
 
-    // Status read_data(size_t offset, size_t length, std::string* output);
-    // @TODO new readable
-    // @TODO read with readable
-
     StatusOr<std::unique_ptr<io::InputStreamWrapper>> get_readable_file();
 
-    Status read_data(io::InputStreamWrapper* readable, int64_t count, void* data);
-
-    static StatusOr<LogBlockContainerPtr> create(const std::string& path, uint64_t id);
+    // static StatusOr<LogBlockContainerPtr> create(const std::string& path, uint64_t id);
+    static StatusOr<LogBlockContainerPtr> create(Dir* dir, TUniqueId query_id, int32_t plan_node_id, const std::string& plan_node_name, uint64_t id);
 
 private:
-    const std::string _path;
-    const uint64_t _id;
-    size_t _size = 0;
+    // const std::string _path;
+    // const uint64_t _id;
+    Dir* _dir;
+    TUniqueId _query_id;
+    int32_t _plan_node_id;
+    std::string _plan_node_name;
+    uint64_t _id;
+    // std::string _path;
+    // size_t _size = 0;
     std::unique_ptr<WritableFile> _writable_file;
-    std::shared_ptr<FileSystem> _fs;
+    // std::shared_ptr<FileSystem> _fs; // maintain in dir level
 };
 
 
 Status LogBlockContainer::open() {
-    std::string file_path = _path + "/" + std::to_string(_id);
+    // std::string file_path = _path + "/" + std::to_string(_id);
+    std::string file_path = path();
     WritableFileOptions opt;
     opt.mode = FileSystem::CREATE_OR_OPEN;
-    ASSIGN_OR_RETURN(_writable_file, _fs->new_writable_file(opt, file_path));
+    ASSIGN_OR_RETURN(_writable_file, _dir->fs()->new_writable_file(opt, file_path));
     LOG(INFO) << "create new file: " << file_path;
     return Status::OK();
 }
@@ -100,25 +117,17 @@ Status LogBlockContainer::flush_data(size_t offset, size_t length) {
     // @TODO update size
     return _writable_file->flush(WritableFile::FLUSH_ASYNC);
 }
-
+// @TODO refine return type, use RAII to tell container this block is no longer to read
 StatusOr<std::unique_ptr<io::InputStreamWrapper>> LogBlockContainer::get_readable_file() {
-    std::string file_path = _path + "/" + std::to_string(_id);
-    ASSIGN_OR_RETURN(auto f, _fs->new_sequential_file(file_path));
+    // std::string file_path = _path + "/" + std::to_string(_id);
+    std::string file_path = path();
+    ASSIGN_OR_RETURN(auto f, _dir->fs()->new_sequential_file(file_path));
     return std::make_unique<io::InputStreamWrapper>(std::move(f));
 }
 
-Status LogBlockContainer::read_data(io::InputStreamWrapper* readable, int64_t count, void* data) {
-    // do we need this method??
-    // ASSIGN_OR_RETURN(auto read_len, readable->read())
-    return Status::OK();
-}
-
-StatusOr<LogBlockContainerPtr> LogBlockContainer::create(const std::string& path, uint64_t id) {
-    ASSIGN_OR_RETURN(auto fs, FileSystem::CreateSharedFromString(path));
-    auto container =  std::make_shared<LogBlockContainer>(path, id, fs);
-    // RETURN_IF_ERROR(fs->create_dir_if_missing(path));
-    // @TODO pending fix
-    RETURN_IF_ERROR(fs->create_dir_recursive(path));
+StatusOr<LogBlockContainerPtr> LogBlockContainer::create(Dir* dir, TUniqueId query_id, int32_t plan_node_id, const std::string& plan_node_name, uint64_t id) {
+    auto container = std::make_shared<LogBlockContainer>(dir, query_id, plan_node_id, plan_node_name, id);
+    RETURN_IF_ERROR(container->open());
     return container;
 }
 
@@ -185,8 +194,7 @@ public:
 
     std::string debug_string() override {
         std::ostringstream oss;
-        oss << "LogBlock[container=" << _container->path() << "/" << _container->id()
-            << ", offset:" << _offset << ", length=" << _length <<"]";
+        oss << "LogBlock[container= " << _container->path() << ", offset=" << _offset << ", len=" << _length << "]";
         return oss.str();
     }
 
@@ -199,57 +207,46 @@ private:
 };
 
 Status LogBlockManager::open() {
-    std::vector<starrocks::StorePath> storage_paths;
-    RETURN_IF_ERROR(parse_conf_store_paths(config::storage_root_path, &storage_paths));
-    if (storage_paths.empty()) {
-        return Status::InvalidArgument("cannot found spill storage path");
-    }
-    for (const auto& path : storage_paths) {
-        _local_storage_paths.emplace_back(path.path + "/" + config::spill_local_storage_dir);
-    }
-    // init storage path
-    auto fs = FileSystem::Default();
-    for (const auto& path: _local_storage_paths) {
-        // LOG(INFO) << "create spill storage path: " << path;
-        RETURN_IF_ERROR(fs->create_dir_if_missing(path));
-    }
     return Status::OK();
 }
 
 StatusOr<BlockPtr> LogBlockManager::acquire_block(const AcquireBlockOptions& opts) {
     // 1. pick up storage path
     // @TODO we need a global component to pick up path by some strategies, e.g. res disk size
-    std::string storage_path = get_storage_path();
+    // std::string storage_path = get_storage_path();
+    AcquireDirOptions acquire_dir_opts;
+    ASSIGN_OR_RETURN(auto dir, ExecEnv::GetInstance()->spill_dir_mgr()->acquire_writable_dir(acquire_dir_opts));
     // storage_path + opts.query_id;
 
     // 2. get or create container from storage path
     // container name: dir/query_id/name-plan_node_id-id
     // @TODO pendign fix
-    ASSIGN_OR_RETURN(auto block_container, get_or_create_container(
-        storage_path + "/" + print_id(opts.query_id) + "/" + opts.name + "-" + std::to_string(opts.plan_node_id)));
+    ASSIGN_OR_RETURN(auto block_container, get_or_create_container(dir, opts.plan_node_id, opts.name));
+    // ASSIGN_OR_RETURN(auto block_container, get_or_create_container(
+    //     storage_path + "/" + print_id(opts.query_id) + "/" + opts.name + "-" + std::to_string(opts.plan_node_id)));
     // @TODO need block id?
     // @TODO fix size
     auto block = std::make_shared<LogBlock>(block_container, block_container->size());
     return block;
 }
 
-Status LogBlockManager::release_block(const BlockId& block_id) {
-    return Status::OK();
-}
-
 Status LogBlockManager::release_block(const BlockPtr& block) {
     auto log_block = dynamic_cast<LogBlock*>(block.get());
     auto container = log_block->container();
-    auto path = container->path();
-    std::string key = path + "/" + std::to_string(container->id());
-    LOG(INFO) << "release block, path: " << key;
+    auto dir = container->dir();
+    LOG(INFO) << "release block at container: " << container->path();
+    int32_t plan_node_id = container->plan_node_id();
     std::lock_guard<std::mutex> l(_mutex);
     // put related contianer back to the avaiable container
     // @TODO if container is full, should not put
-    auto iter = _available_containers_by_path.find(path);
-    DCHECK(iter != _available_containers_by_path.end());
-    iter->second->push(container);
-    LOG(INFO) << "return back container to path: " << path << ", container id: " << container->id();
+    auto iter = _available_containers.find(dir);
+    CHECK(iter != _available_containers.end());
+    auto sub_iter = iter->second->find(plan_node_id);
+    sub_iter->second->push(container);
+    // auto iter = _available_containers_by_path.find(path);
+    // DCHECK(iter != _available_containers_by_path.end());
+    // iter->second->push(container);
+    LOG(INFO) << "return back container to path: " << container->path();
     return Status::OK();
 }
 
@@ -259,30 +256,53 @@ std::string LogBlockManager::get_storage_path() {
 }
 
 StatusOr<LogBlockContainerPtr> LogBlockManager::get_or_create_container(
-    const std::string& path) {
+    Dir *dir, int32_t plan_node_id, const std::string& plan_node_name) {
     // create dir first
-    LOG(INFO) << "get_or_create_container at path: " << path;
+    LOG(INFO) << "get_or_create_container at dir: " << dir->dir() << ", plan node:" << plan_node_id << ", " << plan_node_name;
+    // LOG(INFO) << "get_or_create_container at path: " << path;
     std::lock_guard<std::mutex> l(_mutex);
-    auto iter = _available_containers_by_path.find(path);
-    if (iter != _available_containers_by_path.end()) {
-        auto& q = iter->second;
-        if (!q->empty()) {
-            auto container = q->front();
-            LOG(INFO) << "return an exist container, path: " << container->path() << ", id: " << container->id();
-            q->pop();
-            return container;
-        }
-    } else {
-        // _available_containers_by_path.insert({path, std::queue<LogBlockContainerPtr>()});
-        _available_containers_by_path.insert({path, std::make_shared<ContainerQueue>()});
-        iter = _available_containers_by_path.find(path);
+    auto iter = _available_containers.find(dir);
+    if (iter == _available_containers.end()) {
+        _available_containers.insert({dir, std::make_shared<PlanNodeContainerMap>()});
+        iter = _available_containers.find(dir);
     }
-    // create container
-    // generate container id
-    uint64_t id = ++_next_container_id;
-    ASSIGN_OR_RETURN(auto block_container, LogBlockContainer::create(path, id));
+    auto sub_iter = iter->second->find(plan_node_id);
+    if (sub_iter == iter->second->end()) {
+        iter->second->insert({plan_node_id, std::make_shared<ContainerQueue>()});
+        sub_iter = iter->second->find(plan_node_id);
+    }
+    auto& q = sub_iter->second;
+    if (!q->empty()) {
+        auto container = q->front();
+        LOG(INFO) << "return an exist container";
+        q->pop();
+        return container;
+    }
+    uint64_t id = _next_container_id++;
+    std::string container_dir = dir->dir() + "/" + print_id(_query_id);
+    RETURN_IF_ERROR(dir->fs()->create_dir_if_missing(container_dir));
+    ASSIGN_OR_RETURN(auto block_container, LogBlockContainer::create(dir,_query_id, plan_node_id, plan_node_name, id));
     RETURN_IF_ERROR(block_container->open());
-    LOG(INFO) << "create new container, path: " << path << ", id: " << id;
+    // auto iter = _available_containers_by_path.find(path);
+    // if (iter != _available_containers_by_path.end()) {
+    //     auto& q = iter->second;
+    //     if (!q->empty()) {
+    //         auto container = q->front();
+    //         LOG(INFO) << "return an exist container, path: " << container->path() << ", id: " << container->id();
+    //         q->pop();
+    //         return container;
+    //     }
+    // } else {
+    //     // _available_containers_by_path.insert({path, std::queue<LogBlockContainerPtr>()});
+    //     _available_containers_by_path.insert({path, std::make_shared<ContainerQueue>()});
+    //     iter = _available_containers_by_path.find(path);
+    // }
+    // // create container
+    // // generate container id
+    // uint64_t id = ++_next_container_id;
+    // ASSIGN_OR_RETURN(auto block_container, LogBlockContainer::create(path, id));
+    // RETURN_IF_ERROR(block_container->open());
+    // LOG(INFO) << "create new container, path: " << path << ", id: " << id;
     // iter->second->push(block_container);
     return block_container;
 }

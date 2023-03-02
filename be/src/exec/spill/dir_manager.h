@@ -14,32 +14,53 @@
 
 #pragma once
 
+#include <memory>
+
 #include "common/status.h"
 #include "common/statusor.h"
-#include "exec/spill/block.h"
-#include "gen_cpp/Types_types.h"
+#include "fs/fs.h"
 
 namespace starrocks {
 namespace spill {
 
-struct AcquireBlockOptions {
-    TUniqueId query_id;
-    int32_t plan_node_id;
-    std::string name;
-};
-
-// virtual class, use to allocate block
-// BlockManager holds lots of BlockContainer,
-// when CreateBlock, should choose one unused container first and acquire an block from container
-// one query has one BlockManager?
-class BlockManager {
+class Dir {
 public:
-    virtual ~BlockManager() = default;
-    virtual Status open() = 0;
-    // create a block with option, if cannot create return an error
-    virtual StatusOr<BlockPtr> acquire_block(const AcquireBlockOptions& opts) = 0;
+    Dir(const std::string& dir, std::shared_ptr<FileSystem> fs):
+        _dir(dir), _fs(fs) {}
 
-    virtual Status release_block(const BlockPtr& block) = 0;
+    FileSystem* fs() {
+        return _fs.get();
+    }
+    std::string dir() {
+        return _dir;
+    }
+
+private:
+    std::string _dir;
+    std::shared_ptr<FileSystem> _fs;
+    // @TODO maintain stats, such as capacity
 };
+using DirPtr = std::shared_ptr<Dir>;
+
+struct AcquireDirOptions {
+    // @TBD
+};
+
+class DirManager {
+public:
+    DirManager() = default;
+    ~DirManager() = default;
+
+    // read from confit
+    Status init();
+
+    // choose a dir for write
+    StatusOr<Dir*> acquire_writable_dir(const AcquireDirOptions& opts);
+    // @TODO update dir stats
+
+private:
+    std::vector<DirPtr> _dirs;
+};
+
 }
 }

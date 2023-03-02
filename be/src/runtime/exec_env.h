@@ -41,6 +41,7 @@
 #include "common/status.h"
 #include "exec/query_cache/cache_manager.h"
 #include "exec/workgroup/work_group_fwd.h"
+#include "exec/spill/dir_manager.h"
 #include "storage/options.h"
 // NOTE: Be careful about adding includes here. This file is included by many files.
 // Unnecssary includes will cause compilatio very slow.
@@ -227,6 +228,10 @@ public:
 
     query_cache::CacheManagerRawPtr cache_mgr() const { return _cache_mgr; }
 
+    spill::DirManager* spill_dir_mgr() const {
+        return _spill_dir_mgr.get();
+    }
+
 private:
     Status _init(const std::vector<StorePath>& store_paths);
     void _destroy();
@@ -343,6 +348,7 @@ private:
 
     AgentServer* _agent_server = nullptr;
     query_cache::CacheManagerRawPtr _cache_mgr;
+    std::shared_ptr<spill::DirManager> _spill_dir_mgr;
 };
 
 template <>

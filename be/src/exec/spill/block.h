@@ -42,7 +42,6 @@ public:
     
     virtual Status flush() = 0;
 
-    // virtual Status read_all(std::string* output) = 0;
     virtual Status read_fully(void* data, int64_t count) = 0;
 
     virtual std::string debug_string() = 0;

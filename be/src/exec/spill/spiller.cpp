@@ -28,6 +28,7 @@
 #include "common/status.h"
 #include "common/statusor.h"
 #include "exec/sort_exec_exprs.h"
+#include "exec/pipeline/query_context.h"
 #include "exec/spill/mem_table.h"
 #include "exec/spill/spilled_stream.h"
 #include "exec/spill/spiller_path_provider.h"
@@ -214,7 +215,8 @@ Status Spiller::prepare(RuntimeState* state) {
 
     ASSIGN_OR_RETURN(_formatter, spill::create_formatter(&_opts));
     _block_group = std::make_shared<spill::BlockGroup>(_formatter.get());
-    _block_manager = _opts.block_manager;
+    // _block_manager = _opts.block_manager;
+    _block_manager = state->query_ctx()->spill_block_manager();
     // _block_manager = std::make_shared<spill::LogBlockManager>();
     // RETURN_IF_ERROR(_block_manager->open());
 

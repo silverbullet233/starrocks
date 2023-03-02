@@ -24,6 +24,7 @@
 #include "exec/pipeline/pipeline_fwd.h"
 #include "exec/pipeline/stream_epoch_manager.h"
 #include "exec/spill/query_spill_manager.h"
+#include "exec/spill/block_manager.h"
 #include "gen_cpp/InternalService_types.h" // for TQueryOptions
 #include "gen_cpp/Types_types.h"           // for TUniqueId
 #include "gen_cpp/internal_service.pb.h"
@@ -165,6 +166,11 @@ public:
 
     QuerySpillManager* spill_manager() { return _spill_manager.get(); }
 
+    // @TODO unique ptr
+    std::shared_ptr<spill::BlockManager> spill_block_manager() {
+        return _spill_block_manager;
+    }
+
 public:
     static constexpr int DEFAULT_EXPIRE_SECONDS = 300;
 
@@ -208,6 +214,8 @@ private:
     std::shared_ptr<StreamEpochManager> _stream_epoch_manager;
 
     std::unique_ptr<QuerySpillManager> _spill_manager;
+
+    std::shared_ptr<spill::BlockManager> _spill_block_manager;
 };
 
 class QueryContextManager {

@@ -121,8 +121,9 @@ Status SpillablePartitionSortSinkOperatorFactory::prepare(RuntimeState* state) {
     };
     _spill_options->name = "local-sort-spill";
     _spill_options->plan_node_id = _plan_node_id;
-    _spill_options->block_manager = std::make_shared<spill::LogBlockManager>();
-    RETURN_IF_ERROR(_spill_options->block_manager->open());
+    // @TOOD move to query ctx
+    // _spill_options->block_manager = std::make_shared<spill::LogBlockManager>();
+    // RETURN_IF_ERROR(_spill_options->block_manager->open());
     // @TODO add driver id
     // @TODO make block manager global in a query
     _spill_options->path_provider_factory = spill_manager->provider(fmt::format("local-sort-spill-{}", _plan_node_id));

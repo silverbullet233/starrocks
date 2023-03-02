@@ -123,6 +123,7 @@ set(EXEC_FILES
     spill/spiller_factory.cpp
     spill/spilled_stream.cpp
     spill/mem_table.cpp
+    spill/dir_manager.cpp
     spill/log_block_manager.cpp
     spill/input_stream.cpp
     spill/formatter.cpp
