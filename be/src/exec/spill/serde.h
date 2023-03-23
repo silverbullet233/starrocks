@@ -17,6 +17,7 @@
 #include "column/vectorized_fwd.h"
 #include "common/status.h"
 #include "common/statusor.h"
+#include "exec/spill/options.h"
 #include "exec/spill/block_manager.h"
 #include "gen_cpp/types.pb.h"
 #include "util/raw_container.h"
@@ -30,14 +31,14 @@ enum class SerdeType {
 
 struct SerdeContext {
     std::string serialize_buffer;
-    raw::RawString compress_buffer;
 };
-
+class Spiller;
 // Serde is used to serialize and deserialize spilled data.
 class Serde;
 using SerdePtr = std::shared_ptr<Serde>;
 class Serde {
 public:
+    Serde(Spiller* parent): _parent(parent) {}
     virtual ~Serde() = default;
 
     // serialize chunk and append the serialized data into block
@@ -45,7 +46,11 @@ public:
     // deserialize data from block, return the chunk after deserialized
     virtual StatusOr<ChunkUniquePtr> deserialize(SerdeContext& ctx, const BlockPtr block) = 0;
 
-    static StatusOr<SerdePtr> create_serde(const ChunkBuilder& chunk_builder, const CompressionTypePB& compress_type);
-};
+protected:
+    Spiller* _parent = nullptr;
 
+};
+using SerdePtr = std::shared_ptr<Serde>;
+
+StatusOr<SerdePtr> create_serde(SpilledOptions* options, Spiller* parent);
 } // namespace starrocks::spill

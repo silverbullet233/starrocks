@@ -84,7 +84,9 @@ struct SpilledOptions {
 
     int32_t plan_node_id = 0;
 
-    CompressionTypePB compress_type = CompressionTypePB::LZ4;
+    int encode_level = 0;
+    // the number of columns in spilled chunk, used to initialize EncodeContext
+    size_t column_number = 0;
 
     size_t max_memory_size_each_partition = 2 * 1024 * 1024;
     size_t min_spilled_size = 1 * 1024 * 1024;
