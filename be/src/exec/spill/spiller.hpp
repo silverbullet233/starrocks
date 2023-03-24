@@ -88,6 +88,7 @@ StatusOr<ChunkPtr> Spiller::restore(RuntimeState* state, TaskExecutor&& executor
     ASSIGN_OR_RETURN(auto chunk, _reader->restore(state, executor, guard));
     chunk->check_or_die();
     _restore_read_rows += chunk->num_rows();
+    COUNTER_UPDATE(_metrics.restore_rows, chunk->num_rows());
 
     RETURN_IF_ERROR(trigger_restore(state, std::forward<TaskExecutor>(executor), std::forward<MemGuard>(guard)));
     return chunk;
@@ -165,7 +166,7 @@ Status SpillerReader::trigger_restore(RuntimeState* state, TaskExecutor&& execut
     // if all is well and input stream enable prefetch and not eof
     if (!_current_stream->eof()) {
         auto restore_task = [this, state, guard]() {
-            RETURN_IF(guard.scoped_begin(), Status::OK());
+            RETURN_IF(!guard.scoped_begin(), Status::OK());
             _running_restore_tasks++;
             SerdeContext ctx;
             auto res = _current_stream->prefetch(ctx);

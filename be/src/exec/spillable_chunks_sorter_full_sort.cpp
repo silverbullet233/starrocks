@@ -61,7 +61,7 @@ Status SpillableChunksSorterFullSort::done(RuntimeState* state) {
         return ChunksSorterFullSort::done(state);
     }
 
-    if (_sorted_chunks.empty() && _unsorted_chunk == nullptr) {
+    if (_sorted_chunks.empty() && (_unsorted_chunk == nullptr || _unsorted_chunk->is_empty())) {
         // force flush
         RETURN_IF_ERROR(_spiller->flush(state, io_executor(), spill::MemTrackerGuard(tls_mem_tracker)));
     } else {
@@ -131,7 +131,7 @@ void SpillableChunksSorterFullSort::_update_revocable_mem_bytes() {
 
 std::function<StatusOr<ChunkPtr>()> SpillableChunksSorterFullSort::_spill_process_task() {
     return [this]() -> StatusOr<ChunkPtr> {
-        if (_unsorted_chunk != nullptr) {
+        if (_unsorted_chunk != nullptr && !_unsorted_chunk->is_empty()) {
             return std::move(_unsorted_chunk);
         }
 
