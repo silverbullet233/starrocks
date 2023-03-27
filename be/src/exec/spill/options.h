@@ -26,7 +26,9 @@ struct SpilledChunkBuildSchema {
     void set_schema(const ChunkPtr& chunk) { _chunk = chunk->clone_empty(0); }
     bool empty() { return _chunk->num_columns() == 0; }
     ChunkUniquePtr new_chunk() { return _chunk->clone_unique(); }
-
+    size_t column_number() {
+        return _chunk->num_columns();
+    }
 private:
     ChunkPtr _chunk{new Chunk()};
 };
@@ -35,6 +37,9 @@ struct ChunkBuilder {
     ChunkBuilder() = default;
     ChunkUniquePtr operator()() const { return _spill_chunk_schema->new_chunk(); }
     auto& chunk_schema() { return _spill_chunk_schema; }
+    size_t column_number() const {
+        return _spill_chunk_schema->column_number();
+    }
 
 private:
     std::shared_ptr<SpilledChunkBuildSchema> _spill_chunk_schema;

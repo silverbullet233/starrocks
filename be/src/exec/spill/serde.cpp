@@ -30,6 +30,16 @@ public:
             : Serde(parent), _chunk_builder(std::move(chunk_builder)), _encode_context(std::move(encode_context)) {}
     ~ColumnarSerde() override = default;
 
+    Status prepare() override {
+        if (_encode_context == nullptr) {
+            auto column_number = _parent->chunk_builder().column_number();
+            auto encode_level = _parent->options().encode_level;
+            LOG(INFO) << "init encode_context, column_number: " << column_number << ", encode_level:" << encode_level;
+            _encode_context = serde::EncodeContext::get_encode_context_shared_ptr(column_number, encode_level);
+        }
+        return Status::OK();
+    }
+
     Status serialize(SerdeContext& ctx, const ChunkPtr& chunk, BlockPtr block) override;
     StatusOr<ChunkUniquePtr> deserialize(SerdeContext& ctx, const BlockPtr block) override;
 
@@ -194,8 +204,8 @@ StatusOr<ChunkUniquePtr> ColumnarSerde::deserialize(SerdeContext& ctx, const Blo
 }
 
 StatusOr<SerdePtr> create_serde(SpilledOptions* options, Spiller* parent) {
-    auto encode_context =
-            serde::EncodeContext::get_encode_context_shared_ptr(options->column_number, options->encode_level);
-    return std::make_shared<ColumnarSerde>(parent, parent->chunk_builder(), encode_context);
+    // auto encode_context =
+    //         serde::EncodeContext::get_encode_context_shared_ptr(options->column_number, options->encode_level);
+    return std::make_shared<ColumnarSerde>(parent, parent->chunk_builder(), nullptr);
 }
 } // namespace starrocks::spill

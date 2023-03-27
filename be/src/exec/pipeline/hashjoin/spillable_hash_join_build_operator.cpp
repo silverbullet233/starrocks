@@ -192,6 +192,10 @@ Status SpillableHashJoinBuildOperatorFactory::prepare(RuntimeState* state) {
     _spill_options->block_manager = state->query_ctx()->spill_manager()->block_manager();
     _spill_options->name = "hash-join-build";
     _spill_options->plan_node_id = _plan_node_id;
+    _spill_options->encode_level = state->spill_encode_level();
+    // @TODO set column number
+    // @TODO can we know shema here?
+    // _spill_options->column_number = _materialized_tuple_desc->slots().size();
     _spill_options->read_shared =
             _hash_joiner_factory->hash_join_param()._distribution_mode == TJoinDistributionMode::BROADCAST;
 

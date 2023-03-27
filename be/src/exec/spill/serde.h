@@ -41,6 +41,9 @@ public:
     Serde(Spiller* parent): _parent(parent) {}
     virtual ~Serde() = default;
 
+    // stupid interface, should be removed
+    virtual Status prepare() = 0;
+
     // serialize chunk and append the serialized data into block
     virtual Status serialize(SerdeContext& ctx, const ChunkPtr& chunk, BlockPtr block) = 0;
     // deserialize data from block, return the chunk after deserialized
