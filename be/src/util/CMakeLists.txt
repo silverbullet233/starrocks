@@ -96,6 +96,7 @@ set(UTIL_FILES
   tdigest.cpp
   debug/query_trace_impl.cpp
   random.cc
+  failpoint/fail_point.cpp
 )
 
 add_library(Util STATIC

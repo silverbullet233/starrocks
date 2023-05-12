@@ -380,6 +380,7 @@ import com.starrocks.sql.ast.UnionRelation;
 import com.starrocks.sql.ast.UnitBoundary;
 import com.starrocks.sql.ast.UnitIdentifier;
 import com.starrocks.sql.ast.UnsupportedStmt;
+import com.starrocks.sql.ast.UpdateFailPointStatusStatement;
 import com.starrocks.sql.ast.UpdateStmt;
 import com.starrocks.sql.ast.UseCatalogStmt;
 import com.starrocks.sql.ast.UseDbStmt;
@@ -3299,6 +3300,33 @@ public class AstBuilder extends StarRocksBaseVisitor<ParseNode> {
             properties.put(property.getKey(), property.getValue());
         }
         return new ModifyStorageVolumePropertiesClause(properties, createPos(context));
+    }
+
+    // ----------------------------------------------- FailPoint Statement -----------------------------------------------------
+
+    @Override
+    public ParseNode visitUpdateFailPointStatusStatement(
+            StarRocksParser.UpdateFailPointStatusStatementContext ctx) {
+        System.out.printf("visitUpdateFailPointStatusStatement");
+        String failpointName = ((StringLiteral) visit(ctx.string(0))).getStringValue();
+        List<String> backendList = null;
+        if (ctx.BACKEND() != null) {
+            String tmp = ((StringLiteral) visit(ctx.string(1))).getStringValue();
+            backendList = Lists.newArrayList(tmp.split(","));
+        }
+        if (ctx.ENABLE() != null) {
+            if (ctx.TIMES() != null) {
+                int nTimes = Integer.parseInt(ctx.INTEGER_VALUE().getText());
+                // @TODO check nTimes
+                return new UpdateFailPointStatusStatement(failpointName, nTimes, backendList, createPos(ctx));
+            } else if (ctx.PROBABILITY() != null) {
+                double probability = Double.parseDouble(ctx.DECIMAL_VALUE().getText());
+                // @TODO check probability
+                return new UpdateFailPointStatusStatement(failpointName, probability, backendList, createPos(ctx));
+            }
+            return new UpdateFailPointStatusStatement(failpointName, true, backendList, createPos(ctx));
+        }
+        return new UpdateFailPointStatusStatement(failpointName, false, backendList, createPos(ctx));
     }
 
     // ----------------------------------------------- Unsupported Statement -----------------------------------------------------

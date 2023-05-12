@@ -216,9 +216,13 @@ LogBlockManager::LogBlockManager(TUniqueId query_id) : _query_id(std::move(query
 }
 
 LogBlockManager::~LogBlockManager() {
+    // std::lock_guard<std::mutex> l(_mutex);
+    TRACE_SPILL_LOG << "destruct log block manager";
+    TRACE_SPILL_LOG << "release full containers";
     for (auto& container : _full_containers) {
         container.reset();
     }
+    TRACE_SPILL_LOG << "release available containers";
     for (auto& [dir, container_map] : _available_containers) {
         for (auto& [_, containers] : *container_map) {
             containers.reset();

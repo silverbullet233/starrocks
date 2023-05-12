@@ -40,6 +40,7 @@ StatusOr<ChunkPtr> SpillProcessOperator::pull_chunk(RuntimeState* state) {
     DCHECK(_channel->current_task());
 
     auto chunk_st = _channel->current_task()();
+    // @TODO force set fail?
     if (chunk_st.status().ok() && !state->is_cancelled()) {
         auto chunk = chunk_st.value();
         if (chunk != nullptr && !chunk->is_empty()) {

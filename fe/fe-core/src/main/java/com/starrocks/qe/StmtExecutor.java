@@ -129,6 +129,7 @@ import com.starrocks.sql.ast.ShowStmt;
 import com.starrocks.sql.ast.StatementBase;
 import com.starrocks.sql.ast.SystemVariable;
 import com.starrocks.sql.ast.UnsupportedStmt;
+import com.starrocks.sql.ast.UpdateFailPointStatusStatement;
 import com.starrocks.sql.ast.UpdateStmt;
 import com.starrocks.sql.ast.UseCatalogStmt;
 import com.starrocks.sql.ast.UseDbStmt;
@@ -550,6 +551,9 @@ public class StmtExecutor {
                 handleSetRole();
             } else if (parsedStmt instanceof SetDefaultRoleStmt) {
                 handleSetDefaultRole();
+            } else if (parsedStmt instanceof UpdateFailPointStatusStatement) {
+                LOG.info("handle updateFailPointStatus " + parsedStmt.toSql());
+                handleUpdateFailPointStatusStmt();
             } else {
                 context.getState().setError("Do not support this query.");
             }
@@ -1234,6 +1238,11 @@ public class StmtExecutor {
         ExportStmt exportStmt = (ExportStmt) parsedStmt;
         exportStmt.setExportStartTime(context.getStartTime());
         context.getGlobalStateMgr().getExportMgr().addExportJob(queryId, exportStmt);
+    }
+
+    private void handleUpdateFailPointStatusStmt() throws Exception {
+        FailPointExecutor executor = new FailPointExecutor(context, parsedStmt);
+        executor.execute();
     }
 
     public PQueryStatistics getQueryStatisticsForAuditLog() {

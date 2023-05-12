@@ -159,6 +159,7 @@ public class CurrentQueryInfoProvider {
     }
 
     private List<Pair<Request, Future<PCollectQueryStatisticsResult>>> sendCollectQueryRequest(
+
             Map<TNetworkAddress, Request> requests) throws AnalysisException {
         final List<Pair<Request, Future<PCollectQueryStatisticsResult>>> futures = Lists.newArrayList();
         for (TNetworkAddress address : requests.keySet()) {

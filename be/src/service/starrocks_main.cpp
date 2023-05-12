@@ -69,6 +69,7 @@
 #include "util/thrift_rpc_helper.h"
 #include "util/thrift_server.h"
 #include "util/uid_util.h"
+#include "util/failpoint/fail_point.h"
 
 #if !_GLIBCXX_USE_CXX11_ABI
 #error _GLIBCXX_USE_CXX11_ABI must be non-zero

@@ -94,7 +94,8 @@ struct SpilledOptions {
     bool read_shared = false;
     int encode_level = 0;
 
-    BlockManager* block_manager = nullptr;
+    // BlockManager* block_manager = nullptr;
+    std::shared_ptr<BlockManager> block_manager;
 };
 
 // spill strategy

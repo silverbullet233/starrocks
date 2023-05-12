@@ -61,6 +61,7 @@ Status RawSpillerWriter::flush_task(RuntimeState* state, const MemTablePtr& mem_
     if (state->is_cancelled()) {
         return Status::OK();
     }
+    // @TODO spiller may be released
 
     const auto& serde = _spiller->serde();
     spill::AcquireBlockOptions opts;

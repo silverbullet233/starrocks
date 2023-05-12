@@ -205,6 +205,9 @@ set_target_properties(mysql PROPERTIES IMPORTED_LOCATION ${THIRDPARTY_DIR}/lib/m
 add_library(hdfs STATIC IMPORTED)
 set_target_properties(hdfs PROPERTIES IMPORTED_LOCATION ${THIRDPARTY_DIR}/lib/libhdfs.a)
 
+add_library(fiu STATIC IMPORTED)
+set_target_properties(fiu PROPERTIES IMPORTED_LOCATION /home/disk2/xujia/WorkSpace/silverbullet233/starrocks/thirdparty/src/libfiu/libfiu/libfiu.a)
+
 # Allow FindOpenSSL() to find correct static libraries
 set(OPENSSL_ROOT_DIR ${THIRDPARTY_DIR} CACHE STRING "root directory of an OpenSSL installation")
 message(STATUS "Using OpenSSL Root Dir: ${OPENSSL_ROOT_DIR}")
@@ -519,6 +522,9 @@ if (ENABLE_QUERY_DEBUG_TRACE)
     message(STATUS "enable query debug trace")
 endif()
 
+# if enable fault injection
+set(CXX_COMMON_FLAGS "${CXX_COMMON_FLAGS} -DFIU_ENABLE")
+
 # For CMAKE_BUILD_TYPE=Debug
 #   -ggdb: Enable gdb debugging
 # Debug information is stored as dwarf2 to be as compatible as possible
@@ -576,6 +582,7 @@ add_definitions(-DHAVE_INTTYPES_H -DHAVE_NETINET_IN_H)
 include_directories(
     BEFORE
     ${SRC_DIR}/formats/orc/apache-orc/c++/include/
+    /home/disk2/xujia/WorkSpace/silverbullet233/starrocks/thirdparty/src/libfiu/libfiu   
 )
 include_directories(
     ${SRC_DIR}/
@@ -718,6 +725,11 @@ if (${WITH_CACHELIB} STREQUAL "ON")
         ${WL_END_GROUP}
     )
 endif()
+
+set(STARROCKS_DEPENDENCIES
+    ${STARROCKS_DEPENDENCIES}
+    fiu
+)
 
 if ("${CMAKE_BUILD_TARGET_ARCH}" STREQUAL "x86" OR "${CMAKE_BUILD_TARGET_ARCH}" STREQUAL "x86_64")
     set(STARROCKS_DEPENDENCIES

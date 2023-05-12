@@ -72,6 +72,7 @@
 #include "util/stopwatch.hpp"
 #include "util/thrift_util.h"
 #include "util/uid_util.h"
+#include "util/failpoint/fail_point.h"
 
 namespace starrocks {
 
@@ -405,9 +406,16 @@ Status PInternalServiceImplBase<T>::_exec_plan_fragment(brpc::Controller* cntl) 
     }
 }
 
+DEFINE_FAIL_POINT(test);
+
 template <typename T>
 Status PInternalServiceImplBase<T>::_exec_plan_fragment_by_pipeline(const TExecPlanFragmentParams& t_common_param,
                                                                     const TExecPlanFragmentParams& t_unique_request) {
+    FAIL_POINT_TRIGGER_EXECUTE(test, {
+        LOG(INFO) << "test failpoint execute";
+    });
+    FAIL_POINT_TRIGGER_RETURN(test, Status::InternalError("force fail exec_plan_fragment"));
+    // fiu_return_on("test", Status::InternalError("force fail exec_plan_fragment"));
     pipeline::FragmentExecutor fragment_executor;
     auto status = fragment_executor.prepare(_exec_env, t_common_param, t_unique_request);
     if (status.ok()) {
@@ -971,6 +979,25 @@ void PInternalServiceImplBase<T>::execute_command(google::protobuf::RpcControlle
     }
     st.to_protobuf(response->mutable_status());
 }
+
+template <typename T>
+void PInternalServiceImplBase<T>::update_fail_point_status(google::protobuf::RpcController* controller,
+        const PUpdateFailPointStatusRequest* request,
+        PUpdateFailPointStatusResponse* response, google::protobuf::Closure* done) {
+    LOG(INFO) << "update fail point mode";
+    ClosureGuard closure_guard(done);
+    // @TODO use butil mutex in FailPoint??
+    const auto name = request->fail_point_name();
+    LOG(INFO) << "name: " << name;
+    auto fp = starrocks::failpoint::FailPointRegistry::GetInstance()->get(name);
+    if (fp == nullptr) {
+        response->mutable_status()->set_status_code(TStatusCode::INVALID_ARGUMENT);
+        return;
+    }
+    fp->setMode(request->trigger_mode());
+    response->mutable_status()->set_status_code(TStatusCode::OK);
+}
+
 
 template class PInternalServiceImplBase<PInternalService>;
 template class PInternalServiceImplBase<doris::PBackendService>;

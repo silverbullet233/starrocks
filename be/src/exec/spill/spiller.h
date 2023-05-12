@@ -156,7 +156,7 @@ public:
     const std::unique_ptr<SpillerWriter>& writer() { return _writer; }
 
     const std::shared_ptr<spill::Serde>& serde() { return _serde; }
-    BlockManager* block_manager() { return _block_manager; }
+    std::shared_ptr<BlockManager> block_manager() { return _block_manager; }
     const ChunkBuilder& chunk_builder() { return _chunk_builder; }
 
 private:
@@ -182,7 +182,8 @@ private:
     size_t _restore_read_rows{};
 
     std::shared_ptr<spill::Serde> _serde;
-    spill::BlockManager* _block_manager = nullptr;
+    // spill::BlockManager* _block_manager = nullptr;
+    std::shared_ptr<BlockManager> _block_manager;
     std::shared_ptr<spill::BlockGroup> _block_group;
 
     std::atomic_bool _is_cancel = false;

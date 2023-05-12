@@ -284,7 +284,10 @@ statement
     | descStorageVolumeStatement
     | setDefaultStorageVolumeStatement
 
-    //Unsupported Statement
+    // FailPoint Statement
+    | updateFailPointStatusStatement
+    | showFailPointStatusStatement
+    // Unsupported Statement
     | unsupportedStatement
     ;
 
@@ -746,6 +749,19 @@ descStorageVolumeStatement
 setDefaultStorageVolumeStatement
     : SET identifierOrString AS DEFAULT STORAGE VOLUME
     ;
+
+// ------------------------------------------- FailPoint Statement -----------------------------------------------------
+
+updateFailPointStatusStatement
+    : ADMIN DISABLE FAILPOINT string (ON BACKEND string)?
+    | ADMIN ENABLE FAILPOINT string (WITH INTEGER_VALUE TIMES)? (ON BACKEND string)?
+    | ADMIN ENABLE FAILPOINT string (WITH DECIMAL_VALUE PROBABILITY)? (ON BACKEND string)?
+    ;
+
+showFailPointStatusStatement
+    : ADMIN SHOW FAILPOINT (ON BACKEND string)?
+    ;
+
 
 // ------------------------------------------- Alter Clause ------------------------------------------------------------
 
