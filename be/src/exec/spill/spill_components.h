@@ -272,6 +272,8 @@ public:
 
     const auto& level_to_partitions() { return _level_to_partitions; }
 
+    int64_t mem_consumption() { return _mem_tracker->consumption(); }
+
 private:
     Status _init_with_partition_nums(RuntimeState* state, int num_partitions);
 
