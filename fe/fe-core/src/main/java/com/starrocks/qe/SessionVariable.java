@@ -145,6 +145,7 @@ public class SessionVariable implements Serializable, Writable, Cloneable {
     public static final String ENABLE_INSERT_STRICT = "enable_insert_strict";
     public static final String ENABLE_SPILL = "enable_spill";
     public static final String SPILLABLE_OPERATOR_MASK = "spillable_operator_mask";
+    public static final String ENABLE_AUTO_RELEASE_BUFFER = "enable_auto_release_buffer";
     // spill mode: auto, force
     public static final String SPILL_MODE = "spill_mode";
     // if set to true, some of stmt will be forwarded to leader FE to get result
@@ -724,6 +725,9 @@ public class SessionVariable implements Serializable, Writable, Cloneable {
     // default value is -1, means all operators can spill
     @VariableMgr.VarAttr(name = SPILLABLE_OPERATOR_MASK, flag = VariableMgr.INVISIBLE)
     private long spillableOperatorMask = -1;
+
+    @VariableMgr.VarAttr(name = ENABLE_AUTO_RELEASE_BUFFER, flag = VariableMgr.INVISIBLE)
+    private boolean enableAutoReleaseBuffer = true;
 
     @VariableMgr.VarAttr(name = SPILL_MODE)
     private String spillMode = "auto";
@@ -2178,6 +2182,7 @@ public class SessionVariable implements Serializable, Writable, Cloneable {
             tResult.setSpill_operator_max_bytes(spillOperatorMaxBytes);
             tResult.setSpill_encode_level(spillEncodeLevel);
             tResult.setSpillable_operator_mask(spillableOperatorMask);
+            tResult.setEnable_auto_release_buffer(enableAutoReleaseBuffer);
         }
 
         // Compression Type

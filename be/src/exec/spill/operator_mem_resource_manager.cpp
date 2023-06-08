@@ -26,6 +26,9 @@ void OperatorMemoryResourceManager::prepare(OP* op, QuerySpillManager* query_spi
     if (_spillable) {
         _query_spill_manager->increase_spillable_operators();
     }
+    if (op->releaseable()) {
+        _query_spill_manager->increase_releasable_operators();
+    }
 }
 
 void OperatorMemoryResourceManager::to_low_memory_mode() {
@@ -35,6 +38,28 @@ void OperatorMemoryResourceManager::to_low_memory_mode() {
         if (_spillable) {
             _query_spill_manager->increase_spilling_operators();
         }
+        if (_op->releaseable()) {
+            set_releasing();
+            _query_spill_manager->increase_releasing_operators();
+            LOG(INFO) << "operator set to releasing, op: " << _op->get_name() << ", " << _op
+                << ", current releasing ops: " << _query_spill_manager->releasing_operators();
+        }
+    }
+}
+
+void OperatorMemoryResourceManager::to_mid_memory_mode() {
+    if (_performance_level < MEM_RESOURCE_MID_MEMORY) {
+        _performance_level = MEM_RESOURCE_MID_MEMORY;
+        _op->set_execute_mode(_performance_level);
+    }
+}
+
+void OperatorMemoryResourceManager::set_release_done() {
+    if (_release_state != MEM_RELEASE_STATE::RELEASE_DONE) {
+        _release_state = MEM_RELEASE_STATE::RELEASE_DONE;
+        _query_spill_manager->decrease_releasing_operators();
+        LOG(INFO) << "operator release done, op: " << _op->get_name() << ", " << _op
+            << ", current releasing ops: " << _query_spill_manager->releasing_operators();
     }
 }
 

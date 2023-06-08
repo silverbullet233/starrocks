@@ -136,6 +136,36 @@ StatusOr<ChunkPtr> LocalExchangeSourceOperator::pull_chunk(RuntimeState* state) 
     return std::move(chunk);
 }
 
+const size_t min_local_memory_limit = 1LL * 1024 * 1024;
+
+void LocalExchangeSourceOperator::release_memory() {
+    if (_local_memory_limit != min_local_memory_limit) {
+        LOG(INFO) << "LocalExchangeSource enter release memory mode, " << this << ", current memory use: " << _local_memory_usage
+            << ", whole exchanger use: " << _memory_manager->get_memory_usage();
+    }
+    _local_memory_limit = min_local_memory_limit;
+    // @TODO backpress exchanger
+    _memory_manager->update_max_memory_usage(min_local_memory_limit);
+
+}
+
+bool LocalExchangeSourceOperator::release_memory_done() {
+    if (_local_memory_usage <= min_local_memory_limit) {
+        LOG(INFO) << "LocalExchangeSource release memory done, " << this
+            << ", current memory use: " << _local_memory_usage
+            << ", whole exchanger use: " << _memory_manager->get_memory_usage();
+        return true;
+    }
+    return false;
+    // return _local_memory_usage <= min_local_memory_limit;
+    // @TODO what if single chunk is larger than min_local_memory_limit;
+    // @TODO what if single
+    // return _partition_rows_num > 0 || !_full_chunk_queue.empty(); 
+}
+void LocalExchangeSourceOperator::set_execute_mode(int performance_level) {
+    release_memory();
+}
+
 ChunkPtr LocalExchangeSourceOperator::_pull_passthrough_chunk(RuntimeState* state) {
     std::lock_guard<std::mutex> l(_chunk_lock);
 

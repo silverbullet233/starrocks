@@ -267,6 +267,10 @@ StatusOr<DriverState> PipelineDriver::process(RuntimeState* runtime_state, int w
                     continue;
                 }
 
+                // _adjust_memory_usage(runtime_state, query_mem_tracker.get(), curr_op, nullptr);
+                _adjust_releasable_memory(runtime_state, curr_op);
+                // RELEASE_RESERVED_GUARD();
+                // @TODO change it here?
                 // try successive operator pairs
                 if (!curr_op->has_output() || !next_op->need_input()) {
                     continue;
@@ -284,6 +288,7 @@ StatusOr<DriverState> PipelineDriver::process(RuntimeState* runtime_state, int w
                     SCOPED_TIMER(curr_op->_pull_timer);
                     QUERY_TRACE_SCOPED(curr_op->get_name(), "pull_chunk");
                     maybe_chunk = curr_op->pull_chunk(runtime_state);
+                    // @TODO after each pull, should update releasing operator num
                 }
                 return_status = maybe_chunk.status();
                 if (!return_status.ok() && !return_status.is_end_of_file()) {
@@ -459,23 +464,72 @@ void PipelineDriver::_close_operators(RuntimeState* runtime_state) {
     }
 }
 
+void PipelineDriver::_adjust_releasable_memory(RuntimeState* state, OperatorPtr& op) {
+    if (state->enable_spill() && state->enable_auto_release_buffer()) {
+        auto& mem_resource_mgr = op->mem_resource_manager();
+        // check
+        if (mem_resource_mgr.is_releasing()) {
+            if (op->release_memory_done()) {
+                mem_resource_mgr.set_release_done();
+                LOG(INFO) << "operator release done, op: " << op->get_name() << ", " << op.get()
+                    << ", res releasing opeartors: " << mem_resource_mgr.query_spill_manager()->releasing_operators();
+            }
+            return;
+        }
+        if (mem_resource_mgr.release_done()) {
+            return;
+        }
+        auto query_mem_tracker = _query_ctx->mem_tracker();
+        auto query_mem_limit = query_mem_tracker->limit();
+        auto query_consumption = query_mem_tracker->consumption();
+        auto spill_mem_threshold = query_mem_limit * state->spill_mem_limit_threshold();
+        if (query_consumption >= spill_mem_threshold * 0.8) {
+            // reduce source buffer size
+            if (op->releaseable()) {
+                LOG(INFO) << "release operator due to mem pressure, consumption: " << query_consumption
+                    << ", release threshold: " << static_cast<int64_t>(spill_mem_threshold * 0.8)
+                    << ", spill_mem_threshold: " << static_cast<int64_t>(spill_mem_threshold);
+                mem_resource_mgr.to_low_memory_mode();
+            }
+        }
+    }
+}
+
 void PipelineDriver::_adjust_memory_usage(RuntimeState* state, MemTracker* tracker, OperatorPtr& op,
                                           const ChunkPtr& chunk) {
     // TODO: FIXME
     // a simple spill stragety
     auto& mem_resource_mgr = op->mem_resource_manager();
+
+    // 1. record all releasable memory bytes, if enter release mode, this will decrease, 
+    _adjust_releasable_memory(state, op);
+
     if (state->enable_spill() && mem_resource_mgr.releaseable() &&
         op->revocable_mem_bytes() > state->spill_operator_min_bytes()) {
+        auto query_spill_manager = mem_resource_mgr.query_spill_manager();
+        auto releasing_operators = query_spill_manager->releasing_operators();
+        if (releasing_operators > 0) {
+            // LOG(INFO) << releasing_operators << " operators are releasing, should wait until release done";
+            return;
+        }
+
         auto request_reserved = 0;
         if (chunk == nullptr) {
             request_reserved = op->estimated_memory_reserved();
+            // @TODO for set_finishing, no need consider mem table?
         } else {
             request_reserved = op->estimated_memory_reserved(chunk);
+            // request_reserved += state->spill_mem_table_num() * state->spill_mem_table_size();
         }
         request_reserved += state->spill_mem_table_num() * state->spill_mem_table_size();
 
         if (!tls_thread_status.try_mem_reserve(request_reserved, tracker,
                                                tracker->limit() * state->spill_mem_limit_threshold())) {
+            LOG(INFO) << "operator to low memory mode, " << op->get_name() << ", " << op.get()
+                << ", request_reserved: " << request_reserved
+                << ", spill limit: " << static_cast<int64_t>(tracker->limit() * state->spill_mem_limit_threshold())
+                << ", consumption: " << tracker->consumption()
+                << ", set_finishing: " << (chunk == nullptr ? "true" : "false");
             mem_resource_mgr.to_low_memory_mode();
         }
     }

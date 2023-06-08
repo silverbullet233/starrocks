@@ -324,6 +324,10 @@ public:
         return _query_options.spillable_operator_mask & (1LL << TSpillableOperatorType::NL_JOIN);
     }
 
+    bool enable_auto_release_buffer() const {
+        return _query_options.__isset.enable_auto_release_buffer ? _query_options.__isset.enable_auto_release_buffer : false;
+    }
+
     int32_t spill_mem_table_size() const { return _query_options.spill_mem_table_size; }
 
     int32_t spill_mem_table_num() const { return _query_options.spill_mem_table_num; }

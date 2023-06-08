@@ -24,6 +24,12 @@ enum MEM_RESOURCE {
     MEM_RESOURCE_LOW_MEMORY = 2,
 };
 
+enum MEM_RELEASE_STATE {
+    NOT_RELEASE = 0,
+    RELEASING = 1,
+    RELEASE_DONE = 2,
+};
+
 class OperatorMemoryResourceManager {
 public:
     using OP = pipeline::Operator;
@@ -38,6 +44,27 @@ public:
 
     void to_low_memory_mode();
 
+    void to_mid_memory_mode();
+
+    int performance_level() const {
+        return _performance_level;
+    }
+
+    void set_releasing() {
+        _release_state = MEM_RELEASE_STATE::RELEASING;
+    }
+    void set_release_done();
+    bool is_releasing() {
+        return _release_state == MEM_RELEASE_STATE::RELEASING;
+    }
+    bool release_done() {
+        return _release_state == MEM_RELEASE_STATE::RELEASE_DONE;
+    }
+
+    QuerySpillManager* query_spill_manager() {
+        return _query_spill_manager;
+    }
+
 private:
     // performance level. Determine the execution mode and whether memory can be freed early
     // A higher performance level will allow the operator to execute with less memory, which will reduce performance
@@ -46,5 +73,8 @@ private:
     bool _releaseable = false;
     OP* _op = nullptr;
     QuerySpillManager* _query_spill_manager = nullptr;
+    int _release_state = MEM_RELEASE_STATE::NOT_RELEASE;
+    // bool _is_releasing = false;
+    // bool _release_done = false;
 };
 } // namespace starrocks::spill

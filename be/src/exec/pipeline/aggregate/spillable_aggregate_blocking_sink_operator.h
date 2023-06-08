@@ -45,10 +45,12 @@ public:
     void set_execute_mode(int performance_level) override {
         _spill_strategy = spill::SpillStrategy::SPILL_ALL;
         TRACE_SPILL_LOG << "AggregateBlockingSink, mark spill " << (void*)this;
+        LOG(INFO) << "AggregateBlockingOperator mark spill, " << this << ", revocable mem: " << _revocable_mem_bytes;
     }
 
     size_t estimated_memory_reserved(const ChunkPtr& chunk) override {
         if (chunk && !chunk->is_empty()) {
+            // @TODO seems no need to reserve so much memory
             if (_aggregator->is_hash_set()) {
                 return chunk->memory_usage() + _aggregator->hash_set_memory_usage();
             } else {

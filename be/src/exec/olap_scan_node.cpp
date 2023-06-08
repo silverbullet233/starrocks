@@ -702,6 +702,7 @@ int OlapScanNode::estimated_max_concurrent_chunks() const {
     // is the same size as the chunk_size * _estimated_scan_row_bytes.
     size_t row_mem_usage = _estimated_scan_row_bytes + _estimated_output_row_bytes;
     size_t chunk_mem_usage = row_mem_usage * runtime_state()->chunk_size();
+    LOG(INFO) << "estimated row_mem_usage: " << row_mem_usage;
     DCHECK_GT(chunk_mem_usage, 0);
 
     // limit scan memory usage not greater than 1/4 query limit

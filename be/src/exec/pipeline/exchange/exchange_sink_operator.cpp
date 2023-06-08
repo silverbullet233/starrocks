@@ -233,6 +233,7 @@ Status ExchangeSinkOperator::Channel::send_one_chunk(RuntimeState* state, const 
         if (_use_pass_through) {
             size_t chunk_size = serde::ProtobufChunkSerde::max_serialized_size(*chunk);
             // -1 means disable pipeline level shuffle
+            // @TODO limit buffer
             TRY_CATCH_BAD_ALLOC(
                     _pass_through_context.append_chunk(_parent->_sender_id, chunk, chunk_size,
                                                        _parent->_is_pipeline_level_shuffle ? driver_sequence : -1));
