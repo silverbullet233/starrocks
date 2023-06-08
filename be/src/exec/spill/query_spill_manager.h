@@ -52,9 +52,18 @@ public:
     }
     void decrease_releasing_operators() {
         _releasing_operators--;
+        _released_operators++;
     }
+    size_t released_operators() {
+        return _released_operators;
+    }
+
     size_t releasing_operators() {
         return _releasing_operators;
+    }
+
+    size_t releaseable_operators() {
+        return _releasable_operators;
     }
 
 private:
@@ -67,6 +76,7 @@ private:
     std::atomic_int64_t _releasable_mem_bytes = 0; // @TODO remove
     std::atomic_size_t _releasing_operators = 0;
     size_t _releasable_operators = 0;
+    std::atomic_size_t _released_operators = 0;
     // relasing operators
     // releasing back
 };

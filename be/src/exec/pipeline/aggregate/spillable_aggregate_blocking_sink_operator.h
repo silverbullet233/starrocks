@@ -50,7 +50,6 @@ public:
 
     size_t estimated_memory_reserved(const ChunkPtr& chunk) override {
         if (chunk && !chunk->is_empty()) {
-            // @TODO seems no need to reserve so much memory
             if (_aggregator->is_hash_set()) {
                 return chunk->memory_usage() + _aggregator->hash_set_memory_usage();
             } else {

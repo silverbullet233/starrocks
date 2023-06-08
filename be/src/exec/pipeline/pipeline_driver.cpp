@@ -508,6 +508,9 @@ void PipelineDriver::_adjust_memory_usage(RuntimeState* state, MemTracker* track
         op->revocable_mem_bytes() > state->spill_operator_min_bytes()) {
         auto query_spill_manager = mem_resource_mgr.query_spill_manager();
         auto releasing_operators = query_spill_manager->releasing_operators();
+        auto released_operators = query_spill_manager->released_operators();
+        auto releasable_operators = query_spill_manager->releaseable_operators();
+        if (released_operators < releasable_operators)
         if (releasing_operators > 0) {
             // LOG(INFO) << releasing_operators << " operators are releasing, should wait until release done";
             return;
@@ -520,13 +523,21 @@ void PipelineDriver::_adjust_memory_usage(RuntimeState* state, MemTracker* track
         } else {
             request_reserved = op->estimated_memory_reserved(chunk);
             // request_reserved += state->spill_mem_table_num() * state->spill_mem_table_size();
+            size_t max_mem_table_size = state->spill_mem_table_num() * state->spill_mem_table_size();
+            if (request_reserved < max_mem_table_size) {
+                request_reserved += request_reserved;
+            } else {
+                request_reserved += max_mem_table_size;
+            }
         }
-        request_reserved += state->spill_mem_table_num() * state->spill_mem_table_size();
+        request_reserved = 0;
+        // request_reserved += state->spill_mem_table_num() * state->spill_mem_table_size();
 
         if (!tls_thread_status.try_mem_reserve(request_reserved, tracker,
                                                tracker->limit() * state->spill_mem_limit_threshold())) {
             LOG(INFO) << "operator to low memory mode, " << op->get_name() << ", " << op.get()
                 << ", request_reserved: " << request_reserved
+                << ", revocable: " << op->revocable_mem_bytes()
                 << ", spill limit: " << static_cast<int64_t>(tracker->limit() * state->spill_mem_limit_threshold())
                 << ", consumption: " << tracker->consumption()
                 << ", set_finishing: " << (chunk == nullptr ? "true" : "false");

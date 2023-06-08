@@ -325,7 +325,7 @@ public:
     }
 
     bool enable_auto_release_buffer() const {
-        return _query_options.__isset.enable_auto_release_buffer ? _query_options.__isset.enable_auto_release_buffer : false;
+        return _query_options.__isset.enable_auto_release_buffer ? _query_options.enable_auto_release_buffer : false;
     }
 
     int32_t spill_mem_table_size() const { return _query_options.spill_mem_table_size; }
