@@ -530,7 +530,7 @@ void PipelineDriver::_adjust_memory_usage(RuntimeState* state, MemTracker* track
                 request_reserved += max_mem_table_size;
             }
         }
-        request_reserved = 0;
+        // request_reserved = 0;
         // request_reserved += state->spill_mem_table_num() * state->spill_mem_table_size();
 
         if (!tls_thread_status.try_mem_reserve(request_reserved, tracker,
