@@ -193,6 +193,7 @@ bool MemChunkAllocator::allocate(size_t size, MemChunk* chunk) {
         SCOPED_RAW_TIMER(&cost_ns);
         // allocate from system allocator
         chunk->data = SystemAllocator::allocate(_mem_tracker, size);
+        // LOG(INFO) << "allocate chunk via malloc, chunk size: " << size << ", tracker: " << tls_mem_tracker->debug_string();
     }
     system_alloc_count.increment(1);
     system_alloc_cost_ns.increment(cost_ns);
@@ -228,6 +229,7 @@ void MemChunkAllocator::free(const MemChunk& chunk) {
             {
                 SCOPED_RAW_TIMER(&cost_ns);
                 SystemAllocator::free(_mem_tracker, chunk.data, chunk.size);
+                LOG(INFO) << "release chunk via free, chunk size: " << chunk.size << ", tracker: " << tls_mem_tracker->debug_string();
             }
             system_free_count.increment(1);
             system_free_cost_ns.increment(cost_ns);

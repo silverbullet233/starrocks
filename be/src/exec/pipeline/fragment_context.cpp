@@ -28,6 +28,7 @@ namespace starrocks::pipeline {
 FragmentContext::FragmentContext() : _data_sink(nullptr) {}
 
 FragmentContext::~FragmentContext() {
+    LOG(INFO) << "release fragment: " << print_id(_fragment_instance_id);
     _data_sink.reset();
     _runtime_filter_hub.close_all_in_filters(_runtime_state.get());
     clear_all_drivers();

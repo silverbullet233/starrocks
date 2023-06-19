@@ -25,6 +25,7 @@
 #include "runtime/current_thread.h"
 #include "runtime/mem_tracker.h"
 #include "util/priority_thread_pool.hpp"
+#include "util/stack_util.h"
 
 namespace starrocks::spill {
 struct TraceInfo {
@@ -52,7 +53,8 @@ struct MemTrackerGuard {
 template <class... WeakPtrs>
 struct ResourceMemTrackerGuard {
     ResourceMemTrackerGuard(MemTracker* scope_tracker_, WeakPtrs&&... args)
-            : scope_tracker(scope_tracker_), resources(std::make_tuple(args...)) {}
+            : scope_tracker(scope_tracker_), resources(std::make_tuple(args...)) {
+            }
 
     bool scoped_begin() const {
         auto res = capture(resources);
@@ -61,10 +63,18 @@ struct ResourceMemTrackerGuard {
         }
         captured = std::move(res.value());
         old_tracker = tls_thread_status.set_mem_tracker(scope_tracker);
+        LOG(INFO) << "scoped begin, tls tracker: " << (scope_tracker != nullptr ? scope_tracker->debug_string(): "nullptr")
+            << ", old tracker: " << (old_tracker != nullptr ? old_tracker->debug_string(): "nullptr")
+            << ", stack, " << get_stack_trace();
         return true;
     }
 
-    void scoped_end() const { tls_thread_status.set_mem_tracker(old_tracker); }
+    void scoped_end() const {
+        tls_thread_status.set_mem_tracker(old_tracker);
+        LOG(INFO) << "scoped end, tls tracker: " << (scope_tracker != nullptr ? scope_tracker->debug_string(): "nullptr")
+            << ", old tracker: " << (old_tracker != nullptr ? old_tracker->debug_string(): "nullptr")
+            << ", stack, " << get_stack_trace();
+    }
 
 private:
     auto capture(const std::tuple<WeakPtrs...>& weak_tup) const

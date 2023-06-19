@@ -331,6 +331,10 @@ public:
             << "all tracker size: " << _all_trackers.size() << "; "
             << "limit trackers size: " << _limit_trackers.size() << "; "
             << "parent is null: " << ((_parent == nullptr) ? "true" : "false") << "; ";
+        msg << "parent[" << (_parent == nullptr ? "nullptr" : _parent->debug_string()) << "]";
+        if (_parent != nullptr && _consumption->current_value() > _parent->_consumption->current_value()) {
+            msg << ", ERROR CONSUMPTION";
+        }
         return msg.str();
     }
 

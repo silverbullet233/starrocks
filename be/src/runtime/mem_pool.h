@@ -144,7 +144,7 @@ public:
     // lead error. We only has MemTracker's pointer, which can be invalid after swap.
     void exchange_data(MemPool* other);
 
-    std::string debug_string();
+    std::string debug_string() const;
 
     int64_t total_allocated_bytes() const { return total_allocated_bytes_; }
     int64_t total_reserved_bytes() const { return total_reserved_bytes_; }

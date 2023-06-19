@@ -123,11 +123,13 @@ void MemTracker::Init() {
 
 MemTracker::~MemTracker() {
     // return memory to root mem_tracker
+    LOG(INFO) << "before release mem tracker: " << debug_string();
     release_without_root();
 
     if (parent()) {
         unregister_from_parent();
     }
+    LOG(INFO) << "after release mem tracker: " << debug_string();
 }
 
 Status MemTracker::check_mem_limit(const std::string& msg) const {

@@ -164,6 +164,7 @@ private:
         }
 
         int64_t get_consumed_bytes() const { return _total_consumed_bytes; }
+        int64_t get_reserved_bytes() const { return _reserved_bytes; }
 
     private:
         int64_t _consume_from_reserved(int64_t size) {
@@ -313,6 +314,7 @@ public:
     int64_t try_consume_mem_size() { return _mem_cache_manager.try_consume_mem_size(); }
 
     int64_t get_consumed_bytes() const { return _mem_cache_manager.get_consumed_bytes(); }
+    int64_t get_reserved_bytes() const { return _mem_cache_manager.get_reserved_bytes(); }
 
 private:
     // In order to record operator level memory trace while keep up high performance, we need to

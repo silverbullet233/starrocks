@@ -419,11 +419,14 @@ Status ExecEnv::init_mem_tracker() {
     int32_t update_mem_percent = std::max(std::min(100, config::update_memory_limit_percent), 0);
     _update_mem_tracker = regist_tracker(bytes_limit * update_mem_percent / 100, "update", nullptr);
     _chunk_allocator_mem_tracker = regist_tracker(-1, "chunk_allocator", process_mem_tracker());
+    // _chunk_allocator_mem_tracker = regist_tracker(-1, "chunk_allocator", nullptr);
     _clone_mem_tracker = regist_tracker(-1, "clone", process_mem_tracker());
     int64_t consistency_mem_limit = calc_max_consistency_memory(process_mem_tracker()->limit());
     _consistency_mem_tracker = regist_tracker(consistency_mem_limit, "consistency", process_mem_tracker());
 
     MemChunkAllocator::init_instance(_chunk_allocator_mem_tracker.get(), config::chunk_reserved_bytes_limit);
+    // MemChunkAllocator::init_instance(nullptr, config::chunk_reserved_bytes_limit);
+    // MemChunkAllocator::init_instance(process_mem_tracker(), config::chunk_reserved_bytes_limit);
 
     SetMemTrackerForColumnPool op(_column_pool_mem_tracker);
     ForEach<ColumnPoolList>(op);
