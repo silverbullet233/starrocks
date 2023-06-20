@@ -219,6 +219,7 @@ public:
 
     // Return prev memory tracker.
     starrocks::MemTracker* set_mem_tracker(starrocks::MemTracker* mem_tracker) {
+        release_reserved();
         mem_tracker_ctx_shift();
         auto* prev = tls_mem_tracker;
         tls_mem_tracker = mem_tracker;
@@ -227,6 +228,7 @@ public:
 
     // Return prev memory tracker.
     starrocks::MemTracker* set_operator_mem_tracker(starrocks::MemTracker* operator_mem_tracker) {
+        // release_reserved();
         operator_mem_tracker_ctx_shift();
         auto* prev = tls_operator_mem_tracker;
         tls_operator_mem_tracker = operator_mem_tracker;

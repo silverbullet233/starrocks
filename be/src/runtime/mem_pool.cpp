@@ -78,7 +78,7 @@ void MemPool::clear() {
 }
 
 void MemPool::free_all() {
-    LOG(INFO) << "before mem_pool "<< this << " free_all: " << tls_mem_tracker->debug_string() << ", stack: " << get_stack_trace();
+    // LOG(INFO) << "before mem_pool "<< this << " free_all: " << tls_mem_tracker->debug_string() << ", stack: " << get_stack_trace();
     int64_t total_bytes_released = 0;
     for (auto& chunk : chunks_) {
         total_bytes_released += chunk.chunk.size;
@@ -89,7 +89,7 @@ void MemPool::free_all() {
     current_chunk_idx_ = -1;
     total_allocated_bytes_ = 0;
     total_reserved_bytes_ = 0;
-    LOG(INFO) << "after mem_pool " << this << " free_all: " << tls_mem_tracker->debug_string();
+    // LOG(INFO) << "after mem_pool " << this << " free_all: " << tls_mem_tracker->debug_string();
 
     StarRocksMetrics::instance()->memory_pool_bytes_total.increment(-total_bytes_released);
 }
@@ -135,10 +135,10 @@ bool MemPool::find_chunk(size_t min_size, bool check_limits) {
 
     // Allocate a new chunk. Return early if allocate fails.
     MemChunk chunk;
-    LOG(INFO) << "allocate mem_pool " << this << ", via tracker: " << tls_mem_tracker->debug_string();
-    if (tls_mem_tracker->label() == "process") {
-        LOG(INFO) << get_stack_trace();
-    }
+    // LOG(INFO) << "allocate mem_pool " << this << ", via tracker: " << tls_mem_tracker->debug_string();
+    // if (tls_mem_tracker->label() == "process") {
+    //     LOG(INFO) << get_stack_trace();
+    // }
     if (!MemChunkAllocator::instance()->allocate(chunk_size, &chunk)) {
         if (tls_thread_status.is_catched()) {
             throw std::bad_alloc();

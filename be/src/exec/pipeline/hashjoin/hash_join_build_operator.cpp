@@ -54,6 +54,7 @@ void HashJoinBuildOperator::close(RuntimeState* state) {
     _join_builder->unref(state);
 
     Operator::close(state);
+    LOG(INFO) << "hash join build close operator, tracker: " << tls_mem_tracker->debug_string();
 }
 
 StatusOr<ChunkPtr> HashJoinBuildOperator::pull_chunk(RuntimeState* state) {

@@ -229,7 +229,7 @@ void MemChunkAllocator::free(const MemChunk& chunk) {
             {
                 SCOPED_RAW_TIMER(&cost_ns);
                 SystemAllocator::free(_mem_tracker, chunk.data, chunk.size);
-                LOG(INFO) << "release chunk via free, chunk size: " << chunk.size << ", tracker: " << tls_mem_tracker->debug_string();
+                // LOG(INFO) << "release chunk via free, chunk size: " << chunk.size << ", tracker: " << tls_mem_tracker->debug_string();
             }
             system_free_count.increment(1);
             system_free_cost_ns.increment(cost_ns);

@@ -40,6 +40,7 @@ void AggregateBlockingSinkOperator::close(RuntimeState* state) {
     counter->set(_aggregator->hash_map_memory_usage());
     _aggregator->unref(state);
     Operator::close(state);
+    LOG(INFO) << "agg close operator, tracker: " <<  tls_mem_tracker->debug_string();
 }
 
 Status AggregateBlockingSinkOperator::set_finishing(RuntimeState* state) {

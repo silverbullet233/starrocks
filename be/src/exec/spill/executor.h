@@ -63,17 +63,17 @@ struct ResourceMemTrackerGuard {
         }
         captured = std::move(res.value());
         old_tracker = tls_thread_status.set_mem_tracker(scope_tracker);
-        LOG(INFO) << "scoped begin, tls tracker: " << (scope_tracker != nullptr ? scope_tracker->debug_string(): "nullptr")
-            << ", old tracker: " << (old_tracker != nullptr ? old_tracker->debug_string(): "nullptr")
-            << ", stack, " << get_stack_trace();
+        // LOG(INFO) << "scoped begin, tls tracker: " << (scope_tracker != nullptr ? scope_tracker->debug_string(): "nullptr")
+        //     << ", old tracker: " << (old_tracker != nullptr ? old_tracker->debug_string(): "nullptr")
+        //     << ", stack, " << get_stack_trace();
         return true;
     }
 
     void scoped_end() const {
         tls_thread_status.set_mem_tracker(old_tracker);
-        LOG(INFO) << "scoped end, tls tracker: " << (scope_tracker != nullptr ? scope_tracker->debug_string(): "nullptr")
-            << ", old tracker: " << (old_tracker != nullptr ? old_tracker->debug_string(): "nullptr")
-            << ", stack, " << get_stack_trace();
+        // LOG(INFO) << "scoped end, tls tracker: " << (scope_tracker != nullptr ? scope_tracker->debug_string(): "nullptr")
+        //     << ", old tracker: " << (old_tracker != nullptr ? old_tracker->debug_string(): "nullptr")
+        //     << ", stack, " << get_stack_trace();
     }
 
 private:

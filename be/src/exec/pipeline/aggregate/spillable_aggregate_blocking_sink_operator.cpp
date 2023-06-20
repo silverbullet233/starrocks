@@ -43,11 +43,13 @@ Status SpillableAggregateBlockingSinkOperator::set_finishing(RuntimeState* state
     if (_spill_strategy == spill::SpillStrategy::NO_SPILL) {
         _is_finished = true;
         RETURN_IF_ERROR(AggregateBlockingSinkOperator::set_finishing(state));
+        LOG(INFO) << "SpillableAgg set_finishing";
         return Status::OK();
     }
 
     if (state->is_cancelled()) {
         _aggregator->spiller()->cancel();
+        LOG(INFO) << "SpillableAgg cancel spiller";
     }
     // ugly code
     // TODO: fixme
@@ -115,6 +117,7 @@ Status SpillableAggregateBlockingSinkOperator::push_chunk(RuntimeState* state, c
     RETURN_IF_ERROR(AggregateBlockingSinkOperator::push_chunk(state, chunk));
     set_revocable_mem_bytes(_aggregator->hash_map_memory_usage());
     if (_spill_strategy == spill::SpillStrategy::SPILL_ALL) {
+        // LOG(INFO) << "SpillableAgg spill all input";
         return _spill_all_inputs(state, chunk);
     }
     return Status::OK();
