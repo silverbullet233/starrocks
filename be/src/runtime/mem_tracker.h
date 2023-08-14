@@ -342,6 +342,11 @@ public:
             << "all tracker size: " << _all_trackers.size() << "; "
             << "limit trackers size: " << _limit_trackers.size() << "; "
             << "parent is null: " << ((_parent == nullptr) ? "true" : "false") << "; ";
+        if (_label.starts_with("Query")) {
+            for (auto& tracker: _child_trackers) {
+                msg << "\nchild: " << tracker->debug_string();
+            }
+        }
         return msg.str();
     }
 

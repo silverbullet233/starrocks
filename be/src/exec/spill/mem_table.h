@@ -26,6 +26,7 @@
 #include "exprs/expr_context.h"
 #include "runtime/mem_tracker.h"
 #include "runtime/runtime_state.h"
+#include "exec/sorting/merge.h"
 
 namespace starrocks::spill {
 using FlushCallBack = std::function<Status(const ChunkPtr&)>;
@@ -120,5 +121,42 @@ private:
     Permutation _permutation;
     ChunkPtr _chunk;
     ChunkSharedSlice _chunk_slice;
+
+};
+
+class OrderedMemTableV2 final : public SpillableMemTable {
+public:
+    template <class... Args>
+    OrderedMemTableV2(const std::vector<ExprContext*>* sort_exprs, const SortDescs* sort_desc, Args&&... args)
+            : SpillableMemTable(std::forward<Args>(args)...), _sort_exprs(sort_exprs), _sort_desc(*sort_desc) {}
+    ~OrderedMemTableV2() override = default;
+
+    bool is_empty() override;
+    Status append(ChunkPtr chunk) override;
+    Status append_selective(const Chunk& src, const uint32_t* indexes, uint32_t from, uint32_t size) override;
+    Status done() override;
+    Status flush(FlushCallBack callback) override;
+
+private:
+    Status _partial_sort(bool done);
+    Status _merge_sorted();
+
+    const std::vector<ExprContext*>* _sort_exprs;
+    const SortDescs _sort_desc;
+    Permutation _permutation;
+    
+    std::vector<ChunkPtr> _staging_unsorted_chunks;
+    size_t _staging_unsorted_rows = 0;
+    size_t _staging_unsorted_bytes = 0;
+    ChunkPtr _unsorted_chunk;
+    std::vector<ChunkUniquePtr> _sorted_chunks;
+    SortedRuns _merged_runs;
+
+    ChunkSharedSlice _chunk_slice;
+
+    const static size_t max_buffered_rows = 1024000;
+    const static size_t max_buffered_bytes = 1024 * 1024 * 16;
+
+    // @TODO support late_materialize
 };
 } // namespace starrocks::spill

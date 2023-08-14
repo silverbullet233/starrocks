@@ -139,6 +139,7 @@ Status RawSpillerWriter::flush(RuntimeState* state, TaskExecutor&& executor, Mem
         }
     });
 
+    // @TODO why
     if (captured_mem_table == nullptr) {
         return Status::OK();
     }

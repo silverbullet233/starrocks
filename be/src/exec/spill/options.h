@@ -94,6 +94,8 @@ struct SpilledOptions {
     int encode_level = 0;
 
     BlockManager* block_manager = nullptr;
+
+    int mem_table_version = 0;
 };
 
 // spill strategy

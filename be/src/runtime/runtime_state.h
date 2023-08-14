@@ -331,6 +331,15 @@ public:
 
     int32_t spill_mem_table_num() const { return _query_options.spill_mem_table_num; }
 
+    int32_t spill_mem_table_version() const { return _query_options.spill_mem_table_version; }
+    
+    double spill_agg_ht_reduction() const {
+        return _query_options.spill_agg_ht_reduction;
+    }
+    int32_t spill_agg_low_reduction_limit() const {
+        return _query_options.spill_agg_low_reduction_limit;
+    }
+
     double spill_mem_limit_threshold() const { return _query_options.spill_mem_limit_threshold; }
 
     int64_t spill_operator_min_bytes() const { return _query_options.spill_operator_min_bytes; }
@@ -338,6 +347,8 @@ public:
     int64_t spill_revocable_max_bytes() const { return _query_options.spill_revocable_max_bytes; }
 
     int32_t spill_encode_level() const { return _query_options.spill_encode_level; }
+
+    TSpillPreaggregationMode::type spill_preaggregation_mode() const { return _query_options.spill_preaggregation_mode; }
 
     const std::vector<TTabletCommitInfo>& tablet_commit_infos() const { return _tablet_commit_infos; }
 

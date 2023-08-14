@@ -45,6 +45,7 @@ import com.starrocks.thrift.TCompressionType;
 import com.starrocks.thrift.TPipelineProfileLevel;
 import com.starrocks.thrift.TQueryOptions;
 import com.starrocks.thrift.TSpillMode;
+import com.starrocks.thrift.TSpillPreaggregationMode;
 import com.starrocks.thrift.TTabletInternalParallelMode;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
@@ -147,6 +148,11 @@ public class SessionVariable implements Serializable, Writable, Cloneable {
     public static final String SPILLABLE_OPERATOR_MASK = "spillable_operator_mask";
     // spill mode: auto, force
     public static final String SPILL_MODE = "spill_mode";
+    // preaggregation mode in spillable agg blocking operator
+    public static final String SPILL_PREAGGREGATION_MODE = "spill_preaggregation_mode";
+    public static final String SPILL_MEM_TABLE_VERSION = "spill_mem_table_version";
+    public static final String SPILL_AGG_HT_REUCTION = "spill_agg_ht_reduction";
+    public static final String SPILL_AGG_LOW_REUCTION_LIMIT = "spill_agg_low_reduction_limit";
     // enable table pruning(RBO) in cardinality-preserving joins
     public static final String ENABLE_RBO_TABLE_PRUNE = "enable_rbo_table_prune";
 
@@ -758,6 +764,18 @@ public class SessionVariable implements Serializable, Writable, Cloneable {
     // see more details in the comment above transmissionEncodeLevel
     @VarAttr(name = SPILL_ENCODE_LEVEL)
     private int spillEncodeLevel = 7;
+
+    @VarAttr(name = SPILL_PREAGGREGATION_MODE, flag = VariableMgr.INVISIBLE)
+    public String spillPreaggregationMode = "auto";
+
+    @VarAttr(name = SPILL_MEM_TABLE_VERSION, flag = VariableMgr.INVISIBLE)
+    public int spillMemTableVersion = 0;
+
+    @VarAttr(name = SPILL_AGG_HT_REUCTION, flag = VariableMgr.INVISIBLE)
+    public double spillAggHtReduction = 0.5;
+
+    @VarAttr(name = SPILL_AGG_LOW_REUCTION_LIMIT, flag = VariableMgr.INVISIBLE)
+    public int spillAggLowReductionLimit = 5;
 
     @VarAttr(name = ENABLE_RBO_TABLE_PRUNE)
     private boolean enableRboTablePrune = false;
@@ -1538,6 +1556,10 @@ public class SessionVariable implements Serializable, Writable, Cloneable {
 
     public int getSpillEncodeLevel() {
         return this.spillEncodeLevel;
+    }
+
+    public String getSpillPreaggregationMode() {
+        return this.spillPreaggregationMode;
     }
 
     public boolean getForwardToLeader() {
@@ -2354,6 +2376,16 @@ public class SessionVariable implements Serializable, Writable, Cloneable {
             tResult.setSpill_revocable_max_bytes(spillRevocableMaxBytes);
             tResult.setSpill_encode_level(spillEncodeLevel);
             tResult.setSpillable_operator_mask(spillableOperatorMask);
+            if (spillPreaggregationMode.equals("auto")) {
+                tResult.setSpill_preaggregation_mode(TSpillPreaggregationMode.AUTO);
+            } else if (spillPreaggregationMode.equals("force_spill")) {
+                tResult.setSpill_preaggregation_mode(TSpillPreaggregationMode.FORCE_SPILL);
+            } else {
+                tResult.setSpill_preaggregation_mode(TSpillPreaggregationMode.FORCE_PREAGG);
+            }
+            tResult.setSpill_mem_table_version(spillMemTableVersion);
+            tResult.setSpill_agg_ht_reduction(spillAggHtReduction);
+            tResult.setSpill_agg_low_reduction_limit(spillAggLowReductionLimit);
         }
 
         // Compression Type

@@ -51,9 +51,15 @@ Status RawSpillerWriter::prepare(RuntimeState* state) {
             _mem_table_pool.push(std::make_unique<UnorderedMemTable>(state, opts.spill_mem_table_bytes_size,
                                                                      _parent_tracker, _spiller));
         } else {
-            _mem_table_pool.push(
-                    std::make_unique<OrderedMemTable>(&opts.sort_exprs->lhs_ordering_expr_ctxs(), opts.sort_desc, state,
-                                                      opts.spill_mem_table_bytes_size, _parent_tracker, _spiller));
+            if (opts.mem_table_version == 0) {
+                _mem_table_pool.push(
+                        std::make_unique<OrderedMemTable>(&opts.sort_exprs->lhs_ordering_expr_ctxs(), opts.sort_desc, state,
+                                                        opts.spill_mem_table_bytes_size, _parent_tracker, _spiller));
+            } else {
+                _mem_table_pool.push(
+                        std::make_unique<OrderedMemTableV2>(&opts.sort_exprs->lhs_ordering_expr_ctxs(), opts.sort_desc, state,
+                                                        opts.spill_mem_table_bytes_size, _parent_tracker, _spiller));
+                }
         }
     }
 
@@ -71,6 +77,7 @@ Status RawSpillerWriter::flush_task(RuntimeState* state, const MemTablePtr& mem_
     opts.plan_node_id = options().plan_node_id;
     opts.name = options().name;
     ASSIGN_OR_RETURN(auto block, _spiller->block_manager()->acquire_block(opts));
+    COUNTER_UPDATE(_spiller->metrics().block_count, 1);
 
     // TODO: reuse io context
     SerdeContext spill_ctx;

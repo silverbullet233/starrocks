@@ -55,6 +55,8 @@ protected:
 private:
     // Whether prev operator has no output
     bool _is_finished = false;
+
+protected:
     // whether enable aggregate group by limit optimize
     bool _agg_group_by_with_limit = false;
 };

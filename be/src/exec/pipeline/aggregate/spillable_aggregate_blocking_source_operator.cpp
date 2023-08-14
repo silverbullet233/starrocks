@@ -33,7 +33,11 @@ void SpillableAggregateBlockingSourceOperator::close(RuntimeState* state) {
 }
 
 bool SpillableAggregateBlockingSourceOperator::has_output() const {
-    if (AggregateBlockingSourceOperator::has_output()) {
+    // @TODO if spill happened, check order should be fixed
+    if (!_aggregator->spiller()->spilled() && AggregateBlockingSourceOperator::has_output()) {
+    // if (AggregateBlockingSourceOperator::has_output()) {
+        // @TODO after reset, is_ht_eos will false
+        // LOG(INFO) << " no spill, has_output, spiller: " << _aggregator->spiller().get(); 
         return true;
     }
 
@@ -45,10 +49,12 @@ bool SpillableAggregateBlockingSourceOperator::has_output() const {
     }
     // has output data from spiller.
     if (_aggregator->spiller()->has_output_data()) {
+        // LOG(INFO) << "spiller has output data: " << _aggregator->spiller().get();
         return true;
     }
     // has eos chunk
     if (_aggregator->is_spilled_eos() && _has_last_chunk) {
+        // LOG(INFO) << "spiller has eos chunk: " << _aggregator->spiller().get();
         return true;
     }
     return false;
@@ -99,7 +105,7 @@ StatusOr<ChunkPtr> SpillableAggregateBlockingSourceOperator::pull_chunk(RuntimeS
 }
 
 StatusOr<ChunkPtr> SpillableAggregateBlockingSourceOperator::_pull_spilled_chunk(RuntimeState* state) {
-    DCHECK(_accumulator.need_input());
+    // DCHECK(_accumulator.need_input());
     ChunkPtr res;
 
     if (_accumulator.has_output()) {
@@ -111,6 +117,7 @@ StatusOr<ChunkPtr> SpillableAggregateBlockingSourceOperator::_pull_spilled_chunk
 
     if (!_aggregator->is_spilled_eos()) {
         auto executor = _aggregator->spill_channel()->io_executor();
+        // LOG(INFO) << "restore from spiller: " << _aggregator->spiller().get();
         ASSIGN_OR_RETURN(auto chunk, spiller->restore(state, *executor, TRACKER_WITH_SPILLER_GUARD(state, spiller)));
         if (chunk->is_empty()) {
             return chunk;

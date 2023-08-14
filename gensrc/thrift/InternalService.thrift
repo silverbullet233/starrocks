@@ -114,6 +114,12 @@ enum TSpillableOperatorType {
   NL_JOIN = 4;
 }
 
+enum TSpillPreaggregationMode {
+  AUTO,
+  FORCE_SPILL,
+  FORCE_PREAGG,
+}
+
 enum TTabletInternalParallelMode {
   AUTO,
   FORCE_SPLIT
@@ -216,6 +222,11 @@ struct TQueryOptions {
   97: optional i64 load_profile_collect_second;
 
   101: optional i64 runtime_profile_report_interval = 30;
+
+  102: optional TSpillPreaggregationMode spill_preaggregation_mode;
+  103: optional i32 spill_mem_table_version;
+  104: optional double spill_agg_ht_reduction;
+  105: optional i32 spill_agg_low_reduction_limit;
 }
 
 
