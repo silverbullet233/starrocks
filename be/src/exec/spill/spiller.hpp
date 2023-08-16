@@ -47,6 +47,23 @@ Status Spiller::spill(RuntimeState* state, const ChunkPtr& chunk, TaskExecutor&&
     if (_chunk_builder.chunk_schema()->empty()) {
         _chunk_builder.chunk_schema()->set_schema(chunk);
         RETURN_IF_ERROR(_serde->prepare());
+        // @TODO should decide early and late here
+        std::unordered_set<SlotId> early_materialized_slots;
+        bool all_slot_ref = true;
+        for (ExprContext* expr_ctx : _opts.sort_exprs->lhs_ordering_expr_ctxs()) {
+            auto* expr = expr_ctx->root();
+            if (expr->is_slotref()) {
+                early_materialized_slots.insert(down_cast<ColumnRef*>(expr)->slot_id());
+            } else {
+                all_slot_ref = false;
+            }
+        }
+        if (all_slot_ref) {
+            for (auto slot : early_materialized_slots) {
+                _opts.early_materialized_slots.insert(slot);
+            }
+            LOG(INFO) << "early_materialized_slots num: " << early_materialized_slots.size();
+        }
     }
 
     if (_opts.init_partition_nums > 0) {

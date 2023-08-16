@@ -338,6 +338,7 @@ Status OrderedInputStream::init(SerdePtr serde, const SortExecExprs* sort_exprs,
         };
         chunk_providers.emplace_back(std::move(chunk_provider));
     }
+    // @TODO late mt
     RETURN_IF_ERROR(_merger.init(chunk_providers, &(sort_exprs->lhs_ordering_expr_ctxs()), *descs));
     return Status::OK();
 }

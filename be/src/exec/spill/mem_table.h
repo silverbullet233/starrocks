@@ -149,6 +149,7 @@ private:
     size_t _staging_unsorted_rows = 0;
     size_t _staging_unsorted_bytes = 0;
     ChunkPtr _unsorted_chunk;
+
     std::vector<ChunkUniquePtr> _sorted_chunks;
     SortedRuns _merged_runs;
 
@@ -157,6 +158,80 @@ private:
     const static size_t max_buffered_rows = 1024000;
     const static size_t max_buffered_bytes = 1024 * 1024 * 16;
 
-    // @TODO support late_materialize
+    // @TODO support late_materialize step by step
+    // 1. late materialize in merge unsorted
+    // 2. in materialzation_by_permutation
+};
+
+
+// partial sort + late mt
+class OrderedMemTableV3 final : public SpillableMemTable {
+public:
+    template <class... Args>
+    OrderedMemTableV3(const std::vector<ExprContext*>* sort_exprs, const SortDescs* sort_desc, Args&&... args)
+            : SpillableMemTable(std::forward<Args>(args)...), _sort_exprs(sort_exprs), _sort_desc(*sort_desc) {}
+    ~OrderedMemTableV3() override = default;
+
+    bool is_empty() override;
+    Status append(ChunkPtr chunk) override;
+    Status append_selective(const Chunk& src, const uint32_t* indexes, uint32_t from, uint32_t size) override;
+    Status done() override;
+    Status flush(FlushCallBack callback) override;
+
+private:
+    Status _partial_sort(bool done);
+    Status _merge_sorted();
+
+    void _concat_and_split_chunks(const std::vector<ChunkPtr>& src_chunks, size_t num_rows, ChunkPtr& dst_early_chunk, ChunkPtr& dst_late_chunk);
+
+    void _split_and_append_chunks(ChunkPtr src_chunk);
+
+    void _concat_chunks(const std::vector<ChunkPtr>& src_chunks, size_t num_rows, ChunkPtr& dst_chunk);
+
+    // only append chunks, no split
+    // void _append_chunks(ChunkPtr src_chunk);
+
+
+    ChunkPtr _late_materialize(const ChunkPtr& chunk);
+
+    const std::vector<ExprContext*>* _sort_exprs;
+    const SortDescs _sort_desc;
+
+    // @TODO add an ordinal column in early chunk, duplicate with permutation?
+    // only append late chunk, no sort
+
+    Permutation _permutation;
+
+    
+    // std::vector<ChunkPtr> _staging_unsorted_chunks;
+    size_t _staging_unsorted_rows = 0;
+    size_t _staging_unsorted_bytes = 0;
+
+    std::vector<ChunkPtr> _staging_unsorted_early_chunks;
+    std::vector<ChunkPtr> _staging_late_chunks;
+
+    ChunkPtr _unsorted_early_chunk;
+
+    ChunkPtr _concat_late_chunk;
+    // concat early column into early chunk, put late column into late chunk vectors
+
+    // concat early chunk, and put late col
+
+    std::vector<ChunkUniquePtr> _sorted_early_chunks;
+    std::vector<ChunkPtr> _final_late_chunks;
+    // std::vector<ChunkUniquePtr> _sorted_chunks;
+    SortedRuns _merged_runs;
+
+    ChunkSharedSlice _chunk_slice;
+
+    std::vector<SlotId> _col_idx_to_slot_id;
+
+    const static size_t max_buffered_rows = 1024000;
+    // const static size_t max_buffered_bytes = 1024 * 1024 * 16;
+    const static size_t max_buffered_bytes = 1024 * 1024 * 8;
+
+    // @TODO support late_materialize step by step
+    // 1. late materialize in merge unsorted
+    // 2. in materialzation_by_permutation
 };
 } // namespace starrocks::spill

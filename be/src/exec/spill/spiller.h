@@ -85,6 +85,8 @@ public:
     RuntimeProfile::Counter* materialize_chunk_timer = nullptr;
     // time spent to merge partial sorted chunk
     RuntimeProfile::Counter* merge_chunk_timer = nullptr;
+    RuntimeProfile::Counter* late_materialize_timer = nullptr;
+    RuntimeProfile::Counter* build_late_chunk_timer = nullptr;
 
     // time spent to shuffle data to the corresponding partition, only used in join operator
     RuntimeProfile::Counter* shuffle_timer = nullptr;

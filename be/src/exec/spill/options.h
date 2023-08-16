@@ -96,6 +96,8 @@ struct SpilledOptions {
     BlockManager* block_manager = nullptr;
 
     int mem_table_version = 0;
+
+    std::unordered_set<SlotId> early_materialized_slots;
 };
 
 // spill strategy

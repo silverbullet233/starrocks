@@ -63,6 +63,8 @@ SpillProcessMetrics::SpillProcessMetrics(RuntimeProfile* profile, std::atomic_in
     sort_chunk_timer = ADD_TIMER(_spiller_metrics.get(), "SortChunkTime");
     materialize_chunk_timer = ADD_TIMER(_spiller_metrics.get(), "MaterializeChunkTime");
     merge_chunk_timer = ADD_TIMER(_spiller_metrics.get(), "MergeChunkTime");
+    late_materialize_timer = ADD_TIMER(_spiller_metrics.get(), "LateMaterializeChunkTime");
+    build_late_chunk_timer = ADD_TIMER(_spiller_metrics.get(), "BuildLateChunkTime");
 
     shuffle_timer = ADD_TIMER(_spiller_metrics.get(), "ShuffleTime");
     split_partition_timer = ADD_TIMER(_spiller_metrics.get(), "SplitPartitionTime");

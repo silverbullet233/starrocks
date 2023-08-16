@@ -55,11 +55,15 @@ Status RawSpillerWriter::prepare(RuntimeState* state) {
                 _mem_table_pool.push(
                         std::make_unique<OrderedMemTable>(&opts.sort_exprs->lhs_ordering_expr_ctxs(), opts.sort_desc, state,
                                                         opts.spill_mem_table_bytes_size, _parent_tracker, _spiller));
-            } else {
+            } else if (opts.mem_table_version == 1) {
                 _mem_table_pool.push(
                         std::make_unique<OrderedMemTableV2>(&opts.sort_exprs->lhs_ordering_expr_ctxs(), opts.sort_desc, state,
                                                         opts.spill_mem_table_bytes_size, _parent_tracker, _spiller));
-                }
+            } else {
+                _mem_table_pool.push(
+                        std::make_unique<OrderedMemTableV3>(&opts.sort_exprs->lhs_ordering_expr_ctxs(), opts.sort_desc, state,
+                                                        opts.spill_mem_table_bytes_size, _parent_tracker, _spiller));
+            }
         }
     }
 

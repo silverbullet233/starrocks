@@ -261,6 +261,7 @@ Status OrderedMemTableV2::_partial_sort(bool done) {
             // @TODO we can skip permutation?
             // @TODO store permutation?
             // @TODO add a column in sorted_chunk
+            // @TODO add a new Column in chunk to store permutation
             materialize_by_permutation(sorted_chunk.get(), {_unsorted_chunk}, _permutation);
             RETURN_IF_ERROR(sorted_chunk->upgrade_if_overflow());
         }
@@ -274,9 +275,249 @@ Status OrderedMemTableV2::_partial_sort(bool done) {
 }
 
 Status OrderedMemTableV2::_merge_sorted() {
-    // SCOPED_TIMER(_spiller->metrics().sort_chunk_timer);
     SCOPED_TIMER(_spiller->metrics().merge_chunk_timer);
     RETURN_IF_ERROR(merge_sorted_chunks(_sort_desc, _sort_exprs, _sorted_chunks, &_merged_runs));
+    _sorted_chunks.clear();
+    return Status::OK();
+}
+
+// v3
+bool OrderedMemTableV3::is_empty() {
+    return _staging_unsorted_rows == 0 && _sorted_early_chunks.empty();
+}
+
+Status OrderedMemTableV3::append(ChunkPtr chunk) {
+    _split_and_append_chunks(chunk);
+    RETURN_IF_ERROR(_partial_sort(false));
+    return Status::OK();
+}
+
+Status OrderedMemTableV3::append_selective(const Chunk& src, const uint32_t* indexes, uint32_t from, uint32_t size) {
+    // @TODO reuse
+    ChunkPtr chunk = src.clone_empty();
+    chunk->append_selective(src, indexes, from, size);
+    _split_and_append_chunks(chunk);
+    RETURN_IF_ERROR(_partial_sort(false));
+    return Status::OK();
+}
+
+static constexpr SlotId ORDINAL_COLUMN_SLOT_ID = -2;
+using OrdinalColumn = FixedLengthColumn<uint32_t>;
+
+ChunkPtr OrderedMemTableV3::_late_materialize(const ChunkPtr& sorted_early_chunk) {
+    SCOPED_TIMER(_spiller->metrics().late_materialize_timer);
+    // @TODO need a template?
+    const size_t num_rows = sorted_early_chunk->num_rows();
+    auto ordinal_column = sorted_early_chunk->get_column_by_slot_id(ORDINAL_COLUMN_SLOT_ID);
+    auto& ordinal_data = down_cast<OrdinalColumn*>(ordinal_column.get())->get_data();
+
+    const auto& early_materialized_slots = _spiller->options().early_materialized_slots;
+    // LOG(INFO) << "late mt: " << num_rows;
+    // auto sorted_late_chunk = _staging_late_chunks[0]->clone_empty(num_rows);
+    auto sorted_late_chunk = _final_late_chunks[0]->clone_empty(num_rows);
+    {
+        SCOPED_TIMER(_spiller->metrics().build_late_chunk_timer);
+        const uint32_t mask = (1L << 24) - 1;
+        for (size_t i = 0;i < num_rows;i++) {
+            uint32_t ordinal = ordinal_data[i];
+            uint32_t chunk_idx = ordinal >> 24;
+            uint32_t idx_in_chunk = ordinal & mask;
+            // @TODO column by column?
+            // @TODO cost a lot of time
+            // sorted_late_chunk->append(*_staging_late_chunks[chunk_idx], idx_in_chunk, 1);
+            // LOG(INFO) << "chunk idx: " << chunk_idx << ", idx_in_chunk: " << idx_in_chunk;
+            sorted_late_chunk->append(*_final_late_chunks[chunk_idx], idx_in_chunk, 1);
+        }
+        
+
+    }
+    // @TODO seems we can push merge until restore? need lots of memory, maybe not good
+    auto final_chunk = std::make_shared<Chunk>();
+    // merge two chunk
+    for (auto slot_id : _col_idx_to_slot_id) {
+        if (early_materialized_slots.count(slot_id)) {
+            final_chunk->append_column(sorted_early_chunk->get_column_by_slot_id(slot_id), slot_id);
+        } else {
+            final_chunk->append_column(sorted_late_chunk->get_column_by_slot_id(slot_id), slot_id);
+        }
+    }
+    return final_chunk;
+}
+
+Status OrderedMemTableV3::flush(FlushCallBack callback) {
+    // LOG(INFO) << "flush mem table, late chunks: " << _staging_late_chunks.size() << ", merged runs: " << _merged_runs.num_chunks();
+    // handle materialze
+    for (size_t i = 0;i < _merged_runs.num_chunks();i++) {
+        _chunk_slice.reset(_merged_runs.get_chunk(i));
+        while (!_chunk_slice.empty()) {
+            auto chunk = _chunk_slice.cutoff(_runtime_state->chunk_size());
+            auto final_chunk = _late_materialize(chunk);
+            RETURN_IF_ERROR(callback(final_chunk));
+        }
+    }
+    
+    int64_t consumption = _tracker->consumption();
+    _tracker->release(consumption);
+    COUNTER_ADD(_spiller->metrics().mem_table_peak_memory_usage, -consumption);
+    _merged_runs.clear();
+    // _sorted_early_chunks.clear();
+    _staging_late_chunks.clear();
+    _final_late_chunks.clear();
+    _col_idx_to_slot_id.clear();
+    return Status::OK();
+}
+
+Status OrderedMemTableV3::done() {
+    RETURN_IF_ERROR(_partial_sort(true));
+    _permutation = {};
+    _unsorted_early_chunk.reset();
+    // _staging_late_chunks.clear();
+    // @TODO seems no need
+    // _col_idx_to_slot_id.clear();
+    // _unsorted_chunk.reset();
+    RETURN_IF_ERROR(_merge_sorted());
+    return Status::OK();
+}
+
+// void OrderedMemTableV3::_append_chunks(ChunkPtr chunk) {
+//     DCHECK(!src_chunk->is_empty());
+//     size_t mem_usage = chunk->memory_usage();
+//     _staging_unsorted_rows += chunk->num_rows();
+//     _staging_unsorted_bytes += chunk->bytes_usage();
+//     _staging_unsorted_chunks.emplace_back(std::move(chunk));
+//     _tracker->consume(mem_usage);
+//     COUNTER_ADD(_spiller->metrics().mem_table_peak_memory_usage, mem_usage);
+// }
+
+
+void OrderedMemTableV3::_split_and_append_chunks(ChunkPtr src_chunk) {
+    // split chunk to early chunk and late chunk
+    DCHECK(!src_chunk->is_empty());
+
+    if (_col_idx_to_slot_id.empty()) {
+        // LOG(INFO) << "first chunk in mem table, late chunks: " << _staging_late_chunks.size();
+        const auto& slot_id_to_col_idx = src_chunk->get_slot_id_to_index_map();
+        _col_idx_to_slot_id.resize(slot_id_to_col_idx.size());
+        for (const auto& [slot_id, col_idx]: slot_id_to_col_idx) {
+            _col_idx_to_slot_id[col_idx] = slot_id;
+        }
+    }
+
+    auto& early_materialized_slots = _spiller->options().early_materialized_slots;
+
+    auto dst_early_chunk = std::make_shared<Chunk>();
+    auto dst_late_chunk = std::make_shared<Chunk>();
+
+    for (auto col_idx = 0; col_idx <  src_chunk->num_columns();col_idx++) {
+        auto slot_id = _col_idx_to_slot_id[col_idx];
+        auto src_column = src_chunk->get_column_by_index(col_idx);
+        if (early_materialized_slots.count(slot_id)) {
+            dst_early_chunk->append_column(src_column, slot_id);
+        } else {
+            dst_late_chunk->append_column(src_column, slot_id);
+        }
+    }
+
+
+    // size_t chunk_idx = _staging_late_chunks.size();
+    // use ordinal column to find other columns in _staging_late_chunks
+    // auto ordinal_column = OrdinalColumn::create();
+    // auto& ordinal_data = down_cast<OrdinalColumn*>(ordinal_column.get())->get_data();
+    // raw::make_room(&ordinal_data, src_chunk->num_rows());
+    // for (uint32_t offset = 0;offset < src_chunk->num_rows();offset++) {
+    //     ordinal_data[offset] = ((uint32_t)(chunk_idx << 16) | offset);
+    // }
+
+    // dst_early_chunk->append_column(ordinal_column, ORDINAL_COLUMN_SLOT_ID);
+    // LOG(INFO) << "split chunk, early chunk columns: " << dst_early_chunk->num_columns() << ", mem: " << dst_early_chunk->memory_usage()
+    //     << ", late chunk columns: " << dst_late_chunk->num_columns() << ", mem: " << dst_late_chunk->memory_usage();
+
+    size_t mem_usage = dst_early_chunk->memory_usage() + dst_late_chunk->memory_usage();
+    _staging_unsorted_rows += src_chunk->num_rows();
+    _staging_unsorted_bytes += src_chunk->bytes_usage();
+    _tracker->consume(mem_usage);
+    COUNTER_ADD(_spiller->metrics().mem_table_peak_memory_usage, mem_usage);
+
+    _staging_unsorted_early_chunks.emplace_back(std::move(dst_early_chunk));
+    _staging_late_chunks.emplace_back(std::move(dst_late_chunk));
+}
+
+void OrderedMemTableV3::_concat_chunks(const std::vector<ChunkPtr>& src_chunks, size_t num_rows, ChunkPtr& dst_chunk) {
+    DCHECK(!src_chunks.empty());
+    dst_chunk = src_chunks[0]->clone_empty(num_rows);
+    const size_t num_columns = dst_chunk->num_columns();
+    for (size_t i = 0;i < num_columns;i++) {
+        auto dst_column = dst_chunk->get_column_by_index(i);
+        auto* dst_data_column = ColumnHelper::get_data_column(dst_column.get());
+        if (dst_data_column->is_binary()) {
+            reserve_memory<BinaryColumn>(dst_data_column, src_chunks, i);
+        } else if (dst_column->is_large_binary()) {
+            reserve_memory<LargeBinaryColumn>(dst_data_column, src_chunks, i);
+        }
+    }
+    for (const auto src_chunk: src_chunks) {
+        dst_chunk->append(*src_chunk);
+    }
+}
+
+Status OrderedMemTableV3::_partial_sort(bool done) {
+    if (!_staging_unsorted_rows) {
+        return Status::OK();
+    }
+    bool reach_limit = _staging_unsorted_rows >= max_buffered_rows || _staging_unsorted_bytes >= max_buffered_bytes;
+    if (done || reach_limit) {
+        // LOG(INFO) << "do partial_sort, rows: " << _staging_unsorted_rows << ", bytes: " << _staging_unsorted_bytes;
+        _concat_chunks(_staging_unsorted_early_chunks, _staging_unsorted_rows, _unsorted_early_chunk);
+        _staging_unsorted_early_chunks.clear();
+
+        _concat_chunks(_staging_late_chunks, _staging_unsorted_rows, _concat_late_chunk);
+        _staging_late_chunks.clear();
+
+        // assign ordinal here
+        auto ordinal_column = OrdinalColumn::create();
+        auto& ordinal_data = down_cast<OrdinalColumn*>(ordinal_column.get())->get_data();
+        raw::make_room(&ordinal_data, _staging_unsorted_rows);
+        const size_t chunk_idx = _final_late_chunks.size();
+        for (uint32_t offset = 0;offset < _staging_unsorted_rows;offset++) {
+            ordinal_data[offset] = ((uint32_t)(chunk_idx << 24) | offset);
+        }
+        _unsorted_early_chunk->append_column(ordinal_column, ORDINAL_COLUMN_SLOT_ID);
+
+        _final_late_chunks.emplace_back(std::move(_concat_late_chunk));
+
+
+        RETURN_IF_ERROR(_unsorted_early_chunk->upgrade_if_overflow());
+
+
+        DataSegment segment(_sort_exprs, _unsorted_early_chunk);
+
+        _permutation.resize(0);
+        {
+            SCOPED_TIMER(_spiller->metrics().sort_chunk_timer);
+            RETURN_IF_ERROR(sort_and_tie_columns(_runtime_state->cancelled_ref(), segment.order_by_columns, _sort_desc, &_permutation));
+        }
+
+        auto sorted_early_chunk = _unsorted_early_chunk->clone_empty_with_slot(_unsorted_early_chunk->num_rows());
+        {
+            SCOPED_TIMER(_spiller->metrics().materialize_chunk_timer);
+            materialize_by_permutation(sorted_early_chunk.get(), {_unsorted_early_chunk}, _permutation);
+            RETURN_IF_ERROR(sorted_early_chunk->upgrade_if_overflow());
+        }
+
+        _sorted_early_chunks.emplace_back(std::move(sorted_early_chunk));
+        _unsorted_early_chunk->reset();
+
+        _staging_unsorted_rows = 0;
+        _staging_unsorted_bytes = 0;
+    } 
+    return Status::OK();
+}
+
+Status OrderedMemTableV3::_merge_sorted() {
+    // LOG(INFO) << "merge sorted, sorted_early_chunks: " << _sorted_early_chunks.size();
+    SCOPED_TIMER(_spiller->metrics().merge_chunk_timer);
+    RETURN_IF_ERROR(merge_sorted_chunks(_sort_desc, _sort_exprs, _sorted_early_chunks, &_merged_runs));
+    _sorted_early_chunks.clear();
     return Status::OK();
 }
 } // namespace starrocks::spill

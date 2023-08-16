@@ -168,16 +168,16 @@ Status SpillableAggregateBlockingSinkOperator::_try_to_spill_by_auto(RuntimeStat
         TRY_CATCH_BAD_ALLOC(_aggregator->build_hash_map(chunk_size));
         TRY_CATCH_BAD_ALLOC(_aggregator->try_convert_to_two_level_map());
 
-        if (_agg_group_by_with_limit) {
-            size_t zero_count = SIMD::count_zero(_aggregator->streaming_selection().data(), chunk_size);
-            if (zero_count == chunk_size) {
-                RETURN_IF_ERROR(_aggregator->compute_batch_agg_states(chunk.get(), chunk_size));
-            } else {
-                RETURN_IF_ERROR(_aggregator->compute_batch_agg_states_with_selection(chunk.get(), chunk_size));
-            }
-        } else {
+        // if (_agg_group_by_with_limit) {
+        //     size_t zero_count = SIMD::count_zero(_aggregator->streaming_selection().data(), chunk_size);
+        //     if (zero_count == chunk_size) {
+        //         RETURN_IF_ERROR(_aggregator->compute_batch_agg_states(chunk.get(), chunk_size));
+        //     } else {
+        //         RETURN_IF_ERROR(_aggregator->compute_batch_agg_states_with_selection(chunk.get(), chunk_size));
+        //     }
+        // } else {
             RETURN_IF_ERROR(_aggregator->compute_batch_agg_states(chunk.get(), chunk_size));
-        }
+        // }
 
         _aggregator->update_num_input_rows(chunk_size);
         RETURN_IF_ERROR(_aggregator->check_has_error());
@@ -300,6 +300,7 @@ Status SpillableAggregateBlockingSinkOperatorFactory::prepare(RuntimeState* stat
     _spill_options->plan_node_id = _plan_node_id;
     _spill_options->encode_level = state->spill_encode_level();
     _spill_options->mem_table_version = state->spill_mem_table_version();
+    LOG(INFO) << "mem table version: " << state->spill_mem_table_version();
 
     return Status::OK();
 }
