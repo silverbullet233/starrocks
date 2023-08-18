@@ -69,7 +69,6 @@ private:
 
     void _add_non_agg_chunk(ChunkPtr chunk);
 
-
     std::function<StatusOr<ChunkPtr>()> _build_spill_task(RuntimeState* state, bool should_spill_hash_table = true);
     spill::SpillStrategy _spill_strategy = spill::SpillStrategy::NO_SPILL;
 
@@ -80,14 +79,12 @@ private:
     double _ht_low_reduction_threshold = 0;
     int32_t _ht_low_reduction_chunk_limit = 0;
     int32_t _continuous_low_reduction_chunk_num = 0;
-    
+
     bool _is_finished = false;
 
-    RuntimeProfile::Counter*  _hash_table_spill_times = nullptr;
-    
-    static const int32_t continuous_low_reduction_threshold = 10;
-    
+    RuntimeProfile::Counter* _hash_table_spill_times = nullptr;
 
+    static const int32_t continuous_low_reduction_threshold = 10;
 };
 
 class SpillableAggregateBlockingSinkOperatorFactory : public OperatorFactory {

@@ -331,13 +331,9 @@ public:
 
     int32_t spill_mem_table_num() const { return _query_options.spill_mem_table_num; }
 
-    bool enable_agg_spill_preaggregation() const {
-        return _query_options.enable_agg_spill_preaggregation;
-    }
-    
-    double agg_spill_ht_low_reduction_threshold() const {
-        return _query_options.agg_spill_ht_low_reduction_threshold;
-    }
+    bool enable_agg_spill_preaggregation() const { return _query_options.enable_agg_spill_preaggregation; }
+
+    double agg_spill_ht_low_reduction_threshold() const { return _query_options.agg_spill_ht_low_reduction_threshold; }
     int32_t agg_spill_ht_low_reduction_chunk_limit() const {
         return _query_options.agg_spill_ht_low_reduction_chunk_limit;
     }

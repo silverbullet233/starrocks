@@ -58,7 +58,7 @@ Status SpillableAggregateBlockingSinkOperator::set_finishing(RuntimeState* state
     if (!_aggregator->spill_channel()->has_task()) {
         if (_aggregator->hash_map_variant().size() > 0 || !_non_agg_chunks.empty()) {
             _aggregator->hash_map_variant().visit(
-                [&](auto& hash_map_with_key) { _aggregator->it_hash() = _aggregator->_state_allocator.begin(); });
+                    [&](auto& hash_map_with_key) { _aggregator->it_hash() = _aggregator->_state_allocator.begin(); });
             _aggregator->spill_channel()->add_spill_task(_build_spill_task(state));
         }
     }
@@ -208,8 +208,10 @@ Status SpillableAggregateBlockingSinkOperator::_try_to_spill_by_auto(RuntimeStat
 
     size_t revocable_mem_bytes = _non_agg_bytes + _aggregator->hash_map_memory_usage();
     set_revocable_mem_bytes(revocable_mem_bytes);
-    if (revocable_mem_bytes > state->spill_mem_table_size() || _continuous_low_reduction_chunk_num >= _ht_low_reduction_chunk_limit) {
-        bool should_spill_hash_table = _continuous_low_reduction_chunk_num >= _ht_low_reduction_chunk_limit || _aggregator->hash_map_memory_usage() > state->spill_mem_table_size();
+    if (revocable_mem_bytes > state->spill_mem_table_size() ||
+        _continuous_low_reduction_chunk_num >= _ht_low_reduction_chunk_limit) {
+        bool should_spill_hash_table = _continuous_low_reduction_chunk_num >= _ht_low_reduction_chunk_limit ||
+                                       _aggregator->hash_map_memory_usage() > state->spill_mem_table_size();
         if (should_spill_hash_table) {
             _continuous_low_reduction_chunk_num = 0;
         }
@@ -223,15 +225,15 @@ Status SpillableAggregateBlockingSinkOperator::_try_to_spill_by_auto(RuntimeStat
 Status SpillableAggregateBlockingSinkOperator::_spill_all_data(RuntimeState* state, bool should_spill_hash_table) {
     if (should_spill_hash_table) {
         _aggregator->hash_map_variant().visit(
-                [&](auto& hash_map_with_key) {_aggregator->it_hash() = _aggregator->_state_allocator.begin(); }
-        );
+                [&](auto& hash_map_with_key) { _aggregator->it_hash() = _aggregator->_state_allocator.begin(); });
     }
     CHECK(!_aggregator->spill_channel()->has_task());
     RETURN_IF_ERROR(_aggregator->spill_aggregate_data(state, _build_spill_task(state, should_spill_hash_table)));
     return Status::OK();
 }
 
-std::function<StatusOr<ChunkPtr>()> SpillableAggregateBlockingSinkOperator::_build_spill_task(RuntimeState* state, bool should_spill_hash_table) {
+std::function<StatusOr<ChunkPtr>()> SpillableAggregateBlockingSinkOperator::_build_spill_task(
+        RuntimeState* state, bool should_spill_hash_table) {
     return [this, state, should_spill_hash_table]() -> StatusOr<ChunkPtr> {
         if (!_non_agg_chunks.empty()) {
             auto chunk = _non_agg_chunks.front();
@@ -242,8 +244,8 @@ std::function<StatusOr<ChunkPtr>()> SpillableAggregateBlockingSinkOperator::_bui
             bool use_intermediate_as_output = true;
             if (!_aggregator->is_ht_eos()) {
                 auto chunk = std::make_shared<Chunk>();
-                RETURN_IF_ERROR(
-                        _aggregator->convert_hash_map_to_chunk(state->chunk_size(), &chunk, &use_intermediate_as_output));
+                RETURN_IF_ERROR(_aggregator->convert_hash_map_to_chunk(state->chunk_size(), &chunk,
+                                                                       &use_intermediate_as_output));
                 return chunk;
             }
             COUNTER_UPDATE(_aggregator->input_row_count(), _aggregator->num_input_rows());

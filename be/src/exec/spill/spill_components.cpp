@@ -53,7 +53,7 @@ Status RawSpillerWriter::prepare(RuntimeState* state) {
         } else {
             _mem_table_pool.push(
                     std::make_unique<OrderedMemTable>(&opts.sort_exprs->lhs_ordering_expr_ctxs(), opts.sort_desc, state,
-                                                    opts.spill_mem_table_bytes_size, _parent_tracker, _spiller));
+                                                      opts.spill_mem_table_bytes_size, _parent_tracker, _spiller));
         }
     }
 
