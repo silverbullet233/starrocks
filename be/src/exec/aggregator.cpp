@@ -891,8 +891,8 @@ Status Aggregator::output_chunk_by_streaming(Chunk* input_chunk, ChunkPtr* chunk
     _num_pass_through_rows += result_chunk->num_rows();
     _num_rows_returned += result_chunk->num_rows();
     _num_rows_processed += result_chunk->num_rows();
+    COUNTER_UPDATE(_agg_stat->pass_through_row_count, result_chunk->num_rows());
     *chunk = std::move(result_chunk);
-    // COUNTER_SET(_agg_stat->pass_through_row_count, _num_pass_through_rows);
     return Status::OK();
 }
 

@@ -249,7 +249,6 @@ std::function<StatusOr<ChunkPtr>()> SpillableAggregateBlockingSinkOperator::_bui
                 return chunk;
             }
             COUNTER_UPDATE(_aggregator->input_row_count(), _aggregator->num_input_rows());
-            COUNTER_UPDATE(_aggregator->pass_through_row_count(), _aggregator->num_pass_through_rows());
             COUNTER_UPDATE(_aggregator->rows_returned_counter(), _aggregator->hash_map_variant().size());
             COUNTER_UPDATE(_hash_table_spill_times, 1);
             RETURN_IF_ERROR(_aggregator->reset_state(state, {}, nullptr));

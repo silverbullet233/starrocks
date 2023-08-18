@@ -83,8 +83,6 @@ private:
     bool _is_finished = false;
 
     RuntimeProfile::Counter* _hash_table_spill_times = nullptr;
-
-    static const int32_t continuous_low_reduction_threshold = 10;
 };
 
 class SpillableAggregateBlockingSinkOperatorFactory : public OperatorFactory {
