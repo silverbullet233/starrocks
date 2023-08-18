@@ -33,7 +33,7 @@ void SpillableAggregateBlockingSourceOperator::close(RuntimeState* state) {
 }
 
 bool SpillableAggregateBlockingSourceOperator::has_output() const {
-    if (AggregateBlockingSourceOperator::has_output()) {
+    if (!_aggregator->spiller()->spilled() && AggregateBlockingSourceOperator::has_output()) {
         return true;
     }
 
@@ -99,7 +99,6 @@ StatusOr<ChunkPtr> SpillableAggregateBlockingSourceOperator::pull_chunk(RuntimeS
 }
 
 StatusOr<ChunkPtr> SpillableAggregateBlockingSourceOperator::_pull_spilled_chunk(RuntimeState* state) {
-    DCHECK(_accumulator.need_input());
     ChunkPtr res;
 
     if (_accumulator.has_output()) {

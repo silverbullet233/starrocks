@@ -60,6 +60,8 @@ SpillProcessMetrics::SpillProcessMetrics(RuntimeProfile* profile, std::atomic_in
             "MemTablePeakMemoryBytes", TUnit::BYTES, RuntimeProfile::Counter::create_strategy(TUnit::BYTES));
     input_stream_peak_memory_usage = _spiller_metrics->AddHighWaterMarkCounter(
             "InputStreamPeakMemoryBytes", TUnit::BYTES, RuntimeProfile::Counter::create_strategy(TUnit::BYTES));
+    sort_chunk_timer = ADD_TIMER(_spiller_metrics.get(), "SortChunkTime");
+    materialize_chunk_timer = ADD_TIMER(_spiller_metrics.get(), "MaterializeChunkTime");
 
     shuffle_timer = ADD_TIMER(_spiller_metrics.get(), "ShuffleTime");
     split_partition_timer = ADD_TIMER(_spiller_metrics.get(), "SplitPartitionTime");
@@ -67,6 +69,8 @@ SpillProcessMetrics::SpillProcessMetrics(RuntimeProfile* profile, std::atomic_in
     restore_from_mem_table_bytes = ADD_COUNTER(_spiller_metrics.get(), "BytesRestoreFromMemTable", TUnit::UNIT);
     partition_writer_peak_memory_usage = _spiller_metrics->AddHighWaterMarkCounter(
             "PartitionWriterPeakMemoryBytes", TUnit::BYTES, RuntimeProfile::Counter::create_strategy(TUnit::BYTES));
+    
+    block_count = ADD_COUNTER(_spiller_metrics.get(), "BlockCount", TUnit::UNIT);
 }
 
 Status Spiller::prepare(RuntimeState* state) {

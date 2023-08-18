@@ -216,6 +216,10 @@ struct TQueryOptions {
   97: optional i64 load_profile_collect_second;
 
   101: optional i64 runtime_profile_report_interval = 30;
+
+  102: optional bool enable_agg_spill_preaggregation;
+  103: optional double agg_spill_ht_low_reduction_threshold;
+  104: optional i32 agg_spill_ht_low_reduction_chunk_limit;
 }
 
 
