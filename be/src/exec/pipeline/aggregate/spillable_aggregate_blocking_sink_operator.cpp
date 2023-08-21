@@ -51,7 +51,6 @@ Status SpillableAggregateBlockingSinkOperator::set_finishing(RuntimeState* state
 
     if (!_aggregator->spiller()->spilled()) {
         RETURN_IF_ERROR(AggregateBlockingSinkOperator::set_finishing(state));
-        LOG(INFO) << "no spill, " << this;
         return Status::OK();
     }
 
