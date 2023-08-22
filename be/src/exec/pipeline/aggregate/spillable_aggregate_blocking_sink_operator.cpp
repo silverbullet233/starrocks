@@ -44,20 +44,26 @@ Status SpillableAggregateBlockingSinkOperator::set_finishing(RuntimeState* state
         _is_finished = true;
     });
 
+    LOG(INFO) << "agg block sink set_finishing, " << _aggregator->spiller().get() << ", spill rows: " << _aggregator->spiller()->spilled_append_rows()
+        << ", plan_node_id:" << _plan_node_id;
+
     // cancel spill task
     if (state->is_cancelled()) {
+        LOG(INFO) << "cancel spiller, "<< _aggregator->spiller().get() << ", plan_node_id:" << _plan_node_id;
         _aggregator->spiller()->cancel();
     }
 
+
     if (!_aggregator->spiller()->spilled()) {
         RETURN_IF_ERROR(AggregateBlockingSinkOperator::set_finishing(state));
+        LOG(INFO) << "no spill, " << _aggregator->spiller().get();
         return Status::OK();
     }
-
     if (!_aggregator->spill_channel()->has_task()) {
         if (_aggregator->hash_map_variant().size() > 0 || !_non_agg_chunks.empty()) {
             _aggregator->hash_map_variant().visit(
                     [&](auto& hash_map_with_key) { _aggregator->it_hash() = _aggregator->_state_allocator.begin(); });
+            LOG(INFO) << "spill res data, " << _aggregator->spiller().get();
             _aggregator->spill_channel()->add_spill_task(_build_spill_task(state));
         }
     }
@@ -66,6 +72,7 @@ Status SpillableAggregateBlockingSinkOperator::set_finishing(RuntimeState* state
 
     auto flush_function = [this](RuntimeState* state, auto io_executor) {
         auto& spiller = _aggregator->spiller();
+        LOG(INFO) << "agg block sink flush, " << _aggregator->spiller().get() << ", plan_node_id:" << _plan_node_id;
         return spiller->flush(state, *io_executor, TRACKER_WITH_SPILLER_GUARD(state, spiller));
     };
 
@@ -75,6 +82,7 @@ Status SpillableAggregateBlockingSinkOperator::set_finishing(RuntimeState* state
                 [this, state]() {
                     auto defer = DeferOp([&]() { _aggregator->unref(state); });
                     RETURN_IF_ERROR(AggregateBlockingSinkOperator::set_finishing(state));
+                    LOG(INFO) << "agg block sink set_finishing done, " << _aggregator->spiller().get() << ", plan_node_id:" << _plan_node_id;
                     return Status::OK();
                 },
                 state, *io_executor, TRACKER_WITH_SPILLER_GUARD(state, _aggregator->spiller()));
@@ -156,7 +164,7 @@ Status SpillableAggregateBlockingSinkOperator::_try_to_spill_by_auto(RuntimeStat
     // goal: control buffered data memory usage, aggregate data as much as possible before spill
     // this strategy is similar to the LIMITED_MEM mode in agg streaming
 
-    if (ht_need_expansion && _non_agg_bytes + ht_mem_usage > max_mem_usage) {
+    if (_non_agg_bytes + ht_mem_usage > max_mem_usage) {
         // if hash map need expand and the memory usage of all buffered data exceed limit,
         // use force streaming mode and spill all data
         SCOPED_TIMER(_aggregator->streaming_timer());
@@ -258,6 +266,7 @@ std::function<StatusOr<ChunkPtr>()> SpillableAggregateBlockingSinkOperator::_bui
             COUNTER_UPDATE(_aggregator->input_row_count(), _aggregator->num_input_rows());
             COUNTER_UPDATE(_aggregator->rows_returned_counter(), _aggregator->hash_map_variant().size());
             COUNTER_UPDATE(_hash_table_spill_times, 1);
+            // LOG(INFO) << "spill done, rows: " << _aggregator->num_input_rows() + _non_agg_rows << ", " << _aggregator->spiller().get();
             RETURN_IF_ERROR(_aggregator->reset_state(state, {}, nullptr));
         }
         _non_agg_rows = 0;
