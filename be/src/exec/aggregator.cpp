@@ -22,7 +22,6 @@
 #include "column/chunk.h"
 #include "column/column_helper.h"
 #include "column/vectorized_fwd.h"
-#include "common/config.h"
 #include "common/status.h"
 #include "exec/exec_node.h"
 #include "exec/pipeline/operator.h"
@@ -33,7 +32,6 @@
 #include "runtime/descriptors.h"
 #include "types/logical_type.h"
 #include "udf/java/utils.h"
-#include "util/runtime_profile.h"
 
 namespace starrocks {
 
@@ -298,10 +296,6 @@ Status Aggregator::open(RuntimeState* state) {
     }
 
     RETURN_IF_ERROR(check_has_error());
-
-    _buffer_mem_manager = std::make_unique<pipeline::ChunkBufferMemoryManager>(
-            1, config::local_exchange_buffer_mem_limit_per_driver,
-            state->chunk_size() * config::streaming_agg_chunk_buffer_size);
 
     return Status::OK();
 }
@@ -613,40 +607,20 @@ bool Aggregator::is_chunk_buffer_empty() {
 }
 
 ChunkPtr Aggregator::poll_chunk_buffer() {
-    ChunkPtr chunk;
-    {
-        std::lock_guard<std::mutex> l(_buffer_mutex);
-        if (_buffer.empty()) {
-            return nullptr;
-        }
-        chunk = _buffer.front();
-        _buffer.pop();
+    std::lock_guard<std::mutex> l(_buffer_mutex);
+    if (_buffer.empty()) {
+        return nullptr;
     }
-    size_t mem_usage = chunk->memory_usage();
-    size_t num_rows = chunk->num_rows();
-    _buffer_mem_manager->update_memory_usage(-mem_usage, -num_rows);
-
-    COUNTER_ADD(_agg_stat->chunk_buffer_peak_memory, -mem_usage);
-    COUNTER_ADD(_agg_stat->chunk_buffer_peak_size, -1);
-
+    ChunkPtr chunk = _buffer.front();
+    _buffer.pop();
+    _buffer_size--;
     return chunk;
 }
 
 void Aggregator::offer_chunk_to_buffer(const ChunkPtr& chunk) {
-    {
-        std::lock_guard<std::mutex> l(_buffer_mutex);
-        _buffer.push(chunk);
-    }
-
-    size_t mem_usage = chunk->memory_usage();
-    size_t num_rows = chunk->num_rows();
-    _buffer_mem_manager->update_memory_usage(mem_usage, num_rows);
-    COUNTER_ADD(_agg_stat->chunk_buffer_peak_memory, mem_usage);
-    COUNTER_ADD(_agg_stat->chunk_buffer_peak_size, 1);
-}
-
-bool Aggregator::is_chunk_buffer_full() {
-    return _buffer_mem_manager->is_full();
+    std::lock_guard<std::mutex> l(_buffer_mutex);
+    _buffer.push(chunk);
+    _buffer_size++;
 }
 
 bool Aggregator::should_expand_preagg_hash_tables(size_t prev_row_returned, size_t input_chunk_size, int64_t ht_mem,

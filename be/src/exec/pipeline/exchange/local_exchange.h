@@ -18,11 +18,10 @@
 #include <utility>
 
 #include "column/vectorized_fwd.h"
-#include "exec/chunk_buffer_memory_manager.h"
+#include "exec/pipeline/exchange/local_exchange_memory_manager.h"
 #include "exec/pipeline/exchange/local_exchange_source_operator.h"
 #include "exec/pipeline/exchange/shuffler.h"
 #include "exprs/expr_context.h"
-#include "util/runtime_profile.h"
 
 namespace starrocks {
 class ExprContext;
@@ -109,7 +108,7 @@ public:
 // Exchange the local data from local sink operator to local source operator
 class LocalExchanger {
 public:
-    explicit LocalExchanger(std::string name, std::shared_ptr<ChunkBufferMemoryManager> memory_manager,
+    explicit LocalExchanger(std::string name, std::shared_ptr<LocalExchangeMemoryManager> memory_manager,
                             LocalExchangeSourceOperatorFactory* source)
             : _name(std::move(name)), _memory_manager(std::move(memory_manager)), _source(source) {}
 
@@ -165,7 +164,7 @@ public:
 
 protected:
     const std::string _name;
-    std::shared_ptr<ChunkBufferMemoryManager> _memory_manager;
+    std::shared_ptr<LocalExchangeMemoryManager> _memory_manager;
     std::atomic<int32_t> _sink_number = 0;
     LocalExchangeSourceOperatorFactory* _source;
 
@@ -176,11 +175,11 @@ protected:
 // Exchange the local data for shuffle
 class PartitionExchanger final : public LocalExchanger {
 public:
-    PartitionExchanger(const std::shared_ptr<ChunkBufferMemoryManager>& memory_manager,
+    PartitionExchanger(const std::shared_ptr<LocalExchangeMemoryManager>& memory_manager,
                        LocalExchangeSourceOperatorFactory* source, const TPartitionType::type part_type,
                        const std::vector<ExprContext*>& _partition_expr_ctxs);
 
-    ~PartitionExchanger() override = default;
+    virtual ~PartitionExchanger() = default;
 
     Status prepare(RuntimeState* state) override;
     void close(RuntimeState* state) override;
@@ -206,7 +205,7 @@ class KeyPartitionExchanger final : public LocalExchanger {
     using Partition2RowIndexes = std::map<PartitionKeyPtr, RowIndexPtr, PartitionKeyComparator>;
 
 public:
-    KeyPartitionExchanger(const std::shared_ptr<ChunkBufferMemoryManager>& memory_manager,
+    KeyPartitionExchanger(const std::shared_ptr<LocalExchangeMemoryManager>& memory_manager,
                           LocalExchangeSourceOperatorFactory* source,
                           const std::vector<ExprContext*>& _partition_expr_ctxs, size_t num_sinks);
 
@@ -221,7 +220,7 @@ private:
 // Exchange the local data for broadcast
 class BroadcastExchanger final : public LocalExchanger {
 public:
-    BroadcastExchanger(const std::shared_ptr<ChunkBufferMemoryManager>& memory_manager,
+    BroadcastExchanger(const std::shared_ptr<LocalExchangeMemoryManager>& memory_manager,
                        LocalExchangeSourceOperatorFactory* source)
             : LocalExchanger("Broadcast", memory_manager, source) {}
 
@@ -233,7 +232,7 @@ public:
 // Exchange the local data for one local source operation
 class PassthroughExchanger final : public LocalExchanger {
 public:
-    PassthroughExchanger(const std::shared_ptr<ChunkBufferMemoryManager>& memory_manager,
+    PassthroughExchanger(const std::shared_ptr<LocalExchangeMemoryManager>& memory_manager,
                          LocalExchangeSourceOperatorFactory* source)
             : LocalExchanger("Passthrough", memory_manager, source) {}
 
@@ -248,7 +247,7 @@ private:
 // Random shuffle for each chunk of source.
 class RandomPassthroughExchanger final : public LocalExchanger {
 public:
-    RandomPassthroughExchanger(const std::shared_ptr<ChunkBufferMemoryManager>& memory_manager,
+    RandomPassthroughExchanger(const std::shared_ptr<LocalExchangeMemoryManager>& memory_manager,
                                LocalExchangeSourceOperatorFactory* source)
             : LocalExchanger("RandomPassthrough", memory_manager, source) {}
 
@@ -265,7 +264,7 @@ private:
 // random shuffle each rows for the input chunk to seperate it evenly.
 class AdaptivePassthroughExchanger final : public LocalExchanger {
 public:
-    AdaptivePassthroughExchanger(const std::shared_ptr<ChunkBufferMemoryManager>& memory_manager,
+    AdaptivePassthroughExchanger(const std::shared_ptr<LocalExchangeMemoryManager>& memory_manager,
                                  LocalExchangeSourceOperatorFactory* source)
             : LocalExchanger("AdaptivePassthrough", memory_manager, source) {}
 
