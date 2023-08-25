@@ -220,6 +220,7 @@ struct TQueryOptions {
   102: optional bool enable_agg_spill_preaggregation;
   103: optional double agg_spill_ht_low_reduction_threshold;
   104: optional i32 agg_spill_ht_low_reduction_chunk_limit;
+  105: optional i32 spill_join_mem_table_size;
 }
 
 

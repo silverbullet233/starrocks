@@ -440,6 +440,7 @@ public class SessionVariable implements Serializable, Writable, Cloneable {
     public static final String SPILL_OPERATOR_MAX_BYTES = "spill_operator_max_bytes";
     public static final String SPILL_REVOCABLE_MAX_BYTES = "spill_revocable_max_bytes";
     public static final String SPILL_ENCODE_LEVEL = "spill_encode_level";
+    public static final String SPILL_JOIN_MEM_TABLE_SIZE = "spill_join_mem_table_size";
 
     // full_sort_max_buffered_{rows,bytes} are thresholds that limits input size of partial_sort
     // in full sort.
@@ -770,7 +771,7 @@ public class SessionVariable implements Serializable, Writable, Cloneable {
 
     // this is used to control which operators can spill, only meaningful when enable_spill=true
     // it uses a bit to identify whether the spill of each operator is in effect, 0 means no, 1 means yes
-    // at present, only the lowest 4 bits are meaningful, corresponding to the four operators
+// at present, only the lowest 4 bits are meaningful, corresponding to the four operators
     // HASH_JOIN, AGG, AGG_DISTINCT and SORT respectively (see TSpillableOperatorType in InternalService.thrift)
     // e.g.
     // if spillable_operator_mask & 1 != 0, hash join operator can spill
@@ -789,6 +790,8 @@ public class SessionVariable implements Serializable, Writable, Cloneable {
     // These parameters are experimental. They may be removed in the future
     @VarAttr(name = SPILL_MEM_TABLE_SIZE, flag = VariableMgr.INVISIBLE)
     private int spillMemTableSize = 1024 * 1024 * 100;
+    @VarAttr(name = SPILL_JOIN_MEM_TABLE_SIZE)
+    private int spillJoinMemTableSize = 1024 * 1024 * 8;
     @VarAttr(name = SPILL_MEM_TABLE_NUM, flag = VariableMgr.INVISIBLE)
     private int spillMemTableNum = 2;
     @VarAttr(name = SPILL_MEM_LIMIT_THRESHOLD, flag = VariableMgr.INVISIBLE)
@@ -2434,6 +2437,7 @@ public class SessionVariable implements Serializable, Writable, Cloneable {
         tResult.setEnable_spill(enableSpill);
         if (enableSpill) {
             tResult.setSpill_mem_table_size(spillMemTableSize);
+            tResult.setSpill_join_mem_table_size(spillJoinMemTableSize);
             tResult.setSpill_mem_table_num(spillMemTableNum);
             tResult.setSpill_mem_limit_threshold(spillMemLimitThreshold);
             tResult.setSpill_operator_min_bytes(spillOperatorMinBytes);

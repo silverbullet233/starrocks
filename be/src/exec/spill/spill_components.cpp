@@ -472,9 +472,10 @@ Status PartitionedSpillerWriter::_spill_input_partitions(SerdeContext& context,
                                                          const std::vector<SpilledPartition*>& spilling_partitions) {
     SCOPED_TIMER(_spiller->metrics().flush_timer);
     for (auto partition : spilling_partitions) {
-        RETURN_IF_ERROR(spill_partition(context, partition, [&partition](auto& consumer) {
+        RETURN_IF_ERROR(spill_partition(context, partition, [&partition, this](auto& consumer) {
             auto& mem_table = partition->spill_writer->mem_table();
             RETURN_IF_ERROR(mem_table->flush(consumer));
+            COUNTER_SET(_spiller->metrics().partition_writer_peak_memory_usage, mem_consumption());
             return Status::OK();
         }));
     }
