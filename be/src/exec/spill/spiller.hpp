@@ -172,6 +172,8 @@ Status RawSpillerWriter::flush(RuntimeState* state, TaskExecutor&& executor, Mem
     };
     // submit io task
     RETURN_IF_ERROR(executor.submit(std::move(task)));
+    COUNTER_UPDATE(_spiller->metrics().flush_io_task_count, 1);
+    COUNTER_SET(_spiller->metrics().peak_flush_io_task_count, _running_flush_tasks);
     return Status::OK();
 }
 
@@ -195,6 +197,7 @@ Status SpillerReader::trigger_restore(RuntimeState* state, TaskExecutor&& execut
     DCHECK(_stream->enable_prefetch());
     // if all is well and input stream enable prefetch and not eof
     if (!_stream->eof()) {
+        // @TODO if there is already a task, no need submit again
         _running_restore_tasks++;
         auto restore_task = [this, guard, trace = TraceInfo(state)]() {
             SCOPED_SET_TRACE_INFO({}, trace.query_id, trace.fragment_id);
@@ -216,6 +219,8 @@ Status SpillerReader::trigger_restore(RuntimeState* state, TaskExecutor&& execut
             return Status::OK();
         };
         RETURN_IF_ERROR(executor.submit(std::move(restore_task)));
+        COUNTER_UPDATE(_spiller->metrics().restore_io_task_count, 1);
+        COUNTER_SET(_spiller->metrics().peak_flush_io_task_count, _running_restore_tasks);
     }
     return Status::OK();
 }
@@ -295,6 +300,8 @@ Status PartitionedSpillerWriter::flush(RuntimeState* state, bool is_final_flush,
     };
 
     RETURN_IF_ERROR(executor.submit(std::move(task)));
+    COUNTER_UPDATE(_spiller->metrics().flush_io_task_count, 1);
+    COUNTER_SET(_spiller->metrics().peak_flush_io_task_count, _running_flush_tasks);
 
     return Status::OK();
 }

@@ -317,6 +317,7 @@ public:
     ChunkPtr poll_chunk_buffer();
     void offer_chunk_to_buffer(const ChunkPtr& chunk);
     bool is_chunk_buffer_full();
+    size_t chunk_buffer_size();
 
     bool should_expand_preagg_hash_tables(size_t prev_row_returned, size_t input_chunk_size, int64_t ht_mem,
                                           int64_t ht_rows) const;
@@ -386,7 +387,9 @@ public:
         return _spiller == nullptr || _spiller->spilled_append_rows() == _spiller->restore_read_rows();
     }
 
-    void set_streaming_all_states(bool streaming_all_states) { _streaming_all_states = streaming_all_states; }
+    void set_streaming_all_states(bool streaming_all_states) {
+        _streaming_all_states = streaming_all_states;
+    }
 
     bool is_streaming_all_states() const { return _streaming_all_states; }
 
@@ -423,7 +426,7 @@ protected:
     bool _needs_finalize;
     // Indicate whether data of the hash table has been taken out or reach limit
     bool _is_ht_eos = false;
-    bool _streaming_all_states = false;
+    std::atomic<bool> _streaming_all_states = false;
     bool _is_only_group_by_columns = false;
     // At least one group by column is nullable
     bool _has_nullable_key = false;

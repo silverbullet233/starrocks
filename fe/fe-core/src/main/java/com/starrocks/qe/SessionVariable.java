@@ -771,7 +771,7 @@ public class SessionVariable implements Serializable, Writable, Cloneable {
 
     // this is used to control which operators can spill, only meaningful when enable_spill=true
     // it uses a bit to identify whether the spill of each operator is in effect, 0 means no, 1 means yes
-// at present, only the lowest 4 bits are meaningful, corresponding to the four operators
+    // at present, only the lowest 4 bits are meaningful, corresponding to the four operators
     // HASH_JOIN, AGG, AGG_DISTINCT and SORT respectively (see TSpillableOperatorType in InternalService.thrift)
     // e.g.
     // if spillable_operator_mask & 1 != 0, hash join operator can spill

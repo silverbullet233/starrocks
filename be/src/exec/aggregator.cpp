@@ -648,6 +648,10 @@ void Aggregator::offer_chunk_to_buffer(const ChunkPtr& chunk) {
 bool Aggregator::is_chunk_buffer_full() {
     return _buffer_mem_manager->is_full();
 }
+size_t Aggregator::chunk_buffer_size() {
+    std::lock_guard<std::mutex> l(_buffer_mutex);
+    return _buffer.size();
+}
 
 bool Aggregator::should_expand_preagg_hash_tables(size_t prev_row_returned, size_t input_chunk_size, int64_t ht_mem,
                                                   int64_t ht_rows) const {

@@ -696,7 +696,7 @@ Status PipelineDriver::_mark_operator_finishing(OperatorPtr& op, RuntimeState* s
         return Status::OK();
     }
 
-    VLOG_ROW << strings::Substitute("[Driver] finishing operator [fragment_id=$0] [driver=$1] [operator=$2]",
+    LOG(INFO) << strings::Substitute("[Driver] finishing operator [fragment_id=$0] [driver=$1] [operator=$2]",
                                     print_id(state->fragment_instance_id()), to_readable_string(), op->get_name());
     {
         SCOPED_THREAD_LOCAL_OPERATOR_MEM_TRACKER_SETTER(op);
@@ -714,7 +714,7 @@ Status PipelineDriver::_mark_operator_finished(OperatorPtr& op, RuntimeState* st
         return Status::OK();
     }
 
-    VLOG_ROW << strings::Substitute("[Driver] finished operator [fragment_id=$0] [driver=$1] [operator=$2]",
+    LOG(INFO) << strings::Substitute("[Driver] finished operator [fragment_id=$0] [driver=$1] [operator=$2]",
                                     print_id(state->fragment_instance_id()), to_readable_string(), op->get_name());
     {
         SCOPED_THREAD_LOCAL_OPERATOR_MEM_TRACKER_SETTER(op);
@@ -758,7 +758,7 @@ Status PipelineDriver::_mark_operator_closed(OperatorPtr& op, RuntimeState* stat
         return Status::OK();
     }
 
-    VLOG_ROW << strings::Substitute("[Driver] close operator [fragment_id=$0] [driver=$1] [operator=$2]",
+    LOG(INFO) << strings::Substitute("[Driver] close operator [fragment_id=$0] [driver=$1] [operator=$2]",
                                     print_id(state->fragment_instance_id()), to_readable_string(), op->get_name());
     {
         SCOPED_THREAD_LOCAL_OPERATOR_MEM_TRACKER_SETTER(op);

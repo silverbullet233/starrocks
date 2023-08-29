@@ -48,6 +48,9 @@ private:
     // - reffed at constructor() of both sink and source operator,
     // - unreffed at close() of both sink and source operator.
     AggregatorPtr _aggregator = nullptr;
+    uint64_t _set_finished_ts = 0;
+    mutable uint64_t _last_no_output_ts = 0;
+    bool _has_output_debug = false;
 };
 
 class AggregateStreamingSourceOperatorFactory final : public SourceOperatorFactory {

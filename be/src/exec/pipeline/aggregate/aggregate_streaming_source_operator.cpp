@@ -15,6 +15,7 @@
 #include "aggregate_streaming_source_operator.h"
 
 #include <variant>
+#include <chrono>
 
 namespace starrocks::pipeline {
 
@@ -43,14 +44,47 @@ bool AggregateStreamingSourceOperator::has_output() const {
     //
     // case1 and case2 means that it will wait for the next chunk from the buffer
     // case3 and case4 means that it will apply local aggregate, so need to wait sink operator finish
+    bool has_out = _aggregator->is_sink_complete() && !_aggregator->is_ht_eos();
+    if (!has_out) {
+        uint64_t now = duration_cast<milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
+        if (_last_no_output_ts == 0) {
+            _last_no_output_ts = now;
+        } else if (now - _last_no_output_ts >= 1ull * 1000 * 60) {
+            LOG(INFO) << "AggregateStreamingSource no output, " << _aggregator.get()
+                << ", " << this
+                << ", is_sink_compplete: " << _aggregator->is_sink_complete()
+                << ", is_ht_eos: " << _aggregator->is_ht_eos()
+                << ", is_streaming_all_state: " << _aggregator->is_streaming_all_states();
+            _last_no_output_ts = now;
+        }
+    }
     return _aggregator->is_sink_complete() && !_aggregator->is_ht_eos();
 }
 
 bool AggregateStreamingSourceOperator::is_finished() const {
+    if (_set_finished_ts > 0) {
+        uint64_t now = duration_cast<milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
+        if (now - _set_finished_ts >= 1ull * 1000 * 60) {
+            LOG(INFO) << "AggregateStreamingSource not finished, " << _aggregator.get()
+                << ", " << this
+                << ", is_sink_compelete: " << _aggregator->is_sink_complete()
+                << ", is_chunk_buffer_empty: " << _aggregator->is_chunk_buffer_empty()
+                << ", is_streaming_all_state: " << _aggregator->is_streaming_all_states()
+                << ", is_ht_eos: " << _aggregator->is_ht_eos();
+        }
+    }
     return _aggregator->is_sink_complete() && !has_output();
 }
 
 Status AggregateStreamingSourceOperator::set_finished(RuntimeState* state) {
+    LOG(INFO) << "AggregateStreamingSource::set_finished, " << this << ", " << _aggregator.get()
+        << ", is_sink_compelete: " << _aggregator->is_sink_complete()
+        << ", is_chunk_buffer_empty: " << _aggregator->is_chunk_buffer_empty()
+        << ", is_streaming_all_state: " << _aggregator->is_streaming_all_states()
+        << ", is_ht_eos: " << _aggregator->is_ht_eos();
+    if (_set_finished_ts == 0) {
+        _set_finished_ts = duration_cast<milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
+    }
     return _aggregator->set_finished();
 }
 
@@ -85,7 +119,14 @@ Status AggregateStreamingSourceOperator::_output_chunk_from_hash_map(ChunkPtr* c
     RETURN_IF_ERROR(_aggregator->convert_hash_map_to_chunk(state->chunk_size(), chunk));
 
     if (_aggregator->is_streaming_all_states() && _aggregator->is_ht_eos()) {
-        RETURN_IF_ERROR(_aggregator->reset_state(state, {}, nullptr));
+        if (_aggregator->is_sink_complete()) {
+            LOG(INFO) << "AggregateStreamingSource, reset_state, " << this
+                << ", is_sink_complete: " << _aggregator->is_sink_complete() << ", aggregator: " << _aggregator.get();
+        }
+        // @TODO is_sink_complete will reset
+        if (!_aggregator->is_sink_complete()) {
+            RETURN_IF_ERROR(_aggregator->reset_state(state, {}, nullptr));
+        }
         _aggregator->set_streaming_all_states(false);
     }
 

@@ -98,6 +98,11 @@ public:
 
     // the number of blocks created
     RuntimeProfile::Counter* block_count = nullptr;
+
+    RuntimeProfile::Counter* flush_io_task_count = nullptr;
+    RuntimeProfile::HighWaterMarkCounter* peak_flush_io_task_count = nullptr;
+    RuntimeProfile::Counter* restore_io_task_count = nullptr;
+    RuntimeProfile::HighWaterMarkCounter* peak_restore_io_task_count = nullptr;
 };
 
 // major spill interfaces

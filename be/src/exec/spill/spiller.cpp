@@ -71,6 +71,11 @@ SpillProcessMetrics::SpillProcessMetrics(RuntimeProfile* profile, std::atomic_in
             "PartitionWriterPeakMemoryBytes", TUnit::BYTES, RuntimeProfile::Counter::create_strategy(TUnit::BYTES));
 
     block_count = ADD_COUNTER(_spiller_metrics.get(), "BlockCount", TUnit::UNIT);
+
+    flush_io_task_count = ADD_COUNTER(_spiller_metrics.get(), "FlushIOTaskCount", TUnit::UNIT);
+    peak_flush_io_task_count = _spiller_metrics->AddHighWaterMarkCounter("PeakFlushIOTaskCount", TUnit::UNIT, RuntimeProfile::Counter::create_strategy(TUnit::UNIT));
+    restore_io_task_count = ADD_COUNTER(_spiller_metrics.get(), "RestoreIOTaskCount", TUnit::UNIT);
+    peak_restore_io_task_count = _spiller_metrics->AddHighWaterMarkCounter("PeakRestoreIOTaskCount", TUnit::UNIT, RuntimeProfile::Counter::create_strategy(TUnit::UNIT));
 }
 
 Status Spiller::prepare(RuntimeState* state) {

@@ -52,6 +52,13 @@ Status AggregateStreamingSinkOperator::set_finishing(RuntimeState* state) {
     }
 
     _aggregator->sink_complete();
+    LOG(INFO) << "AggregateStreamingSink::set_finishing: " << get_name()
+        << ", " << _aggregator.get()
+        << ", is_sink_complete: " << _aggregator->is_sink_complete()
+        << ", is_ht_eos: " << _aggregator->is_ht_eos()
+        << ", streaming_all_state:" << _aggregator->is_streaming_all_states()
+        << ", hash_map_size: " << _aggregator->hash_map_variant().size()
+        << ", chunk buffer size: " << _aggregator->chunk_buffer_size();
     return Status::OK();
 }
 
@@ -60,6 +67,7 @@ StatusOr<ChunkPtr> AggregateStreamingSinkOperator::pull_chunk(RuntimeState* stat
 }
 
 void AggregateStreamingSinkOperator::set_execute_mode(int performance_level) {
+    LOG(INFO) << "AggregateStreamingSink::set_execute_mode, " << get_name() << ", " << _aggregator.get();
     if (_aggregator->streaming_preaggregation_mode() == TStreamingPreaggregationMode::AUTO) {
         _aggregator->streaming_preaggregation_mode() = TStreamingPreaggregationMode::LIMITED_MEM;
     }
@@ -297,6 +305,9 @@ Status AggregateStreamingSinkOperator::_push_chunk_by_auto(const ChunkPtr& chunk
 }
 
 Status AggregateStreamingSinkOperator::_push_chunk_by_limited_memory(const ChunkPtr& chunk, const size_t chunk_size) {
+    // if (_aggregator->is_streaming_all_states()) {
+    //     return _push_chunk_by_force_streaming(chunk);
+    // }
     bool ht_needs_expansion = _aggregator->hash_map_variant().need_expand(chunk_size);
     if (ht_needs_expansion && _limited_mem_state.has_limited(*_aggregator)) {
         RETURN_IF_ERROR(_push_chunk_by_force_streaming(chunk));
