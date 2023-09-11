@@ -63,7 +63,7 @@ public:
     //
     // It is an error to call this with a value larger than Count().
     // Doing so has undefined results.
-    virtual Status seek_to_position_in_page(uint32_t pos) = 0;
+    [[nodiscard]] virtual Status seek_to_position_in_page(uint32_t pos) = 0;
 
     // Seek the decoder to the given value in the page, or the
     // lowest value which is greater than the given value.

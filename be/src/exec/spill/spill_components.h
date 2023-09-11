@@ -43,7 +43,7 @@ public:
 
     virtual ~SpillerReader() = default;
 
-    Status set_stream(std::shared_ptr<SpillInputStream> stream) {
+    [[nodiscard]] Status set_stream(std::shared_ptr<SpillInputStream> stream) {
         std::lock_guard guard(_mutex);
         _stream = std::move(stream);
         return Status::OK();
@@ -53,7 +53,7 @@ public:
     StatusOr<ChunkPtr> restore(RuntimeState* state, TaskExecutor&& executor, MemGuard&& guard);
 
     template <class TaskExecutor, class MemGuard>
-    Status trigger_restore(RuntimeState* state, TaskExecutor&& executor, MemGuard&& guard);
+    [[nodiscard]] Status trigger_restore(RuntimeState* state, TaskExecutor&& executor, MemGuard&& guard);
 
     bool has_output_data() { return _stream && _stream->is_ready(); }
 
@@ -94,7 +94,7 @@ public:
 
     virtual void cancel() = 0;
 
-    virtual Status get_spill_partitions(std::vector<const SpillPartitionInfo*>* partitions) = 0;
+    [[nodiscard]] virtual Status get_spill_partitions(std::vector<const SpillPartitionInfo*>* partitions) = 0;
 
     template <class T>
     T as() {

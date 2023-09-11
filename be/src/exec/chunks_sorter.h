@@ -120,14 +120,14 @@ public:
     auto& io_executor() { return *spill_channel()->io_executor(); }
 
     // Append a Chunk for sort.
-    virtual Status update(RuntimeState* state, const ChunkPtr& chunk) = 0;
+    [[nodiscard]] virtual Status update(RuntimeState* state, const ChunkPtr& chunk) = 0;
     // Finish seeding Chunk, and get sorted data with top OFFSET rows have been skipped.
-    virtual Status do_done(RuntimeState* state) = 0;
+    [[nodiscard]] virtual Status do_done(RuntimeState* state) = 0;
 
     Status done(RuntimeState* state);
 
     // get_next only works after done().
-    virtual Status get_next(ChunkPtr* chunk, bool* eos) = 0;
+    [[nodiscard]] virtual Status get_next(ChunkPtr* chunk, bool* eos) = 0;
 
     // RuntimeFilter generate by ChunkSorter only works in TopNSorter and HeapSorter
     virtual std::vector<JoinRuntimeFilter*>* runtime_filters(ObjectPool* pool) { return nullptr; }

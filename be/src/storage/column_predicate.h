@@ -122,7 +122,7 @@ public:
 
     uint32_t column_id() const { return _column_id; }
 
-    Status evaluate(const Column* column, uint8_t* selection) const {
+    [[nodiscard]] Status evaluate(const Column* column, uint8_t* selection) const {
         return evaluate(column, selection, 0, column->size());
     }
 

@@ -67,12 +67,12 @@ public:
 
     /// Prepare expr tree for evaluation.
     /// Allocations from this context will be counted against 'tracker'.
-    Status prepare(RuntimeState* state);
+    [[nodiscard]] Status prepare(RuntimeState* state);
 
     /// Must be called after calling Prepare(). Does not need to be called on clones.
     /// Idempotent (this allows exprs to be opened multiple times in subplans without
     /// reinitializing function state).
-    Status open(RuntimeState* state);
+    [[nodiscard]] Status open(RuntimeState* state);
 
     static Status open(std::vector<ExprContext*> input_evals, RuntimeState* state);
 

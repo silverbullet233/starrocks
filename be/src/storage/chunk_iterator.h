@@ -81,7 +81,7 @@ public:
     // If a Field uses the global dictionary strategy, the field will be rewritten as INT
     const Schema& encoded_schema() const { return _encoded_schema.num_fields() == 0 ? _schema : _encoded_schema; }
 
-    virtual Status init_encoded_schema(ColumnIdToGlobalDictMap& dict_maps) {
+    [[nodiscard]] virtual Status init_encoded_schema(ColumnIdToGlobalDictMap& dict_maps) {
         _encoded_schema.reserve(schema().num_fields());
         for (const auto& field : schema().fields()) {
             const auto cid = field->id();
@@ -94,7 +94,7 @@ public:
         return Status::OK();
     }
 
-    virtual Status init_output_schema(const std::unordered_set<uint32_t>& unused_output_column_ids) {
+    [[nodiscard]] virtual Status init_output_schema(const std::unordered_set<uint32_t>& unused_output_column_ids) {
         if (_is_init_output_schema) {
             return Status::OK();
         }

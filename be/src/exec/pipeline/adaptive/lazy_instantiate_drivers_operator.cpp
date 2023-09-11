@@ -117,6 +117,7 @@ void LazyInstantiateDriversOperator::close(RuntimeState* state) {
                 pipeline->source_operator_factory()->set_degree_of_parallelism(1);
                 pipeline->instantiate_drivers(state);
                 for (auto& driver : pipeline->drivers()) {
+                    // @TODO hanlde status
                     driver->prepare(state);
                 }
                 for (auto& driver : pipeline->drivers()) {

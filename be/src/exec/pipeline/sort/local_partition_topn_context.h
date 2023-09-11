@@ -57,7 +57,7 @@ public:
     void sink_complete();
 
     // Pull chunks form partitioner of each partition to correspondent sorter
-    Status transfer_all_chunks_from_partitioner_to_sorters(RuntimeState* state);
+    [[nodiscard]] Status transfer_all_chunks_from_partitioner_to_sorters(RuntimeState* state);
 
     // Return true if at least one of the sorters has remaining data
     bool has_output();

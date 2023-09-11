@@ -72,7 +72,7 @@ public:
     // Further send() calls are illegal after calling close().
     // It must be okay to call this multiple times. Subsequent calls should
     // be ignored.
-    virtual Status close(RuntimeState* state, Status exec_status) {
+    [[nodiscard]] virtual Status close(RuntimeState* state, Status exec_status) {
         _closed = true;
         return Status::OK();
     }

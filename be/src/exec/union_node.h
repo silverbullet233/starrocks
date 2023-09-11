@@ -41,7 +41,7 @@ private:
     Status _get_next_const(RuntimeState* state, ChunkPtr* chunk);
 
     void _move_passthrough_chunk(ChunkPtr& src_chunk, ChunkPtr& dest_chunk);
-    Status _move_materialize_chunk(ChunkPtr& src_chunk, ChunkPtr& dest_chunk);
+    [[nodiscard]] Status _move_materialize_chunk(ChunkPtr& src_chunk, ChunkPtr& dest_chunk);
     Status _move_const_chunk(ChunkPtr& dest_chunk);
 
     static void _clone_column(ChunkPtr& dest_chunk, const ColumnPtr& src_column, const SlotDescriptor* dest_slot,

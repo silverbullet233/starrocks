@@ -209,7 +209,7 @@ public:
     Status set_mem_limit_exceeded(MemTracker* tracker = nullptr, int64_t failed_allocation_size = 0,
                                   const std::string* msg = nullptr);
 
-    Status set_mem_limit_exceeded(const std::string& msg) { return set_mem_limit_exceeded(nullptr, 0, &msg); }
+    [[nodiscard]] Status set_mem_limit_exceeded(const std::string& msg) { return set_mem_limit_exceeded(nullptr, 0, &msg); }
 
     // Returns a non-OK status if query execution should stop (e.g., the query was cancelled
     // or a mem limit was exceeded). Exec nodes should check this periodically so execution

@@ -524,7 +524,7 @@ public:
             : _state(state), _pool(pool), _expr(expr) {}
 
     Status create();
-    Status add_values(const ColumnPtr& column, size_t column_offset);
+    [[nodiscard]] Status add_values(const ColumnPtr& column, size_t column_offset);
     void use_array_set(size_t array_size) { _array_size = array_size; }
     void use_as_join_runtime_filter() { _is_join_runtime_filter = true; }
     void set_eq_null(bool v) { _eq_null = v; }

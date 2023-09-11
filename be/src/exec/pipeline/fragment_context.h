@@ -101,7 +101,7 @@ public:
         }
         return Status::OK();
     }
-    Status iterate_drivers(const std::function<Status(const DriverPtr&)>& call);
+    [[nodiscard]] Status iterate_drivers(const std::function<Status(const DriverPtr&)>& call);
     void clear_all_drivers();
     void close_all_pipelines();
 

@@ -75,7 +75,7 @@ public:
 
     Status add_fixed_values(SQLFilterOp op, const std::set<T>& values);
 
-    Status add_range(SQLFilterOp op, T value);
+    [[nodiscard]] Status add_range(SQLFilterOp op, T value);
 
     void set_precision(int precision);
 

@@ -149,7 +149,7 @@ public:
     /// Creates vector of ExprContexts containing exprs from the given vector of
     /// TExprs within 'pool'.  Returns an error if any of the individual conversions caused
     /// an error, otherwise OK.
-    static Status create_expr_trees(ObjectPool* pool, const std::vector<TExpr>& texprs, std::vector<ExprContext*>* ctxs,
+    [[nodiscard]] static Status create_expr_trees(ObjectPool* pool, const std::vector<TExpr>& texprs, std::vector<ExprContext*>* ctxs,
                                     RuntimeState* state);
 
     /// Creates an expr tree for the node rooted at 'node_idx' via depth-first traversal.
@@ -168,10 +168,10 @@ public:
                                           int* node_idx, Expr** root_expr, ExprContext** ctx, RuntimeState* state);
 
     /// Convenience function for preparing multiple expr trees.
-    static Status prepare(const std::vector<ExprContext*>& ctxs, RuntimeState* state);
+    [[nodiscard]] static Status prepare(const std::vector<ExprContext*>& ctxs, RuntimeState* state);
 
     /// Convenience function for opening multiple expr trees.
-    static Status open(const std::vector<ExprContext*>& ctxs, RuntimeState* state);
+    [[nodiscard]] static Status open(const std::vector<ExprContext*>& ctxs, RuntimeState* state);
 
     /// Clones each ExprContext for multiple expr trees. 'new_ctxs' must be non-NULL.
     /// Idempotent: if '*new_ctxs' is empty, a clone of each context in 'ctxs' will be added

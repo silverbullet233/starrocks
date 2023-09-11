@@ -55,7 +55,7 @@ public:
                        const ScanRangeInfo& scan_info);
     Status prepare(const MVMaintenanceTaskInfo& maintenance_task_info,
                    const std::vector<FragmentContext*>& fragment_ctxs);
-    Status update_binlog_offset(const TUniqueId& fragment_instance_id, int64_t scan_node_id, int64_t tablet_id,
+    [[nodiscard]] Status update_binlog_offset(const TUniqueId& fragment_instance_id, int64_t scan_node_id, int64_t tablet_id,
                                 BinlogOffset binlog_offset);
     Status activate_parked_driver(ExecEnv* exec_env, const TUniqueId& query_id, int64_t expected_num_drivers,
                                   bool enable_resource_group);

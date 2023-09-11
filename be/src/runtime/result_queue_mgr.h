@@ -47,7 +47,7 @@ public:
 
     void create_queue(const TUniqueId& fragment_instance_id, BlockQueueSharedPtr* queue);
 
-    Status cancel(const TUniqueId& fragment_id);
+    [[nodiscard]] Status cancel(const TUniqueId& fragment_id);
 
     void update_queue_status(const TUniqueId& fragment_id, const Status& status);
 

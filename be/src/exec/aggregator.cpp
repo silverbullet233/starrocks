@@ -578,6 +578,7 @@ void Aggregator::close(RuntimeState* state) {
         _buffer.pop();
     }
 
+    // @TODO handle agg_close status
     auto agg_close = [this, state]() {
         // _mem_pool is nullptr means prepare phase failed
         if (_mem_pool != nullptr) {

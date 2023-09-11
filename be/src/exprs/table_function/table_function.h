@@ -89,6 +89,7 @@ public:
     //Table function processing logic
     virtual std::pair<Columns, UInt32Column::Ptr> process(TableFunctionState* state) const = 0;
 
+    // @TODO change to void
     //Release the resources constructed in init and prepare
     virtual Status close(RuntimeState* runtime_state, TableFunctionState* context) const = 0;
 };

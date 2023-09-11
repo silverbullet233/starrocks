@@ -147,6 +147,7 @@ bool ChunkCursor::chunk_has_supplier() {
 void ChunkCursor::_reset_with_next_chunk() {
     _current_order_by_columns.clear();
     Chunk* tmp_chunk = nullptr;
+    // @TODO handle status
     _chunk_supplier(&tmp_chunk);
     _current_chunk.reset(tmp_chunk);
     _current_pos = -1;

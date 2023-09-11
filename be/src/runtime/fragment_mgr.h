@@ -82,7 +82,7 @@ public:
 
     void close();
 
-    Status cancel(const TUniqueId& fragment_id) {
+    [[nodiscard]] Status cancel(const TUniqueId& fragment_id) {
         return cancel(fragment_id, PPlanFragmentCancelReason::INTERNAL_ERROR);
     }
 

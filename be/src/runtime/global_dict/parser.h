@@ -61,7 +61,7 @@ public:
 
     Status eval_expression(ExprContext* conjunct, DictOptimizeContext* dict_opt_ctx, int32_t targetSlotId);
 
-    Status check_could_apply_dict_optimize(ExprContext* expr_ctx, DictOptimizeContext* dict_opt_ctx);
+    [[nodiscard]] Status check_could_apply_dict_optimize(ExprContext* expr_ctx, DictOptimizeContext* dict_opt_ctx);
 
     // For global dictionary optimized columns,
     // the type at the execution level is INT but at the storage level is TYPE_STRING/TYPE_CHAR,

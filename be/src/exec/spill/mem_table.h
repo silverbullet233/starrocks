@@ -59,8 +59,8 @@ public:
     virtual bool is_empty() = 0;
     size_t mem_usage() { return _tracker->consumption(); }
     // append data to mem table
-    virtual Status append(ChunkPtr chunk) = 0;
-    virtual Status append_selective(const Chunk& src, const uint32_t* indexes, uint32_t from, uint32_t size) = 0;
+    [[nodiscard]] virtual Status append(ChunkPtr chunk) = 0;
+    [[nodiscard]] virtual Status append_selective(const Chunk& src, const uint32_t* indexes, uint32_t from, uint32_t size) = 0;
     // all of data has been added
     // done will be called in pipeline executor threads
     virtual Status done() = 0;

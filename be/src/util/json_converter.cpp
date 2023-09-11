@@ -57,7 +57,7 @@ public:
     }
 
 private:
-    static Status convert(SimdJsonValue value, std::string_view field_name, bool is_object, vpack::Builder* builder) {
+    [[nodiscard]] static Status convert(SimdJsonValue value, std::string_view field_name, bool is_object, vpack::Builder* builder) {
         switch (value.type()) {
         case so::json_type::array: {
             convert(value.get_array().value(), field_name, is_object, builder);

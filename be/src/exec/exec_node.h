@@ -137,7 +137,7 @@ public:
     // This should be called before close() and after get_next(), it is responsible for
     // collecting statistics sent with row batch, it can't be called when prepare() returns
     // error.
-    virtual Status collect_query_statistics(QueryStatistics* statistics);
+    [[nodiscard]] virtual Status collect_query_statistics(QueryStatistics* statistics);
 
     // close() will get called for every exec node, regardless of what else is called and
     // the status of these calls (i.e. prepare() may never have been called, or
@@ -167,7 +167,7 @@ public:
     // evaluate exprs over chunk to get a filter
     // if filter_ptr is not null, save filter to filter_ptr.
     // then running filter on chunk.
-    static Status eval_conjuncts(const std::vector<ExprContext*>& ctxs, Chunk* chunk, FilterPtr* filter_ptr = nullptr,
+    [[nodiscard]] static Status eval_conjuncts(const std::vector<ExprContext*>& ctxs, Chunk* chunk, FilterPtr* filter_ptr = nullptr,
                                  bool apply_filter = true);
     static StatusOr<size_t> eval_conjuncts_into_filter(const std::vector<ExprContext*>& ctxs, Chunk* chunk,
                                                        Filter* filter);
@@ -309,7 +309,7 @@ protected:
 
     // Executes _debug_action if phase matches _debug_phase.
     // 'phase' must not be INVALID.
-    Status exec_debug_action(TExecNodePhase::type phase);
+    [[nodiscard]] Status exec_debug_action(TExecNodePhase::type phase);
 
 private:
     RuntimeState* _runtime_state;

@@ -53,7 +53,7 @@ public:
               _perm(perm) {}
 
     template <class Cmp, class LeftEqual, class RightEqual>
-    Status do_merge(Cmp cmp, LeftEqual equal_left, RightEqual equal_right) {
+    [[nodiscard]] Status do_merge(Cmp cmp, LeftEqual equal_left, RightEqual equal_right) {
         std::vector<EqualRange> next_ranges;
         next_ranges.reserve(_equal_ranges->size());
 

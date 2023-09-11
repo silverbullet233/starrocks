@@ -33,7 +33,7 @@ public:
     // If end of stream is reached, skipping will stop at the end of the stream, and skip
     // will return OK.
     // Returns error if an underlying read error occurs.
-    virtual Status skip(int64_t count) = 0;
+    [[nodiscard]] virtual Status skip(int64_t count) = 0;
 
     // Return zero-copy string_view to upcoming bytes.
     //

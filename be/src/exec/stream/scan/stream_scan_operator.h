@@ -107,7 +107,7 @@ public:
 
     Status prepare(RuntimeState* state) override;
 
-    Status set_stream_offset(int64_t table_version, int64_t changelog_id);
+    [[nodiscard]] Status set_stream_offset(int64_t table_version, int64_t changelog_id);
     void set_epoch_limit(int64_t epoch_rows_limit, int64_t epoch_time_limit);
     void reset_status();
     int64_t get_lane_owner() {

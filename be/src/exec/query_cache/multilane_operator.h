@@ -60,7 +60,7 @@ public:
     void close(RuntimeState* state) override;
 
     Status set_finishing(RuntimeState* state) override;
-    Status set_finished(RuntimeState* state) override;
+    [[nodiscard]] Status set_finished(RuntimeState* state) override;
     Status set_cancelled(RuntimeState* state) override;
     bool has_output() const override;
     bool need_input() const override;

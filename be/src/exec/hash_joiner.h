@@ -231,7 +231,7 @@ public:
     bool has_referenced_hash_table() const { return _has_referenced_hash_table; }
 
     Columns string_key_columns() { return _string_key_columns; }
-    Status reset_probe(RuntimeState* state);
+    [[nodiscard]] Status reset_probe(RuntimeState* state);
 
     float avg_keys_per_bucket() const;
 
@@ -309,7 +309,7 @@ private:
 
     void _init_hash_table_param(HashTableParam* param);
 
-    Status _prepare_key_columns(Columns& key_columns, const ChunkPtr& chunk, const vector<ExprContext*>& expr_ctxs) {
+    [[nodiscard]] Status _prepare_key_columns(Columns& key_columns, const ChunkPtr& chunk, const vector<ExprContext*>& expr_ctxs) {
         key_columns.resize(0);
         for (auto& expr_ctx : expr_ctxs) {
             ASSIGN_OR_RETURN(auto column_ptr, expr_ctx->evaluate(chunk.get()));

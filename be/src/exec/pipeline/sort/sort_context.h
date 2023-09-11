@@ -75,7 +75,7 @@ public:
                                       std::unique_ptr<RuntimeFilterCollector>&& collector);
 
 private:
-    Status _init_merger();
+    [[nodiscard]] Status _init_merger();
 
     RuntimeState* _state;
     const TTopNType::type _topn_type;

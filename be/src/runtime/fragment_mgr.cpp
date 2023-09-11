@@ -100,9 +100,9 @@ public:
 
     std::string to_http_path(const std::string& file_name);
 
-    Status execute();
+    [[nodiscard]] Status execute();
 
-    Status cancel(const PPlanFragmentCancelReason& reason);
+    [[nodiscard]] Status cancel(const PPlanFragmentCancelReason& reason);
 
     TUniqueId fragment_instance_id() const { return _fragment_instance_id; }
 
@@ -119,7 +119,7 @@ public:
     int backend_num() const { return _backend_num; }
 
     // Update status of this fragment execute
-    Status update_status(const Status& status) {
+    [[nodiscard]] Status update_status(const Status& status) {
         std::lock_guard<std::mutex> l(_status_lock);
         if (!status.ok() && _exec_status.ok()) {
             _exec_status = status;
@@ -352,6 +352,7 @@ void FragmentExecState::coordinator_callback(const Status& status, RuntimeProfil
 }
 
 FragmentMgr::FragmentMgr(ExecEnv* exec_env)
+                // @TODO hanlde status
         : _exec_env(exec_env), _stop(false), _cancel_thread([this] { cancel_worker(); }) {
     Thread::set_thread_name(_cancel_thread, "frag_mgr_cancel");
     REGISTER_GAUGE_STARROCKS_METRIC(plan_fragment_count, [this]() {

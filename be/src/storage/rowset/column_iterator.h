@@ -91,7 +91,7 @@ public:
     // Entry 0 is the first entry written to the column.
     // If provided seek point is past the end of the file,
     // then returns false.
-    virtual Status seek_to_ordinal(ordinal_t ord) = 0;
+    [[nodiscard]] virtual Status seek_to_ordinal(ordinal_t ord) = 0;
 
     virtual Status next_batch(size_t* n, Column* dst) = 0;
 
@@ -138,7 +138,7 @@ public:
     // |codes| pointer to the array of dictionary codes.
     // |size| size of dictionary code array.
     // |words| column used to save the columns values, by append into it.
-    virtual Status decode_dict_codes(const int32_t* codes, size_t size, Column* words) {
+    [[nodiscard]] virtual Status decode_dict_codes(const int32_t* codes, size_t size, Column* words) {
         return Status::NotSupported("");
     }
 

@@ -270,7 +270,7 @@ private:
      * @return: JsonColumn
      */
 
-    static Status _get_parsed_paths(const std::vector<std::string>& path_exprs,
+    [[nodiscard]] static Status _get_parsed_paths(const std::vector<std::string>& path_exprs,
                                     std::vector<SimpleJsonPath>* parsed_paths);
 };
 

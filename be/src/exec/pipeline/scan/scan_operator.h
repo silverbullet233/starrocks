@@ -52,7 +52,7 @@ public:
 
     bool is_finished() const override;
 
-    Status set_finishing(RuntimeState* state) override;
+    [[nodiscard]] Status set_finishing(RuntimeState* state) override;
 
     StatusOr<ChunkPtr> pull_chunk(RuntimeState* state) override;
 

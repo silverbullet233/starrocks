@@ -247,7 +247,7 @@ public:
         return {_bloom_filter_descriptors.begin(), _bloom_filter_descriptors.end()};
     }
 
-    Status merge_local_in_filters() {
+    [[nodiscard]] Status merge_local_in_filters() {
         bool can_merge_in_filters = true;
         size_t num_rows = 0;
         ssize_t k = -1;
@@ -305,7 +305,7 @@ public:
         return Status::OK();
     }
 
-    Status merge_local_bloom_filters() {
+    [[nodiscard]] Status merge_local_bloom_filters() {
         if (_partial_bloom_filter_build_params.empty()) {
             return Status::OK();
         }

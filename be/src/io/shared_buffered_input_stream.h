@@ -71,8 +71,8 @@ public:
         return _stream->get_numeric_statistics();
     }
 
-    Status set_io_ranges(const std::vector<IORange>& ranges);
-    Status set_io_ranges(const std::vector<IORange>& ranges, bool coalesce_together);
+    [[nodiscard]] Status set_io_ranges(const std::vector<IORange>& ranges);
+    [[nodiscard]] Status set_io_ranges(const std::vector<IORange>& ranges, bool coalesce_together);
     void release_to_offset(int64_t offset);
     void release();
     void set_coalesce_options(const CoalesceOptions& options) { _options = options; }

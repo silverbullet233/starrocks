@@ -62,13 +62,13 @@ private:
     ColumnExprPredicate(TypeInfoPtr type_info, ColumnId column_id, RuntimeState* state,
                         const SlotDescriptor* slot_desc);
 
-    Status _add_expr_ctxs(const std::vector<ExprContext*>& expr_ctxs);
+    [[nodiscard]] Status _add_expr_ctxs(const std::vector<ExprContext*>& expr_ctxs);
 
     // Take ownership of this expression, not necessary to clone
-    Status _add_expr_ctx(std::unique_ptr<ExprContext> expr_ctx);
+    [[nodiscard]] Status _add_expr_ctx(std::unique_ptr<ExprContext> expr_ctx);
 
     // Share the ownership, is necessary to clone it
-    Status _add_expr_ctx(ExprContext* expr_ctx);
+    [[nodiscard]] Status _add_expr_ctx(ExprContext* expr_ctx);
 
     ObjectPool _pool;
     RuntimeState* _state;

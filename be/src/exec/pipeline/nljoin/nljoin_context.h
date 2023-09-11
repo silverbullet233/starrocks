@@ -60,7 +60,7 @@ public:
     const std::shared_ptr<spill::Spiller>& spiller() { return _spiller; }
     bool has_spilled() { return _spiller && _spiller->spilled(); }
 
-    Status add_chunk_to_spill_buffer(RuntimeState* state, ChunkPtr build_chunk, spill::IOTaskExecutor& executor);
+    [[nodiscard]] Status add_chunk_to_spill_buffer(RuntimeState* state, ChunkPtr build_chunk, spill::IOTaskExecutor& executor);
 
     void finalize();
 
@@ -167,7 +167,7 @@ public:
 
     int get_build_chunk_size() const { return _build_chunk_desired_size; }
 
-    Status append_build_chunk(int32_t sinker_id, const ChunkPtr& build_chunk);
+    [[nodiscard]] Status append_build_chunk(int32_t sinker_id, const ChunkPtr& build_chunk);
     size_t channel_num_rows(int32_t sinker_id);
     NJJoinBuildInputChannel& input_channel(int32_t sinker_id) { return *_input_channel[sinker_id]; }
 

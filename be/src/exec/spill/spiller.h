@@ -104,7 +104,7 @@ public:
     const SpillProcessMetrics& metrics() { return _metrics; }
 
     // set partitions for spiller only works when spiller has partitioned spill writer
-    Status set_partition(const std::vector<const SpillPartitionInfo*>& parititons);
+    [[nodiscard]] Status set_partition(const std::vector<const SpillPartitionInfo*>& parititons);
     // init partition by `num_partitions`
     Status set_partition(RuntimeState* state, size_t num_partitions);
 
@@ -135,7 +135,7 @@ public:
     template <class TaskExecutor, class MemGuard>
     Status flush(RuntimeState* state, TaskExecutor&& executor, MemGuard&& guard);
     template <class MemGuard>
-    Status set_flush_all_call_back(const FlushAllCallBack& callback, RuntimeState* state, IOTaskExecutor& executor,
+    [[nodiscard]] Status set_flush_all_call_back(const FlushAllCallBack& callback, RuntimeState* state, IOTaskExecutor& executor,
                                    const MemGuard& guard) {
         auto flush_call_back = [this, callback, state, &executor, guard]() {
             auto defer = DeferOp([&]() { guard.scoped_end(); });
