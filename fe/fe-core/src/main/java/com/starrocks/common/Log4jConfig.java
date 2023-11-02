@@ -127,6 +127,9 @@ public class Log4jConfig extends XmlConfiguration {
             "    <Logger name=\"org.apache.kafka\" level=\"WARN\"> \n" +
             "      <AppenderRef ref=\"SysWF\"/>\n" +
             "    </Logger>\n" +
+            "    <Logger name=\"com.baidu.jprotobuf\" level=\"DEBUG\"> \n" +
+            "      <AppenderRef ref=\"Sys\"/>\n" +
+            "    </Logger>\n" +
             "    <!--REPLACED BY AUDIT AND VERBOSE MODULE NAMES-->\n" +
             "  </Loggers>\n" +
             "</Configuration>";

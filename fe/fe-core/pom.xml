@@ -264,12 +264,14 @@ under the License.
         <dependency>
             <groupId>org.apache.logging.log4j</groupId>
             <artifactId>log4j-core</artifactId>
+            <version>${log4j.version}</version>
         </dependency>
 
         <!-- https://mvnrepository.com/artifact/org.apache.logging.log4j/log4j-slf4j-impl -->
         <dependency>
             <groupId>org.apache.logging.log4j</groupId>
             <artifactId>log4j-slf4j-impl</artifactId>
+            <version>${log4j.version}</version>
         </dependency>
 
         <!-- https://mvnrepository.com/artifact/io.dropwizard.metrics/metrics-core -->
@@ -441,6 +443,10 @@ under the License.
                     <artifactId>zookeeper</artifactId>
                     <groupId>org.apache.zookeeper</groupId>
                 </exclusion>
+                <exclusion>
+                    <groupId>org.apache.logging.log4j</groupId>
+                    <artifactId>log4j-slf4j2-impl</artifactId>
+                </exclusion>
             </exclusions>
         </dependency>
 
@@ -491,6 +497,10 @@ under the License.
                     <artifactId>zookeeper</artifactId>
                     <groupId>org.apache.zookeeper</groupId>
                 </exclusion>
+                <exclusion>
+                    <groupId>org.slf4j</groupId>
+                    <artifactId>slf4j-reload4j</artifactId>
+                </exclusion>
             </exclusions>
         </dependency>
 
@@ -498,6 +508,12 @@ under the License.
         <dependency>
             <groupId>org.apache.hadoop</groupId>
             <artifactId>hadoop-client</artifactId>
+            <exclusions>
+                <exclusion>
+                    <groupId>org.slf4j</groupId>
+                    <artifactId>slf4j-reload4j</artifactId>
+                </exclusion>
+            </exclusions>
         </dependency>
 
         <!-- https://mvnrepository.com/artifact/org.apache.hadoop/hadoop-aws -->
@@ -530,6 +546,13 @@ under the License.
             <groupId>org.apache.hudi</groupId>
             <artifactId>hudi-hadoop-mr</artifactId>
         </dependency>
+
+
+        <!--dependency>
+            <groupId>com.baidu</groupId>
+            <artifactId>jprotobuf-precompile-plugin</artifactId>
+            <version>2.2.9</version>
+        </dependency-->
     </dependencies>
 
     <build>
@@ -846,6 +869,27 @@ under the License.
                         <phase>initialize</phase>
                         <goals>
                             <goal>clean</goal>
+                        </goals>
+                    </execution>
+                </executions>
+            </plugin>
+
+            <!-- precompile for jprotobuf -->
+            <plugin>
+                <groupId>com.baidu</groupId>
+                <artifactId>jprotobuf-precompile-plugin</artifactId>
+                <version>2.2.9</version>
+                <configuration>
+                    <skipErrorNoDescriptorsFound>true</skipErrorNoDescriptorsFound>
+                    <filterClassPackage>com.starrocks.rpc</filterClassPackage>
+                    <generateProtoFile>false</generateProtoFile>
+                    <compileDependencies>true</compileDependencies>
+                </configuration>
+                <executions>
+                    <execution>
+                        <phase>compile</phase>
+                        <goals>
+                            <goal>precompile</goal>
                         </goals>
                     </execution>
                 </executions>

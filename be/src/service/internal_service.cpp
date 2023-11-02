@@ -145,12 +145,15 @@ void PInternalServiceImpl<T>::exec_plan_fragment(google::protobuf::RpcController
                                                  const PExecPlanFragmentRequest* request,
                                                  PExecPlanFragmentResult* response, google::protobuf::Closure* done) {
     ClosureGuard closure_guard(done);
+    auto start = std::chrono::system_clock::now();
     brpc::Controller* cntl = static_cast<brpc::Controller*>(cntl_base);
     auto st = _exec_plan_fragment(cntl);
     if (!st.ok()) {
         LOG(WARNING) << "exec plan fragment failed, errmsg=" << st.get_error_msg();
     }
     st.to_protobuf(response->mutable_status());
+    auto end = std::chrono::system_clock::now();
+    LOG(INFO) << "exec plan fragment done, cost " << std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count() << "ms";
 }
 
 template <typename T>

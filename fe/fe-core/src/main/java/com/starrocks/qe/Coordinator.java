@@ -598,6 +598,7 @@ public class Coordinator {
                                         fragment.getFragmentId().asInt(), jobId);
                             }
                         }
+                        execState.setRpcStartTime(System.currentTimeMillis());
                         futures.add(Pair.create(execState, execState.execRemoteFragmentAsync()));
                     }
                     for (Pair<BackendExecState, Future<PExecPlanFragmentResult>> pair : futures) {
@@ -606,6 +607,18 @@ public class Coordinator {
                         try {
                             PExecPlanFragmentResult result =
                                     pair.second.get(queryDeliveryTimeoutMs, TimeUnit.MILLISECONDS);
+                            long currentTs = System.currentTimeMillis();
+                            long latency = currentTs - pair.first.getRpcStartTime();
+                            if (latency > 500) {
+                                LOG.info("exec plan fragment cost {} ms, backend = {}:{}, fragment = {}, " +
+                                                "query = {}, get proxy cost {} ms, send rpc cost {} ms",
+                                        latency,
+                                        pair.first.address.hostname, pair.first.address.port,
+                                        DebugUtil.printId(pair.first.rpcParams.getParams().fragment_instance_id),
+                                        DebugUtil.printId(queryId),
+                                        pair.first.getGetProxyTime(),
+                                        currentTs - pair.first.getSendRequestTime());
+                            }
                             code = TStatusCode.findByValue(result.status.statusCode);
                             if (result.status.errorMsgs != null && !result.status.errorMsgs.isEmpty()) {
                                 errMsg = result.status.errorMsgs.get(0);
@@ -1997,6 +2010,10 @@ public class Coordinator {
         TNetworkAddress address;
         Backend backend;
         long lastMissingHeartbeatTime = -1;
+        long rpcStartTime = -1;
+        long sendRequestTime = -1;
+        long getProxyTime = -1;
+        long createProxyTime = 0;
 
         public BackendExecState(PlanFragmentId fragmentId, TNetworkAddress host, int profileFragmentId,
                                 TExecPlanFragmentParams rpcParams, Map<TNetworkAddress, Long> addressToBackendID) {
@@ -2100,7 +2117,7 @@ public class Coordinator {
             }
             this.initiated = true;
             try {
-                return BackendServiceProxy.getInstance().execPlanFragmentAsync(brpcAddress, rpcParams);
+                return BackendServiceProxy.getInstance().execPlanFragmentAsync(brpcAddress, rpcParams, this);
             } catch (RpcException e) {
                 // DO NOT throw exception here, return a complete future with error code,
                 // so that the following logic will cancel the fragment.
@@ -2148,6 +2165,38 @@ public class Coordinator {
 
         private TUniqueId fragmentInstanceId() {
             return this.rpcParams.params.getFragment_instance_id();
+        }
+
+        public void setRpcStartTime(long rpcStartTime) {
+            this.rpcStartTime = rpcStartTime;
+        }
+
+        public long getRpcStartTime() {
+            return rpcStartTime;
+        }
+
+        public void setGetProxyTime(long getProxyTime) {
+            this.getProxyTime = getProxyTime;
+        }
+
+        public long getGetProxyTime() {
+            return getProxyTime;
+        }
+
+        public void setSendRequestTime(long sendRequestTime) {
+            this.sendRequestTime = sendRequestTime;
+        }
+
+        public long getSendRequestTime() {
+            return sendRequestTime;
+        }
+
+        public void setCreateProxyTime(long createProxyTime) {
+            this.createProxyTime = createProxyTime;
+        }
+
+        public long getCreateProxyTime() {
+            return createProxyTime;
         }
     }
 

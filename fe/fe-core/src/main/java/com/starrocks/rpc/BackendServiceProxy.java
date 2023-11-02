@@ -26,7 +26,6 @@ import com.baidu.bjf.remoting.protobuf.utils.compiler.JdkCompiler;
 import com.baidu.jprotobuf.pbrpc.client.ProtobufRpcProxy;
 import com.baidu.jprotobuf.pbrpc.transport.RpcClient;
 import com.baidu.jprotobuf.pbrpc.transport.RpcClientOptions;
-import com.google.common.collect.Maps;
 import com.starrocks.common.Config;
 import com.starrocks.common.util.JdkUtils;
 import com.starrocks.proto.PCancelPlanFragmentRequest;
@@ -38,6 +37,7 @@ import com.starrocks.proto.PProxyRequest;
 import com.starrocks.proto.PProxyResult;
 import com.starrocks.proto.PTriggerProfileReportResult;
 import com.starrocks.proto.PUniqueId;
+import com.starrocks.qe.Coordinator;
 import com.starrocks.thrift.TExecPlanFragmentParams;
 import com.starrocks.thrift.TNetworkAddress;
 import com.starrocks.thrift.TUniqueId;
@@ -47,6 +47,7 @@ import org.apache.thrift.TException;
 
 import java.util.Map;
 import java.util.NoSuchElementException;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Future;
 
 public class BackendServiceProxy {
@@ -75,34 +76,39 @@ public class BackendServiceProxy {
         // Therefore, MaxIdleSize shouldn't less than MaxTotal for the async requests.
         rpcOptions.setMaxIdleSize(Config.brpc_connection_pool_size);
         rpcOptions.setMaxWait(Config.brpc_idle_wait_max_time);
+        // @TODO use epool mode? not necessary, seems it's default in linux
         rpcClient = new RpcClient(rpcOptions);
-        serviceMap = Maps.newHashMap();
+        // serviceMap = Maps.newHashMap();
+        serviceMap = new ConcurrentHashMap<>();
     }
 
     public static BackendServiceProxy getInstance() {
         return SingletonHolder.INSTANCE;
     }
 
-    protected synchronized PBackendService getProxy(TNetworkAddress address) {
-        PBackendService service = serviceMap.get(address);
-        if (service != null) {
-            return service;
+    protected PBackendService getProxy(TNetworkAddress address) {
+        if (serviceMap.containsKey(address)) {
+            return serviceMap.get(address);
         }
-        ProtobufRpcProxy<PBackendService> proxy = new ProtobufRpcProxy(rpcClient, PBackendService.class);
-        proxy.setHost(address.getHostname());
-        proxy.setPort(address.getPort());
-        service = proxy.proxy();
-        serviceMap.put(address, service);
-        return service;
+        return serviceMap.computeIfAbsent(address, k -> {
+            ProtobufRpcProxy<PBackendService> proxy = new ProtobufRpcProxy<>(rpcClient, PBackendService.class);
+            proxy.setHost(address.getHostname());
+            proxy.setPort(address.getPort());
+            return proxy.proxy();
+        });
     }
 
     public Future<PExecPlanFragmentResult> execPlanFragmentAsync(
-            TNetworkAddress address, TExecPlanFragmentParams tRequest)
+            TNetworkAddress address, TExecPlanFragmentParams tRequest, Coordinator.BackendExecState execState)
             throws TException, RpcException {
         final PExecPlanFragmentRequest pRequest = new PExecPlanFragmentRequest();
         pRequest.setRequest(tRequest);
         try {
+            long startTime = System.currentTimeMillis();
             final PBackendService service = getProxy(address);
+            long latency = System.currentTimeMillis() - startTime;
+            execState.setGetProxyTime(latency);
+            execState.setSendRequestTime(System.currentTimeMillis());
             return service.execPlanFragmentAsync(pRequest);
         } catch (NoSuchElementException e) {
             try {
@@ -112,7 +118,11 @@ public class BackendServiceProxy {
                 } catch (InterruptedException interruptedException) {
                     // do nothing
                 }
+                long startTime = System.currentTimeMillis();
                 final PBackendService service = getProxy(address);
+                long latency = System.currentTimeMillis() - startTime;
+                execState.setGetProxyTime(latency);
+                execState.setSendRequestTime(System.currentTimeMillis());
                 return service.execPlanFragmentAsync(pRequest);
             } catch (NoSuchElementException noSuchElementException) {
                 LOG.warn("Execute plan fragment retry failed, address={}:{}",
