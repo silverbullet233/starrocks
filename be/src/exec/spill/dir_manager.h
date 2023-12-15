@@ -70,6 +70,8 @@ struct AcquireDirOptions {
 class DirManager {
 public:
     DirManager() = default;
+    DirManager(std::vector<DirPtr> dirs): _dirs(std::move(dirs)) {}
+
     ~DirManager() = default;
 
     Status init(const std::string& spill_dirs);

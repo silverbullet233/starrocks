@@ -74,6 +74,7 @@ public:
         return Status::NotSupported("unsupport to call as_input_stream");
     }
 
+
 protected:
     RuntimeState* _runtime_state;
     const size_t _max_buffer_size;

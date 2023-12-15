@@ -225,7 +225,7 @@ Status LogBlockReader::read_fully(void* data, int64_t count) {
     return Status::OK();
 }
 
-LogBlockManager::LogBlockManager(TUniqueId query_id) : _query_id(std::move(query_id)) {
+LogBlockManager::LogBlockManager(const TUniqueId& query_id, DirManager* dir_mgr) : _query_id(query_id), _dir_mgr(dir_mgr) {
     _max_container_bytes = config::spill_max_log_block_container_bytes > 0 ? config::spill_max_log_block_container_bytes
                                                                            : kDefaultMaxContainerBytes;
 }
@@ -249,11 +249,11 @@ void LogBlockManager::close() {}
 
 StatusOr<BlockPtr> LogBlockManager::acquire_block(const AcquireBlockOptions& opts) {
     AcquireDirOptions acquire_dir_opts;
-#ifdef BE_TEST
+// #ifdef BE_TEST
     ASSIGN_OR_RETURN(auto dir, _dir_mgr->acquire_writable_dir(acquire_dir_opts));
-#else
-    ASSIGN_OR_RETURN(auto dir, ExecEnv::GetInstance()->spill_dir_mgr()->acquire_writable_dir(acquire_dir_opts));
-#endif
+// #else
+//     ASSIGN_OR_RETURN(auto dir, ExecEnv::GetInstance()->spill_dir_mgr()->acquire_writable_dir(acquire_dir_opts));
+// #endif
 
     ASSIGN_OR_RETURN(auto block_container, get_or_create_container(dir, opts.plan_node_id, opts.name, opts.direct_io));
     return std::make_shared<LogBlock>(block_container, block_container->size());

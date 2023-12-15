@@ -100,7 +100,6 @@ StatusOr<ChunkPtr> Spiller::restore(RuntimeState* state, TaskExecutor&& executor
     ASSIGN_OR_RETURN(auto chunk, _reader->restore(state, executor, guard));
     chunk->check_or_die();
     _restore_read_rows += chunk->num_rows();
-
     RETURN_IF_ERROR(trigger_restore(state, std::forward<TaskExecutor>(executor), std::forward<MemGuard>(guard)));
     return chunk;
 }
@@ -143,7 +142,7 @@ Status RawSpillerWriter::flush(RuntimeState* state, TaskExecutor&& executor, Mem
     if (captured_mem_table == nullptr) {
         return Status::OK();
     }
-
+    // @TODO this is in compute thread
     RETURN_IF_ERROR(captured_mem_table->done());
     _running_flush_tasks++;
     // TODO: handle spill queue
@@ -177,6 +176,7 @@ Status RawSpillerWriter::flush(RuntimeState* state, TaskExecutor&& executor, Mem
 
         return Status::OK();
     };
+    // @TODO: we should know which block this io task will used, and then choose executor
     // submit io task
     RETURN_IF_ERROR(executor.submit(std::move(task)));
     COUNTER_UPDATE(_spiller->metrics().flush_io_task_count, 1);
@@ -204,6 +204,7 @@ Status SpillerReader::trigger_restore(RuntimeState* state, TaskExecutor&& execut
     // if all is well and input stream enable prefetch and not eof
     if (!_stream->eof()) {
         // make sure _running_restore_tasks < io_tasks_per_scan_operator to avoid scan overloaded
+        // @TODO too strange, why use this config to control
         if (_stream->is_ready() && _running_restore_tasks >= config::io_tasks_per_scan_operator) {
             return Status::OK();
         }

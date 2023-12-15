@@ -151,6 +151,10 @@ public class StorageVolume implements Writable, GsonPostProcessable {
         return svt.toString();
     }
 
+    public List<String> getLocations() {
+        return locations;
+    }
+
     private StorageVolumeType toStorageVolumeType(String svt) {
         switch (svt.toLowerCase()) {
             case "s3":

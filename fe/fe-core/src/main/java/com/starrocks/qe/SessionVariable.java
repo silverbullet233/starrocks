@@ -46,9 +46,13 @@ import com.starrocks.common.io.Writable;
 import com.starrocks.common.util.CompressionUtils;
 import com.starrocks.common.util.TimeUtils;
 import com.starrocks.qe.VariableMgr.VarAttr;
+import com.starrocks.server.GlobalStateMgr;
+import com.starrocks.server.StorageVolumeMgr;
 import com.starrocks.sql.analyzer.SemanticException;
 import com.starrocks.sql.common.QueryDebugOptions;
+import com.starrocks.storagevolume.StorageVolume;
 import com.starrocks.system.BackendCoreStat;
+import com.starrocks.thrift.TCloudConfiguration;
 import com.starrocks.thrift.TCompressionType;
 import com.starrocks.thrift.TOverflowMode;
 import com.starrocks.thrift.TPipelineProfileLevel;
@@ -161,6 +165,7 @@ public class SessionVariable implements Serializable, Writable, Cloneable {
     public static final String MAX_PARALLEL_SCAN_INSTANCE_NUM = "max_parallel_scan_instance_num";
     public static final String ENABLE_INSERT_STRICT = "enable_insert_strict";
     public static final String ENABLE_SPILL = "enable_spill";
+    public static final String ENABLE_SPILL_TO_REMOTE_STORAGE = "enable_spill_to_remote_storage";
     public static final String SPILLABLE_OPERATOR_MASK = "spillable_operator_mask";
     // spill mode: auto, force
     public static final String SPILL_MODE = "spill_mode";
@@ -511,6 +516,7 @@ public class SessionVariable implements Serializable, Writable, Cloneable {
     public static final String SPILL_REVOCABLE_MAX_BYTES = "spill_revocable_max_bytes";
     public static final String SPILL_ENABLE_DIRECT_IO = "spill_enable_direct_io";
     public static final String SPILL_ENCODE_LEVEL = "spill_encode_level";
+    public static final String SPILL_STORAGE_VOLUME = "spill_storage_volume";
 
     // full_sort_max_buffered_{rows,bytes} are thresholds that limits input size of partial_sort
     // in full sort.
@@ -899,6 +905,9 @@ public class SessionVariable implements Serializable, Writable, Cloneable {
     @VariableMgr.VarAttr(name = ENABLE_SPILL)
     private boolean enableSpill = false;
 
+    @VariableMgr.VarAttr(name = ENABLE_SPILL_TO_REMOTE_STORAGE)
+    private boolean enableSpillToRemoteStorage = false;
+
     // this is used to control which operators can spill, only meaningful when enable_spill=true
     // it uses a bit to identify whether the spill of each operator is in effect, 0 means no, 1 means yes
     // at present, only the lowest 4 bits are meaningful, corresponding to the four operators
@@ -938,6 +947,9 @@ public class SessionVariable implements Serializable, Writable, Cloneable {
     
     @VarAttr(name = SPILL_ENABLE_DIRECT_IO)
     private boolean spillEnableDirectIO = false;
+
+    @VarAttr(name = SPILL_STORAGE_VOLUME)
+    private String spillStorageVolume = "";
 
     @VarAttr(name = ENABLE_AGG_SPILL_PREAGGREGATION, flag = VariableMgr.INVISIBLE)
     public boolean enableAggSpillPreaggregation = true;
@@ -2999,6 +3011,19 @@ public class SessionVariable implements Serializable, Writable, Cloneable {
             tResult.setSpillable_operator_mask(spillableOperatorMask);
             tResult.setEnable_agg_spill_preaggregation(enableAggSpillPreaggregation);
             tResult.setSpill_enable_direct_io(spillEnableDirectIO);
+            if (enableSpillToRemoteStorage && !spillStorageVolume.isEmpty()) {
+                // find storage volume config
+                GlobalStateMgr globalStateMgr = GlobalStateMgr.getCurrentState();
+                StorageVolumeMgr storageVolumeMgr = globalStateMgr.getStorageVolumeMgr();
+                StorageVolume sv = storageVolumeMgr.getStorageVolumeByName(spillStorageVolume);
+                if (sv != null) {
+                    tResult.setEnable_spill_to_remote_storage(true);
+                    tResult.setSpill_remote_storage_paths(sv.getLocations());
+                    TCloudConfiguration tCloudConfiguration = new TCloudConfiguration();
+                    sv.getCloudConfiguration().toThrift(tCloudConfiguration);
+                    tResult.setSpill_remote_storage_conf(tCloudConfiguration);
+                }
+            }
         }
 
         // Compression Type

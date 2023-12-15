@@ -15,19 +15,31 @@
 #pragma once
 
 #include <atomic>
+#include <memory>
 #include <mutex>
 #include <string>
 #include <unordered_map>
 #include <vector>
 
 #include "exec/spill/log_block_manager.h"
+#include "fs/credential/cloud_configuration.h"
 #include "fs/fs.h"
+#include "gen_cpp/CloudConfiguration_types.h"
+#include "gen_cpp/InternalService_types.h"
 #include "gen_cpp/Types_types.h"
 
 namespace starrocks::spill {
 class QuerySpillManager {
 public:
-    QuerySpillManager(const TUniqueId& uid) : _uid(uid) { _block_manager = std::make_unique<LogBlockManager>(uid); }
+    QuerySpillManager(const TUniqueId& uid) : _uid(uid) {
+        // _block_manager = std::make_unique<LogBlockManager>(uid);
+    }
+    ~QuerySpillManager() {
+        _block_manager.reset();
+        _remote_dir_manager.reset();
+    }
+
+    Status init_block_manager(const TQueryOptions& query_options);
 
     void increase_spilling_operators() { _spilling_operators++; }
     void decrease_spilling_operators() { _spilling_operators--; }
@@ -38,10 +50,17 @@ public:
     size_t spillable_operators() { return _spillable_operators; }
 
     BlockManager* block_manager() const { return _block_manager.get(); }
+    // @TODO remote spill block manger?
+    // @TODO remote dir manager cannot be global, should main in query context
+    // @TODO remote dir manager should aware query context runtime state...
 
 private:
     TUniqueId _uid;
     std::unique_ptr<BlockManager> _block_manager;
+    // @TODO should maintain remote dir manager
+    // @TODO we should distinguish it in DirManager
+    TCloudConfiguration _remote_storage_conf;
+    std::unique_ptr<DirManager> _remote_dir_manager;
     std::atomic_size_t _spilling_operators = 0;
     size_t _spillable_operators = 0;
 };

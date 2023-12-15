@@ -62,7 +62,7 @@ struct SpilledOptions {
               splittable(false),
               sort_exprs(sort_exprs_),
               sort_desc(sort_desc_) {}
-
+    
     const int init_partition_nums;
     const std::vector<ExprContext*> partiton_exprs;
 
@@ -94,6 +94,9 @@ struct SpilledOptions {
     int encode_level = 0;
 
     BlockManager* block_manager = nullptr;
+    // @TODO remote storage settings
+
+    BlockManager* remote_block_manager = nullptr;
 };
 
 // spill strategy

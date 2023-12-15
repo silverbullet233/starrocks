@@ -24,6 +24,8 @@
 namespace starrocks::spill {
 
 Status DirManager::init(const std::string& spill_dirs) {
+    // @TODO need a better interface
+    DCHECK(_dirs.empty());
     std::vector<starrocks::StorePath> spill_local_storage_paths;
     RETURN_IF_ERROR(parse_conf_store_paths(spill_dirs, &spill_local_storage_paths));
     if (spill_local_storage_paths.empty()) {

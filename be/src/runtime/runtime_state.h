@@ -430,6 +430,18 @@ public:
                _query_options.enable_collect_table_level_scan_stats;
     }
 
+    bool enable_spill_to_remote_storage() const {
+        return _query_options.__isset.enable_spill_to_remote_storage;
+    }
+
+    std::vector<std::string> spill_remote_storage_paths() {
+        return _query_options.spill_remote_storage_paths;
+    }
+
+    TCloudConfiguration spill_remote_storage_config() {
+        return _query_options.spill_remote_storage_conf;
+    }
+
 private:
     // Set per-query state.
     void _init(const TUniqueId& fragment_instance_id, const TQueryOptions& query_options,

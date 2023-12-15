@@ -51,8 +51,16 @@ public:
 
     size_t size() const { return _size; }
 
+    bool is_remote() const {
+        return _is_remote;
+    }
+    void set_is_remote(bool value) {
+        _is_remote = value;
+    }
+
 protected:
     size_t _size{};
+    bool _is_remote = false;
 };
 
 using BlockPtr = std::shared_ptr<Block>;

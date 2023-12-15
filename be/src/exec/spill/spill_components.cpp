@@ -88,6 +88,15 @@ Status RawSpillerWriter::yieldable_flush_task(workgroup::YieldContext& yield_ctx
         return flush_ctx.block;
     });
     ASSIGN_OR_RETURN(auto block, std::move(block_st));
+    // @TODO move serieze to here? but need another buffer
+    // const auto& serde = _spiller->serde();
+    // spill::AcquireBlockOptions opts;
+    // opts.query_id = state->query_id();
+    // opts.plan_node_id = options().plan_node_id;
+    // opts.name = options().name;
+    // // @TODO should acuire block first and then put it into differet task pool?
+    // ASSIGN_OR_RETURN(auto block, _spiller->block_manager()->acquire_block(opts));
+    // COUNTER_UPDATE(_spiller->metrics().block_count, 1);
 
     // TODO: reuse io context
     SerdeContext spill_ctx;
@@ -96,6 +105,7 @@ Status RawSpillerWriter::yieldable_flush_task(workgroup::YieldContext& yield_ctx
     {
         TRY_CATCH_ALLOC_SCOPE_START()
         // flush all pending result to spilled files
+        // @TODO num rows can be maintained in mem_table
         size_t num_rows_flushed = 0;
         RETURN_IF_ERROR_EXCEPT_YIELD(mem_table->flush([&](const auto& chunk) {
             SCOPED_RAW_TIMER(&time_spent_ns);
