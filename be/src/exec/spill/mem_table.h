@@ -31,6 +31,7 @@ namespace starrocks::spill {
 using FlushCallBack = std::function<Status(const ChunkPtr&)>;
 class SpillInputStream;
 class Spiller;
+class MemoryBlock;
 
 //  This component is the intermediate buffer for our spill data, which may be ordered or unordered,
 // depending on the requirements of the upper layer
@@ -73,6 +74,11 @@ public:
     virtual StatusOr<std::shared_ptr<SpillInputStream>> as_input_stream(bool shared) {
         return Status::NotSupported("unsupport to call as_input_stream");
     }
+    size_t num_rows() const {
+        return _num_rows;
+    }
+
+    virtual StatusOr<Slice> get_serialized_data();
 
 
 protected:
@@ -80,6 +86,9 @@ protected:
     const size_t _max_buffer_size;
     std::unique_ptr<MemTracker> _tracker;
     Spiller* _spiller = nullptr;
+    size_t _num_rows = 0;
+    // @TODO how to reuse this buffer
+    std::shared_ptr<MemoryBlock> _block;
 };
 
 using MemTablePtr = std::shared_ptr<SpillableMemTable>;
@@ -94,7 +103,7 @@ public:
     [[nodiscard]] Status append(ChunkPtr chunk) override;
     [[nodiscard]] Status append_selective(const Chunk& src, const uint32_t* indexes, uint32_t from,
                                           uint32_t size) override;
-    Status done() override { return Status::OK(); };
+    Status done() override;
     Status flush(FlushCallBack callback) override;
 
     StatusOr<std::shared_ptr<SpillInputStream>> as_input_stream(bool shared) override;

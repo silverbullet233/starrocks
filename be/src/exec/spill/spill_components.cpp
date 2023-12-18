@@ -411,7 +411,7 @@ template <class ChunkProvider>
 Status PartitionedSpillerWriter::spill_partition(SerdeContext& ctx, SpilledPartition* partition,
                                                  ChunkProvider&& provider) {
     auto& serde = _spiller->serde();
-
+    // @TODO acquire block first
     if (partition->spill_writer->block() == nullptr) {
         spill::AcquireBlockOptions opts;
         opts.query_id = _runtime_state->query_id();

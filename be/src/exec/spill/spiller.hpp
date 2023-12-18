@@ -22,6 +22,7 @@
 #include "column/vectorized_fwd.h"
 #include "common/logging.h"
 #include "common/status.h"
+#include "exec/spill/block_manager.h"
 #include "exec/spill/common.h"
 #include "exec/spill/executor.h"
 #include "exec/spill/input_stream.h"
@@ -144,9 +145,20 @@ Status RawSpillerWriter::flush(RuntimeState* state, TaskExecutor&& executor, Mem
     }
     // @TODO this is in compute thread
     RETURN_IF_ERROR(captured_mem_table->done());
+
+    ASSIGN_OR_RETURN(auto serialized_data, captured_mem_table->get_serialized_data());
+    LOG(INFO) << "flush mem table, after serialized size: " << serialized_data.get_size();
+    spill::AcquireBlockOptions opts;
+    opts.query_id = state->query_id();
+    opts.plan_node_id = _spiller->options().plan_node_id;;
+    opts.name = _spiller->options().name;
+    // @TODO should pass block length
+    ASSIGN_OR_RETURN(auto block, _spiller->block_manager()->acquire_block(opts));
+    // @TODO get serialized block size, acquire block
+
     _running_flush_tasks++;
     // TODO: handle spill queue
-    auto task = [this, state, guard = guard, mem_table = std::move(captured_mem_table),
+    auto task = [this, state, guard = guard, mem_table = std::move(captured_mem_table), block = block,
                  trace = TraceInfo(state)](auto& yield_ctx) {
         SCOPED_SET_TRACE_INFO({}, trace.query_id, trace.fragment_id);
         RETURN_IF(!guard.scoped_begin(), Status::Cancelled("cancelled"));
@@ -174,6 +186,8 @@ Status RawSpillerWriter::flush(RuntimeState* state, TaskExecutor&& executor, Mem
             defer.cancel();
         }
 
+        // @TODO just flush this block
+        // _spiller->update_spilled_task_status(flush_task(state, mem_table, block));
         return Status::OK();
     };
     // @TODO: we should know which block this io task will used, and then choose executor
@@ -247,6 +261,7 @@ Status PartitionedSpillerWriter::spill(RuntimeState* state, const ChunkPtr& chun
                                        MemGuard&& guard) {
     DCHECK(!chunk->is_empty());
     DCHECK(!is_full());
+    // @TODO yield??
 
     // the last column was hash column
     auto hash_column = chunk->columns().back();
@@ -296,6 +311,7 @@ Status PartitionedSpillerWriter::flush(RuntimeState* state, bool is_final_flush,
     }
     DCHECK_EQ(_running_flush_tasks, 0);
     _running_flush_tasks++;
+    // @TODO should alloc block first?
 
     auto task = [this, guard = guard, splitting_partitions = std::move(splitting_partitions),
                  spilling_partitions = std::move(spilling_partitions), trace = TraceInfo(state)](auto& yield_ctx) {

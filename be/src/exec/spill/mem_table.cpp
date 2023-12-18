@@ -20,11 +20,48 @@
 
 #include "column/chunk.h"
 #include "column/vectorized_fwd.h"
+#include "common/status.h"
 #include "exec/chunks_sorter.h"
 #include "exec/spill/input_stream.h"
 #include "runtime/current_thread.h"
+#include "util/slice.h"
 
 namespace starrocks::spill {
+
+
+class MemoryBlock: public Block {
+public:
+    MemoryBlock() = default;
+    ~MemoryBlock() override = default;
+    Status append(const std::vector<Slice>& data) override {
+        std::for_each(data.begin(), data.end(), [&] (const Slice& slice) {
+            _serialized_buffer.append(slice.get_data(), slice.get_size());
+            _size += slice.get_size();
+        });
+        return Status::OK();
+    }
+    Status flush() override {
+        return Status::NotSupported("MemoryBlock does not support flush");
+    }
+
+    std::shared_ptr<BlockReader> get_reader() override {
+        DCHECK(false) << "MemoryBlock does not support get_reader";
+        return nullptr;
+    }
+    std::string debug_string() const override {
+        return fmt::format("MemoryBlock");
+    }
+
+    Slice get_data() {
+        return {_serialized_buffer.data(), _serialized_buffer.size()};
+    }
+private:
+    std::string _serialized_buffer;
+};
+
+StatusOr<Slice> SpillableMemTable::get_serialized_data() {
+    return _block->get_data();
+}
 
 bool UnorderedMemTable::is_empty() {
     return _chunks.empty();
@@ -33,6 +70,7 @@ bool UnorderedMemTable::is_empty() {
 Status UnorderedMemTable::append(ChunkPtr chunk) {
     _tracker->consume(chunk->memory_usage());
     COUNTER_ADD(_spiller->metrics().mem_table_peak_memory_usage, chunk->memory_usage());
+    _num_rows += chunk->num_rows();
     _chunks.emplace_back(std::move(chunk));
     return Status::OK();
 }
@@ -47,6 +85,7 @@ Status UnorderedMemTable::append_selective(const Chunk& src, const uint32_t* ind
     Chunk* current = _chunks.back().get();
     size_t mem_usage = current->memory_usage();
     current->append_selective(src, indexes, from, size);
+    _num_rows += size;
     mem_usage = current->memory_usage() - mem_usage;
 
     _tracker->consume(mem_usage);
@@ -54,15 +93,30 @@ Status UnorderedMemTable::append_selective(const Chunk& src, const uint32_t* ind
     return Status::OK();
 }
 
-Status UnorderedMemTable::flush(FlushCallBack callback) {
-    while (_processed_index < _chunks.size()) {
-        RETURN_IF_ERROR(callback(_chunks[_processed_index++]));
+Status UnorderedMemTable::done() {
+    auto& serde = _spiller->serde();
+    _block = std::make_shared<MemoryBlock>();
+    SerdeContext spill_ctx;
+    for (const auto& chunk: _chunks) {
+        RETURN_IF_ERROR(serde->serialize_to_block(spill_ctx, chunk, _block));
     }
-    _processed_index = {};
-    int64_t consumption = _tracker->consumption();
+    LOG(INFO) << "spill unordered memtable done, rows=" << num_rows() << ", size=" << _block->size();
+    int64_t consumption =_tracker->consumption();
     _tracker->release(consumption);
     COUNTER_ADD(_spiller->metrics().mem_table_peak_memory_usage, -consumption);
     _chunks.clear();
+    return Status::OK();
+}
+
+Status UnorderedMemTable::flush(FlushCallBack callback) {
+    // for (const auto& chunk : _chunks) {
+    //     RETURN_IF_ERROR(callback(chunk));
+    // }
+    // // @TODO if mem table not flushed in join, it may read from memory, clear chunk after done is not safe
+    // int64_t consumption = _tracker->consumption();
+    // _tracker->release(consumption);
+    // COUNTER_ADD(_spiller->metrics().mem_table_peak_memory_usage, -consumption);
+    // _chunks.clear();
     return Status::OK();
 }
 
@@ -84,6 +138,7 @@ Status OrderedMemTable::append(ChunkPtr chunk) {
     }
     int64_t old_mem_usage = _chunk->memory_usage();
     _chunk->append(*chunk);
+    _num_rows += chunk->num_rows();
     int64_t new_mem_usage = _chunk->memory_usage();
     _tracker->set(_chunk->memory_usage());
     COUNTER_ADD(_spiller->metrics().mem_table_peak_memory_usage, new_mem_usage - old_mem_usage);
@@ -98,6 +153,7 @@ Status OrderedMemTable::append_selective(const Chunk& src, const uint32_t* index
     Chunk* current = _chunk.get();
     size_t mem_usage = current->memory_usage();
     _chunk->append_selective(src, indexes, from, size);
+    _num_rows += size;
     mem_usage = current->memory_usage() - mem_usage;
 
     _tracker->consume(mem_usage);
@@ -106,22 +162,43 @@ Status OrderedMemTable::append_selective(const Chunk& src, const uint32_t* index
 }
 
 Status OrderedMemTable::flush(FlushCallBack callback) {
-    while (!_chunk_slice.empty()) {
-        auto chunk = _chunk_slice.cutoff(_runtime_state->chunk_size());
-        RETURN_IF_ERROR(callback(chunk));
-    }
-    _chunk_slice.reset(nullptr);
-    int64_t consumption = _tracker->consumption();
-    _tracker->release(consumption);
-    COUNTER_ADD(_spiller->metrics().mem_table_peak_memory_usage, -consumption);
-    _chunk.reset();
+    // @TODO still need this interface??
+    // while (!_chunk_slice.empty()) {
+    //     auto chunk = _chunk_slice.cutoff(_runtime_state->chunk_size());
+    //     RETURN_IF_ERROR(callback(chunk));
+    // }
+    // _chunk_slice.reset(nullptr);
+    // int64_t consumption = _tracker->consumption();
+    // _tracker->release(consumption);
+    // COUNTER_ADD(_spiller->metrics().mem_table_peak_memory_usage, -consumption);
+    // _chunk.reset();
     return Status::OK();
 }
 
+// @TODO after done, output a seriealized block?
+// @TODO maybe hold this buffer for a lot of time?
 Status OrderedMemTable::done() {
     // do sort
     ASSIGN_OR_RETURN(_chunk, _do_sort(_chunk));
     _chunk_slice.reset(_chunk);
+
+    // seriealize data, store result into _block
+    auto& serde = _spiller->serde();
+    _block = std::make_shared<MemoryBlock>();
+    SerdeContext spill_ctx;
+    while (!_chunk_slice.empty()) {
+        auto chunk = _chunk_slice.cutoff(_runtime_state->chunk_size());
+        RETURN_IF_ERROR(serde->serialize_to_block(spill_ctx, chunk, _block));
+    }
+    LOG(INFO) << "spill ordered memtable done, rows=" << num_rows() << ", size=" << _block->size();
+    // clear alldata
+    _chunk_slice.reset(nullptr);
+    int64_t consumption = _tracker->consumption();
+    // @TODO should consider block memory?
+    _tracker->release(consumption);
+    COUNTER_ADD(_spiller->metrics().mem_table_peak_memory_usage, -consumption);
+    _chunk.reset();
+
     return Status::OK();
 }
 
