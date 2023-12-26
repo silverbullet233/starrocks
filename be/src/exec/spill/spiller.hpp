@@ -222,6 +222,7 @@ Status SpillerReader::trigger_restore(RuntimeState* state, TaskExecutor&& execut
         if (_stream->is_ready() && _running_restore_tasks >= config::io_tasks_per_scan_operator) {
             return Status::OK();
         }
+        // @TODO we should know which block this io task will used, and then choose executor
         _running_restore_tasks++;
         auto restore_task = [this, guard, trace = TraceInfo(state), _stream = _stream](auto& yield_ctx) {
             SCOPED_SET_TRACE_INFO({}, trace.query_id, trace.fragment_id);
