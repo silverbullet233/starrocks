@@ -17,6 +17,7 @@
 #include <glog/logging.h>
 
 #include <cstdint>
+#include "fmt/format.h"
 
 namespace starrocks {
 
@@ -49,5 +50,8 @@ struct SpillPartitionInfo {
     int32_t level_last_partition() const { return level_elements() * 2 - 1; }
 
     int32_t mask() const { return level_elements() - 1; }
+    std::string debug_string() const {
+        return fmt::format("partition id={}, level={}, num_rows={}, mem_size={}, bytes={}, in_mem={}", partition_id, level, num_rows, mem_size, bytes, in_mem);
+    }
 };
 } // namespace starrocks

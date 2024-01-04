@@ -88,6 +88,7 @@ Status Spiller::prepare(RuntimeState* state) {
     ASSIGN_OR_RETURN(_serde, Serde::create_serde(this));
 
     if (_opts.init_partition_nums > 0) {
+        LOG(INFO) << "initial partition num: " << _opts.init_partition_nums << ", spiller:" << this;
         _writer = std::make_unique<PartitionedSpillerWriter>(this, state);
     } else {
         _writer = std::make_unique<RawSpillerWriter>(this, state);

@@ -101,6 +101,9 @@ public:
         return down_cast<T>(this);
     }
     uint64_t running_flush_tasks() const { return _running_flush_tasks.load(); }
+    Spiller* spiller() const {
+        return _spiller;
+    }
 
 protected:
     Status _decrease_running_flush_tasks();
@@ -164,6 +167,10 @@ public:
 
     BlockPtr& block() { return _block; }
 
+    void reset_block() {
+        _block = nullptr;
+    }
+
     BlockGroup& block_group() { return _block_group; }
 
     Status acquire_stream(std::shared_ptr<SpillInputStream>* stream) override;
@@ -210,7 +217,7 @@ struct SpilledPartition : public SpillPartitionInfo {
     }
 
     std::string debug_string() {
-        return fmt::format("[id={},bytes={},mem_size={},in_mem={},is_spliting={}]", partition_id, bytes, mem_size,
+        return fmt::format("[id={},bytes={},rows={},mem_size={},in_mem={},is_spliting={}]", partition_id, bytes, num_rows, mem_size,
                            in_mem, is_spliting);
     }
 
@@ -293,6 +300,8 @@ public:
 
     template <class ChunkProvider>
     Status spill_partition(SerdeContext& context, SpilledPartition* partition, ChunkProvider&& provider);
+
+    Status spill_partition_v2(SerdeContext& context, SpilledPartition* partition);
 
     int64_t mem_consumption() const { return _mem_tracker->consumption(); }
 

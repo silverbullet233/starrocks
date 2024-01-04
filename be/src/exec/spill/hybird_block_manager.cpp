@@ -36,9 +36,11 @@ void HyBirdBlockManager::close() {
 }
 
 StatusOr<BlockPtr> HyBirdBlockManager::acquire_block(const AcquireBlockOptions& opts) {
-    auto local_block = _local_block_manager->acquire_block(opts);
-    if (local_block.ok()) {
-        return local_block;
+    if (std::rand() % 10 < 5) {
+        auto local_block = _local_block_manager->acquire_block(opts);
+        if (local_block.ok()) {
+            return local_block;
+        }
     }
     ASSIGN_OR_RETURN(auto remote_block, _remote_block_manager->acquire_block(opts));
     remote_block->set_is_remote(true);

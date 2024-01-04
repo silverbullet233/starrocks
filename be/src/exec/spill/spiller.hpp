@@ -152,6 +152,7 @@ Status RawSpillerWriter::flush(RuntimeState* state, TaskExecutor&& executor, Mem
     opts.query_id = state->query_id();
     opts.plan_node_id = _spiller->options().plan_node_id;;
     opts.name = _spiller->options().name;
+    opts.block_size = serialized_data.get_size();
     // @TODO should pass block length
     ASSIGN_OR_RETURN(auto block, _spiller->block_manager()->acquire_block(opts));
     // @TODO get serialized block size, acquire block
@@ -166,7 +167,8 @@ Status RawSpillerWriter::flush(RuntimeState* state, TaskExecutor&& executor, Mem
         SCOPED_TIMER(_spiller->metrics().flush_timer);
         DCHECK_GT(_running_flush_tasks, 0);
         DCHECK(has_pending_data());
-        //
+        // @TODO
+        yield_ctx.task_context_data = FlushContext{block};
         auto defer = CancelableDefer([&]() {
             {
                 std::lock_guard _(_mutex);
@@ -205,7 +207,9 @@ StatusOr<ChunkPtr> SpillerReader::restore(RuntimeState* state, TaskExecutor&& ex
     RETURN_IF_ERROR(trigger_restore(state, std::forward<TaskExecutor>(executor), std::forward<MemGuard>(guard)));
     _read_rows += chunk->num_rows();
     COUNTER_UPDATE(_spiller->metrics().restore_rows, chunk->num_rows());
-    TRACE_SPILL_LOG << "restore rows: " << chunk->num_rows() << ", total restored: " << _read_rows << ", " << this;
+    TRACE_SPILL_LOG << "restore rows: " << chunk->num_rows() << ", total restored: " << _read_rows
+        << ", total spilled: " << _spiller->spilled_append_rows() 
+        << ", " << this;
     return chunk;
 }
 
@@ -223,6 +227,7 @@ Status SpillerReader::trigger_restore(RuntimeState* state, TaskExecutor&& execut
             return Status::OK();
         }
         // @TODO we should know which block this io task will used, and then choose executor
+        // @TODO how to avoid repeate read?
         _running_restore_tasks++;
         auto restore_task = [this, guard, trace = TraceInfo(state), _stream = _stream](auto& yield_ctx) {
             SCOPED_SET_TRACE_INFO({}, trace.query_id, trace.fragment_id);
@@ -277,6 +282,8 @@ Status PartitionedSpillerWriter::spill(RuntimeState* state, const ChunkPtr& chun
                                    auto mem_table = partition->spill_writer->mem_table();
                                    (void)mem_table->append_selective(*chunk, selection.data(), from, size);
                                    partition->mem_size = mem_table->mem_usage();
+                                   // @TODO shoule we update num_rows here????
+                                //    LOG(INFO) << fmt::format("update partition[{}] add size[{}]", partition->debug_string(), size);
                                    partition->num_rows += size;
                                });
     }
@@ -305,6 +312,14 @@ Status PartitionedSpillerWriter::flush(RuntimeState* state, bool is_final_flush,
     if (spilling_partitions.empty() && splitting_partitions.empty()) {
         return Status::OK();
     }
+    {
+        // mark done for all partitiones need spill
+        for (auto partition : spilling_partitions) {
+            LOG(INFO) << "mark done for partition: " << partition->debug_string() << ", spiller:" << _spiller;
+            auto mem_table = partition->spill_writer->mem_table();
+            RETURN_IF_ERROR(mem_table->done());
+        }
+    }
 
     if (is_final_flush && _running_flush_tasks > 0) {
         _need_final_flush = true;
@@ -313,6 +328,7 @@ Status PartitionedSpillerWriter::flush(RuntimeState* state, bool is_final_flush,
     DCHECK_EQ(_running_flush_tasks, 0);
     _running_flush_tasks++;
     // @TODO should alloc block first?
+    // @TODO need more yield point
 
     auto task = [this, guard = guard, splitting_partitions = std::move(splitting_partitions),
                  spilling_partitions = std::move(spilling_partitions), trace = TraceInfo(state)](auto& yield_ctx) {

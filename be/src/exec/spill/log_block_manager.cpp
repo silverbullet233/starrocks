@@ -212,7 +212,7 @@ Status LogBlockReader::read_fully(void* data, int64_t count) {
         ASSIGN_OR_RETURN(_readable, log_block->get_readable());
         _length = log_block->size();
     }
-
+    // LOG(INFO) << fmt::format("read from block[{}], offset[{}], count[{}]", _block->debug_string(), _offset, count);
     if (_offset + count > _length) {
         return Status::EndOfFile("no more data in this block");
     }

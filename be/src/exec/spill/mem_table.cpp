@@ -100,11 +100,11 @@ Status UnorderedMemTable::done() {
     for (const auto& chunk: _chunks) {
         RETURN_IF_ERROR(serde->serialize_to_block(spill_ctx, chunk, _block));
     }
-    LOG(INFO) << "spill unordered memtable done, rows=" << num_rows() << ", size=" << _block->size();
-    int64_t consumption =_tracker->consumption();
-    _tracker->release(consumption);
-    COUNTER_ADD(_spiller->metrics().mem_table_peak_memory_usage, -consumption);
-    _chunks.clear();
+    LOG(INFO) << "spill unordered memtable done, rows=" << num_rows() << ", size=" << _block->size() << ", mem consumption:" << _tracker->consumption();
+    // int64_t consumption =_tracker->consumption();
+    // _tracker->release(consumption);
+    // COUNTER_ADD(_spiller->metrics().mem_table_peak_memory_usage, -consumption);
+    // _chunks.clear();
     return Status::OK();
 }
 
@@ -117,6 +117,13 @@ Status UnorderedMemTable::flush(FlushCallBack callback) {
     // _tracker->release(consumption);
     // COUNTER_ADD(_spiller->metrics().mem_table_peak_memory_usage, -consumption);
     // _chunks.clear();
+    int64_t consumption =_tracker->consumption();
+    _tracker->release(consumption);
+    COUNTER_ADD(_spiller->metrics().mem_table_peak_memory_usage, -consumption);
+    _chunks.clear();
+    _num_rows = 0;
+    // @TODO shoud reuse
+    _block.reset();
     return Status::OK();
 }
 
@@ -172,6 +179,7 @@ Status OrderedMemTable::flush(FlushCallBack callback) {
     // _tracker->release(consumption);
     // COUNTER_ADD(_spiller->metrics().mem_table_peak_memory_usage, -consumption);
     // _chunk.reset();
+    _num_rows = 0;
     return Status::OK();
 }
 
@@ -192,13 +200,13 @@ Status OrderedMemTable::done() {
     }
     LOG(INFO) << "spill ordered memtable done, rows=" << num_rows() << ", size=" << _block->size();
     // clear alldata
+    // @TODO move to flush?
     _chunk_slice.reset(nullptr);
     int64_t consumption = _tracker->consumption();
     // @TODO should consider block memory?
     _tracker->release(consumption);
     COUNTER_ADD(_spiller->metrics().mem_table_peak_memory_usage, -consumption);
     _chunk.reset();
-
     return Status::OK();
 }
 

@@ -84,6 +84,9 @@ public:
                                                const SortExecExprs* sort_exprs, const SortDescs* sort_descs);
 
     void clear() { _blocks.clear(); }
+    size_t block_num() const {
+        return _blocks.size();
+    }
 
 private:
     std::vector<BlockPtr> _blocks;

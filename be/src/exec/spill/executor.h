@@ -27,6 +27,7 @@
 #include "runtime/current_thread.h"
 #include "runtime/mem_tracker.h"
 #include "util/priority_thread_pool.hpp"
+#include "util/runtime_profile.h"
 
 namespace starrocks::spill {
 struct TraceInfo {
@@ -118,6 +119,8 @@ struct SyncTaskExecutor {
     }
 };
 
+#define SUPPORT_YIELD
+#ifdef SUPPORT_YIELD
 #define BREAK_IF_YIELD(wg, yield, time_spent_ns)                                                \
     if (time_spent_ns >= workgroup::WorkGroup::YIELD_MAX_TIME_SPENT) {                          \
         *yield = true;                                                                          \
@@ -152,6 +155,12 @@ struct SyncTaskExecutor {
     if (*yield) {              \
         return Status::OK();   \
     }
+#else
+#define BREAK_IF_YIELD(wg, yield, time_spent_ns)                                                
+#define RETURN_IF_NEED_YIELD(wg, yield, time_spent_ns)                                          
+#define RETURN_IF_ERROR_EXCEPT_YIELD(stmt)                                                            
+#define RETURN_IF_YIELD(yield)
+#endif
 
 #define DEFER_GUARD_END(guard) auto VARNAME_LINENUM(defer) = DeferOp([&]() { guard.scoped_end(); });
 

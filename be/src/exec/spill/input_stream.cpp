@@ -34,6 +34,7 @@ Status YieldableRestoreTask::do_read(workgroup::YieldContext& ctx, SerdeContext&
     int64_t time_spent_ns = 0;
     size_t num_eos = 0;
     ctx.total_yield_point_cnt = _sub_stream.size();
+    // LOG(INFO) << "restore do_read, yield_point" << ctx.yield_point << ", total:" << ctx.total_yield_point_cnt; 
     auto wg = ctx.wg;
     while (ctx.yield_point < ctx.total_yield_point_cnt) {
         {
@@ -47,6 +48,7 @@ Status YieldableRestoreTask::do_read(workgroup::YieldContext& ctx, SerdeContext&
                 }
             }
             num_eos += _sub_stream[i]->eof();
+            // LOG(INFO) << "restore do_read, yield_point" << ctx.yield_point << ", total:" << ctx.total_yield_point_cnt; 
         }
 
         BREAK_IF_YIELD(wg, yield, time_spent_ns);
@@ -264,10 +266,12 @@ StatusOr<ChunkUniquePtr> UnorderedInputStream::get_next(SerdeContext& ctx) {
         if (_current_reader == nullptr) {
             _current_reader = _input_blocks[_current_idx]->get_reader();
         }
+        // LOG(INFO) << "read from idx: " << _current_idx << ", total:" << _input_blocks.size();
         auto res = _serde->deserialize(ctx, _current_reader.get());
         if (res.status().is_end_of_file()) {
             _input_blocks[_current_idx].reset();
             _current_reader.reset();
+            // LOG(INFO) << "read done from idx: " << _current_idx;
             _current_idx++;
             if (_current_idx >= _input_blocks.size()) {
                 return Status::EndOfFile("end of stream");
