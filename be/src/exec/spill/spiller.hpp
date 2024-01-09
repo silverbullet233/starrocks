@@ -185,8 +185,10 @@ Status RawSpillerWriter::flush(RuntimeState* state, TaskExecutor&& executor, Mem
         int yield = false;
         _spiller->update_spilled_task_status(yieldable_flush_task(yield_ctx, state, mem_table, &yield));
         if (yield) {
+            LOG(INFO) << "flush task yield";
             defer.cancel();
         }
+        // @TODO if need switch io thread, should create a new task and submit it into another executor?
 
         // @TODO just flush this block
         // _spiller->update_spilled_task_status(flush_task(state, mem_table, block));
@@ -194,6 +196,8 @@ Status RawSpillerWriter::flush(RuntimeState* state, TaskExecutor&& executor, Mem
     };
     // @TODO: we should know which block this io task will used, and then choose executor
     // submit io task
+    // @TODO we can use global executor directly
+    // RETURN_IF_ERROR(_spiller->local_io_executor()->submit(std::move(task)));
     RETURN_IF_ERROR(executor.submit(std::move(task)));
     COUNTER_UPDATE(_spiller->metrics().flush_io_task_count, 1);
     COUNTER_SET(_spiller->metrics().peak_flush_io_task_count, _running_flush_tasks);
@@ -262,6 +266,53 @@ Status SpillerReader::trigger_restore(RuntimeState* state, TaskExecutor&& execut
     return Status::OK();
 }
 
+template <class MemGuard>
+StatusOr<ChunkPtr> SpillerReader::sync_restore(RuntimeState* state, MemGuard&& guard) {
+    SCOPED_TIMER(_spiller->metrics().restore_from_buffer_timer);
+    // @TODO
+    ASSIGN_OR_RETURN(auto chunk, _stream->get_next(_spill_read_ctx));
+    // LOG(INFO) << "can't get data from stream";
+    // restore
+    if (!_stream->eof()) {
+        if (_stream->is_ready()) {
+            return chunk;
+            // return Status::OK();
+        }
+        // LOG(INFO) << "trigger restore";
+        auto restore_task = [this, guard, trace = TraceInfo(state), _stream = _stream](auto& yield_ctx) {
+            SCOPED_SET_TRACE_INFO({}, trace.query_id, trace.fragment_id);
+            RETURN_IF(!guard.scoped_begin(), (void)0);
+            DEFER_GUARD_END(guard);
+            {
+                auto defer = CancelableDefer([&]() {
+                    _running_restore_tasks--;
+                    yield_ctx.set_finished();
+                });
+                Status res;
+                SerdeContext serd_ctx;
+                int yield = false;
+
+                YieldableRestoreTask task(_stream);
+                res = task.do_read(yield_ctx, serd_ctx, &yield);
+
+                if (yield) {
+                    defer.cancel();
+                }
+
+                if (!res.is_ok_or_eof()) {
+                    _spiller->update_spilled_task_status(std::move(res));
+                }
+                _finished_restore_tasks += !res.ok();
+            };
+        };
+        SyncTaskExecutor executor;
+        RETURN_IF_ERROR(executor.submit(std::move(restore_task)));
+        // ASSIGN_OR_RETURN(auto chunk, _stream->get_next(_spill_read_ctx));
+    }
+    return chunk;
+}
+
+
 template <class TaskExecutor, class MemGuard>
 Status PartitionedSpillerWriter::spill(RuntimeState* state, const ChunkPtr& chunk, TaskExecutor&& executor,
                                        MemGuard&& guard) {
@@ -312,14 +363,7 @@ Status PartitionedSpillerWriter::flush(RuntimeState* state, bool is_final_flush,
     if (spilling_partitions.empty() && splitting_partitions.empty()) {
         return Status::OK();
     }
-    {
-        // mark done for all partitiones need spill
-        for (auto partition : spilling_partitions) {
-            LOG(INFO) << "mark done for partition: " << partition->debug_string() << ", spiller:" << _spiller;
-            auto mem_table = partition->spill_writer->mem_table();
-            RETURN_IF_ERROR(mem_table->done());
-        }
-    }
+
 
     if (is_final_flush && _running_flush_tasks > 0) {
         _need_final_flush = true;
@@ -327,11 +371,57 @@ Status PartitionedSpillerWriter::flush(RuntimeState* state, bool is_final_flush,
     }
     DCHECK_EQ(_running_flush_tasks, 0);
     _running_flush_tasks++;
-    // @TODO should alloc block first?
-    // @TODO need more yield point
+
+    {
+        // @TODO we should allocate block here
+        // mark done for all partitiones need spill
+        for (auto partition : spilling_partitions) {
+            LOG(INFO) << "mark done for partition: " << partition->debug_string() << ", spiller:" << _spiller;
+            auto mem_table = partition->spill_writer->mem_table();
+            RETURN_IF_ERROR(mem_table->done());
+            // allocate block here
+            DCHECK(partition->spill_writer->block() == nullptr) << "block should be null";
+            ASSIGN_OR_RETURN(auto serialized_data, mem_table->get_serialized_data());
+            spill::AcquireBlockOptions opts;
+            opts.query_id = _runtime_state->query_id();
+            opts.plan_node_id = options().plan_node_id;
+            opts.name = options().name;
+            opts.direct_io = _runtime_state->spill_enable_direct_io();
+            opts.block_size = serialized_data.get_size();
+            ASSIGN_OR_RETURN(auto block, _spiller->block_manager()->acquire_block(opts));
+            // really need this mutex?
+            std::lock_guard<std::mutex> l(_mutex);
+            partition->spill_writer->block() = block;
+        }
+        std::partition(spilling_partitions.begin(), spilling_partitions.end(), [](const SpilledPartition* arg) { return !arg->spill_writer->block()->is_remote();});
+        std::ostringstream oss;
+        oss << "final spilling partition [";
+        for (auto partition: spilling_partitions) {
+            if (partition->spill_writer->block()->is_remote()) {
+                oss << partition->partition_id << ":remote,";
+            } else {
+                oss << partition->partition_id << ":local,";
+            }
+        }
+        oss << "]";
+        LOG(INFO) << oss.str();
+    }
+    // @TODO if first partitions is local blokc ,submit to local_io_executor, then yield
+    // find first partition
+    std::shared_ptr<IOTaskExecutor> initial_executor = _spiller->local_io_executor();
+    if (!spilling_partitions.empty()) {
+        if (spilling_partitions[0]->spill_writer->block()->is_remote()) {
+            initial_executor = _spiller->remote_io_executor();
+        }
+    }
+
+
+    // @TODO create io task
+    workgroup::ScanTask scan_task;
 
     auto task = [this, guard = guard, splitting_partitions = std::move(splitting_partitions),
-                 spilling_partitions = std::move(spilling_partitions), trace = TraceInfo(state)](auto& yield_ctx) {
+                 spilling_partitions = std::move(spilling_partitions), trace = TraceInfo(state),
+                 initial_executor = std::move(initial_executor)] (auto& yield_ctx) {
         SCOPED_SET_TRACE_INFO({}, trace.query_id, trace.fragment_id);
         RETURN_IF(!guard.scoped_begin(), Status::Cancelled("cancelled"));
         DEFER_GUARD_END(guard);
@@ -345,16 +435,41 @@ Status PartitionedSpillerWriter::flush(RuntimeState* state, bool is_final_flush,
         if (_spiller->is_cancel() || !_spiller->task_status().ok()) {
             return Status::OK();
         }
+        if (!yield_ctx.task_context_data.has_value()) {
+            auto ctx = std::make_shared<PartitionedFlushContext>();
+            ctx->io_task_executor = initial_executor;
+            yield_ctx.task_context_data = ctx;
+            // yield_ctx.task_context_data = std::make_shared<PartitionedFlushContext>();
+        }
         int yield = false;
         _spiller->update_spilled_task_status(
                 yieldable_flush_task(yield_ctx, splitting_partitions, spilling_partitions, &yield));
         if (yield) {
+            LOG(INFO) << "scan io task is yield, finished: " << yield_ctx.is_finished();
+            // @TODO submit in another thread pool
+            // @TODO shoud get task itself??? should set old ctx into new task
+            // @TODo concurrent issue
             defer.cancel();
         }
+        // @TODO build a new scan task?
         return Status::OK();
     };
-
-    RETURN_IF_ERROR(executor.submit(std::move(task)));
+    scan_task = workgroup::ScanTask(_spiller->options().wg.get(), task);
+    scan_task.disable_auto_schedule();
+    scan_task.set_yield_function([&](workgroup::ScanTask&& task) {
+        LOG(INFO) << "force submit task in yield function";
+        // @TODO we should know yield reason, if only time out, don't need submit in other pool
+        // otherwise ,should submit in another pool
+        // executor.force_submit(std::move(task));
+        // @TODO should record next executor should be used
+        PartitionedFlushContextPtr flush_ctx = std::any_cast<PartitionedFlushContextPtr>(task.get_work_context().task_context_data);
+        flush_ctx->io_task_executor->force_submit(std::move(task));
+        // _spiller->remote_io_executor()->force_submit(std::move(task));
+    });
+    // RETURN_IF_ERROR(executor.submit(std::move(scan_task)));
+    RETURN_IF_ERROR(_spiller->local_io_executor()->submit(std::move(scan_task)));
+    // RETURN_IF_ERROR(executor.submit(std::move(task)));
+    // @TODO metrics should be fixed??
     COUNTER_UPDATE(_spiller->metrics().flush_io_task_count, 1);
     COUNTER_SET(_spiller->metrics().peak_flush_io_task_count, _running_flush_tasks);
 

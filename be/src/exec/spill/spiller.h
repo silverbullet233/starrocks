@@ -206,6 +206,14 @@ public:
 
     Status reset_state(RuntimeState* state);
 
+    std::shared_ptr<IOTaskExecutor> local_io_executor() const {
+        return _local_io_executor;
+    }
+
+    std::shared_ptr<IOTaskExecutor> remote_io_executor() const {
+        return _remote_io_executor;
+    }
+
 private:
     Status _acquire_input_stream(RuntimeState* state);
 
@@ -233,6 +241,9 @@ private:
     std::shared_ptr<spill::BlockGroup> _block_group;
 
     std::atomic_bool _is_cancel = false;
+    
+    std::shared_ptr<IOTaskExecutor> _local_io_executor = nullptr;
+    std::shared_ptr<IOTaskExecutor> _remote_io_executor = nullptr;
 };
 
 } // namespace starrocks::spill

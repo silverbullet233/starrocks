@@ -55,6 +55,10 @@ public:
     template <class TaskExecutor, class MemGuard>
     [[nodiscard]] Status trigger_restore(RuntimeState* state, TaskExecutor&& executor, MemGuard&& guard);
 
+    template <class MemGuard>
+    StatusOr<ChunkPtr> sync_restore(RuntimeState* state, MemGuard&& guard);
+
+
     bool has_output_data() { return _stream && _stream->is_ready(); }
 
     bool restore_finished() const { return _running_restore_tasks == 0; }
@@ -301,7 +305,7 @@ public:
     template <class ChunkProvider>
     Status spill_partition(SerdeContext& context, SpilledPartition* partition, ChunkProvider&& provider);
 
-    Status spill_partition_v2(SerdeContext& context, SpilledPartition* partition);
+    Status spill_partition_v2(workgroup::YieldContext& yield_ctx, SerdeContext& context, SpilledPartition* partition);
 
     int64_t mem_consumption() const { return _mem_tracker->consumption(); }
 
@@ -333,6 +337,7 @@ public:
 
         SpillStageContext spill_stage_ctx;
         SplitStageContext split_stage_ctx;
+        std::shared_ptr<IOTaskExecutor> io_task_executor;
     };
     using PartitionedFlushContextPtr = std::shared_ptr<PartitionedFlushContext>;
 
@@ -341,6 +346,7 @@ public:
                                 const std::vector<SpilledPartition*>& spilling_partitions, int* yield);
 
 private:
+    // std::function<Status(workgroup::YieldContext)> _build_flush_task();
     void _init_with_partition_nums(RuntimeState* state, int num_partitions);
     // prepare and acquire mem_table for each partition in _id_to_partitions
     void _prepare_partitions(RuntimeState* state);

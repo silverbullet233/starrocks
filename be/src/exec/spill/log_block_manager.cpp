@@ -114,7 +114,7 @@ Status LogBlockContainer::close() {
 }
 
 Status LogBlockContainer::append_data(const std::vector<Slice>& data, size_t total_size) {
-    RETURN_IF_ERROR(_writable_file->pre_allocate(total_size));
+    // RETURN_IF_ERROR(_writable_file->pre_allocate(total_size));
     RETURN_IF_ERROR(_writable_file->appendv(data.data(), data.size()));
     _data_size += total_size;
     return Status::OK();

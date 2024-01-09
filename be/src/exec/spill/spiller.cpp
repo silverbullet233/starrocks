@@ -30,6 +30,7 @@
 #include "common/status.h"
 #include "common/statusor.h"
 #include "exec/sort_exec_exprs.h"
+#include "exec/spill/executor.h"
 #include "exec/spill/input_stream.h"
 #include "exec/spill/mem_table.h"
 #include "exec/spill/options.h"
@@ -84,6 +85,9 @@ SpillProcessMetrics::SpillProcessMetrics(RuntimeProfile* profile, std::atomic_in
 
 Status Spiller::prepare(RuntimeState* state) {
     _chunk_builder.chunk_schema() = std::make_shared<SpilledChunkBuildSchema>();
+
+    _local_io_executor = std::make_shared<IOTaskExecutor>(ExecEnv::GetInstance()->scan_executor(), _opts.wg);
+    _remote_io_executor = std::make_shared<IOTaskExecutor>(ExecEnv::GetInstance()->connector_scan_executor(), _opts.wg);
 
     ASSIGN_OR_RETURN(_serde, Serde::create_serde(this));
 

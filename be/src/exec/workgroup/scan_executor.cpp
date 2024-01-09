@@ -79,13 +79,23 @@ void ScanExecutor::worker_thread() {
 
         // task
         if (!task.is_finished()) {
-            _task_queue->force_put(std::move(task));
+            // @TODO should support put task into another pool?
+            // LOG(INFO) << "task not finished, need_auto_schedule: " << task.need_auto_schedule();
+            if (task.need_auto_schedule()) {
+                _task_queue->force_put(std::move(task));
+            } else {
+                task.cb_yield_function();
+            }
         }
     }
 }
 
 bool ScanExecutor::submit(ScanTask task) {
     return _task_queue->try_offer(std::move(task));
+}
+
+void ScanExecutor::force_submit(ScanTask task) {
+    return _task_queue->force_put(std::move(task));
 }
 
 } // namespace starrocks::workgroup

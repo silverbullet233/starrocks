@@ -23,6 +23,7 @@
 #include "exec/pipeline/query_context.h"
 #include "exec/workgroup/scan_executor.h"
 #include "exec/workgroup/scan_task_queue.h"
+#include "exec/workgroup/work_group.h"
 #include "gen_cpp/Types_types.h"
 #include "runtime/current_thread.h"
 #include "runtime/mem_tracker.h"
@@ -96,7 +97,10 @@ struct IOTaskExecutor {
     workgroup::WorkGroupPtr wg;
 
     IOTaskExecutor(workgroup::ScanExecutor* pool_, workgroup::WorkGroupPtr wg_) : pool(pool_), wg(std::move(wg_)) {}
-
+    workgroup::WorkGroup* get_wg() const {
+        return wg.get();
+    }
+    // @TODO should expose task, we may switch to another thread
     template <class Func>
     Status submit(Func&& func) {
         workgroup::ScanTask task(wg.get(), func);
@@ -105,6 +109,18 @@ struct IOTaskExecutor {
         } else {
             return Status::InternalError("offer task failed");
         }
+    }
+
+    Status submit(workgroup::ScanTask io_task) {
+        if (pool->submit(std::move(io_task))) {
+            return Status::OK();
+        } else {
+            return Status::InternalError("offer task failed");
+        }
+    }
+
+    void force_submit(workgroup::ScanTask io_task) {
+        pool->force_submit(std::move(io_task));
     }
 };
 
@@ -119,7 +135,7 @@ struct SyncTaskExecutor {
     }
 };
 
-#define SUPPORT_YIELD
+#define SUPPORT_YIELD 1
 #ifdef SUPPORT_YIELD
 #define BREAK_IF_YIELD(wg, yield, time_spent_ns)                                                \
     if (time_spent_ns >= workgroup::WorkGroup::YIELD_MAX_TIME_SPENT) {                          \
@@ -134,13 +150,27 @@ struct SyncTaskExecutor {
 
 #define RETURN_IF_NEED_YIELD(wg, yield, time_spent_ns)                                          \
     if (time_spent_ns >= workgroup::WorkGroup::YIELD_MAX_TIME_SPENT) {                          \
+        LOG(INFO) << "yield"; \
         *yield = true;                                                                          \
         return Status::Yield();                                                                 \
     }                                                                                           \
     if (wg != nullptr && time_spent_ns >= workgroup::WorkGroup::YIELD_PREEMPT_MAX_TIME_SPENT && \
         wg->scan_sched_entity()->in_queue()->should_yield(wg, time_spent_ns)) {                 \
+        LOG(INFO) << "yield wg"; \
         *yield = true;                                                                          \
         return Status::Yield();                                                                 \
+    }
+#define RETURN_OK_IF_NEED_YIELD(wg, yield, time_spent_ns)                                          \
+    if (time_spent_ns >= workgroup::WorkGroup::YIELD_MAX_TIME_SPENT) {                          \
+        LOG(INFO) << "yield"; \
+        *yield = true;                                                                          \
+        return Status::OK(); \
+    }                                                                                           \
+    if (wg != nullptr && time_spent_ns >= workgroup::WorkGroup::YIELD_PREEMPT_MAX_TIME_SPENT && \
+        wg->scan_sched_entity()->in_queue()->should_yield(wg, time_spent_ns)) {                 \
+        LOG(INFO) << "yield wg"; \
+        *yield = true;                                                                          \
+        return Status::OK();                                                                 \
     }
 
 #define RETURN_IF_ERROR_EXCEPT_YIELD(stmt)                                                            \

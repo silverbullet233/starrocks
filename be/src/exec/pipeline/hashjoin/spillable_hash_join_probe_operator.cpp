@@ -260,10 +260,10 @@ Status SpillableHashJoinProbeOperator::_load_partition_build_side(workgroup::Yie
             if (state->is_cancelled()) {
                 return Status::Cancelled("cancelled");
             }
-
-            RETURN_IF_ERROR(reader->trigger_restore(state, SyncTaskExecutor{}, MemTrackerGuard(tls_mem_tracker)));
-            auto chunk_st = reader->restore(state, SyncTaskExecutor{}, MemTrackerGuard(tls_mem_tracker));
-
+            // @TODO just use a sync interface?
+            // RETURN_IF_ERROR(reader->trigger_restore(state, SyncTaskExecutor{}, MemTrackerGuard(tls_mem_tracker)));
+            // auto chunk_st = reader->restore(state, SyncTaskExecutor{}, MemTrackerGuard(tls_mem_tracker));
+            auto chunk_st =  reader->sync_restore(state, MemTrackerGuard(tls_mem_tracker));
             if (chunk_st.ok() && chunk_st.value() != nullptr && !chunk_st.value()->is_empty()) {
                 int64_t old_mem_usage = hash_table_mem_usage;
                 RETURN_IF_ERROR(builder->append_chunk(std::move(chunk_st.value())));
@@ -305,6 +305,7 @@ Status SpillableHashJoinProbeOperator::_load_all_partition_build_side(RuntimeSta
                 }
             }
         };
+        // @TODO
         RETURN_IF_ERROR(_executor->submit(std::move(task)));
     }
     return Status::OK();
@@ -520,6 +521,7 @@ Status SpillableHashJoinProbeOperatorFactory::prepare(RuntimeState* state) {
     _spill_options->name = "hash-join-probe";
     _spill_options->plan_node_id = _plan_node_id;
     _spill_options->encode_level = state->spill_encode_level();
+    _spill_options->wg = state->fragment_ctx()->workgroup();
 
     return Status::OK();
 }

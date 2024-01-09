@@ -20,6 +20,7 @@
 
 #include "column/vectorized_fwd.h"
 #include "common/config.h"
+#include "exec/spill/block_manager.h"
 #include "exec/spill/executor.h"
 #include "exec/spill/serde.h"
 #include "exec/spill/spiller.h"
@@ -459,33 +460,37 @@ Status PartitionedSpillerWriter::spill_partition(SerdeContext& ctx, SpilledParti
     return Status::OK();
 }
 
-Status PartitionedSpillerWriter::spill_partition_v2(SerdeContext& ctx, SpilledPartition* partition) {
+Status PartitionedSpillerWriter::spill_partition_v2(workgroup::YieldContext& yield_ctx, SerdeContext& ctx, SpilledPartition* partition) {
     // auto& serde = _spiller->serde();
-    DCHECK(partition->spill_writer->block() == nullptr) << "block should be null";
+    // @TODO we can allocate block in compute thread
+    DCHECK(partition->spill_writer->block() != nullptr) << fmt::format("block must be set, partition[{}]", partition->debug_string());
+    // DCHECK(partition->spill_writer->block() == nullptr) << "block should be null";
+    // pass yield ctx
+    auto block = partition->spill_writer->block();
 
     auto mem_table = partition->spill_writer->mem_table();
     ASSIGN_OR_RETURN(auto serialized_data, mem_table->get_serialized_data());
     LOG(INFO) << fmt::format("spill partition[{}], mem_table_size[{}] bytes[{}] rows[{}]", partition->debug_string(), serialized_data.get_size(),
         mem_table->mem_usage(), mem_table->num_rows());
-    spill::AcquireBlockOptions opts;
-    opts.query_id = _runtime_state->query_id();
-    opts.plan_node_id = options().plan_node_id;
-    opts.name = options().name;
-    opts.direct_io = _runtime_state->spill_enable_direct_io();
-    opts.block_size = serialized_data.get_size();
+    // spill::AcquireBlockOptions opts;
+    // opts.query_id = _runtime_state->query_id();
+    // opts.plan_node_id = options().plan_node_id;
+    // opts.name = options().name;
+    // opts.direct_io = _runtime_state->spill_enable_direct_io();
+    // opts.block_size = serialized_data.get_size();
 
-    ASSIGN_OR_RETURN(auto block, _spiller->block_manager()->acquire_block(opts));
+    // @TODO this run in io thread, if allocate block here ,maybe need switch thread
+    // ASSIGN_OR_RETURN(auto block, _spiller->block_manager()->acquire_block(opts));
     // @TODO
     partition->bytes += mem_table->mem_usage();
     // @TODO should update num_rows here????
     // LOG(INFO) << fmt::format("update partition[{}], size[{}]", partition->debug_string(), mem_table->num_rows());
     // partition->num_rows += mem_table->num_rows();
-
     RETURN_IF_ERROR(block->append({serialized_data}));
     {
         std::lock_guard<std::mutex> l(_mutex);
         partition->spill_writer->block_group().append(block);
-        partition->spill_writer->block() = block;
+        // partition->spill_writer->block() = block;
         LOG(INFO) << "add block to partition: " << partition->partition_id << ", block group size:" << partition->spill_writer->block_group().block_num()
             << "block: " << block->debug_string() << ", num_rows:" << mem_table->num_rows();
         // @TODO remove 
@@ -498,7 +503,7 @@ Status PartitionedSpillerWriter::spill_partition_v2(SerdeContext& ctx, SpilledPa
     RETURN_IF_ERROR(_spiller->block_manager()->release_block(block));
     partition->spill_writer->reset_block();
     // block.reset();
-
+    LOG(INFO) << fmt::format("spill partition[{}] done ", partition->debug_string());
     return Status::OK();
 }
 
@@ -582,10 +587,34 @@ Status PartitionedSpillerWriter::_spill_input_partitions(workgroup::YieldContext
     SCOPED_TIMER(_spiller->metrics().flush_timer);
     auto& flush_ctx = std::any_cast<PartitionedFlushContextPtr>(yield_ctx.task_context_data)->spill_stage_ctx;
 
-    for (; flush_ctx.processing_idx < spilling_partitions.size(); ++flush_ctx.processing_idx) {
+    // @TODO need change task
+    for (; flush_ctx.processing_idx < spilling_partitions.size();) {
         auto partition = spilling_partitions[flush_ctx.processing_idx];
-
-        RETURN_IF_ERROR(spill_partition_v2(context, partition));
+        {
+            // check yield first
+            auto flush_ctx = std::any_cast<PartitionedFlushContextPtr>(yield_ctx.task_context_data);
+            auto block = partition->spill_writer->block();
+            if (block->is_remote() && flush_ctx->io_task_executor.get() != _spiller->remote_io_executor().get()) {
+                flush_ctx->io_task_executor = _spiller->remote_io_executor();
+                LOG(INFO) << "block is remote but executor is local, yield";
+                *yield = true;
+            } else if (!block->is_remote() && flush_ctx->io_task_executor.get() != _spiller->local_io_executor().get()) {
+                flush_ctx->io_task_executor = _spiller->local_io_executor();
+                LOG(INFO) << "block is local but executor is remote, yield";
+                *yield = true;
+            }
+            RETURN_IF_YIELD(yield);
+        }
+        {
+            SCOPED_RAW_TIMER(time_spent_ns);
+            // @TODO yield
+            // RETURN_IF_ERROR_EXCEPT_YIELD(spill_partition_v2(yield_ctx, context, partition));
+            RETURN_IF_ERROR(spill_partition_v2(yield_ctx, context, partition));
+            ++flush_ctx.processing_idx;
+            // check time
+            RETURN_OK_IF_NEED_YIELD(yield_ctx.wg, yield, *time_spent_ns);
+            // check manully yield
+        }
         RETURN_IF_YIELD(yield);
         // @TODO should support yield
         // RETURN_IF_ERROR(spill_partition(context, partition, [&](auto& consumer) {
@@ -660,6 +689,7 @@ Status PartitionedSpillerWriter::_split_input_partitions(workgroup::YieldContext
             flush_ctx.right = std::move(right);
         }
 
+        // @TODO this should be in io thread
         auto st = _split_partition(yield_ctx, context, flush_ctx.reader.get(), partition, flush_ctx.left.get(),
                                    flush_ctx.right.get(), time_spent_ns, yield);
         RETURN_IF_YIELD(yield);
@@ -694,14 +724,30 @@ Status PartitionedSpillerWriter::_split_partition(workgroup::YieldContext& yield
         left_mem_table->num_rows(), right_mem_table->num_rows(),
         partition->spill_writer->spiller()->spilled_append_rows());
     
-    auto flush_partition = [this, &spill_ctx] (SpilledPartition* partition) -> Status {
+    auto flush_partition = [this, &spill_ctx, &yield_ctx] (SpilledPartition* partition) -> Status {
         auto mem_table = partition->spill_writer->mem_table();
         LOG(INFO) << "flush partition: " << partition->debug_string() << ", mem table rows:" << mem_table->num_rows();
         RETURN_IF_ERROR(mem_table->done());
+        ASSIGN_OR_RETURN(auto serialized_data, mem_table->get_serialized_data());
         partition->num_rows += mem_table->num_rows();
-        return this->spill_partition_v2(spill_ctx, partition);
+        // @TODO we should allocate block first
+        spill::AcquireBlockOptions opts;
+        opts.query_id = _runtime_state->query_id();
+        opts.plan_node_id = options().plan_node_id;
+        opts.name = options().name;
+        opts.direct_io = _runtime_state->spill_enable_direct_io();
+        opts.block_size = serialized_data.get_size();
+
+        ASSIGN_OR_RETURN(auto block, _spiller->block_manager()->acquire_block(opts));
+        {
+            std::lock_guard<std::mutex> l(_mutex);
+            partition->spill_writer->block() = block;
+        }
+        // @TODO if ioexecutor should change, return yield???
+        return this->spill_partition_v2(yield_ctx, spill_ctx, partition);
     };
 
+    // @TODO handle status
     auto defer = DeferOp([&]() {
         WARN_IF_ERROR(flush_partition(left_partition), "flush error");
         WARN_IF_ERROR(flush_partition(right_partition), "flush error");
@@ -711,14 +757,28 @@ Status PartitionedSpillerWriter::_split_partition(workgroup::YieldContext& yield
     while (true) {
         {
             SCOPED_RAW_TIMER(time_spent_ns);
-            RETURN_IF_ERROR(reader->trigger_restore(_runtime_state, SyncTaskExecutor{}, EmptyMemGuard{}));
-            if (!reader->has_output_data()) {
-                break;
-            }
-            ASSIGN_OR_RETURN(auto chunk, reader->restore(_runtime_state, SyncTaskExecutor{}, EmptyMemGuard{}));
+            // if (!reader->has_output_data()) {
+            //     break;
+            // }
+            // @TODO support yield here
+            ASSIGN_OR_RETURN(auto chunk, reader->sync_restore(_runtime_state, EmptyMemGuard{}));
             if (chunk->is_empty()) {
                 continue;
             }
+            if (!reader->has_output_data()) {
+                LOG(INFO) << "no output data, break";
+                break;
+            }
+
+            // @TODO add restore_sync interface?
+            // RETURN_IF_ERROR(reader->trigger_restore(_runtime_state, SyncTaskExecutor{}, EmptyMemGuard{}));
+            // if (!reader->has_output_data()) {
+            //     break;
+            // }
+            // ASSIGN_OR_RETURN(auto chunk, reader->restore(_runtime_state, SyncTaskExecutor{}, EmptyMemGuard{}));
+            // if (chunk->is_empty()) {
+            //     continue;
+            // }
             auto hash_column = down_cast<SpillHashColumn*>(chunk->columns().back().get());
             const auto& hash_data = hash_column->get_data();
             // hash data
@@ -768,7 +828,7 @@ Status PartitionedSpillerWriter::_split_partition(workgroup::YieldContext& yield
                 // RETURN_IF_ERROR(right_accumulate_writer.write(right_chunk));
             }
         }
-        // BREAK_IF_YIELD(yield_ctx.wg, yield, *time_spent_ns);
+        BREAK_IF_YIELD(yield_ctx.wg, yield, *time_spent_ns);
     }
     TRY_CATCH_ALLOC_SCOPE_END()
     // TODO: add restore rows check
@@ -864,10 +924,12 @@ Status PartitionedSpillerWriter::yieldable_flush_task(workgroup::YieldContext& c
     enum PartitionWriterStage { SPILL = 0, SPLIT = 1, FINISH = 2 };
 
     ctx.total_yield_point_cnt = FINISH;
+    DCHECK(ctx.task_context_data.has_value()) << "spill flush context must be set";
     // init task context
-    if (!ctx.task_context_data.has_value()) {
-        ctx.task_context_data = std::make_shared<PartitionedFlushContext>();
-    }
+    // if (!ctx.task_context_data.has_value()) {
+    //     ctx.task_context_data = std::make_shared<PartitionedFlushContext>();
+    //     // @TODO how to know current executor
+    // }
 
     // partition memory usage
     // now we partitioned sorted spill

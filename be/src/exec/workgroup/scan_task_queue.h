@@ -53,10 +53,22 @@ struct YieldContext {
         task_context_data.reset();
     }
 
+    bool is_auto_schedule() const {
+        return auto_schedule;
+    }
+    void set_auto_schedule(bool value) {
+        auto_schedule = value;
+    }
+
     std::any task_context_data;
     size_t yield_point{};
     size_t total_yield_point_cnt{};
     const workgroup::WorkGroup* wg = nullptr;
+    bool auto_schedule = true;
+    // -1 means invalid
+    // 0 means time exceed
+    // 1 means should switch thread
+    // @TODO executor
 };
 
 struct ScanTask {
@@ -84,10 +96,31 @@ public:
 
     bool is_finished() const { return work_context.is_finished(); }
 
+    // @TODO need a better name
+    bool need_auto_schedule() const {
+        return work_context.is_auto_schedule();
+    }
+    void disable_auto_schedule() {
+        work_context.set_auto_schedule(false);
+    }
+    // std::move(*this)
+    void set_yield_function(std::function<void(ScanTask&&)> cb) {
+        yield_function = std::move(cb);
+    }
+
+    void cb_yield_function() {
+        yield_function(std::move(*this));       
+    }
+
+    const YieldContext& get_work_context() const {
+        return work_context;
+    }
+
 public:
     WorkGroup* workgroup;
     YieldContext work_context;
     WorkFunction work_function;
+    std::function<void(ScanTask&&)> yield_function;
     int priority = 0;
     std::shared_ptr<ScanTaskGroup> task_group = nullptr;
     RuntimeProfile::HighWaterMarkCounter* peak_scan_task_queue_size_counter = nullptr;
