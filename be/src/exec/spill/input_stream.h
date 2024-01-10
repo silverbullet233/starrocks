@@ -35,28 +35,30 @@ class Spiller;
 
 class SpillInputStream {
 public:
-    SpillInputStream() = default;
+    SpillInputStream(Spiller* spiller): _spiller(spiller) {};
     virtual ~SpillInputStream() = default;
 
-    virtual StatusOr<ChunkUniquePtr> get_next(SerdeContext& ctx) = 0;
+    virtual StatusOr<ChunkUniquePtr> get_next(workgroup::YieldContext& yield_ctx, SerdeContext& ctx) = 0;
     virtual bool is_ready() = 0;
     virtual void close() = 0;
 
     virtual void get_io_stream(std::vector<SpillInputStream*>* io_stream) {}
 
     virtual bool enable_prefetch() const { return false; }
-    virtual Status prefetch(SerdeContext& ctx) { return Status::NotSupported("input stream doesn't support prefetch"); }
+    virtual Status prefetch(workgroup::YieldContext& yield_ctx, SerdeContext& ctx) { return Status::NotSupported("input stream doesn't support prefetch"); }
 
     void mark_is_eof() { _eof = true; }
 
     bool eof() { return _eof; }
 
-    static InputStreamPtr union_all(const InputStreamPtr& left, const InputStreamPtr& right);
-    static InputStreamPtr union_all(std::vector<InputStreamPtr>& _streams);
+    static InputStreamPtr union_all(const InputStreamPtr& left, const InputStreamPtr& right, Spiller* spiller);
+    static InputStreamPtr union_all(std::vector<InputStreamPtr>& _streams, Spiller* spiller);
     static InputStreamPtr as_stream(std::vector<ChunkPtr> chunks, Spiller* spiller);
 
 private:
     std::atomic_bool _eof = false;
+protected:
+    Spiller* _spiller = nullptr;
 };
 
 class YieldableRestoreTask {

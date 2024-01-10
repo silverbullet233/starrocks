@@ -90,7 +90,7 @@ Status RawSpillerWriter::yieldable_flush_task(workgroup::YieldContext& yield_ctx
     // });
     // ASSIGN_OR_RETURN(auto block, std::move(block_st));
     DCHECK(yield_ctx.task_context_data.has_value()) << "block should be allocated before flush";
-    auto block = std::any_cast<FlushContext>(yield_ctx.task_context_data).block;
+    auto block = std::any_cast<FlushContextPtr>(yield_ctx.task_context_data)->block;
 
     // @TODO move serieze to here? but need another buffer
     // const auto& serde = _spiller->serde();
@@ -132,6 +132,7 @@ Status RawSpillerWriter::yieldable_flush_task(workgroup::YieldContext& yield_ctx
         RETURN_IF_ERROR(block->append({data}));
         RETURN_IF_ERROR(block->flush());
     }
+    LOG(INFO) << "flush block: " << block->debug_string();
     RETURN_IF_ERROR(_spiller->block_manager()->release_block(block));
 
     {
@@ -164,7 +165,7 @@ Status RawSpillerWriter::acquire_stream(std::shared_ptr<SpillInputStream>* strea
     if (_mem_table != nullptr && !_mem_table->is_empty()) {
         DCHECK(opts.is_unordered);
         ASSIGN_OR_RETURN(auto mem_table_stream, _mem_table->as_input_stream(opts.read_shared));
-        *stream = SpillInputStream::union_all(mem_table_stream, *stream);
+        *stream = SpillInputStream::union_all(mem_table_stream, *stream, _spiller);
     }
 
     return Status::OK();

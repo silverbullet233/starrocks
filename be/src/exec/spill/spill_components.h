@@ -121,6 +121,12 @@ protected:
     FlushAllCallBack _flush_all_callback;
 };
 
+struct SpillIOTaskContext {
+    SpillIOTaskContext(std::shared_ptr<IOTaskExecutor> executor): io_task_executor(std::move(executor)) {}
+    std::shared_ptr<IOTaskExecutor> io_task_executor;
+};
+using SpillIOTaskContextPtr = std::shared_ptr<SpillIOTaskContext>;
+
 class RawSpillerWriter final : public SpillerWriter {
 private:
     MemTablePtr _acquire_mem_table_from_pool() {
@@ -189,9 +195,11 @@ public:
                                 int* yield);
 
 public:
-    struct FlushContext {
+    struct FlushContext: public SpillIOTaskContext {
+        FlushContext(std::shared_ptr<IOTaskExecutor> executor, BlockPtr block_ptr): SpillIOTaskContext(std::move(executor)), block(std::move(block_ptr)) {}
         BlockPtr block;
     };
+    using FlushContextPtr = std::shared_ptr<FlushContext>;
 
 private:
     template <class Provider>
@@ -310,7 +318,7 @@ public:
     int64_t mem_consumption() const { return _mem_tracker->consumption(); }
 
 public:
-    struct PartitionedFlushContext {
+    struct PartitionedFlushContext: public SpillIOTaskContext {
         // used in spill stage
         struct SpillStageContext {
             size_t processing_idx{};
@@ -331,13 +339,13 @@ public:
             }
         };
 
-        PartitionedFlushContext() = default;
+        PartitionedFlushContext(std::shared_ptr<IOTaskExecutor> executor): SpillIOTaskContext(std::move(executor)) {}
         PartitionedFlushContext(PartitionedFlushContext&&) = default;
         PartitionedFlushContext& operator=(PartitionedFlushContext&&) = default;
 
         SpillStageContext spill_stage_ctx;
         SplitStageContext split_stage_ctx;
-        std::shared_ptr<IOTaskExecutor> io_task_executor;
+        // std::shared_ptr<IOTaskExecutor> io_task_executor;
     };
     using PartitionedFlushContextPtr = std::shared_ptr<PartitionedFlushContext>;
 

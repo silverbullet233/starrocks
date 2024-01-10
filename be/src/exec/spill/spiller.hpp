@@ -29,6 +29,7 @@
 #include "exec/spill/serde.h"
 #include "exec/spill/spill_components.h"
 #include "exec/spill/spiller.h"
+#include "exec/workgroup/scan_task_queue.h"
 #include "storage/chunk_helper.h"
 #include "util/defer_op.h"
 #include "util/runtime_profile.h"
@@ -155,6 +156,7 @@ Status RawSpillerWriter::flush(RuntimeState* state, TaskExecutor&& executor, Mem
     opts.block_size = serialized_data.get_size();
     // @TODO should pass block length
     ASSIGN_OR_RETURN(auto block, _spiller->block_manager()->acquire_block(opts));
+    LOG(INFO) << "allocate block " << block->debug_string();
     // @TODO get serialized block size, acquire block
 
     _running_flush_tasks++;
@@ -167,8 +169,10 @@ Status RawSpillerWriter::flush(RuntimeState* state, TaskExecutor&& executor, Mem
         SCOPED_TIMER(_spiller->metrics().flush_timer);
         DCHECK_GT(_running_flush_tasks, 0);
         DCHECK(has_pending_data());
-        // @TODO
-        yield_ctx.task_context_data = FlushContext{block};
+        // @TODO fix executor
+        // yield_ctx.task_context_data = FlushContext(nullptr, block);
+        yield_ctx.task_context_data = std::make_shared<FlushContext>(nullptr, block);
+        // yield_ctx.task_context_data = FlushContext{block};
         auto defer = CancelableDefer([&]() {
             {
                 std::lock_guard _(_mutex);
@@ -207,7 +211,9 @@ Status RawSpillerWriter::flush(RuntimeState* state, TaskExecutor&& executor, Mem
 template <class TaskExecutor, class MemGuard>
 StatusOr<ChunkPtr> SpillerReader::restore(RuntimeState* state, TaskExecutor&& executor, MemGuard&& guard) {
     SCOPED_TIMER(_spiller->metrics().restore_from_buffer_timer);
-    ASSIGN_OR_RETURN(auto chunk, _stream->get_next(_spill_read_ctx));
+    // @TODO yield context
+    workgroup::YieldContext mock_ctx;
+    ASSIGN_OR_RETURN(auto chunk, _stream->get_next(mock_ctx, _spill_read_ctx));
     RETURN_IF_ERROR(trigger_restore(state, std::forward<TaskExecutor>(executor), std::forward<MemGuard>(guard)));
     _read_rows += chunk->num_rows();
     COUNTER_UPDATE(_spiller->metrics().restore_rows, chunk->num_rows());
@@ -233,9 +239,19 @@ Status SpillerReader::trigger_restore(RuntimeState* state, TaskExecutor&& execut
         // @TODO we should know which block this io task will used, and then choose executor
         // @TODO how to avoid repeate read?
         _running_restore_tasks++;
+        // @TODO we should determine which executor should be used...
+
+        // @TODO how to know stream
         auto restore_task = [this, guard, trace = TraceInfo(state), _stream = _stream](auto& yield_ctx) {
             SCOPED_SET_TRACE_INFO({}, trace.query_id, trace.fragment_id);
-            RETURN_IF(!guard.scoped_begin(), (void)0);
+            LOG(INFO) << "restore_task run";
+            // RETURN_IF(!guard.scoped_begin(), (void)0);
+            if (!guard.scoped_begin()) {
+                // @TODO query is cancel, reset ctx
+                LOG(INFO) << "query is cancel, reset yield_ctx";
+                yield_ctx.set_finished();
+                return;
+            }
             DEFER_GUARD_END(guard);
             {
                 auto defer = CancelableDefer([&]() {
@@ -246,10 +262,16 @@ Status SpillerReader::trigger_restore(RuntimeState* state, TaskExecutor&& execut
                 SerdeContext serd_ctx;
                 int yield = false;
 
+                // @TODO set yield ctx
                 YieldableRestoreTask task(_stream);
+                if (!yield_ctx.task_context_data.has_value()) {
+                    auto ctx = std::make_shared<SpillIOTaskContext>(_spiller->local_io_executor());
+                    yield_ctx.task_context_data = ctx;
+                }
                 res = task.do_read(yield_ctx, serd_ctx, &yield);
 
                 if (yield) {
+                    LOG(INFO) << "restore task yield";
                     defer.cancel();
                 }
 
@@ -259,7 +281,15 @@ Status SpillerReader::trigger_restore(RuntimeState* state, TaskExecutor&& execut
                 _finished_restore_tasks += !res.ok();
             };
         };
-        RETURN_IF_ERROR(executor.submit(std::move(restore_task)));
+        workgroup::ScanTask scan_task = workgroup::ScanTask(_spiller->options().wg.get(), restore_task);
+        scan_task.disable_auto_schedule();
+        scan_task.set_yield_function([&](workgroup::ScanTask&& task) {
+            auto ctx = std::any_cast<SpillIOTaskContextPtr>(task.get_work_context().task_context_data);
+            LOG(INFO) << "force submit task in yield function, " << ctx.get();
+            ctx->io_task_executor->force_submit(std::move(task));
+        });
+        RETURN_IF_ERROR(_spiller->local_io_executor()->submit(std::move(scan_task)));
+        // RETURN_IF_ERROR(executor.submit(std::move(restore_task)));
         COUNTER_UPDATE(_spiller->metrics().restore_io_task_count, 1);
         COUNTER_SET(_spiller->metrics().peak_flush_io_task_count, _running_restore_tasks);
     }
@@ -270,7 +300,9 @@ template <class MemGuard>
 StatusOr<ChunkPtr> SpillerReader::sync_restore(RuntimeState* state, MemGuard&& guard) {
     SCOPED_TIMER(_spiller->metrics().restore_from_buffer_timer);
     // @TODO
-    ASSIGN_OR_RETURN(auto chunk, _stream->get_next(_spill_read_ctx));
+    workgroup::YieldContext mock_ctx;
+    mock_ctx.task_context_data = std::make_shared<SpillIOTaskContext>(nullptr);
+    ASSIGN_OR_RETURN(auto chunk, _stream->get_next(mock_ctx, _spill_read_ctx));
     // LOG(INFO) << "can't get data from stream";
     // restore
     if (!_stream->eof()) {
@@ -293,6 +325,7 @@ StatusOr<ChunkPtr> SpillerReader::sync_restore(RuntimeState* state, MemGuard&& g
                 int yield = false;
 
                 YieldableRestoreTask task(_stream);
+                yield_ctx.task_context_data = std::make_shared<SpillIOTaskContext>(nullptr);
                 res = task.do_read(yield_ctx, serd_ctx, &yield);
 
                 if (yield) {
@@ -436,8 +469,7 @@ Status PartitionedSpillerWriter::flush(RuntimeState* state, bool is_final_flush,
             return Status::OK();
         }
         if (!yield_ctx.task_context_data.has_value()) {
-            auto ctx = std::make_shared<PartitionedFlushContext>();
-            ctx->io_task_executor = initial_executor;
+            auto ctx = std::make_shared<PartitionedFlushContext>(initial_executor);
             yield_ctx.task_context_data = ctx;
             // yield_ctx.task_context_data = std::make_shared<PartitionedFlushContext>();
         }

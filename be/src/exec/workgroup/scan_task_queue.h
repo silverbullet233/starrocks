@@ -68,7 +68,7 @@ struct YieldContext {
     // -1 means invalid
     // 0 means time exceed
     // 1 means should switch thread
-    // @TODO executor
+    // @TODO executor?
 };
 
 struct ScanTask {
