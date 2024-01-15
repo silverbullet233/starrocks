@@ -229,13 +229,8 @@ void FileBlockManager::close() {}
 
 StatusOr<BlockPtr> FileBlockManager::acquire_block(const AcquireBlockOptions& opts) {
     AcquireDirOptions acquire_dir_opts;
-#ifdef BE_TEST
+    acquire_dir_opts.data_size = opts.block_size;
     ASSIGN_OR_RETURN(auto dir, _dir_mgr->acquire_writable_dir(acquire_dir_opts));
-#else
-    ASSIGN_OR_RETURN(auto dir, _dir_mgr->acquire_writable_dir(acquire_dir_opts));
-    // ASSIGN_OR_RETURN(auto dir, ExecEnv::GetInstance()->spill_dir_mgr()->acquire_writable_dir(acquire_dir_opts));
-    // @TODO test
-#endif
     ASSIGN_OR_RETURN(auto block_container, get_or_create_container(dir, opts.plan_node_id, opts.name));
     return std::make_shared<FileBlock>(block_container);
 }
