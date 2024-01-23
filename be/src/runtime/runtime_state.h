@@ -353,6 +353,13 @@ public:
 
     int32_t spill_encode_level() const { return _query_options.spill_encode_level; }
 
+    bool enable_spill_to_remote_storage() const {
+        return _query_options.__isset.enable_spill_to_remote_storage && _query_options.enable_spill_to_remote_storage;
+    }
+
+    TCloudConfiguration spill_remote_storage_config() {
+        return _query_options.spill_remote_storage_conf;
+    }
     bool error_if_overflow() const {
         return _query_options.__isset.overflow_mode && _query_options.overflow_mode == TOverflowMode::REPORT_ERROR;
     }
@@ -360,6 +367,7 @@ public:
     bool enable_hyperscan_vec() const {
         return _query_options.__isset.enable_hyperscan_vec && _query_options.enable_hyperscan_vec;
     }
+
 
     const std::vector<TTabletCommitInfo>& tablet_commit_infos() const { return _tablet_commit_infos; }
 

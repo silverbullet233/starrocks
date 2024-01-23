@@ -92,6 +92,8 @@ Status Spiller::prepare(RuntimeState* state) {
 
     DCHECK(_opts.wg != nullptr) << "workgroup must be set";
     _local_io_executor = std::make_shared<IOTaskExecutor>(ExecEnv::GetInstance()->scan_executor(), _opts.wg);
+    _remote_io_executor = std::make_shared<IOTaskExecutor>(ExecEnv::GetInstance()->connector_scan_executor(), _opts.wg);
+
     ASSIGN_OR_RETURN(_serde, Serde::create_serde(this));
 
     if (_opts.init_partition_nums > 0) {
@@ -161,4 +163,12 @@ Status Spiller::_acquire_input_stream(RuntimeState* state) {
 
     return Status::OK();
 }
+
+IOTaskExecutorPtr Spiller::expected_executor(const BlockPtr& block) {
+    if(block->is_remote()) {
+        return _remote_io_executor;
+    }
+    return _local_io_executor;
+}
+
 } // namespace starrocks::spill

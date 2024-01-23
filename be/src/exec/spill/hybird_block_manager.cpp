@@ -27,6 +27,7 @@ HyBirdBlockManager::~HyBirdBlockManager() {
 }
 
 Status HyBirdBlockManager::open() {
+    LOG(INFO) << "HybirdBlockManager open";
     RETURN_IF_ERROR(_local_block_manager->open());
     RETURN_IF_ERROR(_remote_block_manager->open());
     return Status::OK();
@@ -38,9 +39,11 @@ void HyBirdBlockManager::close() {
 }
 
 StatusOr<BlockPtr> HyBirdBlockManager::acquire_block(const AcquireBlockOptions& opts) {
-    auto local_block = _local_block_manager->acquire_block(opts);
-    if (local_block.ok()) {
-        return local_block;
+    if (rand() % 10 < 2) {
+        auto local_block = _local_block_manager->acquire_block(opts);
+        if (local_block.ok()) {
+            return local_block;
+        }
     }
     ASSIGN_OR_RETURN(auto remote_block, _remote_block_manager->acquire_block(opts));
     remote_block->set_is_remote(true);

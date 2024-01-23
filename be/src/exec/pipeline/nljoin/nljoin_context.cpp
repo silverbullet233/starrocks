@@ -93,7 +93,7 @@ Status SpillableNLJoinChunkStream::reset(RuntimeState* state, spill::Spiller* du
         spilled_input_streams.emplace_back(std::move(input_stream));
     }
 
-    stream = spill::SpillInputStream::union_all(spilled_input_streams);
+    stream = spill::SpillInputStream::union_all(spilled_input_streams, dummy_spiller);
     _reader = std::make_shared<spill::SpillerReader>(dummy_spiller);
     _reader->set_stream(std::move(stream));
 

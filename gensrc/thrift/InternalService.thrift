@@ -46,6 +46,7 @@ include "Data.thrift"
 include "RuntimeProfile.thrift"
 include "WorkGroup.thrift"
 include "RuntimeFilter.thrift"
+include "CloudConfiguration.thrift"
 
 // constants for function version
 enum TFunctionVersion {
@@ -254,6 +255,9 @@ struct TQueryOptions {
   113: optional bool enable_hyperscan_vec;
 
   114: optional bool enable_jit = false;
+  115: optional bool enable_spill_to_remote_storage;
+  116: optional list<string> spill_remote_storage_paths;
+  117: optional CloudConfiguration.TCloudConfiguration spill_remote_storage_conf;
 }
 
 

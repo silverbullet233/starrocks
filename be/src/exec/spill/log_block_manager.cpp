@@ -23,6 +23,7 @@
 #include "common/config.h"
 #include "exec/spill/block_manager.h"
 #include "exec/spill/common.h"
+#include "exec/spill/dir_manager.h"
 #include "fmt/format.h"
 #include "fs/fs.h"
 #include "gutil/casts.h"
@@ -217,7 +218,7 @@ Status LogBlockReader::read_fully(void* data, int64_t count) {
     return Status::OK();
 }
 
-LogBlockManager::LogBlockManager(TUniqueId query_id) : _query_id(std::move(query_id)) {
+LogBlockManager::LogBlockManager(TUniqueId query_id, DirManager* dir_mgr) : _query_id(std::move(query_id)), _dir_mgr(dir_mgr) {
     _max_container_bytes = config::spill_max_log_block_container_bytes > 0 ? config::spill_max_log_block_container_bytes
                                                                            : kDefaultMaxContainerBytes;
 }

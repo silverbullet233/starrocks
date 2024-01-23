@@ -33,6 +33,7 @@
 #include "exec/spill/serde.h"
 #include "exec/spill/spill_components.h"
 #include "exec/spill/spiller_factory.h"
+#include "exec/workgroup/scan_task_queue.h"
 #include "fs/fs.h"
 #include "runtime/mem_tracker.h"
 #include "runtime/runtime_state.h"
@@ -211,6 +212,10 @@ public:
 
     Status reset_state(RuntimeState* state);
     IOTaskExecutorPtr local_io_executor() const { return _local_io_executor; }
+    IOTaskExecutorPtr remote_io_executor() const { return _remote_io_executor; }
+
+
+    IOTaskExecutorPtr expected_executor(const BlockPtr& block);
 
 private:
     Status _acquire_input_stream(RuntimeState* state);
@@ -239,7 +244,8 @@ private:
     std::shared_ptr<spill::BlockGroup> _block_group;
 
     std::atomic_bool _is_cancel = false;
-    std::shared_ptr<IOTaskExecutor> _local_io_executor;
+    IOTaskExecutorPtr _local_io_executor;
+    IOTaskExecutorPtr _remote_io_executor;
 };
 
 } // namespace starrocks::spill

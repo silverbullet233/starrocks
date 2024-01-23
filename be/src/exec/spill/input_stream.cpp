@@ -21,6 +21,7 @@
 #include "exec/spill/block_manager.h"
 #include "exec/spill/serde.h"
 #include "exec/spill/spiller.h"
+#include "exec/workgroup/scan_task_queue.h"
 #include "exec/workgroup/work_group.h"
 #include "runtime/sorted_chunks_merger.h"
 #include "util/blocking_queue.hpp"
@@ -34,21 +35,32 @@ Status YieldableRestoreTask::do_read(workgroup::YieldContext& ctx, SerdeContext&
     size_t num_eos = 0;
     ctx.total_yield_point_cnt = _sub_stream.size();
     auto wg = ctx.wg;
+    auto task_ctx = std::any_cast<SpillIOTaskContextPtr>(ctx.task_context_data);
+    LOG(INFO) << "restore do_read, yield_point" << ctx.yield_point << ", total:" << ctx.total_yield_point_cnt << ", ctx:" << task_ctx.get(); 
     while (ctx.yield_point < ctx.total_yield_point_cnt) {
         {
             SCOPED_RAW_TIMER(&ctx.time_spent_ns);
-            size_t i = ctx.yield_point++;
+            size_t i = ctx.yield_point;
             if (!_sub_stream[i]->eof()) {
                 DCHECK(_sub_stream[i]->enable_prefetch());
-                auto status = _sub_stream[i]->prefetch(context);
-                if (!status.ok() && !status.is_end_of_file()) {
+                auto status = _sub_stream[i]->prefetch(ctx, context);
+                if (!status.ok() && !status.is_end_of_file() && !status.is_yield()) {
                     return status;
                 }
+                if (status.is_yield()) {
+                    LOG(INFO) << "prefetch yield, yield_point: " << ctx.yield_point << ", total: " << ctx.total_yield_point_cnt;
+                    ctx.need_yield = true;
+                    return Status::OK();
+                } else {
+                    ctx.yield_point++;
+                }
+            } else {
+                ctx.yield_point++;
             }
             num_eos += _sub_stream[i]->eof();
         }
 
-        BREAK_IF_YIELD(wg, &ctx.need_yield, ctx.time_spent_ns);
+        // BREAK_IF_YIELD(wg, &ctx.need_yield, ctx.time_spent_ns);
     }
 
     if (num_eos == _sub_stream.size()) {
@@ -60,16 +72,16 @@ Status YieldableRestoreTask::do_read(workgroup::YieldContext& ctx, SerdeContext&
 
 class UnionAllSpilledInputStream final : public SpillInputStream {
 public:
-    UnionAllSpilledInputStream(InputStreamPtr left, InputStreamPtr right) {
+    UnionAllSpilledInputStream(InputStreamPtr left, InputStreamPtr right, Spiller* spiller): SpillInputStream(spiller) {
         _streams.emplace_back(std::move(left));
         _streams.emplace_back(std::move(right));
     }
 
-    UnionAllSpilledInputStream(std::vector<InputStreamPtr> streams) : _streams(std::move(streams)) {}
+    UnionAllSpilledInputStream(std::vector<InputStreamPtr> streams, Spiller* spiller) : SpillInputStream(spiller), _streams(std::move(streams)) {}
 
     ~UnionAllSpilledInputStream() override = default;
 
-    StatusOr<ChunkUniquePtr> get_next(SerdeContext& ctx) override;
+    StatusOr<ChunkUniquePtr> get_next(workgroup::YieldContext& yield_ctx, SerdeContext& ctx) override;
 
     void get_io_stream(std::vector<SpillInputStream*>* io_stream) override {
         for (auto& stream : _streams) {
@@ -92,9 +104,9 @@ private:
     std::vector<InputStreamPtr> _streams;
 };
 
-StatusOr<ChunkUniquePtr> UnionAllSpilledInputStream::get_next(SerdeContext& context) {
+StatusOr<ChunkUniquePtr> UnionAllSpilledInputStream::get_next(workgroup::YieldContext& yield_ctx, SerdeContext& context) {
     if (_current_process_idx < _streams.size()) {
-        auto chunk_st = _streams[_current_process_idx]->get_next(context);
+        auto chunk_st = _streams[_current_process_idx]->get_next(yield_ctx, context);
         if (chunk_st.ok()) {
             return std::move(chunk_st.value());
         }
@@ -112,8 +124,8 @@ StatusOr<ChunkUniquePtr> UnionAllSpilledInputStream::get_next(SerdeContext& cont
 class RawChunkInputStream final : public SpillInputStream {
 public:
     RawChunkInputStream(std::vector<ChunkPtr> chunks, Spiller* spiller)
-            : _chunks(std::move(chunks)), _spiller(spiller) {}
-    StatusOr<ChunkUniquePtr> get_next(SerdeContext& ctx) override;
+            : SpillInputStream(spiller), _chunks(std::move(chunks)) {}
+    StatusOr<ChunkUniquePtr> get_next(workgroup::YieldContext& yield_ctx, SerdeContext& ctx) override;
 
     bool is_ready() override { return true; };
     void close() override{};
@@ -121,11 +133,10 @@ public:
 private:
     size_t read_idx{};
     std::vector<ChunkPtr> _chunks;
-    Spiller* _spiller = nullptr;
     DECLARE_RACE_DETECTOR(detect_get_next)
 };
 
-StatusOr<ChunkUniquePtr> RawChunkInputStream::get_next(SerdeContext& context) {
+StatusOr<ChunkUniquePtr> RawChunkInputStream::get_next(workgroup::YieldContext& yield_ctx, SerdeContext& context) {
     RACE_DETECT(detect_get_next, var1);
     if (read_idx >= _chunks.size()) {
         return Status::EndOfFile("eos");
@@ -138,12 +149,12 @@ StatusOr<ChunkUniquePtr> RawChunkInputStream::get_next(SerdeContext& context) {
 }
 
 // method for create input stream
-InputStreamPtr SpillInputStream::union_all(const InputStreamPtr& left, const InputStreamPtr& right) {
-    return std::make_shared<UnionAllSpilledInputStream>(left, right);
+InputStreamPtr SpillInputStream::union_all(const InputStreamPtr& left, const InputStreamPtr& right, Spiller* spiller) {
+    return std::make_shared<UnionAllSpilledInputStream>(left, right, spiller);
 }
 
-InputStreamPtr SpillInputStream::union_all(std::vector<InputStreamPtr>& _streams) {
-    return std::make_shared<UnionAllSpilledInputStream>(_streams);
+InputStreamPtr SpillInputStream::union_all(std::vector<InputStreamPtr>& _streams, Spiller* spiller) {
+    return std::make_shared<UnionAllSpilledInputStream>(_streams, spiller);
 }
 
 InputStreamPtr SpillInputStream::as_stream(std::vector<ChunkPtr> chunks, Spiller* spiller) {
@@ -153,7 +164,7 @@ InputStreamPtr SpillInputStream::as_stream(std::vector<ChunkPtr> chunks, Spiller
 class BufferedInputStream : public SpillInputStream {
 public:
     BufferedInputStream(int capacity, InputStreamPtr stream, Spiller* spiller)
-            : _capacity(capacity), _input_stream(std::move(stream)), _spiller(spiller) {}
+            : SpillInputStream(spiller), _capacity(capacity), _input_stream(std::move(stream)) {}
     ~BufferedInputStream() override = default;
 
     bool is_buffer_full() { return _chunk_buffer.get_size() >= _capacity; }
@@ -161,7 +172,7 @@ public:
     // if the InputStream is in the eof state, it also needs to return true to driver ChunkSortCursor into the stage of obtaining data.
     bool has_chunk() { return !_chunk_buffer.empty() || eof(); }
 
-    StatusOr<ChunkUniquePtr> get_next(SerdeContext& ctx) override;
+    StatusOr<ChunkUniquePtr> get_next(workgroup::YieldContext& yield_ctx, SerdeContext& ctx) override;
     bool is_ready() override { return has_chunk(); }
     void close() override {}
 
@@ -169,7 +180,7 @@ public:
 
     void get_io_stream(std::vector<SpillInputStream*>* io_stream) override { io_stream->emplace_back(this); }
 
-    Status prefetch(SerdeContext& ctx) override;
+    Status prefetch(workgroup::YieldContext& yield_ctx, SerdeContext& ctx) override;
 
     StatusOr<ChunkUniquePtr> read_from_buffer();
 
@@ -190,7 +201,6 @@ private:
     InputStreamPtr _input_stream;
     UnboundedBlockingQueue<ChunkUniquePtr> _chunk_buffer;
     std::atomic_bool _is_prefetching = false;
-    Spiller* _spiller = nullptr;
 };
 
 StatusOr<ChunkUniquePtr> BufferedInputStream::read_from_buffer() {
@@ -204,15 +214,15 @@ StatusOr<ChunkUniquePtr> BufferedInputStream::read_from_buffer() {
     return res;
 }
 
-StatusOr<ChunkUniquePtr> BufferedInputStream::get_next(SerdeContext& ctx) {
+StatusOr<ChunkUniquePtr> BufferedInputStream::get_next(workgroup::YieldContext& yield_ctx, SerdeContext& ctx) {
     if (has_chunk()) {
         return read_from_buffer();
     }
     CHECK(!_is_prefetching);
-    return _input_stream->get_next(ctx);
+    return _input_stream->get_next(yield_ctx, ctx);
 }
 
-Status BufferedInputStream::prefetch(SerdeContext& ctx) {
+Status BufferedInputStream::prefetch(workgroup::YieldContext& yield_ctx, SerdeContext& ctx) {
     if (is_buffer_full() || eof()) {
         return Status::OK();
     }
@@ -223,7 +233,7 @@ Status BufferedInputStream::prefetch(SerdeContext& ctx) {
     }
     DeferOp defer([this]() { _release(); });
 
-    auto res = _input_stream->get_next(ctx);
+    auto res = _input_stream->get_next(yield_ctx, ctx);
     if (res.ok()) {
         COUNTER_ADD(_spiller->metrics().input_stream_peak_memory_usage, res.value()->memory_usage());
         _chunk_buffer.put(std::move(res.value()));
@@ -237,11 +247,11 @@ Status BufferedInputStream::prefetch(SerdeContext& ctx) {
 
 class UnorderedInputStream : public SpillInputStream {
 public:
-    UnorderedInputStream(std::vector<BlockPtr> input_blocks, SerdePtr serde)
-            : _input_blocks(std::move(input_blocks)), _serde(std::move(serde)) {}
+    UnorderedInputStream(std::vector<BlockPtr> input_blocks, SerdePtr serde, Spiller* spiller)
+            : SpillInputStream(spiller), _input_blocks(std::move(input_blocks)), _serde(std::move(serde)) {}
     ~UnorderedInputStream() override = default;
 
-    StatusOr<ChunkUniquePtr> get_next(SerdeContext& ctx) override;
+    StatusOr<ChunkUniquePtr> get_next(workgroup::YieldContext& yield_ctx, SerdeContext& ctx) override;
 
     bool is_ready() override { return false; }
 
@@ -255,16 +265,26 @@ private:
     DECLARE_RACE_DETECTOR(detect_get_next)
 };
 
-StatusOr<ChunkUniquePtr> UnorderedInputStream::get_next(SerdeContext& ctx) {
+StatusOr<ChunkUniquePtr> UnorderedInputStream::get_next(workgroup::YieldContext& yield_ctx, SerdeContext& ctx) {
     RACE_DETECT(detect_get_next, var1);
     if (_current_idx >= _input_blocks.size()) {
         return Status::EndOfFile("end of reading spilled UnorderedInputStream");
     }
 
+    auto io_ctx = std::any_cast<SpillIOTaskContextPtr>(yield_ctx.task_context_data);
+    auto executor = io_ctx->io_task_executor;
+
     while (true) {
         if (_current_reader == nullptr) {
             _current_reader = _input_blocks[_current_idx]->get_reader();
         }
+        auto block = _input_blocks[_current_idx];
+        if (auto expected_executor = _spiller->expected_executor(block); expected_executor.get() != executor.get()) {
+            io_ctx->io_task_executor = expected_executor;
+            LOG(INFO) << fmt::format("block[{}] need switch executor", block->debug_string());
+            return Status::Yield();
+        }
+        
         auto res = _serde->deserialize(ctx, _current_reader.get());
         if (res.status().is_end_of_file()) {
             _input_blocks[_current_idx].reset();
@@ -280,6 +300,7 @@ StatusOr<ChunkUniquePtr> UnorderedInputStream::get_next(SerdeContext& ctx) {
             continue;
         }
         if (!res.status().is_end_of_file()) {
+            LOG(INFO) << "return " << res.value()->num_rows() << " rows";
             return res;
         }
     }
@@ -290,14 +311,14 @@ void UnorderedInputStream::close() {}
 
 class OrderedInputStream : public SpillInputStream {
 public:
-    OrderedInputStream(std::vector<BlockPtr> blocks, RuntimeState* state)
-            : _input_blocks(std::move(blocks)), _merger(state) {}
+    OrderedInputStream(std::vector<BlockPtr> blocks, RuntimeState* state, Spiller* spiller)
+            : SpillInputStream(spiller), _input_blocks(std::move(blocks)), _merger(state) {}
 
     ~OrderedInputStream() override = default;
 
     Status init(SerdePtr serde, const SortExecExprs* sort_exprs, const SortDescs* descs, Spiller* spiller);
 
-    StatusOr<ChunkUniquePtr> get_next(SerdeContext& ctx) override;
+    StatusOr<ChunkUniquePtr> get_next(workgroup::YieldContext& yield_ctx, SerdeContext& ctx) override;
 
     void get_io_stream(std::vector<SpillInputStream*>* io_stream) override {
         for (auto& stream : _input_streams) {
@@ -326,7 +347,7 @@ Status OrderedInputStream::init(SerdePtr serde, const SortExecExprs* sort_exprs,
     for (auto& block : _input_blocks) {
         std::vector<BlockPtr> blocks{block};
         auto stream = std::make_shared<BufferedInputStream>(
-                chunk_buffer_max_size, std::make_shared<UnorderedInputStream>(blocks, serde), spiller);
+                chunk_buffer_max_size, std::make_shared<UnorderedInputStream>(blocks, serde, spiller), spiller);
         _input_streams.emplace_back(std::move(stream));
         auto input_stream = _input_streams.back();
         auto chunk_provider = [input_stream, this](ChunkUniquePtr* output, bool* eos) {
@@ -336,9 +357,11 @@ Status OrderedInputStream::init(SerdePtr serde, const SortExecExprs* sort_exprs,
             if (!input_stream->is_ready()) {
                 return false;
             }
-            // @TODO(silverbullet233): reuse ctx
+            workgroup::YieldContext mock_ctx;
+            mock_ctx.task_context_data = std::make_shared<SpillIOTaskContext>(nullptr);
+
             SerdeContext ctx;
-            auto res = input_stream->get_next(ctx);
+            auto res = input_stream->get_next(mock_ctx, ctx);
             if (!res.status().ok()) {
                 if (!res.status().is_end_of_file()) {
                     _status.update(res.status());
@@ -356,7 +379,7 @@ Status OrderedInputStream::init(SerdePtr serde, const SortExecExprs* sort_exprs,
     return Status::OK();
 }
 
-StatusOr<ChunkUniquePtr> OrderedInputStream::get_next(SerdeContext& ctx) {
+StatusOr<ChunkUniquePtr> OrderedInputStream::get_next(workgroup::YieldContext& yield_ctx, SerdeContext& ctx) {
     ChunkUniquePtr chunk;
     bool should_exit = false;
     std::atomic_bool eos = false;
@@ -372,7 +395,7 @@ StatusOr<ChunkUniquePtr> OrderedInputStream::get_next(SerdeContext& ctx) {
 }
 
 StatusOr<InputStreamPtr> BlockGroup::as_unordered_stream(const SerdePtr& serde, Spiller* spiller) {
-    auto stream = std::make_shared<UnorderedInputStream>(_blocks, serde);
+    auto stream = std::make_shared<UnorderedInputStream>(_blocks, serde, spiller);
     return std::make_shared<BufferedInputStream>(chunk_buffer_max_size, std::move(stream), spiller);
 }
 
@@ -382,7 +405,7 @@ StatusOr<InputStreamPtr> BlockGroup::as_ordered_stream(RuntimeState* state, cons
         return as_unordered_stream(serde, spiller);
     }
 
-    auto stream = std::make_shared<OrderedInputStream>(_blocks, state);
+    auto stream = std::make_shared<OrderedInputStream>(_blocks, state, spiller);
     RETURN_IF_ERROR(stream->init(serde, sort_exprs, sort_descs, spiller));
     return stream;
 }

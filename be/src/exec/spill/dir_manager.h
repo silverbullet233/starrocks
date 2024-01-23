@@ -72,9 +72,7 @@ struct AcquireDirOptions {
 class DirManager {
 public:
     DirManager() = default;
-#ifdef BE_TEST
     DirManager(const std::vector<DirPtr>& dirs) : _dirs(dirs) {}
-#endif
     ~DirManager() = default;
 
     Status init(const std::string& spill_dirs);

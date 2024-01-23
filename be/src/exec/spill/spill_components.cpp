@@ -140,7 +140,7 @@ Status RawSpillerWriter::acquire_stream(std::shared_ptr<SpillInputStream>* strea
     if (_mem_table != nullptr && !_mem_table->is_empty()) {
         DCHECK(opts.is_unordered);
         ASSIGN_OR_RETURN(auto mem_table_stream, _mem_table->as_input_stream(opts.read_shared));
-        *stream = SpillInputStream::union_all(mem_table_stream, *stream);
+        *stream = SpillInputStream::union_all(mem_table_stream, *stream, _spiller);
     }
 
     return Status::OK();

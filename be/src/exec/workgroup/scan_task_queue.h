@@ -93,6 +93,10 @@ public:
 
     bool is_finished() const { return work_context.is_finished(); }
 
+    const YieldContext& get_work_context() const {
+        return work_context;
+    }
+    
     bool has_yield_function() const { return yield_function != nullptr; }
 
     void execute_yield_function() {

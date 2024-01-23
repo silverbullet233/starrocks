@@ -151,6 +151,15 @@ void QueryContext::init_mem_tracker(int64_t query_mem_limit, MemTracker* parent,
     });
 }
 
+Status QueryContext::init_spill_manager(const TQueryOptions& query_options) {
+    Status st;
+    std::call_once(_init_spill_manager_once, [this, &st, &query_options] () {
+        _spill_manager = std::make_unique<spill::QuerySpillManager>(_query_id);
+        st = _spill_manager->init_block_manager(query_options);
+    });
+    return st;
+}
+
 Status QueryContext::init_query_once(workgroup::WorkGroup* wg, bool enable_group_level_query_queue) {
     Status st = Status::OK();
     if (wg != nullptr) {
