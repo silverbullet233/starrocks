@@ -22,16 +22,18 @@
 #include "common/status.h"
 #include "common/statusor.h"
 #include "fs/fs.h"
+#include "gen_cpp/CloudConfiguration_types.h"
 #include "util/random.h"
 
 namespace starrocks::spill {
 
 // Dir describes a specific directory, including the directory name and the corresponding FileSystem
 // @TODO(silverbullet233): maintain some stats, such as the capacity
+// @TODO virtual class
 class Dir {
 public:
     Dir(std::string dir, std::shared_ptr<FileSystem> fs, int64_t max_dir_size)
-            : _dir(std::move(dir)), _fs(fs), _max_size(max_dir_size) {}
+            : _dir(std::move(dir)), _fs(std::move(fs)), _max_size(max_dir_size) {}
 
     FileSystem* fs() const { return _fs.get(); }
     std::string dir() const { return _dir; }
@@ -53,9 +55,13 @@ public:
 
     int64_t get_max_size() const { return _max_size; }
 
+    void set_cloud_conf(std::shared_ptr<TCloudConfiguration> cloud_conf) {
+        _cloud_conf = std::move(cloud_conf);
+    }
 private:
     std::string _dir;
     std::shared_ptr<FileSystem> _fs;
+    std::shared_ptr<TCloudConfiguration> _cloud_conf;
     int64_t _max_size;
     std::atomic<int64_t> _current_size = 0;
 };
@@ -77,7 +83,7 @@ public:
 
     Status init(const std::string& spill_dirs);
 
-    StatusOr<Dir*> acquire_writable_dir(const AcquireDirOptions& opts);
+    StatusOr<DirPtr> acquire_writable_dir(const AcquireDirOptions& opts);
 
 private:
     bool is_same_disk(const std::string& path1, const std::string& path2) {

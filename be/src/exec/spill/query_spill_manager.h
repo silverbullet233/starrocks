@@ -47,6 +47,7 @@ public:
 private:
     TUniqueId _uid;
     std::unique_ptr<BlockManager> _block_manager;
+    // @TODO life cycle
     TCloudConfiguration _remote_storage_conf;
     std::unique_ptr<DirManager> _remote_dir_manager;
     std::atomic_size_t _spilling_operators = 0;

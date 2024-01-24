@@ -34,7 +34,7 @@ public:
 
 private:
     // @TODO should consider be ip in path
-    StatusOr<FileBlockContainerPtr> get_or_create_container(Dir* dir, int32_t plan_node_id,
+    StatusOr<FileBlockContainerPtr> get_or_create_container(DirPtr dir, int32_t plan_node_id,
                                                             const std::string& plan_node_name);
 
     TUniqueId _query_id;

@@ -258,6 +258,7 @@ struct TQueryOptions {
   115: optional bool enable_spill_to_remote_storage;
   116: optional list<string> spill_remote_storage_paths;
   117: optional CloudConfiguration.TCloudConfiguration spill_remote_storage_conf;
+  118: optional bool disable_spill_to_local_disk;
 }
 
 

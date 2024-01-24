@@ -59,7 +59,7 @@ public:
 #endif
 
 private:
-    StatusOr<LogBlockContainerPtr> get_or_create_container(Dir* dir, int32_t plan_node_id,
+    StatusOr<LogBlockContainerPtr> get_or_create_container(DirPtr dir, int32_t plan_node_id,
                                                            const std::string& plan_node_name, bool direct_io);
 
 private:

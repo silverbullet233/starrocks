@@ -168,6 +168,7 @@ public class SessionVariable implements Serializable, Writable, Cloneable {
     public static final String ENABLE_INSERT_STRICT = "enable_insert_strict";
     public static final String ENABLE_SPILL = "enable_spill";
     public static final String ENABLE_SPILL_TO_REMOTE_STORAGE = "enable_spill_to_remote_storage";
+    public static final String DISABLE_SPILL_TO_LOCAL_DISK = "disable_spill_to_local_disk";
     public static final String SPILLABLE_OPERATOR_MASK = "spillable_operator_mask";
     // spill mode: auto, force
     public static final String SPILL_MODE = "spill_mode";
@@ -941,6 +942,9 @@ public class SessionVariable implements Serializable, Writable, Cloneable {
 
     @VariableMgr.VarAttr(name = ENABLE_SPILL_TO_REMOTE_STORAGE)
     private boolean enableSpillToRemoteStorage = false;
+
+    @VariableMgr.VarAttr(name = DISABLE_SPILL_TO_LOCAL_DISK)
+    private boolean disableSpillToLocalDisk = false;
 
     // this is used to control which operators can spill, only meaningful when enable_spill=true
     // it uses a bit to identify whether the spill of each operator is in effect, 0 means no, 1 means yes
@@ -3215,6 +3219,7 @@ public class SessionVariable implements Serializable, Writable, Cloneable {
                     TCloudConfiguration tCloudConfiguration = new TCloudConfiguration();
                     sv.getCloudConfiguration().toThrift(tCloudConfiguration);
                     tResult.setSpill_remote_storage_conf(tCloudConfiguration);
+                    tResult.setDisable_spill_to_local_disk(disableSpillToLocalDisk);
                 }
             }
         }

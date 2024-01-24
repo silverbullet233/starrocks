@@ -174,7 +174,6 @@ Status RawSpillerWriter::flush(RuntimeState* state, MemGuard&& guard) {
         }
 
         if (!yield_ctx.task_context_data.has_value()) {
-            LOG(INFO) << "init task contet";
             yield_ctx.task_context_data = std::make_shared<FlushContext>(initial_executor, nullptr);
         }
         yield_ctx.time_spent_ns = 0;
@@ -191,7 +190,6 @@ Status RawSpillerWriter::flush(RuntimeState* state, MemGuard&& guard) {
     auto yield_func = [&] (workgroup::ScanTask&& task) {
         DCHECK(task.get_work_context().task_context_data.has_value()) << "task context must be set";
         auto ctx = std::any_cast<FlushContextPtr>(task.get_work_context().task_context_data);
-        LOG(INFO) << "force submit task in yield function, " << ctx.get();
         ctx->io_task_executor->force_submit(std::move(task));
     };
     workgroup::ScanTask io_task = workgroup::ScanTask(_spiller->options().wg.get(), std::move(task), std::move(yield_func));
@@ -270,7 +268,6 @@ Status SpillerReader::trigger_restore(RuntimeState* state, MemGuard&& guard) {
         auto io_executor = _spiller->local_io_executor();
         auto yield_func = [&](workgroup::ScanTask&& task) {
             auto ctx = std::any_cast<SpillIOTaskContextPtr>(task.get_work_context().task_context_data);
-            LOG(INFO) << "force submit task in yield function, " << ctx.get();
             ctx->io_task_executor->force_submit(std::move(task));
         };
         workgroup::ScanTask io_task = workgroup::ScanTask(_spiller->options().wg.get(), std::move(restore_task), std::move(yield_func));
@@ -408,7 +405,6 @@ Status PartitionedSpillerWriter::flush(RuntimeState* state, bool is_final_flush,
     };
     auto io_executor = _spiller->local_io_executor();
     auto yield_func = [&](workgroup::ScanTask&& task) {
-        LOG(INFO) << "force submit task in yield function";
         PartitionedFlushContextPtr flush_ctx = std::any_cast<PartitionedFlushContextPtr>(task.get_work_context().task_context_data);
         flush_ctx->io_task_executor->force_submit(std::move(task));
     };

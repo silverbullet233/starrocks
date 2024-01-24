@@ -357,6 +357,10 @@ public:
         return _query_options.__isset.enable_spill_to_remote_storage && _query_options.enable_spill_to_remote_storage;
     }
 
+    bool disable_spill_to_local_disk() const {
+        return _query_options.__isset.disable_spill_to_local_disk && _query_options.disable_spill_to_local_disk;
+    }
+
     TCloudConfiguration spill_remote_storage_config() {
         return _query_options.spill_remote_storage_conf;
     }

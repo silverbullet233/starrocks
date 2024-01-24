@@ -24,9 +24,9 @@
 namespace starrocks::spill {
 class FileBlockContainer {
 public:
-    FileBlockContainer(Dir* dir, const TUniqueId& query_id, int32_t plan_node_id, std::string plan_node_name,
+    FileBlockContainer(DirPtr dir, const TUniqueId& query_id, int32_t plan_node_id, std::string plan_node_name,
                        uint64_t id)
-            : _dir(dir),
+            : _dir(std::move(dir)),
               _query_id(query_id),
               _plan_node_id(plan_node_id),
               _plan_node_name(std::move(plan_node_name)),
@@ -45,7 +45,7 @@ public:
 
     Status close();
 
-    Dir* dir() const { return _dir; }
+    Dir* dir() const { return _dir.get(); }
     int32_t plan_node_id() const { return _plan_node_id; }
     std::string plan_node_name() const { return _plan_node_name; }
 
@@ -65,11 +65,11 @@ public:
 
     StatusOr<std::unique_ptr<io::InputStreamWrapper>> get_readable(size_t offset, size_t length);
 
-    static StatusOr<FileBlockContainerPtr> create(Dir* dir, TUniqueId query_id, int32_t plan_node_id,
+    static StatusOr<FileBlockContainerPtr> create(DirPtr dir, TUniqueId query_id, int32_t plan_node_id,
                                                   const std::string& plan_node_name, uint64_t id);
 
 private:
-    Dir* _dir;
+    DirPtr _dir;
     TUniqueId _query_id;
     int32_t _plan_node_id;
     std::string _plan_node_name;
@@ -114,7 +114,7 @@ StatusOr<std::unique_ptr<io::InputStreamWrapper>> FileBlockContainer::get_readab
     return f;
 }
 
-StatusOr<FileBlockContainerPtr> FileBlockContainer::create(Dir* dir, TUniqueId query_id, int32_t plan_node_id,
+StatusOr<FileBlockContainerPtr> FileBlockContainer::create(DirPtr dir, TUniqueId query_id, int32_t plan_node_id,
                                                            const std::string& plan_node_name, uint64_t id) {
     auto container = std::make_shared<FileBlockContainer>(dir, query_id, plan_node_id, plan_node_name, id);
     RETURN_IF_ERROR(container->open());
@@ -244,7 +244,7 @@ Status FileBlockManager::release_block(const BlockPtr& block) {
     return Status::OK();
 }
 
-StatusOr<FileBlockContainerPtr> FileBlockManager::get_or_create_container(Dir* dir, int32_t plan_node_id,
+StatusOr<FileBlockContainerPtr> FileBlockManager::get_or_create_container(DirPtr dir, int32_t plan_node_id,
                                                                           const std::string& plan_node_name) {
     TRACE_SPILL_LOG << "get_or_create_container at dir: " << dir->dir() << ", plan node:" << plan_node_id << ", "
                     << plan_node_name;

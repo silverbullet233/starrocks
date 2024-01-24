@@ -36,9 +36,9 @@
 namespace starrocks::spill {
 class LogBlockContainer {
 public:
-    LogBlockContainer(Dir* dir, const TUniqueId& query_id, int32_t plan_node_id, std::string plan_node_name,
+    LogBlockContainer(DirPtr dir, const TUniqueId& query_id, int32_t plan_node_id, std::string plan_node_name,
                       uint64_t id, bool direct_io)
-            : _dir(dir),
+            : _dir(std::move(dir)),
               _query_id(query_id),
               _plan_node_id(plan_node_id),
               _plan_node_name(std::move(plan_node_name)),
@@ -57,7 +57,7 @@ public:
 
     Status close();
 
-    Dir* dir() const { return _dir; }
+    Dir* dir() const { return _dir.get(); }
     int32_t plan_node_id() const { return _plan_node_id; }
     std::string plan_node_name() const { return _plan_node_name; }
 
@@ -77,11 +77,11 @@ public:
 
     StatusOr<std::unique_ptr<io::InputStreamWrapper>> get_readable(size_t offset, size_t length);
 
-    static StatusOr<LogBlockContainerPtr> create(Dir* dir, TUniqueId query_id, int32_t plan_node_id,
+    static StatusOr<LogBlockContainerPtr> create(DirPtr dir, TUniqueId query_id, int32_t plan_node_id,
                                                  const std::string& plan_node_name, uint64_t id, bool enable_direct_io);
 
 private:
-    Dir* _dir;
+    DirPtr _dir;
     TUniqueId _query_id;
     int32_t _plan_node_id;
     std::string _plan_node_name;
@@ -135,7 +135,7 @@ StatusOr<std::unique_ptr<io::InputStreamWrapper>> LogBlockContainer::get_readabl
     return f;
 }
 
-StatusOr<LogBlockContainerPtr> LogBlockContainer::create(Dir* dir, TUniqueId query_id, int32_t plan_node_id,
+StatusOr<LogBlockContainerPtr> LogBlockContainer::create(DirPtr dir, TUniqueId query_id, int32_t plan_node_id,
                                                          const std::string& plan_node_name, uint64_t id,
                                                          bool direct_io) {
     auto container = std::make_shared<LogBlockContainer>(dir, query_id, plan_node_id, plan_node_name, id, direct_io);
@@ -280,17 +280,17 @@ Status LogBlockManager::release_block(const BlockPtr& block) {
     return Status::OK();
 }
 
-StatusOr<LogBlockContainerPtr> LogBlockManager::get_or_create_container(Dir* dir, int32_t plan_node_id,
+StatusOr<LogBlockContainerPtr> LogBlockManager::get_or_create_container(DirPtr dir, int32_t plan_node_id,
                                                                         const std::string& plan_node_name,
                                                                         bool direct_io) {
     TRACE_SPILL_LOG << "get_or_create_container at dir: " << dir->dir() << ", plan node:" << plan_node_id << ", "
                     << plan_node_name;
 
     std::lock_guard<std::mutex> l(_mutex);
-    auto iter = _available_containers.find(dir);
+    auto iter = _available_containers.find(dir.get());
     if (iter == _available_containers.end()) {
-        _available_containers.insert({dir, std::make_shared<PlanNodeContainerMap>()});
-        iter = _available_containers.find(dir);
+        _available_containers.insert({dir.get(), std::make_shared<PlanNodeContainerMap>()});
+        iter = _available_containers.find(dir.get());
     }
     auto sub_iter = iter->second->find(plan_node_id);
     if (sub_iter == iter->second->end()) {

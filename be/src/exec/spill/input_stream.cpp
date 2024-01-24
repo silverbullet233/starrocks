@@ -36,7 +36,6 @@ Status YieldableRestoreTask::do_read(workgroup::YieldContext& ctx, SerdeContext&
     ctx.total_yield_point_cnt = _sub_stream.size();
     auto wg = ctx.wg;
     auto task_ctx = std::any_cast<SpillIOTaskContextPtr>(ctx.task_context_data);
-    LOG(INFO) << "restore do_read, yield_point" << ctx.yield_point << ", total:" << ctx.total_yield_point_cnt << ", ctx:" << task_ctx.get(); 
     while (ctx.yield_point < ctx.total_yield_point_cnt) {
         {
             SCOPED_RAW_TIMER(&ctx.time_spent_ns);
@@ -48,7 +47,6 @@ Status YieldableRestoreTask::do_read(workgroup::YieldContext& ctx, SerdeContext&
                     return status;
                 }
                 if (status.is_yield()) {
-                    LOG(INFO) << "prefetch yield, yield_point: " << ctx.yield_point << ", total: " << ctx.total_yield_point_cnt;
                     ctx.need_yield = true;
                     return Status::OK();
                 } else {
@@ -60,7 +58,7 @@ Status YieldableRestoreTask::do_read(workgroup::YieldContext& ctx, SerdeContext&
             num_eos += _sub_stream[i]->eof();
         }
 
-        // BREAK_IF_YIELD(wg, &ctx.need_yield, ctx.time_spent_ns);
+        BREAK_IF_YIELD(wg, &ctx.need_yield, ctx.time_spent_ns);
     }
 
     if (num_eos == _sub_stream.size()) {
@@ -300,7 +298,6 @@ StatusOr<ChunkUniquePtr> UnorderedInputStream::get_next(workgroup::YieldContext&
             continue;
         }
         if (!res.status().is_end_of_file()) {
-            LOG(INFO) << "return " << res.value()->num_rows() << " rows";
             return res;
         }
     }
