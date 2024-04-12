@@ -1,72 +1,104 @@
-// Licensed to the Apache Software Foundation (ASF) under one
-// or more contributor license agreements.  See the NOTICE file
-// distributed with this work for additional information
-// regarding copyright ownership.  The ASF licenses this file
-// to you under the Apache License, Version 2.0 (the
-// "License"); you may not use this file except in compliance
-// with the License.  You may obtain a copy of the License at
-//
-//   http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing,
-// software distributed under the License is distributed on an
-// "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
-// KIND, either express or implied.  See the License for the
-// specific language governing permissions and limitations
-// under the License.
-
 #pragma once
 
 #include <memory>
+#include "runtime/mem_tracker.h"
+#include "jemalloc/jemalloc.h"
 
 namespace starrocks {
 
-#include <iostream>
-#include <memory>
 
-template <typename T>
-class Allocator {
+template<typename T>
+class NoMemHookAllocator {
 public:
-    using value_type = T;
-    using pointer = T*;
-    using const_pointer = const T*;
-    using reference = T&;
-    using const_reference = const T&;
-    using size_type = size_t;
-    using difference_type = ptrdiff_t;
+    typedef T value_type;
+    typedef size_t size_type;
 
-    template <typename U>
-    struct rebind {
-        using other = Allocator<U>;
-    };
-
-    Allocator() = default;
-    template <typename U>
-    Allocator(const SimpleAllocator<U>&) {}
-
-    pointer allocate(size_type n, const void* hint = 0) {
-        std::cout << "Allocating " << n << " elements of type " << typeid(T).name() << std::endl;
-        return static_cast<pointer>(::operator new(n * sizeof(T)));
+    T* allocate(size_t n) {
+        return static_cast<T*>(je_malloc(n * sizeof(T)));
     }
 
-    void deallocate(pointer p, size_type n) {
-        std::cout << "Deallocating " << n << " elements of type " << typeid(T).name() << std::endl;
-        ::operator delete(p);
+    void deallocate(T* ptr, size_t n) {
+        je_free(ptr);
     }
 
-    template <class U, class... Args>
-    void construct(U* p, Args&&... args) {
-        new(p) U(std::forward<Args>(args)...);
+};
+
+template<typename T, typename Alloc = std::allocator<T>>
+class MemTrackerAllocator {
+public:
+    typedef typename Alloc::value_type value_type;
+    typedef typename Alloc::size_type size_type;
+
+    explicit MemTrackerAllocator(std::shared_ptr<MemTracker> mem_tracker, std::shared_ptr<Alloc> allocator)
+        : _tracker(std::move(mem_tracker)), _allocator(allocator) {}
+
+    explicit MemTrackerAllocator(std::shared_ptr<MemTracker> mem_tracker):
+        _tracker(std::move(mem_tracker)), _allocator(new Alloc()) {}
+
+    T* allocate(size_t n) {
+        // try consume
+        _tracker->consume(n * sizeof(T));
+        T* ptr = _allocator->allocate(n);
+        if (ptr == nullptr) {
+            _tracker->release(n * sizeof(T));
+        }
+        return ptr;
     }
 
-    template <class U>
-    void destroy(U* p) {
-        p->~U();
+    void deallocate(T* p, size_t n) {
+        _allocator->deallocate(p, n);
+        _tracker->release(n * sizeof(T));
     }
 
-    size_type max_size() const noexcept {
-        return std::numeric_limits<size_type>::max() / sizeof(T);
+
+private:
+    std::shared_ptr<MemTracker> _tracker;
+    std::shared_ptr<Alloc> _allocator;
+};
+
+// use dedicated jemalloc arena
+template<typename T>
+class JemallocArenaAllocator {
+public:
+    typedef T value_type;
+    typedef size_t size_type;
+
+    JemallocArenaAllocator() {
+        init();
     }
+
+    ~JemallocArenaAllocator() {
+        std::ostringstream key;
+        key << "arena." << _arena_index << ".destroy";
+        unsigned tmp;
+        size_t len = sizeof(tmp);
+        if (auto ret = je_mallctl(key.str().c_str(), &tmp, &len, nullptr, 0); ret != 0) {
+            std::cout << key.str() << " failed, ret: " << ret << std::endl;
+        }
+    }
+
+    T* allocate(size_t n) {
+        return static_cast<T*>(je_mallocx(sizeof(T) * n, _flags));
+    }
+    void deallocate(T* ptr, size_t n) {
+        je_dallocx(ptr, _flags);
+    }
+
+private:
+    bool init() {
+        size_t len = sizeof(_arena_index);
+        if (auto ret = je_mallctl("arenas.create", &_arena_index, &len, nullptr, 0); ret != 0) {
+            std::cout << "create arena failed, ret: " << ret << std::endl;
+            return false;
+        }
+        std::cout << "arena index: " << _arena_index << std::endl;
+        _flags = MALLOCX_ARENA(_arena_index) | MALLOCX_TCACHE_NONE;
+        return true;
+    }
+
+    unsigned _arena_index = 0;
+    int _flags = 0;
+
 };
 
 }

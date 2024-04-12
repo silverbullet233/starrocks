@@ -35,7 +35,8 @@ starrocks::MemTracker* CurrentThread::mem_tracker() {
         }
         return tls_mem_tracker;
     } else {
-        return nullptr;
+        return tls_mem_tracker;
+        // return nullptr;
     }
 }
 
