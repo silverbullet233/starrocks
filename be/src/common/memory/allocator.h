@@ -1,6 +1,7 @@
 #pragma once
 
 #include <memory>
+#include <memory_resource>
 #include <type_traits>
 #include "runtime/mem_tracker.h"
 #include "jemalloc/jemalloc.h"
@@ -9,7 +10,9 @@
 namespace starrocks {
 
 struct AllocState {
-    std::string to_string() {
+    AllocState() = default;
+
+    std::string to_string() const {
         return fmt::format("[alloc count[{}], dealloc count[{}], size[{}]]", _alloc_count, _dealloc_count, _size);
     }
     size_t _alloc_count = 0;
@@ -17,124 +20,126 @@ struct AllocState {
     size_t _size = 0;
 };
 
+class Allocator {
+public:
+    virtual ~Allocator() = default;
+    virtual void* malloc(size_t bytes) {
+        return je_malloc(bytes);
+    }
+    virtual void free(void* p, size_t bytes) {
+        return je_free(p);
+    }
+    // ... other c api
+};
+
+class TrackingAllocator: public Allocator {
+public:
+    TrackingAllocator(std::string label, std::shared_ptr<MemTracker> tracker): _label(std::move(label)), _tracker(std::move(tracker)) {}
+    ~TrackingAllocator() override = default;
+
+    void* malloc(size_t bytes) override {
+        void* ptr = Allocator::malloc(bytes);
+        if (ptr) {
+            _state._alloc_count += 1;
+            _state._size += bytes;
+            _tracker->consume(bytes);
+        }
+        std::cout << "consume " << bytes << " bytes, ptr=" << reinterpret_cast<uintptr_t>(ptr) << std::endl;
+        return ptr;
+    }
+    void free(void* p, size_t bytes) override {
+        _state._dealloc_count += 1;
+        _state._size -= bytes;
+        _tracker->release(bytes);
+        std::cout << "release " << bytes << " bytes, ptr=" << reinterpret_cast<uintptr_t>(p) << std::endl;
+        Allocator::free(p, bytes);
+
+    }
+
+    void set_tracker(std::shared_ptr<MemTracker> tracker) {
+        _tracker = tracker;
+    }
+
+    std::string debug_string() const {
+        return fmt::format("TrackingAllocator[label={}, state={}]", _label, _state.to_string());
+    }
+
+private:
+    std::string _label;
+    AllocState _state;
+    std::shared_ptr<MemTracker> _tracker;
+};
+
+
 template<typename T>
-class NoMemHookAllocator {
+class TrackingStlAllocator {
 public:
     typedef T value_type;
     typedef size_t size_type;
     using propagate_on_container_copy_assignment = std::true_type; // for consistency
 	using propagate_on_container_move_assignment = std::true_type; // to avoid the pessimization
 	using propagate_on_container_swap = std::true_type; // to avoid the undefined behavior
-    // using is_always_equal = std::true_type;
-    // @TODO rebind
+
     template <typename U>
     struct rebind {
-        using other = NoMemHookAllocator<U>;
+        using other = TrackingStlAllocator<U>;
     };
 
-    NoMemHookAllocator() {
-        std::cout << "default construct" << std::endl;
-    }
-    NoMemHookAllocator(std::string label): _label(label) {
-        std::cout << "what ??" << std::endl;
-    }
-    NoMemHookAllocator(const NoMemHookAllocator& rhs): _label(rhs._label), _state(rhs._state) {
-        // std::cout << "copy construct, " << rhs.debug_string() << std::endl; 
-    }
-    NoMemHookAllocator(NoMemHookAllocator& rhs): _label(rhs._label),_state(rhs._state) {
-        // std::cout << "copy construct1, " << rhs.debug_string() << std::endl; 
-    }
-
-    ~NoMemHookAllocator() {
-        // std::cout << "destruct " << std::to_string(reinterpret_cast<uintptr_t>(this)) << std::endl;
-    }
-
+    TrackingStlAllocator() = default;
+    TrackingStlAllocator(std::shared_ptr<TrackingAllocator> allocator): _allocator(std::move(allocator)) {}
+    TrackingStlAllocator(const TrackingStlAllocator& rhs): _allocator(rhs._allocator) {}
     template<class U>
-    NoMemHookAllocator(const NoMemHookAllocator<U>& other) {
-        // std::cout << "convert construct " << other.debug_string() << ", this " << debug_string() << std::endl;
-        _label = other.label();
-        _state = other.state();
+    TrackingStlAllocator(const TrackingStlAllocator<U>& other): _allocator(other._allocator) {}
+
+    ~TrackingStlAllocator() = default;
+
+    TrackingStlAllocator(TrackingStlAllocator&& rhs) noexcept {
+        _allocator.swap(rhs._allocator);
     }
 
-    NoMemHookAllocator(NoMemHookAllocator&& rhs) noexcept {
-        // std::cout << "move construct " <<  rhs.debug_string() << ", this " << debug_string() << std::endl;
-        std::swap(_label, rhs._label);
-        _state.swap(rhs._state);
-    }
-
-    NoMemHookAllocator& operator=(NoMemHookAllocator&& rhs) noexcept {
+    TrackingStlAllocator& operator=(TrackingStlAllocator&& rhs) noexcept {
         if (this != &rhs) {
-            std::cout << "move operator" << std::endl;
-            _label = rhs._label;
-            _state = rhs._state;
+            _allocator.swap(rhs._allocator);
         }
-        std::cout << "move operator end " << rhs.debug_string() << std::endl;
         return *this;
     }
 
     T* allocate(size_t n) {
-        // size_t old = _state->_size;
-        _state->_alloc_count ++;
-        _state->_size += n * sizeof(T);
-        // std::cout << "allocate " << n << ", old " << old << ", size: " << debug_string() << std::endl;
-        return static_cast<T*>(je_malloc(n * sizeof(T)));
+        std::cout << "allocate " << n * sizeof(T) << std::endl;
+        return static_cast<T*>(_allocator->malloc(n * sizeof(T)));
     }
 
     void deallocate(T* ptr, size_t n) {
-        // size_t old = _state->_size;
-        je_free(ptr);
-        _state->_size -= n*sizeof(T);
-        _state->_dealloc_count++;
-        // std::cout << "deallocate " << n << ", old " << old <<  ", size: " << debug_string() << std::endl;
+        std::cout << "deallocate " << n * sizeof(T) << std::endl;
+        _allocator->free(ptr, n * sizeof(T));
     }
 
-
-    std::string label() const {
-        return _label;
-    }
-    std::shared_ptr<AllocState> state() const {
-        return _state;
-    }
-
-    NoMemHookAllocator& operator=(const NoMemHookAllocator& rhs) {
-        // std::cout << "assign operator " << rhs.debug_string() << std::endl;
-        _label = rhs._label;
-        _state = rhs._state;
+    TrackingStlAllocator& operator=(const TrackingStlAllocator& rhs) {
+        _allocator = rhs._allocator;
         return *this;
     }
 
     template<class U>
-    NoMemHookAllocator& operator=(const NoMemHookAllocator<U>& rhs) {
-        // std::cout << "assign convert operator " << rhs.debug_string() << ", this " << debug_string() <<std::endl;
-        _label = rhs._label;
-        _state = rhs._state;
+    TrackingStlAllocator& operator=(const TrackingStlAllocator<U>& rhs) {
+        _allocator = rhs._allocator;
         return *this;
     }
 
 
-
-    bool operator==(const NoMemHookAllocator& rhs) const {
-        std::cout << "invoke ==" << std::endl;
-        return this == &rhs;
-        // return true;
+    bool operator==(const TrackingStlAllocator& rhs) const {
+        return _allocator.get() == rhs._allocator.get();
     }
 
-    bool operator!=(const NoMemHookAllocator& rhs) const {
+    bool operator!=(const TrackingStlAllocator& rhs) const {
         return !(*this == rhs);
     }
 
     std::string debug_string() const {
-        return "NoMemHookAllocator(label=" + _label + ", "+ ", state=" + _state->to_string()+ ", addr=" + std::to_string(reinterpret_cast<uintptr_t>(this));
-    }
-
-    NoMemHookAllocator select_on_container_copy_construction() {
-        std::cout << "select_on_container_copy_construction, " << debug_string() << std::endl;
-        return *this;
+        return _allocator->debug_string();
     }
 
 private:
-    std::string _label;
-    std::shared_ptr<AllocState> _state = std::make_shared<AllocState>();
+    std::shared_ptr<TrackingAllocator> _allocator;
 };
 
 template<typename T, typename Alloc = std::allocator<T>>
@@ -217,8 +222,4 @@ private:
     int _flags = 0;
 
 };
-
-// @TODO test pmr
-
-
 }

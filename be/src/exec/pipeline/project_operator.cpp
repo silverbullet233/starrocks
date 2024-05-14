@@ -48,6 +48,7 @@ Status ProjectOperator::push_chunk(RuntimeState* state, const ChunkPtr& chunk) {
         SCOPED_TIMER(_common_sub_expr_compute_timer);
         for (size_t i = 0; i < _common_sub_column_ids.size(); ++i) {
             ASSIGN_OR_RETURN(auto col, _common_sub_expr_ctxs[i]->evaluate(chunk.get()));
+            // @TODO transfer
             chunk->append_column(std::move(col), _common_sub_column_ids[i]);
             RETURN_IF_HAS_ERROR(_common_sub_expr_ctxs);
         }
