@@ -75,18 +75,33 @@ void test_isolation() {
 // }
 
 // // move between different allocator
-// void test3() {
-//     auto alloc1 = NoMemHookAllocator<int>("alloc1");
-//     std::vector<int, NoMemHookAllocator<int>> v1(alloc1);
-//     v1.push_back(1);
-//     v1.push_back(2);
-//     auto alloc2 = NoMemHookAllocator<int>("alloc2");
-//     std::vector<int, NoMemHookAllocator<int>> v2(alloc2);
-//     v2.push_back(3);
-//     std::cout << "v1 size: " << v1.get_allocator().debug_string() << ", v2 size: " << v2.get_allocator().debug_string() << std::endl;
-//     v2.swap(v1);
-//     std::cout << "v1 size: " << v1.get_allocator().debug_string() << ", v2 size: " << v2.get_allocator().debug_string() << std::endl;
-// }
+void test3() {
+
+    std::shared_ptr<MemTracker> mem_tracker_1 = std::make_shared<MemTracker>(MemTracker::NO_SET, -1, "mem1");
+    std::shared_ptr<MemTracker> mem_tracker_2 = std::make_shared<MemTracker>(MemTracker::NO_SET, -1, "mem2");
+    using StlAlloc = TrackingStlAllocator<int>;
+    auto alloc = std::make_shared<TrackingAllocator>("label1", mem_tracker_1);
+    auto alloc1 = StlAlloc(alloc);
+
+    auto alloc2 = StlAlloc(std::make_shared<TrackingAllocator>("label2", mem_tracker_2));
+    {
+        std::vector<int, StlAlloc> v1(alloc1);
+        {
+            v1.push_back(1);
+            v1.push_back(2);
+
+            std::vector<int, StlAlloc> v2(alloc2);
+            v2.push_back(3);
+
+            std::cout << "before swap, v1 size: " << alloc1.debug_string() << std::endl << ", v2 size: " << alloc2.debug_string() << std::endl;
+            v2.swap(v1);
+            std::cout << "after swap, v1 size: " << alloc1.debug_string() << std::endl<< ", v2 size: " << alloc2.debug_string() << std::endl;
+        }
+        std::cout << "after release v2, v1 size: " << alloc1.debug_string() << std::endl<<", v2 size: " << alloc2.debug_string() << std::endl;
+    }
+
+    std::cout << "after release v1, v1 size: " << alloc1.debug_string() << std::endl<<", v2 size: " << alloc2.debug_string() << std::endl;
+}
 
 // template<class T>
 // using VectorWithAlloc = std::vector<T, NoMemHookAllocator<T>>;
@@ -195,9 +210,9 @@ void test_isolation() {
 int main(int argc, char** argv) {
     // init global env
     // @TODO use CurrentThread
-    test_isolation();
+    // test_isolation();
     // test2();
-    // test3();
+    test3();
     // test4();
     // test5();
     // test6();
