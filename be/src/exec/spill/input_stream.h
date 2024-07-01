@@ -60,16 +60,17 @@ public:
 private:
     std::atomic_bool _eof = false;
 };
-
+class SpillerReader;
 class YieldableRestoreTask {
 public:
-    YieldableRestoreTask(InputStreamPtr input_stream) : _input_stream(std::move(input_stream)) {
+    YieldableRestoreTask(InputStreamPtr input_stream, SpillerReader* reader) : _input_stream(std::move(input_stream)), _reader(reader) {
         _input_stream->get_io_stream(&_sub_stream);
     }
     Status do_read(workgroup::YieldContext& ctx, SerdeContext& context);
 
 private:
     InputStreamPtr _input_stream;
+    SpillerReader* _reader = nullptr;
     std::vector<SpillInputStream*> _sub_stream;
 };
 

@@ -27,6 +27,7 @@ public:
             : SourceOperator(factory, id, "aggregate_streaming_source", plan_node_id, false, driver_sequence),
               _aggregator(std::move(aggregator)) {
         _aggregator->ref();
+        LOG(INFO) << "init AggregateStreamingSource, " << (void*)this << ", aggregator: " << (void*)(_aggregator.get());
     }
 
     ~AggregateStreamingSourceOperator() override = default;

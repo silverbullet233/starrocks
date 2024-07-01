@@ -27,6 +27,7 @@
 #include "util/blocking_priority_queue.hpp"
 #include "util/race_detect.h"
 #include "util/runtime_profile.h"
+#include "fmt/format.h"
 
 namespace starrocks::workgroup {
 
@@ -51,6 +52,9 @@ struct YieldContext {
     void set_finished() {
         yield_point = total_yield_point_cnt = 0;
         task_context_data.reset();
+    }
+    std::string debug_string() {
+        return fmt::format("ctx {}. yield_point: {}, total_yield_point_cnt: {}", (void*)this, yield_point, total_yield_point_cnt);
     }
 
     std::any task_context_data;

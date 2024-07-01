@@ -45,6 +45,9 @@ bool AggregateStreamingSourceOperator::has_output() const {
     //
     // case1 and case2 means that it will wait for the next chunk from the buffer
     // case3 and case4 means that it will apply local aggregate, so need to wait sink operator finish
+    LOG_EVERY_N(INFO, 1000000) << "AggregateStreamingSource no output, aggregator: " << (void*)(_aggregator.get())
+        << ", is_sink_complete:" << _aggregator->is_sink_complete() << ", is_hit_eos: " << _aggregator->is_ht_eos()
+        << ", " << (void*)this;
     return _aggregator->is_sink_complete() && !_aggregator->is_ht_eos();
 }
 

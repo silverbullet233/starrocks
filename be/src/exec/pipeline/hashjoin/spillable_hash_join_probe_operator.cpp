@@ -52,6 +52,7 @@ Status SpillableHashJoinProbeOperator::prepare(RuntimeState* state) {
 }
 
 void SpillableHashJoinProbeOperator::close(RuntimeState* state) {
+    LOG(INFO) << "SpillableHashJoinProbe::close, " << (void*)this << ", plan_node_id:" << _plan_node_id;
     HashJoinProbeOperator::close(state);
 }
 
@@ -63,7 +64,7 @@ bool SpillableHashJoinProbeOperator::has_output() const {
     if (!spilled()) {
         return HashJoinProbeOperator::has_output();
     }
-
+    LOG_EVERY_N(INFO, 10000000) << "SpillableHashJoinProbeOperator::has_output, " << (void*)(this) << ", plan_node_id:" << _plan_node_id;
     // if any partition hash_table is loading. just return false
     if (!_latch.ready()) {
         return false;
@@ -105,6 +106,7 @@ bool SpillableHashJoinProbeOperator::has_output() const {
         for (size_t i = 0; i < _probers.size(); ++i) {
             if (_current_reader[i]->has_output_data()) {
                 return true;
+                // @TODO no output and has restore task, so nothing to do
             } else if (!_current_reader[i]->has_restore_task()) {
                 // if trigger_restore returns error, should record this status and return it in pull_chunk
                 _update_status(_current_reader[i]->trigger_restore(
@@ -169,6 +171,7 @@ bool SpillableHashJoinProbeOperator::is_finished() const {
 }
 
 Status SpillableHashJoinProbeOperator::set_finishing(RuntimeState* state) {
+    LOG(INFO) << "SpillableHashJoinProbe set_finishing, " << (void*)this << ", plan_node_id:"<< _plan_node_id;
     if (!spilled()) {
         return HashJoinProbeOperator::set_finishing(state);
     }
@@ -180,6 +183,7 @@ Status SpillableHashJoinProbeOperator::set_finishing(RuntimeState* state) {
 }
 
 Status SpillableHashJoinProbeOperator::set_finished(RuntimeState* state) {
+    LOG(INFO) << "SpillableHashJoinProbe set_finished, " << (void*)this << ", plan_node_id:"<< _plan_node_id;
     _is_finished = true;
     return HashJoinProbeOperator::set_finished(state);
 }
@@ -443,7 +447,7 @@ StatusOr<ChunkPtr> SpillableHashJoinProbeOperator::pull_chunk(RuntimeState* stat
 
     // processing partitions
     if (_is_finishing && eofs == _processing_partitions.size() && !_has_probe_remain) {
-        DCHECK(all_probe_partition_is_empty());
+        CHECK(all_probe_partition_is_empty()) << "not all probe partition is empty";
         // current partition is finished
         for (auto* partition : _processing_partitions) {
             _processed_partitions.emplace(partition->partition_id);

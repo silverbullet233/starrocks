@@ -30,6 +30,7 @@ public:
               _auto_state(AggrAutoState::INIT_PREAGG) {
         _aggregator->set_aggr_phase(AggrPhase1);
         _aggregator->ref();
+        LOG(INFO) << "init AggregateStreamingSink, " << (void*)this << ", aggregator: " << (void*)(_aggregator.get());
     }
     ~AggregateStreamingSinkOperator() override = default;
 

@@ -419,13 +419,13 @@ StatusOr<DriverState> PipelineDriver::process(RuntimeState* runtime_state, int w
                 set_driver_state(DriverState::OUTPUT_FULL);
                 COUNTER_UPDATE(_block_by_output_full_counter, 1);
             } else if (!source_operator()->is_finished() && !source_operator()->has_output()) {
-                if (source_operator()->is_mutable()) {
-                    set_driver_state(DriverState::LOCAL_WAITING);
-                    COUNTER_UPDATE(_yield_by_local_wait_counter, 1);
-                } else {
+                // if (source_operator()->is_mutable()) {
+                //     set_driver_state(DriverState::LOCAL_WAITING);
+                //     COUNTER_UPDATE(_yield_by_local_wait_counter, 1);
+                // } else {
                     set_driver_state(DriverState::INPUT_EMPTY);
                     COUNTER_UPDATE(_block_by_input_empty_counter, 1);
-                }
+                // }
             } else {
                 set_driver_state(DriverState::READY);
             }

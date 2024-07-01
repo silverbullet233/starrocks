@@ -40,6 +40,7 @@ void AggregateStreamingSinkOperator::close(RuntimeState* state) {
 }
 
 Status AggregateStreamingSinkOperator::set_finishing(RuntimeState* state) {
+    LOG(INFO) << "AggregateStreamingSink set_finishing, " << (void*)this << ", " << _aggregator->is_finished();
     _is_finished = true;
 
     // skip processing if cancelled

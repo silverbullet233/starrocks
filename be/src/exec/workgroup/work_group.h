@@ -211,7 +211,7 @@ public:
     static constexpr int64 DEFAULT_MV_VERSION = 1;
 
     // Yield scan io task when maximum time in nano-seconds has spent in current execution round.
-    static constexpr int64_t YIELD_MAX_TIME_SPENT = 100'000'000L;
+    static constexpr int64_t YIELD_MAX_TIME_SPENT = 20'000'000L;
     // Yield scan io task when maximum time in nano-seconds has spent in current execution round,
     // if it runs in the worker thread owned by other workgroup, which has running drivers.
     static constexpr int64_t YIELD_PREEMPT_MAX_TIME_SPENT = 5'000'000L;

@@ -222,32 +222,44 @@ Status SpillerReader::trigger_restore(RuntimeState* state, MemGuard&& guard) {
         _running_restore_tasks++;
         auto restore_task = [this, guard, trace = TraceInfo(state), _stream = _stream](auto& yield_ctx) {
             SCOPED_SET_TRACE_INFO({}, trace.query_id, trace.fragment_id);
+            // @TODO what if return here, no one will update running_restore_tasks
             RETURN_IF(!guard.scoped_begin(), (void)0);
             DEFER_GUARD_END(guard);
             {
+                Status res;
+                SpillIOTaskContextPtr io_ctx;
                 auto defer = CancelableDefer([&]() {
+                    // LOG(INFO) << fmt::format("finish restore task for reader[{}], res[{}] ctx[{}] io_ctx[{}]",
+                    //     (void*)this, res.to_string(), yield_ctx.debug_string(), (void*)(io_ctx.get()));
                     _running_restore_tasks--;
                     yield_ctx.set_finished();
                 });
-                Status res;
                 SerdeContext serd_ctx;
                 if (!yield_ctx.task_context_data.has_value()) {
                     yield_ctx.task_context_data = std::make_shared<SpillIOTaskContext>();
+                    // LOG(INFO) << fmt::format("submit restore task for reader[{}]", (void*)this);
                 }
+                io_ctx = std::any_cast<SpillIOTaskContextPtr>(yield_ctx.task_context_data);
 
                 auto ctx = std::any_cast<SpillIOTaskContextPtr>(yield_ctx.task_context_data);
                 yield_ctx.time_spent_ns = 0;
                 yield_ctx.need_yield = false;
 
-                YieldableRestoreTask task(_stream);
+                YieldableRestoreTask task(_stream, this);
                 res = task.do_read(yield_ctx, serd_ctx);
-
+                
+                // @TODO what if need_yield and not ok
+                // @TODO what if need yield and finish
                 if (yield_ctx.need_yield) {
+                    LOG(INFO) << fmt::format("restore task for reader[{}] need yield, res[{}], task ctx[{}]", (void*)this, res.to_string(), (void*)io_ctx.get());
                     COUNTER_UPDATE(_spiller->metrics().restore_task_yield_times, 1);
                     defer.cancel();
                 }
 
                 if (!res.is_ok_or_eof()) {
+                    // LOG(INFO) << fmt::format("restore task for reader[{}] error [{}], need_yield[{}]",
+                    //     (void*)this, res.to_string(), yield_ctx.need_yield);
+                    // @TODO after move, res is invalid
                     _spiller->update_spilled_task_status(std::move(res));
                 }
                 _finished_restore_tasks += !res.ok();
@@ -261,7 +273,7 @@ Status SpillerReader::trigger_restore(RuntimeState* state, MemGuard&& guard) {
                 workgroup::ScanTask(_spiller->options().wg.get(), std::move(restore_task), std::move(yield_func));
         RETURN_IF_ERROR(TaskExecutor::submit(std::move(io_task)));
         COUNTER_UPDATE(_spiller->metrics().restore_io_task_count, 1);
-        COUNTER_SET(_spiller->metrics().peak_flush_io_task_count, _running_restore_tasks);
+        COUNTER_SET(_spiller->metrics().peak_restore_io_task_count, _running_restore_tasks);
     }
     return Status::OK();
 }

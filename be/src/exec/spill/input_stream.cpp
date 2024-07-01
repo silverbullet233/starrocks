@@ -35,6 +35,7 @@ Status YieldableRestoreTask::do_read(workgroup::YieldContext& yield_ctx, SerdeCo
     size_t num_eos = 0;
     yield_ctx.total_yield_point_cnt = _sub_stream.size();
     auto wg = yield_ctx.wg;
+    // @TODO what if yield_ctx.finish
     while (yield_ctx.yield_point < yield_ctx.total_yield_point_cnt) {
         {
             SCOPED_RAW_TIMER(&yield_ctx.time_spent_ns);
@@ -56,6 +57,23 @@ Status YieldableRestoreTask::do_read(workgroup::YieldContext& yield_ctx, SerdeCo
 
         BREAK_IF_YIELD(wg, &yield_ctx.need_yield, yield_ctx.time_spent_ns);
     }
+    // if (yield_ctx.yield_point >= yield_ctx.total_yield_point_cnt) {
+    //     if (num_eos != _sub_stream.size()) {
+    //         LOG(INFO) << fmt::format("restore task finished, but not all eos, [{}], eos[{}], stream size[{}], reader[{}]",
+    //             yield_ctx.debug_string(), num_eos, _sub_stream.size(), (void*)_reader);
+    //     }
+    // }
+    if (yield_ctx.need_yield && yield_ctx.is_finished()) {
+        auto io_ctx = std::any_cast<SpillIOTaskContextPtr>(yield_ctx.task_context_data);
+        LOG(INFO) << fmt::format("restore task need yield but finished, reader[{}], task ctx[{}]", (void*)_reader, (void*)(io_ctx.get()));
+    }
+    if (yield_ctx.is_finished()) {
+        yield_ctx.need_yield = false;
+    }
+
+    // if (yield_ctx.yield_point >= yield_ctx.total_yield_point_cnt) {
+    //     yield_ctx.need_yield = true;
+    // }
 
     if (num_eos == _sub_stream.size()) {
         _input_stream->mark_is_eof();
@@ -92,6 +110,8 @@ public:
             stream->close();
         }
     };
+
+    // @TODO no eof??
 
 private:
     size_t _current_process_idx = 0;
@@ -215,6 +235,7 @@ StatusOr<ChunkUniquePtr> BufferedInputStream::get_next(workgroup::YieldContext& 
     }
     // if prefetch failed, return empty chunk
     DCHECK(false);
+    LOG(INFO) << "unreachable path, yield_ctx " << yield_ctx.debug_string();
     return std::make_unique<Chunk>();
 }
 
@@ -291,13 +312,17 @@ StatusOr<ChunkUniquePtr> UnorderedInputStream::get_next(workgroup::YieldContext&
             // move to the next block
             continue;
         }
+        // @TODO in which case res value can be empty?
         if (res.status().ok() && res.value()->is_empty()) {
             continue;
         }
         if (!res.status().is_end_of_file()) {
+            // LOG(INFO) << fmt::format("deserialize error[{}], block[{}], current_idx[{}]", res.status().to_string(), (void*)block.get(), _current_idx);
             return res;
         }
     }
+    LOG(INFO) << "unreachable path";
+    // @TODO add log??
     __builtin_unreachable();
 }
 
