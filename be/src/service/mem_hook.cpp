@@ -123,6 +123,11 @@ DEFINE_SCOPED_FAIL_POINT(mem_alloc_error);
 #define FAIL_POINT_INJECT_MEM_ALLOC_ERROR(retVal) (void)0
 #endif
 
+#define SET_DELTA_MEMORY(value) \
+    do { \
+        starrocks::tls_delta_memory = value; \
+    } while (0)
+
 extern "C" {
 // malloc
 void* my_malloc(size_t size) __THROW {
@@ -156,6 +161,7 @@ void* my_malloc(size_t size) __THROW {
 
 // free
 void my_free(void* p) __THROW {
+    SET_DELTA_MEMORY(0);
     if (UNLIKELY(p == nullptr)) {
         RESET_DELTA_MEMORY();
         return;
@@ -169,6 +175,7 @@ void my_free(void* p) __THROW {
 // realloc
 void* my_realloc(void* p, size_t size) __THROW {
     STARROCKS_REPORT_LARGE_MEM_ALLOC(size);
+    SET_DELTA_MEMORY(0);
     // If new_size is zero, the behavior is implementation defined
     // (null pointer may be returned (in which case the old memory block may or may not be freed),
     // or some non-null pointer may be returned that may not be used to access storage)
@@ -206,6 +213,7 @@ void* my_realloc(void* p, size_t size) __THROW {
 // calloc
 void* my_calloc(size_t n, size_t size) __THROW {
     STARROCKS_REPORT_LARGE_MEM_ALLOC(n * size);
+    SET_DELTA_MEMORY(0);
     // If size is zero, the behavior is implementation defined (null pointer may be returned
     // or some non-null pointer may be returned that may not be used to access storage)
     if (UNLIKELY(size == 0)) {
@@ -237,6 +245,7 @@ void* my_calloc(size_t n, size_t size) __THROW {
 }
 
 void my_cfree(void* ptr) __THROW {
+    SET_DELTA_MEMORY(0);
     if (UNLIKELY(ptr == nullptr)) {
         RESET_DELTA_MEMORY();
         return;
@@ -250,6 +259,7 @@ void my_cfree(void* ptr) __THROW {
 // memalign
 void* my_memalign(size_t align, size_t size) __THROW {
     STARROCKS_REPORT_LARGE_MEM_ALLOC(size);
+    SET_DELTA_MEMORY(0);
     if (IS_BAD_ALLOC_CATCHED()) {
         FAIL_POINT_INJECT_MEM_ALLOC_ERROR(nullptr);
         TRY_MEM_CONSUME(size, nullptr);
@@ -276,6 +286,7 @@ void* my_memalign(size_t align, size_t size) __THROW {
 // aligned_alloc
 void* my_aligned_alloc(size_t align, size_t size) __THROW {
     STARROCKS_REPORT_LARGE_MEM_ALLOC(size);
+    SET_DELTA_MEMORY(0);
     if (IS_BAD_ALLOC_CATCHED()) {
         FAIL_POINT_INJECT_MEM_ALLOC_ERROR(nullptr);
         TRY_MEM_CONSUME(size, nullptr);
@@ -302,6 +313,7 @@ void* my_aligned_alloc(size_t align, size_t size) __THROW {
 // valloc
 void* my_valloc(size_t size) __THROW {
     STARROCKS_REPORT_LARGE_MEM_ALLOC(size);
+    SET_DELTA_MEMORY(0);
     if (IS_BAD_ALLOC_CATCHED()) {
         FAIL_POINT_INJECT_MEM_ALLOC_ERROR(nullptr);
         TRY_MEM_CONSUME(size, nullptr);
@@ -328,6 +340,7 @@ void* my_valloc(size_t size) __THROW {
 // pvalloc
 void* my_pvalloc(size_t size) __THROW {
     STARROCKS_REPORT_LARGE_MEM_ALLOC(size);
+    SET_DELTA_MEMORY(0);
     if (IS_BAD_ALLOC_CATCHED()) {
         FAIL_POINT_INJECT_MEM_ALLOC_ERROR(nullptr);
         TRY_MEM_CONSUME(size, nullptr);
@@ -354,6 +367,7 @@ void* my_pvalloc(size_t size) __THROW {
 // posix_memalign
 int my_posix_memalign(void** r, size_t align, size_t size) __THROW {
     STARROCKS_REPORT_LARGE_MEM_ALLOC(size);
+    SET_DELTA_MEMORY(0);
     if (IS_BAD_ALLOC_CATCHED()) {
         FAIL_POINT_INJECT_MEM_ALLOC_ERROR(-1);
         TRY_MEM_CONSUME(size, ENOMEM);
