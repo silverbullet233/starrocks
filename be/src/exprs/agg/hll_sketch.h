@@ -35,7 +35,14 @@ public:
     using ColumnType = RunTimeColumnType<LT>;
 
     void reset(FunctionContext* ctx, const Columns& args, AggDataPtr state) const override {
+        ctx->add_mem_usage(-this->data(state).mem_usage());
         this->data(state).clear();
+    }
+
+    ALWAYS_INLINE void update_state(FunctionContext* ctx, AggDataPtr state, uint64_t value) const {
+        int64_t prev_memory = this->data(state).mem_usage();
+        this->data(state).update(value);
+        ctx->add_mem_usage(this->data(state).mem_usage() - prev_memory);
     }
 
     void update(FunctionContext* ctx, const Column** columns, AggDataPtr __restrict state,
@@ -52,7 +59,8 @@ public:
         }
 
         if (value != 0) {
-            this->data(state).update(value);
+            update_state(ctx, state, value);
+            // this->data(state).update(value);
         }
     }
 
@@ -68,7 +76,8 @@ public:
                 value = HashUtil::murmur_hash64A(s.data, s.size, HashUtil::MURMUR_SEED);
 
                 if (value != 0) {
-                    this->data(state).update(value);
+                    update_state(ctx, state, value);
+                    // this->data(state).update(value);
                 }
             }
         } else {
@@ -78,7 +87,8 @@ public:
                 value = HashUtil::murmur_hash64A(&v[i], sizeof(v[i]), HashUtil::MURMUR_SEED);
 
                 if (value != 0) {
-                    this->data(state).update(value);
+                    update_state(ctx, state, value);
+                    // this->data(state).update(value);
                 }
             }
         }
@@ -89,7 +99,9 @@ public:
 
         const BinaryColumn* hll_column = down_cast<const BinaryColumn*>(column);
         DataSketchesHll hll(hll_column->get(row_num).get_slice());
+        int64_t prev_memory = this->data(state).mem_usage();
         this->data(state).merge(hll);
+        ctx->add_mem_usage(this->data(state).mem_usage() - prev_memory);
     }
 
     void get_values(FunctionContext* ctx, ConstAggDataPtr __restrict state, Column* dst, size_t start,

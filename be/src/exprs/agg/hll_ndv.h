@@ -38,11 +38,11 @@ public:
     using ColumnType = RunTimeColumnType<LT>;
 
     void reset(FunctionContext* ctx, const Columns& args, AggDataPtr state) const override {
-        ctx->add_mem_usage(this->data(state).mem_usage());
+        ctx->add_mem_usage(-this->data(state).mem_usage());
         this->data(state).clear();
     }
 
-    ALWAYS_INLINE void update_state(FunctionContext* ctx, AggDataPtr state, uint64_t value) {
+    ALWAYS_INLINE void update_state(FunctionContext* ctx, AggDataPtr state, uint64_t value) const {
         int64_t prev_memory = this->data(state).mem_usage();
         this->data(state).update(value);
         ctx->add_mem_usage(this->data(state).mem_usage() - prev_memory);
