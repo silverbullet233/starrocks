@@ -778,6 +778,8 @@ Status Aggregator::compute_single_agg_state(Chunk* chunk, size_t chunk_size) {
                                                         _agg_input_columns[i][0].get(), 0, chunk_size);
         }
     }
+    COUNTER_SET(_agg_stat->agg_state_peak_memory, allocator_memory_usage());
+    COUNTER_SET(_agg_stat->estimate_agg_state_peak_memory, agg_state_memory_usage());
     RETURN_IF_ERROR(check_has_error());
     return Status::OK();
 }
@@ -801,6 +803,8 @@ Status Aggregator::compute_batch_agg_states(Chunk* chunk, size_t chunk_size) {
                                            _agg_input_columns[i][0].get(), _tmp_agg_states.data());
         }
     }
+    COUNTER_SET(_agg_stat->agg_state_peak_memory, allocator_memory_usage());
+    COUNTER_SET(_agg_stat->estimate_agg_state_peak_memory, agg_state_memory_usage());
     RETURN_IF_ERROR(check_has_error());
     return Status::OK();
 }
@@ -824,6 +828,8 @@ Status Aggregator::compute_batch_agg_states_with_selection(Chunk* chunk, size_t 
                                                        _tmp_agg_states.data(), _streaming_selection);
         }
     }
+    COUNTER_SET(_agg_stat->agg_state_peak_memory, allocator_memory_usage());
+    COUNTER_SET(_agg_stat->estimate_agg_state_peak_memory, agg_state_memory_usage());
     RETURN_IF_ERROR(check_has_error());
     return Status::OK();
 }
