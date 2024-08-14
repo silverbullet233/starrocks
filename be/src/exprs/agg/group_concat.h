@@ -373,19 +373,48 @@ public:
         }
     }
 
-    // reject null for output columns, but non-output columns may be null
-    void update(FunctionContext* ctx, const Column** columns, AggDataPtr __restrict state,
-                size_t row_num) const override {
-        auto num = ctx->get_num_args();
+    bool need_update(FunctionContext* ctx, const Column** columns, AggDataPtr state, size_t row_num) const {
         auto& state_impl = this->data(state);
         if (state_impl.data_columns == nullptr) {
             create_impl(ctx, state_impl);
         }
-        for (auto i = 0; i < state_impl.output_col_num; ++i) {
+        for (auto i = 0;i < state_impl.output_col_num; ++i) {
             if (columns[i]->is_nullable() && columns[i]->is_null(row_num)) {
-                return;
+                return false;
             }
+        } 
+        return true;
+    }
+
+    template <bool is_merge = false>
+    void update_memory_usage(FunctionContext* ctx, const Column** input, size_t updated_rows) const {
+        int64_t mem_usage = 0;
+        if constexpr (!is_merge) {
+            for (auto i = 0;i < ctx->get_num_args();i++) {
+                mem_usage += input[i]->container_memory_usage();
+            }
+            mem_usage *= (updated_rows / input[0]->size());
+        } else {
+            auto& input_columns = down_cast<const StructColumn*>(ColumnHelper::get_data_column(*input))->fields();
+            for (auto i = 0;i < input_columns.size();i++) {
+                mem_usage += input_columns[i]->container_memory_usage();
+            }
+            mem_usage *= (updated_rows / input_columns[0]->size());
         }
+        ctx->add_mem_usage(mem_usage);
+    }
+
+    // reject null for output columns, but non-output columns may be null
+    void update(FunctionContext* ctx, const Column** columns, AggDataPtr __restrict state,
+                size_t row_num) const override {
+        auto num = ctx->get_num_args();
+        DCHECK(need_update(ctx, columns, state, row_num));
+        // remove
+        // if (!need_update(ctx, columns, state, row_num)) {
+        //     return;
+        // }
+
+        auto& state_impl = this->data(state);
 
         for (auto i = 0; i < num; ++i) {
             // non-output columns is null
@@ -404,6 +433,35 @@ public:
         }
     }
 
+    void update_batch(FunctionContext* ctx, size_t chunk_size, size_t state_offset, const Column** columns,
+                      AggDataPtr* states) const override {
+        size_t updated_rows = 0;
+        for (size_t i = 0; i < chunk_size; ++i) {
+            if (!need_update(ctx, columns, states[i] + state_offset, i)) {
+                continue;
+            }
+            update(ctx, columns, states[i] + state_offset, i);
+            updated_rows ++;
+        }
+        // @TODO
+        update_memory_usage(ctx, columns, updated_rows);
+    }
+
+    void update_batch_selectively(FunctionContext* ctx, size_t chunk_size, size_t state_offset, const Column** columns,
+                                  AggDataPtr* states, const std::vector<uint8_t>& filter) const override {
+        size_t updated_rows = 0;
+        for (size_t i = 0; i < chunk_size; i++) {
+            // TODO: optimize with simd ?
+            if (filter[i] == 0 && need_update(ctx, columns, states[i] + state_offset, i)) {
+                update(ctx, columns, states[i] + state_offset, i);
+                updated_rows++;
+            }
+        }
+        // @TODO
+        update_memory_usage(ctx, columns, updated_rows);
+    }
+
+
     void update_batch_single_state(FunctionContext* ctx, size_t chunk_size, const Column** columns,
                                    AggDataPtr __restrict state) const override {
         auto& state_impl = this->data(state);
@@ -415,9 +473,15 @@ public:
                 return;
             }
         }
+        size_t updated_rows = 0;
         for (size_t i = 0; i < chunk_size; ++i) {
+            if (!need_update(ctx, columns, state, i)) {
+                continue;
+            }
             update(ctx, columns, state, i);
+            updated_rows += 1;
         }
+        update_memory_usage(ctx, columns, updated_rows);
     }
 
     void update_batch_single_state_with_frame(FunctionContext* ctx, AggDataPtr __restrict state, const Column** columns,
@@ -433,19 +497,20 @@ public:
             }
         }
         for (size_t i = frame_start; i < frame_end; ++i) {
-            update(ctx, columns, state, i);
+            if (need_update(ctx, columns, state, i)) {
+                update(ctx, columns, state, i);
+            }
         }
     }
 
-    // input struct column, array may be null, but array->elements of output columns should not null
-    void merge(FunctionContext* ctx, const Column* column, AggDataPtr __restrict state, size_t row_num) const override {
+    bool need_merge(FunctionContext* ctx, const Column* column, AggDataPtr __restrict state, size_t row_num) const {
         if (UNLIKELY(row_num >= column->size())) {
             ctx->set_error(std::string(get_name() + " merge() row id overflow").c_str(), false);
-            return;
+            return false;
         }
         // input struct is null
         if (column->is_nullable() && column->is_null(row_num)) {
-            return;
+            return false;
         }
         auto& input_columns = down_cast<const StructColumn*>(ColumnHelper::get_data_column(column))->fields();
         auto& state_impl = this->data(state);
@@ -455,9 +520,19 @@ public:
         // output columns is null
         for (auto i = 0; i < state_impl.output_col_num; i++) {
             if (input_columns[i]->is_null(row_num)) {
-                return;
+                return false;
             }
         }
+        return true;
+    }
+
+    // input struct column, array may be null, but array->elements of output columns should not null
+    void merge(FunctionContext* ctx, const Column* column, AggDataPtr __restrict state, size_t row_num) const override {
+        DCHECK(need_merge(ctx, column, state, row_num));
+
+        auto& input_columns = down_cast<const StructColumn*>(ColumnHelper::get_data_column(column))->fields();
+        auto& state_impl = this->data(state);
+
         for (auto i = 0; i < input_columns.size(); ++i) {
             auto array_column = down_cast<const ArrayColumn*>(ColumnHelper::get_data_column(input_columns[i].get()));
             auto& offsets = array_column->offsets().get_data();
@@ -465,6 +540,45 @@ public:
                               offsets[row_num + 1] - offsets[row_num]);
         }
     }
+
+
+    void merge_batch(FunctionContext* ctx, size_t chunk_size, size_t state_offset, const Column* column,
+                     AggDataPtr* states) const override {
+        size_t updated_rows = 0;
+        for (size_t i = 0; i < chunk_size; ++i) {
+            if (need_merge(ctx, column, states[i] + state_offset, i)) {
+                merge(ctx, column, states[i] + state_offset, i);
+                updated_rows ++;
+            }
+        }
+        update_memory_usage<true>(ctx, &column, updated_rows);
+    }
+
+    void merge_batch_selectively(FunctionContext* ctx, size_t chunk_size, size_t state_offset, const Column* column,
+                                 AggDataPtr* states, const std::vector<uint8_t>& filter) const override {
+        size_t updated_rows = 0;
+        for (size_t i = 0; i < chunk_size; i++) {
+            if (filter[i] == 0 && need_merge(ctx, column, states[i] + state_offset, i)) {
+                merge(ctx, column, states[i] + state_offset, i);
+                updated_rows ++;
+            }
+        }
+        update_memory_usage<true>(ctx, &column, updated_rows);
+    }
+
+    void merge_batch_single_state(FunctionContext* ctx, AggDataPtr __restrict state, const Column* input, size_t start,
+                                  size_t size) const override {
+        size_t updated_rows = 0;
+        for (size_t i = start; i < start + size; ++i) {
+            if (need_merge(ctx, input, state, i)) {
+                merge(ctx, input, state, i);
+                updated_rows ++;
+            }
+        }
+        update_memory_usage<true>(ctx, &input, updated_rows);
+
+    }
+
 
     // TODO: if any output column is nullable, the result and intermediate result should be nullable
     // serialize each state->column to a (nullable but no null) array in a nullable struct

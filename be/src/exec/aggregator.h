@@ -298,6 +298,7 @@ public:
     const int64_t allocator_memory_usage() const { return _allocator->memory_usage(); }
 
     const int64_t memory_usage() const {
+        // LOG(INFO) << "agg state mem: " << agg_state_memory_usage() << " alloc mem: " << allocator_memory_usage();
         if (is_hash_set()) {
             return hash_set_memory_usage() + agg_state_memory_usage() + allocator_memory_usage();
         } else if (!_group_by_expr_ctxs.empty()) {
