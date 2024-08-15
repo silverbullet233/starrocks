@@ -1252,7 +1252,7 @@ CONF_String(rocksdb_db_options_string, "create_if_missing=true;create_missing_co
 // limit local exchange buffer's memory size per driver
 CONF_Int64(local_exchange_buffer_mem_limit_per_driver, "134217728"); // 128MB
 // only used for test. default: 128M
-CONF_mInt64(streaming_agg_limited_memory_size, "134217728");
+CONF_mInt64(streaming_agg_limited_memory_size, "16777216");
 // pipeline streaming aggregate chunk buffer size
 CONF_mInt32(streaming_agg_chunk_buffer_size, "1024");
 CONF_mInt64(wait_apply_time, "6000"); // 6s
