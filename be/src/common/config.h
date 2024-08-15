@@ -1428,4 +1428,6 @@ CONF_mInt32(thrift_max_frame_size, "16384000");
 // allows for structures nested up to 64 levels deep.
 CONF_mInt32(thrift_max_recursion_depth, "64");
 
+CONF_mBool(is_count_agg_state_mem, "true");
+
 } // namespace starrocks::config

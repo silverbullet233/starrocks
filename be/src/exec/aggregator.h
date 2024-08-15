@@ -28,6 +28,7 @@
 #include "column/column_helper.h"
 #include "column/type_traits.h"
 #include "column/vectorized_fwd.h"
+#include "common/config.h"
 #include "common/statusor.h"
 #include "exec/aggregate/agg_hash_variant.h"
 #include "exec/aggregate/agg_profile.h"
@@ -299,10 +300,13 @@ public:
 
     const int64_t memory_usage() const {
         // LOG(INFO) << "agg state mem: " << agg_state_memory_usage() << " alloc mem: " << allocator_memory_usage();
+        int64_t agg_state_mem_usage = config::is_count_agg_state_mem ? (agg_state_memory_usage() + allocator_memory_usage()) : 0;
         if (is_hash_set()) {
-            return hash_set_memory_usage() + agg_state_memory_usage() + allocator_memory_usage();
+            return hash_set_memory_usage() + agg_state_mem_usage;
+            // return hash_set_memory_usage() + agg_state_memory_usage() + allocator_memory_usage();
         } else if (!_group_by_expr_ctxs.empty()) {
-            return hash_map_memory_usage() + agg_state_memory_usage() + allocator_memory_usage();
+            return hash_map_memory_usage() + agg_state_mem_usage;
+            // return hash_map_memory_usage() + agg_state_memory_usage() + allocator_memory_usage();
         } else {
             return 0;
         }
