@@ -31,6 +31,15 @@ public:
 
     bool is_full() const { return _buffer_mem_manager.is_full(); }
 
+    size_t size() const {
+        return _element_size;
+    }
+    std::string debug_string() const {
+        return fmt::format("LimitedBuffer, size[{}], mem_usage[{}] max[{}], buffered_rows[{}] max[{}]",
+            _element_size, _buffer_mem_manager.get_memory_usage(), _buffer_mem_manager.get_max_memory_usage(),
+            _buffer_mem_manager.get_buffered_num_rows(), _buffer_mem_manager.get_max_buffered_rows());;
+    }
+
     void push(const ChunkPtr& chunk) {
         size_t mem_usage = chunk->memory_usage();
         size_t num_rows = chunk->num_rows();

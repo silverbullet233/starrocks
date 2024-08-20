@@ -30,6 +30,10 @@ bool AggregateStreamingSourceOperator::has_output() const {
         return true;
     }
 
+    if (!_aggregator->is_sink_complete() && _aggregator->is_ht_need_consume()) {
+        return true;
+    }
+
     if (_aggregator->is_streaming_all_states()) {
         return true;
     }
@@ -45,6 +49,7 @@ bool AggregateStreamingSourceOperator::has_output() const {
     //
     // case1 and case2 means that it will wait for the next chunk from the buffer
     // case3 and case4 means that it will apply local aggregate, so need to wait sink operator finish
+
     return _aggregator->is_sink_complete() && !_aggregator->is_ht_eos();
 }
 
@@ -67,7 +72,6 @@ StatusOr<ChunkPtr> AggregateStreamingSourceOperator::pull_chunk(RuntimeState* st
     if (!_aggregator->is_chunk_buffer_empty()) {
         return _aggregator->poll_chunk_buffer();
     }
-
     // Even if it is streaming mode, the purpose of reading from hash table is to
     // correctly process the state of hash table(_is_ht_eos)
     ChunkPtr chunk = std::make_shared<Chunk>();
@@ -89,7 +93,10 @@ Status AggregateStreamingSourceOperator::_output_chunk_from_hash_map(ChunkPtr* c
 
     RETURN_IF_ERROR(_aggregator->convert_hash_map_to_chunk(state->chunk_size(), chunk));
 
-    auto need_reset_aggregator = _aggregator->is_streaming_all_states() && _aggregator->is_ht_eos();
+    // auto need_reset_aggregator = _aggregator->is_streaming_all_states() && _aggregator->is_ht_eos();
+    // auto need_reset_aggregator = _aggregator->is_ht_need_consume() && _aggregator->is_ht_eos();
+    auto need_reset_aggregator = config::test_limited_agg ? (_aggregator->is_ht_need_consume() && _aggregator->is_ht_eos())
+        :(_aggregator->is_streaming_all_states() && _aggregator->is_ht_eos());
 
     FAIL_POINT_TRIGGER_EXECUTE(force_reset_aggregator_after_agg_streaming_sink_finish, {
         if (_aggregator->is_sink_complete()) {
@@ -102,6 +109,8 @@ Status AggregateStreamingSourceOperator::_output_chunk_from_hash_map(ChunkPtr* c
             RETURN_IF_ERROR(_aggregator->reset_state(state, {}, nullptr, false));
         }
         _aggregator->set_streaming_all_states(false);
+        _aggregator->set_ht_need_consume(false);
+        // LOG(INFO) << "ht_need_consume = false";
     }
 
     return Status::OK();

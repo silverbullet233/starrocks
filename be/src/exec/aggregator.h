@@ -207,6 +207,7 @@ static const int STREAMING_HT_MIN_REDUCTION_SIZE =
 
 struct LimitedMemAggState {
     size_t limited_memory_size{};
+    size_t input_rows = 0;
     bool has_limited(const Aggregator& aggregator) const;
 };
 
@@ -341,6 +342,12 @@ public:
     ChunkPtr poll_chunk_buffer();
     void offer_chunk_to_buffer(const ChunkPtr& chunk);
     bool is_chunk_buffer_full();
+    size_t chunk_buffer_size() const {
+        return _limited_buffer->size();
+    }
+    std::string debug_chunk_buffer() const {
+        return _limited_buffer->debug_string();
+    }
 
     bool should_expand_preagg_hash_tables(size_t prev_row_returned, size_t input_chunk_size, int64_t ht_mem,
                                           int64_t ht_rows) const;
@@ -414,6 +421,11 @@ public:
 
     bool is_streaming_all_states() const { return _streaming_all_states; }
 
+    bool is_ht_need_consume() const { return _ht_need_consume; }
+    void set_ht_need_consume(bool value) {
+        _ht_need_consume = value;
+    } 
+
     HashTableKeyAllocator _state_allocator;
 
 protected:
@@ -439,6 +451,8 @@ protected:
     std::atomic<bool> _is_sink_complete = false;
     // only used in pipeline engine
     std::unique_ptr<LimitedPipelineChunkBuffer<AggStatistics>> _limited_buffer;
+    // std::atomic<bool> _is_hash_variant_avaiable = true;
+    std::atomic<bool> _ht_need_consume = false;
 
     // Certain aggregates require a finalize step, which is the final step of the
     // aggregate after consuming all input rows. The finalize step converts the aggregate

@@ -21,6 +21,7 @@
 #include "exec/pipeline/pipeline_fwd.h"
 #include "runtime/current_thread.h"
 #include "simd/simd.h"
+#include "util/defer_op.h"
 namespace starrocks::pipeline {
 
 Status AggregateStreamingSinkOperator::prepare(RuntimeState* state) {
@@ -76,7 +77,9 @@ Status AggregateStreamingSinkOperator::push_chunk(RuntimeState* state, const Chu
     }};
     size_t chunk_size = chunk->num_rows();
     _aggregator->update_num_input_rows(chunk_size);
-    COUNTER_SET(_aggregator->input_row_count(), _aggregator->num_input_rows());
+    COUNTER_UPDATE(_aggregator->input_row_count(), chunk_size);
+    // @TODO why use set...
+    // COUNTER_SET(_aggregator->input_row_count(), _aggregator->num_input_rows());
 
     RETURN_IF_ERROR(_aggregator->evaluate_groupby_exprs(chunk.get()));
     if (_aggregator->streaming_preaggregation_mode() == TStreamingPreaggregationMode::FORCE_STREAMING) {
@@ -84,7 +87,7 @@ Status AggregateStreamingSinkOperator::push_chunk(RuntimeState* state, const Chu
     } else if (_aggregator->streaming_preaggregation_mode() == TStreamingPreaggregationMode::FORCE_PREAGGREGATION) {
         RETURN_IF_ERROR(_push_chunk_by_force_preaggregation(chunk, chunk->num_rows()));
     } else if (_aggregator->streaming_preaggregation_mode() == TStreamingPreaggregationMode::LIMITED_MEM) {
-        RETURN_IF_ERROR(_push_chunk_by_limited_memory(chunk, chunk_size));
+        RETURN_IF_ERROR(_push_chunk_by_limited_memory(state, chunk, chunk_size));
     } else {
         RETURN_IF_ERROR(_push_chunk_by_auto(chunk, chunk->num_rows()));
     }
@@ -300,13 +303,54 @@ Status AggregateStreamingSinkOperator::_push_chunk_by_auto(const ChunkPtr& chunk
     return Status::OK();
 }
 
-Status AggregateStreamingSinkOperator::_push_chunk_by_limited_memory(const ChunkPtr& chunk, const size_t chunk_size) {
-    if (_limited_mem_state.has_limited(*_aggregator)) {
-        RETURN_IF_ERROR(_push_chunk_by_force_streaming(chunk));
-        _aggregator->set_streaming_all_states(true);
-    } else {
-        RETURN_IF_ERROR(_push_chunk_by_auto(chunk, chunk_size));
+Status AggregateStreamingSinkOperator::_streaming_hash_map(RuntimeState* state) {
+    SCOPED_TIMER(_aggregator->streaming_timer());
+    // CHECK(_aggregator->is_hash_variant_available()) << "hash_variant must be avaiable";
+    // _aggregator->set_hash_variant_available(false);
+    // DeferOp defer([&]() {
+    //     _aggregator->set_hash_variant_available(true);
+    // });
+    // LOG(INFO) << "_streaming_hash_map begin";
+    // move all data in hash map to aggregator
+    // @TODO how to avoid contention
+    if (!_aggregator->it_hash().has_value()) {
+        _aggregator->hash_map_variant().visit(
+                [&](auto& hash_map_with_key) { _aggregator->it_hash() = _aggregator->_state_allocator.begin(); });
     }
+    
+    // size_t streaming_rows = 0;
+    while (!_aggregator->is_ht_eos()) {
+        auto chunk = std::make_shared<Chunk>();
+        RETURN_IF_ERROR(_aggregator->convert_hash_map_to_chunk(state->chunk_size(), &chunk));
+        // streaming_rows += chunk->num_rows();
+        _aggregator->offer_chunk_to_buffer(std::move(chunk));
+
+    }
+    // LOG(INFO) << "streaming rows: " << streaming_rows;
+    RETURN_IF_ERROR(_aggregator->reset_state(state, {}, nullptr, false));
+    // _aggregator->reset_state(state, {}, nullptr, false);
+    // LOG(INFO) << "_streaming_hash_map end";
+    return Status::OK();
+}
+
+// @TODO should consider aggregated ratio
+// 1. if highly aggregated, should convert hash map to chunk and create a new hash map, force_streaming is not a good choice
+Status AggregateStreamingSinkOperator::_push_chunk_by_limited_memory(RuntimeState* state, const ChunkPtr& chunk, const size_t chunk_size) {
+    if (config::test_limited_agg) {
+        if (_limited_mem_state.has_limited(*_aggregator)) {
+            CHECK(false) << "shouldn't run into this path";
+        } else {
+            RETURN_IF_ERROR(_push_chunk_by_auto(chunk, chunk_size));
+        }
+    } else {
+        if (_limited_mem_state.has_limited(*_aggregator)) {
+            RETURN_IF_ERROR(_push_chunk_by_force_streaming(chunk));
+            _aggregator->set_streaming_all_states(true);
+        } else {
+            RETURN_IF_ERROR(_push_chunk_by_auto(chunk, chunk_size));
+        }
+    }
+
     return Status::OK();
 }
 

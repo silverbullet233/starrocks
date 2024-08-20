@@ -16,6 +16,7 @@
 
 #include <utility>
 
+#include "common/config.h"
 #include "exec/aggregator.h"
 #include "exec/pipeline/operator.h"
 
@@ -35,7 +36,21 @@ public:
 
     bool has_output() const override { return false; }
     bool need_input() const override {
-        return !is_finished() && !_aggregator->is_streaming_all_states() && !_aggregator->is_chunk_buffer_full();
+        if (config::test_limited_agg) {
+            bool can_input = !_aggregator->is_ht_need_consume();
+            if (_aggregator->streaming_preaggregation_mode() == TStreamingPreaggregationMode::LIMITED_MEM) {
+                if (_limited_mem_state.has_limited(*_aggregator) && !_aggregator->is_ht_need_consume()) {
+                    _aggregator->set_ht_need_consume(true);
+                    can_input = false;
+                }
+            }
+            // LOG_EVERY_N(INFO, 10000) << "is_finished: " << is_finished() << " is_streaming_all_states: " << _aggregator->is_streaming_all_states()
+            //     << ", is_chunk_buffer_full:" << _aggregator->is_chunk_buffer_full() << ", is_sink_complete: " << _aggregator->is_sink_complete()
+            //     << ", debug_chunk_buffer: " << _aggregator->debug_chunk_buffer();
+            return !is_finished() && !_aggregator->is_streaming_all_states() && !_aggregator->is_chunk_buffer_full() && can_input;
+        } else {
+            return !is_finished() && !_aggregator->is_streaming_all_states() && !_aggregator->is_chunk_buffer_full();
+        }
     }
     bool is_finished() const override { return _is_finished || _aggregator->is_finished(); }
     Status set_finishing(RuntimeState* state) override;
@@ -62,8 +77,9 @@ private:
     Status _push_chunk_by_selective_preaggregation(const ChunkPtr& chunk, const size_t chunk_size, bool need_build);
 
     // Invoked by push_chunk  if current mode is TStreamingPreaggregationMode::LIMITED
-    Status _push_chunk_by_limited_memory(const ChunkPtr& chunk, const size_t chunk_size);
+    Status _push_chunk_by_limited_memory(RuntimeState* state, const ChunkPtr& chunk, const size_t chunk_size);
 
+    Status _streaming_hash_map(RuntimeState* state);
     // It is used to perform aggregation algorithms shared by
     // AggregateStreamingSourceOperator. It is
     // - prepared at SinkOperator::prepare(),
