@@ -943,6 +943,7 @@ private:
         }
 
         size_t chunk_size = columns[0]->size();
+        // @TODO avoid unpack
         ColumnPtr src_column = ColumnHelper::unpack_and_duplicate_const_column(chunk_size, columns[0]);
         ColumnPtr dest_column = src_column->clone_empty();
         if (columns[1]->only_null()) { // return empty array for non-null array by design, keep the same null with src.
