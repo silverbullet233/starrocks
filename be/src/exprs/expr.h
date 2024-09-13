@@ -66,6 +66,7 @@ class JITContext;
 class JITExpr;
 struct JitScore;
 struct LLVMDatum;
+class LambdaFunction;
 
 // This is the superclass of all expr evaluation nodes.
 class Expr {
@@ -197,6 +198,7 @@ public:
     static void close(const std::vector<Expr*>& exprs);
 
     virtual std::string debug_string() const;
+
     static std::string debug_string(const std::vector<Expr*>& exprs);
     static std::string debug_string(const std::vector<ExprContext*>& ctxs);
 
@@ -214,6 +216,8 @@ public:
 
     // Get the first column ref in expr.
     ColumnRef* get_column_ref();
+
+    virtual int get_column_refs(std::vector<ColumnRef*>* column_refs);
 
     StatusOr<LLVMDatum> generate_ir(ExprContext* context, JITContext* jit_ctx);
 
@@ -268,6 +272,8 @@ protected:
     friend class Literal;
     friend class ExprContext;
     friend class ColumnPredicateRewriter;
+    friend class LambdaFunction;
+    friend class ArrayMapExpr;
 
     explicit Expr(TypeDescriptor type);
     explicit Expr(const TExprNode& node);

@@ -77,6 +77,7 @@
 #include "exprs/match_expr.h"
 #include "exprs/placeholder_ref.h"
 #include "exprs/subfield_expr.h"
+#include "gutil/casts.h"
 #include "gutil/strings/substitute.h"
 #include "runtime/runtime_state.h"
 #include "types/logical_type.h"
@@ -598,7 +599,7 @@ std::string Expr::debug_string(const std::vector<Expr*>& exprs) {
     out << "[";
 
     for (int i = 0; i < exprs.size(); ++i) {
-        out << (i == 0 ? "" : " ") << exprs[i]->debug_string();
+        out << (i == 0 ? "" : "\n") << exprs[i]->debug_string();
     }
 
     out << "]";
@@ -721,6 +722,18 @@ ColumnRef* Expr::get_column_ref() {
         }
     }
     return nullptr;
+}
+
+int Expr::get_column_refs(std::vector<ColumnRef*>* column_refs) {
+    if (this->is_slotref()) {
+        column_refs->push_back(down_cast<ColumnRef*>(this));
+        return 1;
+    }
+    int ret = 0;
+    for (auto child: this->children()) {
+        ret += child->get_column_refs(column_refs);
+    }
+    return ret;
 }
 
 StatusOr<LLVMDatum> Expr::generate_ir(ExprContext* context, JITContext* jit_ctx) {
