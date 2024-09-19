@@ -730,7 +730,7 @@ int Expr::get_column_refs(std::vector<ColumnRef*>* column_refs) {
         return 1;
     }
     int ret = 0;
-    for (auto child: this->children()) {
+    for (auto child : this->children()) {
         ret += child->get_column_refs(column_refs);
     }
     return ret;
