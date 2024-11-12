@@ -56,8 +56,7 @@ public:
             pipeline::PipelineBuilderContext* context) override;
 
 private:
-    std::vector<SlotId> _common_expr_slot_ids;
-    std::vector<ExprContext*> _common_expr_ctxs;
+    std::map<SlotId, ExprContext*> _common_expr_ctxs;
 
     RuntimeProfile::Counter* _conjunct_evaluate_timer = nullptr;
 };

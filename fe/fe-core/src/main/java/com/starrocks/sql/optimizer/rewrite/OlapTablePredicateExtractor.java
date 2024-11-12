@@ -17,20 +17,12 @@ package com.starrocks.sql.optimizer.rewrite;
 import com.starrocks.catalog.Column;
 import com.starrocks.sql.optimizer.Utils;
 import com.starrocks.sql.optimizer.operator.OperatorType;
-import com.starrocks.sql.optimizer.operator.scalar.ArrayOperator;
-import com.starrocks.sql.optimizer.operator.scalar.ArraySliceOperator;
-import com.starrocks.sql.optimizer.operator.scalar.BetweenPredicateOperator;
-import com.starrocks.sql.optimizer.operator.scalar.BinaryPredicateOperator;
-import com.starrocks.sql.optimizer.operator.scalar.CallOperator;
 import com.starrocks.sql.optimizer.operator.scalar.ColumnRefOperator;
 import com.starrocks.sql.optimizer.operator.scalar.CompoundPredicateOperator;
 import com.starrocks.sql.optimizer.operator.scalar.ConstantOperator;
 import com.starrocks.sql.optimizer.operator.scalar.LambdaFunctionOperator;
-import com.starrocks.sql.optimizer.operator.scalar.MapOperator;
-import com.starrocks.sql.optimizer.operator.scalar.PredicateOperator;
 import com.starrocks.sql.optimizer.operator.scalar.ScalarOperator;
 import com.starrocks.sql.optimizer.operator.scalar.ScalarOperatorVisitor;
-import com.starrocks.sql.optimizer.operator.scalar.SubfieldOperator;
 
 import java.util.LinkedList;
 import java.util.List;
@@ -55,23 +47,14 @@ public class OlapTablePredicateExtractor {
     }
 
     public void extract(ScalarOperator op) {
-        // @TODO pending fix
-        // extract rule
-        // 1. single column predicate can push down
-        // 2. lambda function can't push down
-        // 3. multi column predicate can't pushdown (e,g. a > b)
-        // how about or??
-
-        // (a > b) or (c = 1), we must push a > b to scan?
-        // or ?
-
         if (op.getOpType().equals(OperatorType.COMPOUND)) {
             CompoundPredicateOperator operator = (CompoundPredicateOperator) op;
             switch (operator.getCompoundType()) {
                 case AND: {
                     List<ScalarOperator> conjuncts = Utils.extractConjuncts(operator);
                     for (ScalarOperator conjunct : conjuncts) {
-                        if (conjunct.accept(new CanFullyPushDownVisitor(), null)) {
+                        if (conjunct.accept(new CanFullyPushDownVisitor(colRefToColumnMetaMap),
+                                new CanFullyPushDownVisitorContext())) {
                             pushedPredicates.add(conjunct);
                         } else {
                             reservedPredicates.add(conjunct);
@@ -81,7 +64,8 @@ public class OlapTablePredicateExtractor {
                 }
                 case OR: {
                     for (ScalarOperator child : operator.getChildren()) {
-                        if (!child.accept(new CanFullyPushDownVisitor(), null)) {
+                        if (!child.accept(new CanFullyPushDownVisitor(colRefToColumnMetaMap),
+                                new CanFullyPushDownVisitorContext())) {
                             reservedPredicates.add(op);
                             return;
                         }
@@ -90,7 +74,8 @@ public class OlapTablePredicateExtractor {
                     return;
                 }
                 case NOT: {
-                    if (op.getChild(0).accept(new CanFullyPushDownVisitor(), null)) {
+                    if (op.getChild(0).accept(new CanFullyPushDownVisitor(colRefToColumnMetaMap),
+                            new CanFullyPushDownVisitorContext())) {
                         pushedPredicates.add(op);
                     } else {
                         reservedPredicates.add(op);
@@ -100,19 +85,24 @@ public class OlapTablePredicateExtractor {
             }
             return;
         }
-        if (op.accept(new CanFullyPushDownVisitor(), null)) {
+        if (op.accept(new CanFullyPushDownVisitor(colRefToColumnMetaMap), new CanFullyPushDownVisitorContext())) {
             pushedPredicates.add(op);
         } else {
             reservedPredicates.add(op);
         }
     }
 
-    private class CanFullyPushDownVisitor extends ScalarOperatorVisitor<Boolean, Void> {
-        public CanFullyPushDownVisitor() {
+    private class CanFullyPushDownVisitorContext {
+        public ColumnRefOperator usedColumn = null;
+    }
 
+    private class CanFullyPushDownVisitor extends ScalarOperatorVisitor<Boolean, CanFullyPushDownVisitorContext> {
+        private final Map<ColumnRefOperator, Column> columnRefOperatorColumnMap;
+        public CanFullyPushDownVisitor(Map<ColumnRefOperator, Column> columnRefOperatorColumnMap) {
+            this.columnRefOperatorColumnMap = columnRefOperatorColumnMap;
         }
 
-        private Boolean visitAllChildren(ScalarOperator op, Void context) {
+        private Boolean visitAllChildren(ScalarOperator op, CanFullyPushDownVisitorContext context) {
             for (ScalarOperator child : op.getChildren()) {
                 if (!child.accept(this, context)) {
                     return false;
@@ -122,62 +112,40 @@ public class OlapTablePredicateExtractor {
         }
 
         @Override
-        public Boolean visit(ScalarOperator scalarOperator, Void context) {
-            return false;
-        }
-
-        @Override
-        public Boolean visitConstant(ConstantOperator op, Void context) {
-            return true;
-        }
-
-        @Override
-        public Boolean visitVariableReference(ColumnRefOperator op, Void context) {
-            return true;
-        }
-
-        @Override
-        public Boolean visitSubfield(SubfieldOperator subfieldOperator, Void context) {
-            return true;
-        }
-
-        @Override
-        public Boolean visitArray(ArrayOperator array, Void context) {
-            return true;
-        }
-
-        @Override
-        public Boolean visitMap(MapOperator map, Void context) {
-            return true;
-        }
-
-        @Override
-        public Boolean visitArraySlice(ArraySliceOperator op, Void context) {
-            return true;
-        }
-
-        @Override
-        public Boolean visitCall(CallOperator call, Void context) {
-            return visitAllChildren(call, context);
-        }
-
-        @Override
-        public Boolean visitPredicate(PredicateOperator op, Void context) {
+        public Boolean visit(ScalarOperator op, CanFullyPushDownVisitorContext context) {
             return visitAllChildren(op, context);
         }
 
         @Override
-        public Boolean visitBetweenPredicate(BetweenPredicateOperator op, Void context) {
-            return visitPredicate(op, context);
+        public Boolean visitConstant(ConstantOperator op, CanFullyPushDownVisitorContext context) {
+            return true;
         }
 
         @Override
-        public Boolean visitBinaryPredicate(BinaryPredicateOperator predicate, Void context) {
-            return visitPredicate(predicate, context);
+        public Boolean visitVariableReference(ColumnRefOperator op, CanFullyPushDownVisitorContext context) {
+            if (columnRefOperatorColumnMap.containsKey(op)) {
+                if (context.usedColumn == null) {
+                    context.usedColumn = op;
+                } else if (!context.usedColumn.equals(op)) {
+                    return false;
+                }
+            }
+            return true;
         }
 
         @Override
-        public Boolean visitLambdaFunctionOperator(LambdaFunctionOperator op, Void context) {
+        public Boolean visitCompoundPredicate(CompoundPredicateOperator op, CanFullyPushDownVisitorContext context) {
+            for (ScalarOperator child : op.getChildren()) {
+                context.usedColumn = null;
+                if (!child.accept(this, context)) {
+                    return false;
+                }
+            }
+            return true;
+        }
+
+        @Override
+        public Boolean visitLambdaFunctionOperator(LambdaFunctionOperator op, CanFullyPushDownVisitorContext context) {
             return false;
         }
     }

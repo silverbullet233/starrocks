@@ -820,7 +820,7 @@ public class SessionVariable implements Serializable, Writable, Cloneable {
 
     public static final String DISABLE_GENERATED_COLUMN_REWRITE = "disable_generated_column_rewrite";
 
-    public static final String ENABLE_SCAN_PREDICATE_COMMON_EXPR_REUSE = "enable_scan_predicate_common_expr_reuse";
+    public static final String ENABLE_SCAN_PREDICATE_EXPR_REUSE = "enable_scan_predicate_expr_reuse";
 
     public static final List<String> DEPRECATED_VARIABLES = ImmutableList.<String>builder()
             .add(CODEGEN_LEVEL)
@@ -1603,8 +1603,8 @@ public class SessionVariable implements Serializable, Writable, Cloneable {
     @VarAttr(name = DISABLE_GENERATED_COLUMN_REWRITE, flag = VariableMgr.INVISIBLE)
     private boolean disableGeneratedColumnRewrite = false;
 
-    @VarAttr(name = ENABLE_SCAN_PREDICATE_COMMON_EXPR_REUSE)
-    private boolean enableScanPredicateCommonExprReuse = true;
+    @VarAttr(name = ENABLE_SCAN_PREDICATE_EXPR_REUSE)
+    private boolean enableScanPredicateExprReuse = true;
 
     public int getCboPruneJsonSubfieldDepth() {
         return cboPruneJsonSubfieldDepth;
@@ -4323,8 +4323,8 @@ public class SessionVariable implements Serializable, Writable, Cloneable {
         return disableGeneratedColumnRewrite;
     }
 
-    public boolean isEnableScanPredicateCommonExprReuse() {
-        return enableScanPredicateCommonExprReuse;
+    public boolean isEnableScanPredicateExprReuse() {
+        return enableScanPredicateExprReuse;
     }
 
     public int getConnectorIncrementalScanRangeNumber() {
