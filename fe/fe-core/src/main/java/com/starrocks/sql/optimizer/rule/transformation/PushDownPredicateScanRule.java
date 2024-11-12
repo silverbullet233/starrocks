@@ -28,12 +28,14 @@ import com.starrocks.sql.optimizer.operator.logical.LogicalScanOperator;
 import com.starrocks.sql.optimizer.operator.pattern.Pattern;
 import com.starrocks.sql.optimizer.operator.scalar.ColumnRefOperator;
 import com.starrocks.sql.optimizer.operator.scalar.ScalarOperator;
+import com.starrocks.sql.optimizer.rewrite.OlapTablePredicateExtractor;
 import com.starrocks.sql.optimizer.rewrite.ScalarOperatorRewriter;
 import com.starrocks.sql.optimizer.rewrite.ScalarRangePredicateExtractor;
 import com.starrocks.sql.optimizer.rule.RuleType;
 
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
@@ -85,6 +87,9 @@ public class PushDownPredicateScanRule extends TransformationRule {
         OptExpression scan = input.getInputs().get(0);
         LogicalScanOperator logicalScanOperator = (LogicalScanOperator) scan.getOp();
 
+        ScalarOperator scanPredicate = logicalScanOperator.getPredicate();
+        ScalarOperator filterPredicate = lfo.getPredicate();
+
         ScalarOperatorRewriter scalarOperatorRewriter = new ScalarOperatorRewriter();
         ScalarOperator predicates = Utils.compoundAnd(lfo.getPredicate(), logicalScanOperator.getPredicate());
 
@@ -98,6 +103,43 @@ public class PushDownPredicateScanRule extends TransformationRule {
         predicates = scalarOperatorRewriter.rewrite(predicates,
                 ScalarOperatorRewriter.DEFAULT_REWRITE_SCAN_PREDICATE_RULES);
         predicates = Utils.transTrue2Null(predicates);
+        // @TODO extract predicate, scan->project->filter
+        // @TODO how to avoid project->filter change to filter->project...
+        if (context.getSessionVariable().isEnableScanPredicateCommonExprReuse()) {
+            OlapTablePredicateExtractor olapTablePredicateExtractor =
+                    new OlapTablePredicateExtractor(logicalScanOperator.getColRefToColumnMetaMap());
+            // @TODO which predicate can pushdown?
+            olapTablePredicateExtractor.extract(predicates);
+            ScalarOperator pushedPredicates = olapTablePredicateExtractor.getPushedPredicates();
+            ScalarOperator reservedPredicates = olapTablePredicateExtractor.getReservedPredicates();
+            boolean newScanPredicateIsSame = Objects.equals(pushedPredicates, scanPredicate);
+            boolean newFilterPredicateIsSame = Objects.equals(filterPredicate, reservedPredicates);
+            if (newScanPredicateIsSame && newFilterPredicateIsSame) {
+                return Lists.newArrayList();
+            }
+            if (reservedPredicates != null) {
+                // scan -> filter -> project
+                // scan -> project -> filter ? should avoid rewrite
+                // @TODO projection?
+                Operator.Builder builder = OperatorBuilderFactory.build(logicalScanOperator);
+                LogicalScanOperator newScanOperator = (LogicalScanOperator) builder.withOperator(logicalScanOperator)
+                           .setPredicate(pushedPredicates).build();
+                newScanOperator.buildColumnFilters(pushedPredicates);
+                Map<ColumnRefOperator, ScalarOperator> projectMap =
+                        newScanOperator.getOutputColumns().stream()
+                                .collect(Collectors.toMap(Function.identity(), Function.identity()));
+                // @TODO should we change reserve predicate to column ref and add into project???
+                // @TODO should put filter into project
+                LogicalProjectOperator logicalProjectOperator = new LogicalProjectOperator(projectMap);
+                LogicalFilterOperator logicalFilterOperator = new LogicalFilterOperator(reservedPredicates);
+                // OptExpression project = OptExpression.create(logicalProjectOperator,
+                //         OptExpression.create(logicalFilterOperator, OptExpression.create(newScanOperator)));
+                OptExpression filter = OptExpression.create(logicalFilterOperator,
+                        OptExpression.create(logicalProjectOperator, OptExpression.create(newScanOperator)));
+                return Lists.newArrayList(filter);
+                // return Lists.newArrayList(project);
+            }
+        }
 
         // clone a new scan operator and rewrite predicate.
         Operator.Builder builder = OperatorBuilderFactory.build(logicalScanOperator);

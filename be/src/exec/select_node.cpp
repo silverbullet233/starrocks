@@ -51,6 +51,10 @@ SelectNode::~SelectNode() {
     }
 }
 
+Status SelectNode::init(const TPlanNode& tnode, RuntimeState* state) {
+    return Status::OK();
+}
+
 Status SelectNode::prepare(RuntimeState* state) {
     RETURN_IF_ERROR(ExecNode::prepare(state));
     _conjunct_evaluate_timer = ADD_TIMER(_runtime_profile, "ConjunctEvaluateTime");

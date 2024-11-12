@@ -50,6 +50,7 @@ import java.util.List;
  */
 public class SelectNode extends PlanNode {
     private static final Logger LOG = LogManager.getLogger(SelectNode.class);
+    // @TODO add common expr
 
     public SelectNode(PlanNodeId id, PlanNode child, List<Expr> conjuncts) {
         super(id, child.getTupleIds(), "SELECT");

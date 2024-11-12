@@ -62,6 +62,7 @@ public abstract class ScanNode extends PlanNode {
     protected DataCacheOptions dataCacheOptions = null;
     protected long warehouseId = WarehouseManager.DEFAULT_WAREHOUSE_ID;
     protected ScanOptimzeOption scanOptimzeOption;
+    // @TODO add common slot map
 
     public ScanNode(PlanNodeId id, TupleDescriptor desc, String planNodeName) {
         super(id, desc.getId().asList(), planNodeName);

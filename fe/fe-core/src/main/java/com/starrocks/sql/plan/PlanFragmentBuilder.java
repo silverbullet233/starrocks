@@ -851,6 +851,7 @@ public class PlanFragmentBuilder {
             scanNode.setWithoutColocateRequirement(node.isWithoutColocateRequirement());
             scanNode.setGtid(node.getGtid());
             scanNode.setVectorSearchOptions(node.getVectorSearchOptions());
+            // @TODO set common expr
             currentExecGroup.add(scanNode);
             // set tablet
             try {
