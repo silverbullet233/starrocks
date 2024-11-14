@@ -280,8 +280,6 @@ Status OlapChunkSource::_init_reader_params(const std::vector<std::unique_ptr<Ol
         GlobalDictPredicatesRewriter not_pushdown_predicate_rewriter(*_params.global_dictmaps);
         RETURN_IF_ERROR(not_pushdown_predicate_rewriter.rewrite_predicate(&_obj_pool, _non_pushdown_pred_tree));
     }
-    LOG(INFO) << "pushdown_pred_root: " << pushdown_pred_root.debug_string();
-    LOG(INFO) << "non_pushdown_pred_root: " << non_pushdown_pred_root.debug_string();
 
     // Range
     for (const auto& key_range : key_ranges) {
@@ -598,16 +596,12 @@ Status OlapChunkSource::_read_chunk_from_storage(RuntimeState* state, Chunk* chu
             SCOPED_TIMER(_expr_filter_timer);
             size_t nrows = chunk->num_rows();
             _selection.resize(nrows);
-            LOG(INFO) << "_non_pushdown_pred_tree: " << _non_pushdown_pred_tree.root().debug_string();
             RETURN_IF_ERROR(_non_pushdown_pred_tree.evaluate(chunk, _selection.data(), 0, nrows));
             chunk->filter(_selection);
             DCHECK_CHUNK(chunk);
         }
         if (!_scan_ctx->not_push_down_conjuncts().empty()) {
             SCOPED_TIMER(_expr_filter_timer);
-            for (auto expr: _scan_ctx->not_push_down_conjuncts()) {
-                LOG(INFO) << "not_push_down_conjunct: " << expr->root()->debug_string();
-            }
             RETURN_IF_ERROR(ExecNode::eval_conjuncts(_scan_ctx->not_push_down_conjuncts(), chunk));
             DCHECK_CHUNK(chunk);
         }

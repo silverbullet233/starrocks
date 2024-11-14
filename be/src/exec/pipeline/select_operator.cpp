@@ -85,10 +85,12 @@ bool SelectOperator::need_input() const {
 }
 
 Status SelectOperator::push_chunk(RuntimeState* state, const ChunkPtr& chunk) {
-    for (const auto& [slot_id, expr] : _common_exprs) {
-        // LOG(INFO) << "eval expr: " << expr->root()->debug_string();
-        ASSIGN_OR_RETURN(auto col, expr->evaluate(chunk.get()));
-        chunk->append_column(col, slot_id);
+    {
+        SCOPED_TIMER(_conjuncts_timer);
+        for (const auto& [slot_id, expr] : _common_exprs) {
+            ASSIGN_OR_RETURN(auto col, expr->evaluate(chunk.get()));
+            chunk->append_column(col, slot_id);
+        }
     }
     RETURN_IF_ERROR(eval_conjuncts_and_in_filters(_conjunct_ctxs, chunk.get()));
     _curr_chunk = chunk;
@@ -106,7 +108,7 @@ Status SelectOperatorFactory::prepare(RuntimeState* state) {
     RETURN_IF_ERROR(OperatorFactory::prepare(state));
     RETURN_IF_ERROR(Expr::prepare(_conjunct_ctxs, state));
     std::vector<ExprContext*> common_expr_ctxs;
-    for (const auto& [_, ctx]: _common_exprs) {
+    for (const auto& [_, ctx] : _common_exprs) {
         common_expr_ctxs.emplace_back(ctx);
     }
     RETURN_IF_ERROR(Expr::prepare(common_expr_ctxs, state));
