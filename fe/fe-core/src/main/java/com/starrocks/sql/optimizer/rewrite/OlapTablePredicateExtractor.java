@@ -29,6 +29,10 @@ import java.util.List;
 import java.util.Map;
 
 // extract olap table scan predicates to two parts: pushed-down to scan node, keep into filter node
+// extract the predicates of table scan and divide it into two part:
+// 1. pushedPredicates: simple single-column predicates that can use the optimizations of storage layer,
+// these should be evaluated inside ScanNode;
+// 2. reservedPredicates: other predicates which can be evaluated outside ScanNode;
 public class OlapTablePredicateExtractor {
     private Map<ColumnRefOperator, Column> colRefToColumnMetaMap;
     private List<ScalarOperator> pushedPredicates = new LinkedList<>();
@@ -96,6 +100,8 @@ public class OlapTablePredicateExtractor {
         public ColumnRefOperator usedColumn = null;
     }
 
+    // CanFullyPushDownVisitor is used to check whether a predicate can be pushed down into ScanNode.
+    // currently, we only allow single-column predicates that not contain lambda expressions to be pushed down.
     private class CanFullyPushDownVisitor extends ScalarOperatorVisitor<Boolean, CanFullyPushDownVisitorContext> {
         private final Map<ColumnRefOperator, Column> columnRefOperatorColumnMap;
         public CanFullyPushDownVisitor(Map<ColumnRefOperator, Column> columnRefOperatorColumnMap) {

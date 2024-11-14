@@ -1603,7 +1603,7 @@ public class SessionVariable implements Serializable, Writable, Cloneable {
     @VarAttr(name = DISABLE_GENERATED_COLUMN_REWRITE, flag = VariableMgr.INVISIBLE)
     private boolean disableGeneratedColumnRewrite = false;
 
-    @VarAttr(name = ENABLE_SCAN_PREDICATE_EXPR_REUSE)
+    @VarAttr(name = ENABLE_SCAN_PREDICATE_EXPR_REUSE, flag = VariableMgr.INVISIBLE)
     private boolean enableScanPredicateExprReuse = true;
 
     public int getCboPruneJsonSubfieldDepth() {

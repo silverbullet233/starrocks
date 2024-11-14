@@ -48,7 +48,6 @@ public class ScalarOperatorsReuseRule implements TreeRewriteRule {
                 if (opt.getOp().getPredicate() != null) {
                     Projection result = rewritePredicate(opt, context);
                     if (!result.getCommonSubOperatorMap().isEmpty()) {
-                        // rewrite success, we should optimize
                         PhysicalFilterOperator filter = (PhysicalFilterOperator) opt.getOp();
                         ScalarOperator newPredicate = result.getColumnRefMap().values().iterator().next();
                         filter.setPredicate(newPredicate);
