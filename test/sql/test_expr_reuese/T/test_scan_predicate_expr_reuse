@@ -1,0 +1,25 @@
+-- name: test_scan_predicate_expr_reuse
+CREATE TABLE `t` (
+  `v1` bigint NOT NULL COMMENT "",
+  `v2` bigint NULL COMMENT "",
+  `v3` bigint NULL COMMENT "",
+  `v4` array<string> NULL COMMENT ""
+) ENGINE=OLAP
+DUPLICATE KEY(`v1`)
+DISTRIBUTED BY RANDOM
+PROPERTIES (
+"replication_num" = "1"
+);
+insert into t select generate_series, generate_series, generate_series, array_repeat(cast(generate_series as string), 5) from table(generate_series(1, 100));
+
+select * from t where v1 = 10 and v2 = v3;
+select * from t where v1 = 10 or v2 = v3 order by v1 limit 3;
+select * from t where v1 = v3 and (v2 = 5 or v3 = 10) order by v1;
+select * from t where v1 < 10 and array_max(array_map(x->length(x) + v2, v4)) > 0 order by v1;
+
+set enable_scan_predicate_expr_reuse = false;
+select * from t where v1 = 10 and v2 = v3;
+select * from t where v1 = 10 or v2 = v3 order by v1 limit 3;
+select * from t where v1 = v3 and (v2 = 5 or v3 = 10) order by v1;
+select * from t where v1 < 10 and array_max(array_map(x->length(x) + v2, v4)) > 0 order by v1;
+
