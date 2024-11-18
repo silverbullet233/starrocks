@@ -28,17 +28,17 @@ import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
 
-// extract olap table scan predicates to two parts: pushed-down to scan node, keep into filter node
+// extract table scan predicates to two parts: pushed-down to scan node, keep into filter node
 // extract the predicates of table scan and divide it into two part:
 // 1. pushedPredicates: simple single-column predicates that can use the optimizations of storage layer,
 // these should be evaluated inside ScanNode;
 // 2. reservedPredicates: other predicates which can be evaluated outside ScanNode;
-public class OlapTablePredicateExtractor {
+public class TableScanPredicateExtractor {
     private Map<ColumnRefOperator, Column> colRefToColumnMetaMap;
     private List<ScalarOperator> pushedPredicates = new LinkedList<>();
     private List<ScalarOperator> reservedPredicates = new LinkedList<>();
 
-    public OlapTablePredicateExtractor(Map<ColumnRefOperator, Column> colRefToColumnMetaMap) {
+    public TableScanPredicateExtractor(Map<ColumnRefOperator, Column> colRefToColumnMetaMap) {
         this.colRefToColumnMetaMap = colRefToColumnMetaMap;
     }
 

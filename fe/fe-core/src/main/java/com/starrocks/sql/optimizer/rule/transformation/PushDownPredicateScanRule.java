@@ -28,9 +28,9 @@ import com.starrocks.sql.optimizer.operator.logical.LogicalScanOperator;
 import com.starrocks.sql.optimizer.operator.pattern.Pattern;
 import com.starrocks.sql.optimizer.operator.scalar.ColumnRefOperator;
 import com.starrocks.sql.optimizer.operator.scalar.ScalarOperator;
-import com.starrocks.sql.optimizer.rewrite.OlapTablePredicateExtractor;
 import com.starrocks.sql.optimizer.rewrite.ScalarOperatorRewriter;
 import com.starrocks.sql.optimizer.rewrite.ScalarRangePredicateExtractor;
+import com.starrocks.sql.optimizer.rewrite.TableScanPredicateExtractor;
 import com.starrocks.sql.optimizer.rule.RuleType;
 
 import java.util.List;
@@ -103,12 +103,14 @@ public class PushDownPredicateScanRule extends TransformationRule {
         predicates = scalarOperatorRewriter.rewrite(predicates,
                 ScalarOperatorRewriter.DEFAULT_REWRITE_SCAN_PREDICATE_RULES);
         predicates = Utils.transTrue2Null(predicates);
-        if (context.getSessionVariable().isEnableScanPredicateExprReuse()) {
-            OlapTablePredicateExtractor olapTablePredicateExtractor =
-                    new OlapTablePredicateExtractor(logicalScanOperator.getColRefToColumnMetaMap());
-            olapTablePredicateExtractor.extract(predicates);
-            ScalarOperator pushedPredicates = olapTablePredicateExtractor.getPushedPredicates();
-            ScalarOperator reservedPredicates = olapTablePredicateExtractor.getReservedPredicates();
+        if (context.getSessionVariable().isEnableScanPredicateExprReuse() && predicates != null) {
+            // @TODO: currently all tables use the same TableScanPredicateExtractor,
+            //  you can implement it seperately for each type of table if there is a special need.
+            TableScanPredicateExtractor tableScanPredicateExtractor =
+                    new TableScanPredicateExtractor(logicalScanOperator.getColRefToColumnMetaMap());
+            tableScanPredicateExtractor.extract(predicates);
+            ScalarOperator pushedPredicates = tableScanPredicateExtractor.getPushedPredicates();
+            ScalarOperator reservedPredicates = tableScanPredicateExtractor.getReservedPredicates();
             boolean newScanPredicateIsSame = Objects.equals(pushedPredicates, scanPredicate);
             boolean newFilterPredicateIsSame = Objects.equals(filterPredicate, reservedPredicates);
             // if nothing changed after extracting predicates, just return
