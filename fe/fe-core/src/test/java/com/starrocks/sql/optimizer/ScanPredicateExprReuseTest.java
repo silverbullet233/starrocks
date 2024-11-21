@@ -107,10 +107,10 @@ public class ScanPredicateExprReuseTest extends PlanTestBase {
                     "select * from input2 where a + b + c < 10;";
             String plan = getFragmentPlan(sql);
             assertContains(plan, "  1:SELECT\n" +
-                    "  |  predicates: 15: array_min + 1 + 15: array_min + 2 + 15: array_min + 3 < 10\n" +
+                    "  |  predicates: 13: array_min + 1 + 13: array_min + 2 + 13: array_min + 3 < 10\n" +
                     "  |    common sub expr:\n" +
-                    "  |    <slot 14> : array_map(<slot 4> -> <slot 4> + 1: v1, 3: v3)\n" +
-                    "  |    <slot 15> : array_min(14: array_map)");
+                    "  |    <slot 12> : array_map(<slot 4> -> <slot 4> + 1: v1, 3: v3)\n" +
+                    "  |    <slot 13> : array_min(12: array_map)");
         }
     }
 }

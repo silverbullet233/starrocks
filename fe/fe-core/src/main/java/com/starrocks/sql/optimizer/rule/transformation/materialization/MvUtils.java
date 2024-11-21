@@ -659,6 +659,25 @@ public class MvUtils {
                 return null;
             }
 
+            public Object visitLogicalFilter(OptExpression optExpression, ColumnRefSet context) {
+                List<ScalarOperator> conjuncts = Utils.extractConjuncts(optExpression.getOp().getPredicate());
+                for (ScalarOperator conjunct : conjuncts) {
+                    if (!isValidPredicate(conjunct)) {
+                        continue;
+                    }
+                    if (conjunct instanceof IsNullPredicateOperator) {
+                        IsNullPredicateOperator isNullPredicateOperator = conjunct.cast();
+                        if (isNullPredicateOperator.isNotNull() && context != null
+                                && context.containsAll(isNullPredicateOperator.getUsedColumns())) {
+                            // if column ref is join key and column ref is not null can be ignored for inner and semi join
+                            continue;
+                        }
+                    }
+                    result.add(conjunct);
+                }
+                return visit(optExpression, context);
+            }
+
             public Object visitLogicalJoin(OptExpression optExpression, ColumnRefSet context) {
                 LogicalJoinOperator joinOperator = optExpression.getOp().cast();
 

@@ -62,6 +62,7 @@ import com.starrocks.sql.optimizer.rule.transformation.OnPredicateMoveAroundRule
 import com.starrocks.sql.optimizer.rule.transformation.PartitionColumnMinMaxRewriteRule;
 import com.starrocks.sql.optimizer.rule.transformation.PartitionColumnValueOnlyOnScanRule;
 import com.starrocks.sql.optimizer.rule.transformation.PruneEmptyWindowRule;
+import com.starrocks.sql.optimizer.rule.transformation.PullUpScanPredicateRule;
 import com.starrocks.sql.optimizer.rule.transformation.PushDownAggregateGroupingSetsRule;
 import com.starrocks.sql.optimizer.rule.transformation.PushDownJoinOnExpressionToChildProject;
 import com.starrocks.sql.optimizer.rule.transformation.PushDownLimitRankingWindowRule;
@@ -624,6 +625,7 @@ public class Optimizer {
         ruleRewriteOnlyOnce(tree, rootTaskContext, RuleSetType.PARTITION_PRUNE);
         ruleRewriteIterative(tree, rootTaskContext, new RewriteMultiDistinctRule());
         ruleRewriteIterative(tree, rootTaskContext, RuleSetType.PUSH_DOWN_PREDICATE);
+        ruleRewriteIterative(tree, rootTaskContext, PullUpScanPredicateRule.OLAP_SCAN);
         ruleRewriteIterative(tree, rootTaskContext, RuleSetType.PRUNE_EMPTY_OPERATOR);
         ruleRewriteIterative(tree, rootTaskContext, new CTEProduceAddProjectionRule());
         ruleRewriteIterative(tree, rootTaskContext, RuleSetType.PRUNE_PROJECT);

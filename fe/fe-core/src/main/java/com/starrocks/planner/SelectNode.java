@@ -71,7 +71,9 @@ public class SelectNode extends PlanNode {
     protected void toThrift(TPlanNode msg) {
         msg.node_type = TPlanNodeType.SELECT_NODE;
         msg.select_node = new TSelectNode();
-        commonSlotMap.forEach((key, value) -> msg.select_node.putToCommon_slot_map(key.asInt(), value.treeToThrift()));
+        if (commonSlotMap != null) {
+            commonSlotMap.forEach((key, value) -> msg.select_node.putToCommon_slot_map(key.asInt(), value.treeToThrift()));
+        }
     }
 
     @Override

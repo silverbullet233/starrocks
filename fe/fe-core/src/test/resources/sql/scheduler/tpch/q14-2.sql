@@ -175,3 +175,4 @@ PLAN FRAGMENT 2
      cardinality=1
      avgRowSize=28.0
 [end]
+

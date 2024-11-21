@@ -103,7 +103,7 @@ public class PushDownPredicateScanRule extends TransformationRule {
         predicates = scalarOperatorRewriter.rewrite(predicates,
                 ScalarOperatorRewriter.DEFAULT_REWRITE_SCAN_PREDICATE_RULES);
         predicates = Utils.transTrue2Null(predicates);
-        if (context.getSessionVariable().isEnableScanPredicateExprReuse() && predicates != null) {
+        if (context.getSessionVariable().isEnableScanPredicateExprReuse() && predicates != null && false) {
             // @TODO: currently all tables use the same TableScanPredicateExtractor,
             //  you can implement it seperately for each type of table if there is a special need.
             TableScanPredicateExtractor tableScanPredicateExtractor =

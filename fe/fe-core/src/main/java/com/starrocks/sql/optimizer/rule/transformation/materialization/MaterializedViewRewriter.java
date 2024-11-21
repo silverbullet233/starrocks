@@ -92,6 +92,7 @@ import java.util.HashSet;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 import java.util.stream.Collectors;
@@ -334,6 +335,15 @@ public class MaterializedViewRewriter implements IMaterializedViewRewriter {
         } else if (queryOp instanceof LogicalAggregationOperator) {
             // consider aggregation
             return computeCompatibility(queryExpr.inputAt(0), mvExpr.inputAt(0));
+        } else if (queryOp instanceof LogicalFilterOperator && true) {
+            if (queryExpr.inputAt(0).getOp() instanceof LogicalScanOperator &&
+                    mvExpr.inputAt(0).getOp() instanceof LogicalScanOperator) {
+                ScalarOperator queryPredicate = queryOp.getPredicate();
+                ScalarOperator mvPredicate = mvOp.getPredicate();
+                return Objects.equals(queryPredicate, mvPredicate) &&
+                        computeCompatibility(queryExpr.inputAt(0), mvExpr.inputAt(0));
+            }
+            return false;
         } else {
             throw new UnsupportedOperationException("unsupported operator:" + queryOp.getClass());
         }

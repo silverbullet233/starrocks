@@ -19,6 +19,7 @@ import com.google.common.collect.Lists;
 import com.starrocks.sql.optimizer.OptExpression;
 import com.starrocks.sql.optimizer.OptimizerContext;
 import com.starrocks.sql.optimizer.operator.OperatorType;
+import com.starrocks.sql.optimizer.operator.logical.LogicalFilterOperator;
 import com.starrocks.sql.optimizer.operator.logical.LogicalOlapScanOperator;
 import com.starrocks.sql.optimizer.operator.pattern.Pattern;
 import com.starrocks.sql.optimizer.rewrite.OptOlapPartitionPruner;
@@ -54,25 +55,46 @@ import static com.starrocks.sql.optimizer.operator.OpRuleBit.OP_PARTITION_PRUNED
  */
 public class PartitionPruneRule extends TransformationRule {
 
+    public static final PartitionPruneRule PRUNE_BASED_ON_OLAP_SCAN_PREDICATE =
+            new PartitionPruneRule(Pattern.create(OperatorType.LOGICAL_OLAP_SCAN));
+    public static final PartitionPruneRule PRUNE_BASED_ON_OLAP_FILTER_PREDICATE =
+            new PartitionPruneRule(Pattern.create(OperatorType.LOGICAL_FILTER, OperatorType.LOGICAL_OLAP_SCAN));
+
     public PartitionPruneRule() {
         super(RuleType.TF_PARTITION_PRUNE, Pattern.create(OperatorType.LOGICAL_OLAP_SCAN));
     }
 
+    public PartitionPruneRule(Pattern pattern) {
+        super(RuleType.TF_PARTITION_PRUNE, pattern);
+    }
+
     @Override
     public List<OptExpression> transform(OptExpression input, OptimizerContext context) {
-        LogicalOlapScanOperator logicalOlapScanOperator = (LogicalOlapScanOperator) input.getOp();
-        if (logicalOlapScanOperator.isOpRuleBitSet(OP_PARTITION_PRUNED)) {
+        if (input.getOp() instanceof LogicalOlapScanOperator) {
+            LogicalOlapScanOperator logicalOlapScanOperator = (LogicalOlapScanOperator) input.getOp();
+            if (logicalOlapScanOperator.isOpRuleBitSet(OP_PARTITION_PRUNED)) {
+                return Collections.emptyList();
+            }
+
+            LogicalOlapScanOperator prunedOlapScanOperator = null;
+            if (logicalOlapScanOperator.getSelectedPartitionId() == null) {
+                prunedOlapScanOperator = OptOlapPartitionPruner.prunePartitions(logicalOlapScanOperator);
+            } else {
+                // do merge pruned partitions with new pruned partitions
+                prunedOlapScanOperator = OptOlapPartitionPruner.mergePartitionPrune(logicalOlapScanOperator);
+            }
+            prunedOlapScanOperator.setOpRuleBit(OP_PARTITION_PRUNED);
+            return Lists.newArrayList(OptExpression.create(prunedOlapScanOperator, input.getInputs()));
+        } else {
+            LogicalFilterOperator logicalFilterOperator = (LogicalFilterOperator) input.getOp();
+            if (logicalFilterOperator.getPredicate() == null || logicalFilterOperator.isOpRuleBitSet(OP_PARTITION_PRUNED)) {
+                return Collections.emptyList();
+            }
+            // create a new olap scan operator, add filter predicate into it and prune
+            // get a new olap scan operator, set partitions to old scan operator
+            LogicalOlapScanOperator logicalOlapScanOperator = (LogicalOlapScanOperator) input.getInputs().get(0).getOp();
+
             return Collections.emptyList();
         }
-
-        LogicalOlapScanOperator prunedOlapScanOperator = null;
-        if (logicalOlapScanOperator.getSelectedPartitionId() == null) {
-            prunedOlapScanOperator = OptOlapPartitionPruner.prunePartitions(logicalOlapScanOperator);
-        } else {
-            // do merge pruned partitions with new pruned partitions
-            prunedOlapScanOperator = OptOlapPartitionPruner.mergePartitionPrune(logicalOlapScanOperator);
-        }
-        prunedOlapScanOperator.setOpRuleBit(OP_PARTITION_PRUNED);
-        return Lists.newArrayList(OptExpression.create(prunedOlapScanOperator, input.getInputs()));
     }
 }

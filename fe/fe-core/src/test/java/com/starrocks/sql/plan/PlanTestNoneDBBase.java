@@ -507,6 +507,7 @@ public class PlanTestNoneDBBase {
         if (CollectionUtils.isNotEmpty(errorCollector)) {
             StringJoiner joiner = new StringJoiner("\n");
             errorCollector.stream().forEach(e -> joiner.add(e.getMessage()));
+            System.out.println(filename);
             Assert.fail(joiner.toString());
         }
     }
@@ -589,6 +590,7 @@ public class PlanTestNoneDBBase {
                         Assert.assertEquals(exceptString.toString(), ex.getMessage());
                         return true;
                     }
+                    ex.printStackTrace(System.out);
                     Assert.fail("Scheduling failed, message: " + ex.getMessage() + ", sql: " + sql);
                 }
 
