@@ -20,6 +20,7 @@
 #include "column/vectorized_fwd.h"
 #include "common/statusor.h"
 #include "util/slice.h"
+#include "util/string_view.h"
 
 namespace starrocks {
 
@@ -39,6 +40,17 @@ public:
         BinaryDataProxyContainer(const BinaryColumnBase& column) : _column(column) {}
 
         Slice operator[](size_t index) const { return _column.get_slice(index); }
+
+        size_t size() const { return _column.size(); }
+
+    private:
+        const BinaryColumnBase& _column;
+    };
+
+    struct BinaryDataProxyContainerV2 {
+        BinaryDataProxyContainerV2(const BinaryColumnBase& column) : _column(column) {}
+
+        StringView operator[](size_t index) const { return _column.get_view(index); }
 
         size_t size() const { return _column.size(); }
 
@@ -135,6 +147,9 @@ public:
 
     Slice get_slice(size_t idx) const {
         return Slice(_bytes.data() + _offsets[idx], _offsets[idx + 1] - _offsets[idx]);
+    }
+    StringView get_view(size_t idx) const {
+        return StringView(_bytes.data() + _offsets[idx], _offsets[idx + 1] - _offsets[idx]);
     }
 
     void check_or_die() const override;
@@ -278,6 +293,7 @@ public:
     }
 
     const BinaryDataProxyContainer& get_proxy_data() const { return _immuable_container; }
+    const BinaryDataProxyContainerV2& get_proxy_data_v2() const { return _immuable_container_v2; }
 
     Bytes& get_bytes() { return _bytes; }
 
@@ -346,6 +362,7 @@ private:
     mutable Container _slices;
     mutable bool _slices_cache = false;
     BinaryDataProxyContainer _immuable_container = BinaryDataProxyContainer(*this);
+    BinaryDataProxyContainerV2 _immuable_container_v2 = BinaryDataProxyContainerV2(*this);
 };
 
 using Offsets = BinaryColumnBase<uint32_t>::Offsets;

@@ -456,6 +456,7 @@ set(EXEC_FILES
         ./util/scoped_cleanup_test.cpp
         ./util/string_parser_test.cpp
         ./util/string_util_test.cpp
+        ./util/string_view_test.cpp
         ./util/tdigest_test.cpp
         ./util/thread_test.cpp
         ./util/threadpool_test.cpp

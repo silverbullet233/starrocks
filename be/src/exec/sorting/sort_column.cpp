@@ -170,12 +170,18 @@ public:
             DCHECK_GE(column.size(), _permutation.size());
         }
 
-        using ItemType = InlinePermuteItem<Slice>;
+        // using ItemType = InlinePermuteItem<Slice>;
+        using ItemType = InlinePermuteItem<StringView>;
         auto cmp = [&](const ItemType& lhs, const ItemType& rhs) -> int {
-            return lhs.inline_value.compare(rhs.inline_value);
+            // return lhs.inline_value.compare(rhs.inline_value);
+            if (lhs.inline_value == rhs.inline_value) {
+                return 0;
+            }
+            return lhs.inline_value > rhs.inline_value ? 1: -1;
         };
 
-        auto inlined = create_inline_permutation<Slice, IS_RANGES>(_permutation, column.get_proxy_data());
+        // auto inlined = create_inline_permutation<Slice, IS_RANGES>(_permutation, column.get_proxy_data());
+        auto inlined = create_inline_permutation<StringView, IS_RANGES>(_permutation, column.get_proxy_data_v2());
         RETURN_IF_ERROR(sort_and_tie_helper(_cancel, &column, _sort_desc.asc_order(), inlined, _tie, cmp,
                                             _range_or_ranges, _build_tie));
         restore_inline_permutation(inlined, _permutation);
@@ -283,20 +289,28 @@ public:
         using ColumnType = BinaryColumnBase<T>;
 
         if (_need_inline_value()) {
-            using ItemType = CompactChunkItem<Slice>;
-            using Container = typename BinaryColumnBase<T>::BinaryDataProxyContainer;
+            // using ItemType = CompactChunkItem<Slice>;
+            using ItemType = CompactChunkItem<StringView>;
+            using Container = typename BinaryColumnBase<T>::BinaryDataProxyContainerV2;
 
             auto cmp = [&](const ItemType& lhs, const ItemType& rhs) -> int {
-                return lhs.inline_value.compare(rhs.inline_value);
+                // return lhs.inline_value.compare(rhs.inline_value);
+                if (lhs.inline_value == rhs.inline_value) {
+                    return 0;
+                }
+                return lhs.inline_value > rhs.inline_value ? 1 : -1;
             };
 
             std::vector<const Container*> containers;
             for (const auto& col : _vertical_columns) {
                 const auto real = down_cast<const ColumnType*>(col.get());
-                containers.push_back(&real->get_proxy_data());
+                // containers.push_back(&real->get_proxy_data());
+                containers.push_back(&real->get_proxy_data_v2());
             }
 
-            auto inlined = _create_inlined_permutation<Slice>(containers);
+            // auto inlined = _create_inlined_permutation<Slice>(containers);
+            auto inlined = _create_inlined_permutation<StringView>(containers);
+            // @TODO
             RETURN_IF_ERROR(sort_and_tie_helper(_cancel, &column, _sort_desc.asc_order(), inlined, _tie, cmp, _range,
                                                 _build_tie, _limit, &_pruned_limit));
             _restore_inlined_permutation(inlined);
