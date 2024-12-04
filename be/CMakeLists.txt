@@ -108,6 +108,8 @@ else()
     set(WITH_TENANN "OFF")
 endif()
 
+add_definitions(-DSV_TEST)
+
 message(STATUS "WITH TENANN is: ${WITH_TENANN}")
 
 # Check gcc

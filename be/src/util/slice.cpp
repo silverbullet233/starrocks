@@ -35,6 +35,7 @@
 #include "util/slice.h"
 
 #include "util/faststring.h"
+#include "util/string_view.h"
 
 namespace starrocks {
 
@@ -55,6 +56,8 @@ Slice::Slice(const faststring& s)
         : // NOLINT(runtime/explicit)
           data((char*)(s.data())),
           size(s.size()) {}
+
+Slice::Slice(const StringView& sv):  data((char*)(sv.get_data())), size(sv.get_size()) {}
 
 void Slice::init() {
     memset(_slice_max_value_data, 0xff, sizeof(_slice_max_value_data));

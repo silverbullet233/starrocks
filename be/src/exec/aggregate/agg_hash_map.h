@@ -31,9 +31,11 @@
 #include "gutil/strings/fastmem.h"
 #include "runtime/mem_pool.h"
 #include "util/fixed_hash_map.h"
+#include "util/hash.h"
 #include "util/hash_util.hpp"
 #include "util/phmap/phmap.h"
 #include "util/phmap/phmap_dump.h"
+#include "util/string_view.h"
 
 namespace starrocks {
 
@@ -57,6 +59,8 @@ template <PhmapSeed seed>
 using TimeStampAggHashMap = phmap::flat_hash_map<TimestampValue, AggDataPtr, StdHashWithSeed<TimestampValue, seed>>;
 template <PhmapSeed seed>
 using SliceAggHashMap = phmap::flat_hash_map<Slice, AggDataPtr, SliceHashWithSeed<seed>, SliceEqual>;
+template <PhmapSeed seed>
+using StringViewAggHashMap = phmap::flat_hash_map<StringView, AggDataPtr, StringViewHashWithSeed<seed>, StringViewEqual>;
 
 // ==================
 // one level fixed size slice hash map
@@ -80,6 +84,12 @@ template <PhmapSeed seed>
 using SliceAggTwoLevelHashMap =
         phmap::parallel_flat_hash_map<Slice, AggDataPtr, SliceHashWithSeed<seed>, SliceEqual,
                                       phmap::priv::Allocator<phmap::priv::Pair<const Slice, AggDataPtr>>, PHMAPN>;
+template <PhmapSeed seed>
+using StringViewAggTwoLevelHashMap =
+        phmap::parallel_flat_hash_map<StringView, AggDataPtr, StringViewHashWithSeed<seed>, StringViewEqual,
+                                      phmap::priv::Allocator<phmap::priv::Pair<const StringView, AggDataPtr>>, PHMAPN>;
+
+
 
 static_assert(sizeof(AggDataPtr) == sizeof(size_t));
 #define AGG_HASH_MAP_PRECOMPUTE_HASH_VALUES(column, prefetch_dist)              \

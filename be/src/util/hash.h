@@ -4,6 +4,7 @@
 
 #include "util/hash_util.hpp"
 #include "util/slice.h"
+#include "util/string_view.h"
 #include "util/unaligned_access.h"
 #if defined(__aarch64__)
 #include "arm_acle.h"
@@ -202,6 +203,38 @@ public:
         return crc_hash_64(slice.data, static_cast<int32_t>(slice.size), CRC_HASH_SEEDS::CRC_HASH_SEED2);
     }
 };
+
+class StringViewHash {
+public:
+    std::size_t operator()(const StringView& sv) const {
+        return crc_hash_64(sv.get_data(), sv.get_size(), CRC_HASH_SEEDS::CRC_HASH_SEED1);
+    }
+};
+
+template <PhmapSeed>
+class StringViewHashWithSeed {
+public:
+    std::size_t operator()(const StringView& sv) const;
+};
+
+template <>
+class StringViewHashWithSeed<PhmapSeed1> {
+public:
+    std::size_t operator()(const StringView& sv) const {
+        return crc_hash_64(sv.get_data(), static_cast<int32_t>(sv.get_size()), CRC_HASH_SEEDS::CRC_HASH_SEED1);
+    }
+};
+
+template <>
+class StringViewHashWithSeed<PhmapSeed2> {
+public:
+    std::size_t operator()(const StringView& sv) const {
+        return crc_hash_64(sv.get_data(), static_cast<int32_t>(sv.get_size()), CRC_HASH_SEEDS::CRC_HASH_SEED2);
+    }
+};
+
+
+
 
 template <class T>
 class StdHash {

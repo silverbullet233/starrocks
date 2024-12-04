@@ -50,6 +50,7 @@
 namespace starrocks {
 
 class faststring;
+class StringView;
 
 /// @brief A wrapper around externally allocated data.
 ///
@@ -94,6 +95,7 @@ public:
               size(s.size()) {}
 
     Slice(const faststring& s);
+    Slice(const StringView& sv);
 
     /// Create a slice that refers to a C-string s[0,strlen(s)-1].
     Slice(const char* s)

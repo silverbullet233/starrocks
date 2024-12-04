@@ -8,7 +8,6 @@
 #include "gutil/strings/fastmem.h"
 #include "gutil/port.h"
 #include "util/memcmp.h"
-#include "util/hash.h"
 
 namespace starrocks {
 
@@ -148,12 +147,7 @@ inline bool operator>=(const StringView& x, const StringView& y) {
 }
 // how to hash
 
-class StringViewHash {
-public:
-    std::size_t operator()(const StringView& sv) const {
-        return crc_hash_64(sv.get_data(), sv.get_size(), CRC_HASH_SEEDS::CRC_HASH_SEED1);
-    }
-};
+
 
 class StringViewEqual {
 public:

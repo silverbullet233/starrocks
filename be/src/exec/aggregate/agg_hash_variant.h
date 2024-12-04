@@ -146,14 +146,32 @@ using NullTimeStampAggHashMapWithOneNumberKey =
         AggHashMapWithOneNullableNumberKey<TYPE_DATETIME, TimeStampAggHashMap<seed>>;
 
 // For string type, we use slice type as hashmap key
+#ifndef SV_TEST
 template <PhmapSeed seed>
 using OneStringAggHashMap = AggHashMapWithOneStringKey<SliceAggHashMap<seed>>;
 template <PhmapSeed seed>
 using NullOneStringAggHashMap = AggHashMapWithOneNullableStringKey<SliceAggHashMap<seed>>;
 template <PhmapSeed seed>
 using SerializedKeyAggHashMap = AggHashMapWithSerializedKey<SliceAggHashMap<seed>>;
+#else
+template <PhmapSeed seed>
+using OneStringAggHashMap = AggHashMapWithOneStringKey<StringViewAggHashMap<seed>>;
+template <PhmapSeed seed>
+using NullOneStringAggHashMap = AggHashMapWithOneNullableStringKey<StringViewAggHashMap<seed>>;
+template <PhmapSeed seed>
+using SerializedKeyAggHashMap = AggHashMapWithSerializedKey<StringViewAggHashMap<seed>>;
+#endif
+
+
+#ifndef SV_TEST
 template <PhmapSeed seed>
 using SerializedKeyTwoLevelAggHashMap = AggHashMapWithSerializedKey<SliceAggTwoLevelHashMap<seed>>;
+#else
+template <PhmapSeed seed>
+using SerializedKeyTwoLevelAggHashMap = AggHashMapWithSerializedKey<StringViewAggTwoLevelHashMap<seed>>;
+#endif
+
+
 template <PhmapSeed seed>
 using Int32TwoLevelAggHashMapWithOneNumberKey = AggHashMapWithOneNumberKey<TYPE_INT, Int32AggTwoLevelHashMap<seed>>;
 
