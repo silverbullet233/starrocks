@@ -34,6 +34,7 @@ add_library(Column STATIC
         nullable_column.cpp
         schema.cpp
         binary_column.cpp
+        string_column.cpp
         object_column.cpp
         decimalv3_column.cpp
         column_visitor.cpp

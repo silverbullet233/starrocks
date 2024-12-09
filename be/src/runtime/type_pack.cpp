@@ -67,10 +67,18 @@ template <LogicalType LT>
 struct Packer<LT, BinaryOrStringLTGuard<LT>> {
     using CppType = RunTimeCppType<LT>;
     static void pack(faststring* s, const Datum& datum) {
+        #ifndef SV_TEST
         static_assert(std::is_same_v<Slice, CppType>, "CppType must be Slice");
         const auto& slice = datum.get<Slice>();
         put_fixed64_le(s, slice.size);
         s->append(slice.data, slice.size);
+        #else
+        static_assert(std::is_same_v<StringView, CppType>, "CppType must be Slice");
+        const auto& slice = datum.get<Slice>();
+        put_fixed64_le(s, slice.size);
+        s->append(slice.data, slice.size);
+ 
+        #endif
     }
 };
 

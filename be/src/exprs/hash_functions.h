@@ -62,7 +62,7 @@ inline StatusOr<ColumnPtr> HashFunctions::murmur_hash3_32(FunctionContext* conte
             }
 
             auto slice = viewer.value(row);
-            seed = HashUtil::murmur_hash3_32(slice.data, slice.size, seed);
+            seed = HashUtil::murmur_hash3_32(slice.get_data(), slice.get_size(), seed);
         }
 
         builder.append(seed, has_null);
@@ -98,7 +98,7 @@ inline StatusOr<ColumnPtr> HashFunctions::xx_hash3_64(FunctionContext* context, 
 
             auto slice = viewer.value(row);
             uint64_t seed = seeds_vec[row];
-            seeds_vec[row] = HashUtil::xx_hash3_64(slice.data, slice.size, seed);
+            seeds_vec[row] = HashUtil::xx_hash3_64(slice.get_data(), slice.get_size(), seed);
         }
     }
 
@@ -142,7 +142,7 @@ inline StatusOr<ColumnPtr> HashFunctions::xx_hash3_128(FunctionContext* context,
             }
 
             auto slice = viewer.value(row);
-            XXH_errorcode code = XXH3_128bits_update(&(states[row]), slice.data, slice.size);
+            XXH_errorcode code = XXH3_128bits_update(&(states[row]), slice.get_data(), slice.get_size());
             if (code != XXH_OK) {
                 return Status::InternalError("update xxh3 state failed");
             }

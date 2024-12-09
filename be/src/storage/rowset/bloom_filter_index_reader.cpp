@@ -106,7 +106,7 @@ Status BloomFilterIndexIterator::read_bloom_filter(rowid_t ordinal, std::unique_
     // construct bloom filter
     RETURN_IF_ERROR(BloomFilter::create(_reader->_algorithm, bf));
 
-    RETURN_IF_ERROR((*bf)->init(value.data, value.size, _reader->_hash_strategy));
+    RETURN_IF_ERROR((*bf)->init(value.get_data(), value.get_size(), _reader->_hash_strategy));
     return Status::OK();
 }
 

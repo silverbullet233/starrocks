@@ -322,7 +322,7 @@ Status ZoneMapIndexReader::_do_load(const IndexReadOptions& opts, const ZoneMapI
 
         ColumnViewer<TYPE_VARCHAR> viewer(column);
         auto value = viewer.value(0);
-        if (!_page_zone_maps[i].ParseFromArray(value.data, value.size)) {
+        if (!_page_zone_maps[i].ParseFromArray(value.get_data(), value.get_size())) {
             return Status::Corruption("Failed to parse zone map");
         }
 

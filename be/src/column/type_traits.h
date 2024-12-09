@@ -22,6 +22,7 @@
 #include "column/nullable_column.h"
 #include "column/object_column.h"
 #include "column/struct_column.h"
+#include "column/string_column.h"
 #include "column/vectorized_fwd.h"
 #include "types/constexpr.h"
 #include "types/logical_type.h"
@@ -214,16 +215,28 @@ struct RunTimeTypeTraits<TYPE_NULL> {
 
 template <>
 struct RunTimeTypeTraits<TYPE_CHAR> {
+#ifndef SV_TEST
     using CppType = Slice;
     using ColumnType = BinaryColumn;
     using ProxyContainerType = ColumnType::BinaryDataProxyContainer;
+#else
+    using CppType = StringView;
+    using ColumnType = StringColumn;
+    using ProxyContainerType = ColumnType::Container;
+#endif
 };
 
 template <>
 struct RunTimeTypeTraits<TYPE_VARCHAR> {
+#ifndef SV_TEST
     using CppType = Slice;
     using ColumnType = BinaryColumn;
     using ProxyContainerType = ColumnType::BinaryDataProxyContainer;
+#else
+    using CppType = StringView;
+    using ColumnType = StringColumn;
+    using ProxyContainerType = ColumnType::Container;
+#endif
 };
 
 template <>
@@ -277,16 +290,28 @@ struct RunTimeTypeTraits<TYPE_JSON> {
 
 template <>
 struct RunTimeTypeTraits<TYPE_BINARY> {
+#ifndef SV_TEST
     using CppType = Slice;
     using ColumnType = BinaryColumn;
     using ProxyContainerType = ColumnType::BinaryDataProxyContainer;
+#else
+    using CppType = StringView;
+    using ColumnType = StringColumn;
+    using ProxyContainerType = ColumnType::Container;
+#endif
 };
 
 template <>
 struct RunTimeTypeTraits<TYPE_VARBINARY> {
+#ifndef SV_TEST
     using CppType = Slice;
     using ColumnType = BinaryColumn;
     using ProxyContainerType = ColumnType::BinaryDataProxyContainer;
+#else
+    using CppType = StringView;
+    using ColumnType = StringColumn;
+    using ProxyContainerType = ColumnType::Container;
+#endif
 };
 
 template <>

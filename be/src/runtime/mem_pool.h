@@ -111,6 +111,7 @@ public:
     /// Frees all chunks of memory and subtracts the total allocated bytes
     /// from the registered limits.
     ~MemPool();
+    // @TODO support move sematics
 
     /// Allocates a section of memory of 'size' bytes with DEFAULT_ALIGNMENT at the end
     /// of the the current chunk. Creates a new chunk if there aren't any chunks

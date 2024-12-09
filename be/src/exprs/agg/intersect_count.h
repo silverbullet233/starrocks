@@ -77,7 +77,7 @@ public:
                 if constexpr (LT != TYPE_VARCHAR && LT != TYPE_CHAR) {
                     intersect.add_key(arg_value);
                 } else {
-                    std::string key(arg_value.data, arg_value.size);
+                    std::string key(arg_value.get_data(), arg_value.get_size());
                     intersect.add_key(key);
                 }
             }
@@ -95,7 +95,7 @@ public:
         if constexpr (LT != TYPE_VARCHAR && LT != TYPE_CHAR) {
             intersect.update(key_value, bimtap_value);
         } else {
-            std::string key(key_value.data, key_value.size);
+            std::string key(key_value.get_data(), key_value.get_size());
             intersect.update(key, bimtap_value);
         }
     }
@@ -133,7 +133,7 @@ public:
             if constexpr (LT != TYPE_VARCHAR && LT != TYPE_CHAR) {
                 intersect.add_key(arg_value);
             } else {
-                std::string key(arg_value.data, arg_value.size);
+                std::string key(arg_value.get_data(), arg_value.get_size());
                 intersect.add_key(key);
             }
         }
@@ -154,7 +154,7 @@ public:
             if constexpr (LT != TYPE_VARCHAR && LT != TYPE_CHAR) {
                 intersect_per_row.update(key_value, bimtap_value);
             } else {
-                std::string key(key_value.data, key_value.size);
+                std::string key(key_value.get_data(), key_value.get_size());
                 intersect_per_row.update(key, bimtap_value);
             }
 

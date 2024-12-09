@@ -653,14 +653,14 @@ StatusOr<ColumnPtr> MathFunctions::conv_string(FunctionContext* context, const C
         int8_t src_base_value = src_base.value(row);
         int8_t dest_base_value = dest_base.value(row);
         if (std::abs(src_base_value) < MIN_BASE || std::abs(src_base_value) > MAX_BASE ||
-            std::abs(dest_base_value) < MIN_BASE || std::abs(dest_base_value) > MAX_BASE) {
+        std::abs(dest_base_value) < MIN_BASE || std::abs(dest_base_value) > MAX_BASE) {
             result.append_null();
             continue;
         }
         bool is_signed = src_base_value < 0;
-        char* data_ptr = reinterpret_cast<char*>(string_value.data);
-        int digit_start_offset = StringParser::skip_leading_whitespace(data_ptr, string_value.size);
-        if (digit_start_offset == string_value.size) {
+        const char* data_ptr = reinterpret_cast<const char*>(string_value.get_data());
+        int digit_start_offset = StringParser::skip_leading_whitespace(data_ptr, string_value.get_size());
+        if (digit_start_offset == string_value.get_size()) {
             result.append(Slice("0", 1));
             continue;
         }
@@ -668,7 +668,7 @@ StatusOr<ColumnPtr> MathFunctions::conv_string(FunctionContext* context, const C
         digit_start_offset += negative;
         StringParser::ParseResult parse_res;
         auto decimal64_num = StringParser::string_to_int<uint64_t>(data_ptr + digit_start_offset,
-                                                                   string_value.size - digit_start_offset,
+                                                                   string_value.get_size() - digit_start_offset,
                                                                    std::abs(src_base_value), &parse_res);
         if (parse_res == StringParser::PARSE_SUCCESS) {
             if (is_signed) {

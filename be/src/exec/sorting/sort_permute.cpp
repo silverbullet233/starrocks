@@ -217,6 +217,10 @@ public:
         return Status::OK();
     }
 
+    Status do_visit(StringColumn* dst) {
+        return Status::NotSupported("not support");
+    }
+
     template <typename T>
     Status do_visit(ObjectColumn<T>* dst) {
         for (auto& p : _perm) {

@@ -390,8 +390,10 @@ Status LevelBuilder::_write_byte_array_column_chunk(const LevelBuilderContext& c
                                                     const CallbackFunction& write_leaf_callback) {
     const auto* data_col = down_cast<const RunTimeColumnType<lt>*>(ColumnHelper::get_data_column(col.get()));
     const auto* null_col = get_raw_null_column(col);
+    #ifndef SV_TEST
     auto& vo = data_col->get_offset();
     auto& vb = data_col->get_bytes();
+    #endif
 
     // Use the rep_levels in the context from caller since node is primitive.
     auto& rep_levels = ctx._rep_levels;
@@ -402,8 +404,13 @@ Status LevelBuilder::_write_byte_array_column_chunk(const LevelBuilderContext& c
     DeferOp defer([&] { delete[] values; });
 
     for (size_t i = 0; i < col->size(); i++) {
+        #ifndef SV_TEST
         values[i].len = static_cast<uint32_t>(vo[i + 1] - vo[i]);
         values[i].ptr = reinterpret_cast<const uint8_t*>(vb.data() + vo[i]);
+        #else
+        values[i].len = data_col->get_view(i).get_size();
+        values[i].ptr = reinterpret_cast<const uint8_t*>(data_col->get_view(i).get_data());
+        #endif
     }
 
     write_leaf_callback(LevelBuilderResult{

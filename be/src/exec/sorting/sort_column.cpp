@@ -189,6 +189,10 @@ public:
         return Status::OK();
     }
 
+    Status do_visit(const StringColumn& column) {
+        return Status::NotSupported("not support");
+    }
+
     template <typename T>
     Status do_visit(const FixedLengthColumnBase<T>& column) {
         if constexpr (!IS_RANGES) {
@@ -328,6 +332,10 @@ public:
         }
         _prune_limit();
         return Status::OK();
+    }
+
+    Status do_visit(const StringColumn& column) {
+        return Status::NotSupported("not supported");
     }
 
     template <typename T>

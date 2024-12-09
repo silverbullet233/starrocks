@@ -493,6 +493,7 @@ inline void Decimal32Or64Or128ColumnReader<DecimalType>::_fill_decimal_column_ge
 }
 
 Status StringColumnReader::get_next(orc::ColumnVectorBatch* cvb, ColumnPtr& col, size_t from, size_t size) {
+#ifndef SV_TEST
     auto* data = down_cast<orc::StringVectorBatch*>(cvb);
 
     size_t len = 0;
@@ -626,11 +627,13 @@ Status StringColumnReader::get_next(orc::ColumnVectorBatch* cvb, ColumnPtr& col,
         auto* c = ColumnHelper::as_raw_column<NullableColumn>(col);
         c->update_has_null();
     }
-
+#else
+#endif
     return Status::OK();
 }
 
 Status VarbinaryColumnReader::get_next(orc::ColumnVectorBatch* cvb, ColumnPtr& col, size_t from, size_t size) {
+#ifndef SV_TEST
     auto* data = down_cast<orc::StringVectorBatch*>(cvb);
     size_t len = 0;
     for (size_t i = 0; i < size; ++i) {
@@ -674,6 +677,8 @@ Status VarbinaryColumnReader::get_next(orc::ColumnVectorBatch* cvb, ColumnPtr& c
             vo[i + 1] = write_pos;
         }
     }
+#else
+#endif
     return Status::OK();
 }
 

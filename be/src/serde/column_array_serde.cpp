@@ -19,6 +19,8 @@
 #include <lz4/lz4frame.h>
 #include <streamvbyte.h>
 #include <streamvbytedelta.h>
+#include <cstdint>
+#include <stdexcept>
 
 #include "column/array_column.h"
 #include "column/binary_column.h"
@@ -286,6 +288,25 @@ public:
     }
 };
 
+class StringColumnSerde {
+public:
+    static int64_t max_serialized_size(const StringColumn& column, const int encode_level) {
+        throw std::runtime_error("max_serialized_size not support");
+        return 0;
+    }
+
+    static uint8_t* serialize(const StringColumn& column, uint8_t* buff, const int encode_level) {
+        throw std::runtime_error("serialize not support");
+        return buff;
+    }
+
+    static const uint8_t* deserialize(const uint8_t* buff, StringColumn* column, const int encode_level) {
+        throw std::runtime_error("deserialize not support");
+        return buff;
+    }
+
+};
+
 template <typename T>
 class ObjectColumnSerde {
 public:
@@ -525,6 +546,11 @@ public:
         return Status::OK();
     }
 
+    Status do_visit(const StringColumn& column) {
+        _size += StringColumnSerde::max_serialized_size(column, _encode_level);
+        return Status::OK();
+    }
+
     template <typename T>
     Status do_visit(const FixedLengthColumnBase<T>& column) {
         _size += FixedLengthColumnSerde<T, false>::max_serialized_size(column, _encode_level);
@@ -582,6 +608,11 @@ public:
     template <typename T>
     Status do_visit(const BinaryColumnBase<T>& column) {
         _cur = BinaryColumnSerde::serialize(column, _cur, _encode_level);
+        return Status::OK();
+    }
+    
+    Status do_visit(const StringColumn& column) {
+        _cur = StringColumnSerde::serialize(column, _cur, _encode_level);
         return Status::OK();
     }
 
@@ -654,6 +685,10 @@ public:
     template <typename T>
     Status do_visit(BinaryColumnBase<T>* column) {
         _cur = BinaryColumnSerde::deserialize(_cur, column, _encode_level);
+        return Status::OK();
+    }
+    Status do_visit(StringColumn* column) {
+        _cur = StringColumnSerde::deserialize(_cur, column, _encode_level);
         return Status::OK();
     }
 

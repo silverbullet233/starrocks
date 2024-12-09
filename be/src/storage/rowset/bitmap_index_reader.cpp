@@ -116,7 +116,7 @@ Status BitmapIndexIterator::read_bitmap(rowid_t ordinal, Roaring* result) {
     ColumnViewer<TYPE_VARCHAR> viewer(column);
     auto value = viewer.value(0);
 
-    *result = Roaring::read(value.data, false);
+    *result = Roaring::read(value.get_data(), false);
     return Status::OK();
 }
 

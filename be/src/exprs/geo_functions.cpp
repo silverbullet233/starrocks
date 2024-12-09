@@ -47,7 +47,7 @@ StatusOr<ColumnPtr> GeoFunctions::st_from_wkt_common(FunctionContext* ctx, const
 
             GeoParseStatus status;
             auto wkt_value = wkt_viewer.value(row);
-            std::unique_ptr<GeoShape> shape(GeoShape::from_wkt(wkt_value.data, wkt_value.size, &status));
+            std::unique_ptr<GeoShape> shape(GeoShape::from_wkt(wkt_value.get_data(), wkt_value.get_size(), &status));
             if (shape == nullptr || (shape_type != GEO_SHAPE_ANY && shape->type() != shape_type)) {
                 result.append_null();
                 continue;
@@ -206,7 +206,7 @@ StatusOr<ColumnPtr> GeoFunctions::st_x(FunctionContext* context, const Columns& 
 
         auto encode_value = encode.value(row);
         GeoPoint point;
-        auto res = point.decode_from(encode_value.data, encode_value.size);
+        auto res = point.decode_from(encode_value.get_data(), encode_value.get_size());
         if (!res) {
             result.append_null();
             continue;
@@ -231,7 +231,7 @@ StatusOr<ColumnPtr> GeoFunctions::st_y(FunctionContext* context, const Columns& 
 
         auto encode_value = encode.value(row);
         GeoPoint point;
-        auto res = point.decode_from(encode_value.data, encode_value.size);
+        auto res = point.decode_from(encode_value.get_data(), encode_value.get_size());
         if (!res) {
             result.append_null();
             continue;
@@ -286,7 +286,7 @@ StatusOr<ColumnPtr> GeoFunctions::st_as_wkt(FunctionContext* context, const Colu
         }
 
         auto shape_value = shape_viewer.value(row);
-        std::unique_ptr<GeoShape> shape(GeoShape::from_encoded(shape_value.data, shape_value.size));
+        std::unique_ptr<GeoShape> shape(GeoShape::from_encoded(shape_value.get_data(), shape_value.get_size()));
         if (shape == nullptr) {
             result.append_null();
             continue;
@@ -335,7 +335,7 @@ Status GeoFunctions::st_contains_prepare(FunctionContext* ctx, FunctionContext::
                 contains_ctx->is_null = true;
             } else {
                 auto str_value = ColumnHelper::get_const_value<TYPE_VARCHAR>(str_column);
-                contains_ctx->shapes[i] = GeoShape::from_encoded(str_value.data, str_value.size);
+                contains_ctx->shapes[i] = GeoShape::from_encoded(str_value.get_data(), str_value.get_size());
                 if (contains_ctx->shapes[i] == nullptr) {
                     contains_ctx->is_null = true;
                 }
@@ -368,7 +368,8 @@ StatusOr<ColumnPtr> GeoFunctions::st_contains(FunctionContext* context, const Co
         GeoShape* shapes[2] = {nullptr, nullptr};
         auto lhs_value = lhs_viewer.value(row);
         auto rhs_value = rhs_viewer.value(row);
-        const Slice* strs[2] = {&lhs_value, &rhs_value};
+        // const Slice* strs[2] = {&lhs_value, &rhs_value};
+        const decltype(lhs_value)* strs[2] = {&lhs_value, &rhs_value};
         // use this to delete new
         StContainsState local_state;
         int i;
@@ -376,7 +377,7 @@ StatusOr<ColumnPtr> GeoFunctions::st_contains(FunctionContext* context, const Co
             if (state != nullptr && state->shapes[i] != nullptr) {
                 shapes[i] = state->shapes[i];
             } else {
-                shapes[i] = local_state.shapes[i] = GeoShape::from_encoded(strs[i]->data, strs[i]->size);
+                shapes[i] = local_state.shapes[i] = GeoShape::from_encoded(strs[i]->get_data(), strs[i]->get_size());
                 if (shapes[i] == nullptr) {
                     result.append_null();
                     break;
@@ -410,7 +411,7 @@ Status GeoFunctions::st_from_wkt_prepare_common(FunctionContext* ctx, FunctionCo
     } else {
         auto str_value = ColumnHelper::get_const_value<TYPE_VARCHAR>(str_column);
         GeoParseStatus status;
-        std::unique_ptr<GeoShape> shape(GeoShape::from_wkt(str_value.data, str_value.size, &status));
+        std::unique_ptr<GeoShape> shape(GeoShape::from_wkt(str_value.get_data(), str_value.get_size(), &status));
         if (shape == nullptr || (shape_type != GEO_SHAPE_ANY && shape->type() != shape_type)) {
             state->is_null = true;
         } else {

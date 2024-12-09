@@ -59,6 +59,7 @@ private:
 };
 
 jlong JavaNativeMethods::resizeStringData(JNIEnv* env, jclass clazz, jlong columnAddr, jint byteSize) {
+#ifndef SV_TEST
     auto* column = reinterpret_cast<Column*>(columnAddr); // NOLINT
     BinaryColumn* binary_column = nullptr;
     if (column->is_nullable()) {
@@ -76,6 +77,9 @@ jlong JavaNativeMethods::resizeStringData(JNIEnv* env, jclass clazz, jlong colum
         return 0;
     }
     return reinterpret_cast<jlong>(binary_column->get_bytes().data());
+#else
+    return 0;
+#endif
 }
 
 jlongArray JavaNativeMethods::getAddrs(JNIEnv* env, jclass clazz, jlong columnAddr) {

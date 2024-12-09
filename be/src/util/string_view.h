@@ -5,6 +5,7 @@
 #include <iostream>
 #include <string>
 #include <string_view>
+#include "common/status.h"
 #include "gutil/strings/fastmem.h"
 #include "gutil/port.h"
 #include "util/memcmp.h"
@@ -12,11 +13,10 @@
 namespace starrocks {
 
 class StringView {
-private:
+public:
     static const size_t kInlineBytes = 12;
     static const size_t kPrefixBytes = 4;
 
-public:
     StringView(): StringView("") {}
     StringView(const char* data): StringView(data, strlen(data)) {}
     StringView(const char* data, uint32_t length) {
@@ -55,6 +55,7 @@ public:
     std::string to_string() const {
         return is_inlined() ? std::string(value.inlined.data, value.inlined.length): std::string(value.pointer.data, value.pointer.length);
     }
+    operator std::string_view() const { return {get_data(), get_size()}; }
 
     struct Comparator {
         bool operator()(const StringView& lhs, const StringView& rhs) const;
@@ -101,6 +102,14 @@ public:
         return ret > 0 || (ret == 0 && left_len > right_len);
     }
 
+    static inline int compare(const StringView& lhs, const StringView& rhs) {
+        // @TODO pending fix
+        if (equals(lhs, rhs)) {
+            return 0;
+        }
+        return greater_than(lhs, rhs) ? 1: -1;
+    }
+
 private:
     union {
         struct {
@@ -116,6 +125,7 @@ private:
 };
 
 inline std::ostream& operator<<(std::ostream &os, const StringView& sv) {
+    os << sv.to_string();
     return os;
 }
 
@@ -156,4 +166,11 @@ public:
     }
 };
 
+
+}
+
+namespace std {
+inline std::string to_string(const starrocks::StringView& value) {
+    return value.to_string();
+}
 }

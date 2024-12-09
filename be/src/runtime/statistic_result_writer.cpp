@@ -166,7 +166,7 @@ Status StatisticResultWriter::_fill_dict_statistic_data(int version, const Colum
         data_list[i].__set_meta_version(versioncolumn->get_data()[i]);
         if (!dictColumnViewer.is_null(i)) {
             TGlobalDict dict;
-            thrift_from_json_string(&dict, std::string(dictColumnViewer.value(i).data, dictColumnViewer.value(i).size));
+            thrift_from_json_string(&dict, std::string(dictColumnViewer.value(i).get_data(), dictColumnViewer.value(i).get_size()));
             data_list[i].__set_dict(dict);
         }
     }
@@ -192,7 +192,8 @@ Status StatisticResultWriter::_fill_statistic_data_v1(int version, const Columns
     auto& updateTimes = ColumnHelper::cast_to_raw<TYPE_DATETIME>(columns[1])->get_data();
     auto& dbIds = ColumnHelper::cast_to_raw<TYPE_BIGINT>(columns[2])->get_data();
     auto& tableIds = ColumnHelper::cast_to_raw<TYPE_BIGINT>(columns[3])->get_data();
-    BinaryColumn* nameColumn = ColumnHelper::cast_to_raw<TYPE_VARCHAR>(columns[4]);
+    // BinaryColumn* nameColumn = ColumnHelper::cast_to_raw<TYPE_VARCHAR>(columns[4]);
+    auto* nameColumn = ColumnHelper::cast_to_raw<TYPE_VARCHAR>(columns[4]);
     auto* rowCounts = down_cast<Int64Column*>(ColumnHelper::get_data_column(columns[5].get()));
     auto* dataSizes = down_cast<Int64Column*>(ColumnHelper::get_data_column(columns[6].get()));
     auto* countDistincts = down_cast<Int64Column*>(ColumnHelper::get_data_column(columns[7].get()));
@@ -208,7 +209,11 @@ Status StatisticResultWriter::_fill_statistic_data_v1(int version, const Columns
         data_list[i].__set_updateTime(updateTimes[i].to_string());
         data_list[i].__set_dbId(dbIds[i]);
         data_list[i].__set_tableId(tableIds[i]);
+        #ifndef SV_TEST
         data_list[i].__set_columnName(nameColumn->get_slice(i).to_string());
+        #else
+        data_list[i].__set_columnName(nameColumn->get_view(i).to_string());
+        #endif
         data_list[i].__set_rowCount(rowCounts->get(i).get_int64());
         data_list[i].__set_dataSize(dataSizes->get(i).get_int64());
         data_list[i].__set_countDistinct(countDistincts->get(i).get_int64());

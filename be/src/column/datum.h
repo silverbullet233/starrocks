@@ -26,6 +26,7 @@
 #include "types/timestamp_value.h"
 #include "util/int96.h"
 #include "util/slice.h"
+#include "util/string_view.h"
 
 namespace starrocks {
 class MemPool;
@@ -78,6 +79,7 @@ public:
     TimestampValue get_timestamp() const { return get<TimestampValue>(); }
     DateValue get_date() const { return get<DateValue>(); }
     const Slice& get_slice() const { return get<Slice>(); }
+    const StringView& get_string_view() const { return get<StringView>(); }
     const int128_t& get_int128() const { return get<int128_t>(); }
     const decimal12_t& get_decimal12() const { return get<decimal12_t>(); }
     const DecimalV2Value& get_decimal() const { return get<DecimalV2Value>(); }
@@ -105,6 +107,7 @@ public:
     void set_date(DateValue v) { set<decltype(v)>(v); }
     void set_int128(const int128_t& v) { set<decltype(v)>(v); }
     void set_slice(const Slice& v) { set<decltype(v)>(v); }
+    void set_string_view(const StringView& v) { set<decltype(v)>(v); }
     void set_decimal12(const decimal12_t& v) { set<decltype(v)>(v); }
     void set_decimal(const DecimalV2Value& v) { set<decltype(v)>(v); }
     void set_array(const DatumArray& v) { set<decltype(v)>(v); }
@@ -171,6 +174,7 @@ public:
                            [](const int96_t& arg) { return DatumKey(arg); },
                            [](const int128_t& arg) { return DatumKey(arg); },
                            [](const Slice& arg) { return DatumKey(arg); },
+                           [](const StringView& arg) { return DatumKey(arg); },
                            [](const decimal12_t& arg) { return DatumKey(arg); },
                            [](const DecimalV2Value& arg) { return DatumKey(arg); },
                            [](const float& arg) { return DatumKey(arg); },
@@ -194,7 +198,7 @@ public:
 private:
     using Variant =
             std::variant<std::monostate, int8_t, uint8_t, int16_t, uint16_t, uint24_t, int32_t, uint32_t, int64_t,
-                         uint64_t, int96_t, int128_t, Slice, decimal12_t, DecimalV2Value, float, double, DatumArray,
+                         uint64_t, int96_t, int128_t, Slice, StringView, decimal12_t, DecimalV2Value, float, double, DatumArray,
                          DatumMap, HyperLogLog*, BitmapValue*, PercentileValue*, JsonValue*>;
     Variant _value;
 };

@@ -40,12 +40,12 @@ StatusOr<ColumnPtr> EncryptionFunctions::aes_encrypt(FunctionContext* ctx, const
         }
 
         auto src_value = src_viewer.value(row);
-        int cipher_len = src_value.size + 16;
+        int cipher_len = src_value.get_size() + 16;
         char p[cipher_len];
 
         auto key_value = key_viewer.value(row);
-        int len = AesUtil::encrypt(AES_128_ECB, (unsigned char*)src_value.data, src_value.size,
-                                   (unsigned char*)key_value.data, key_value.size, nullptr, true, (unsigned char*)p);
+        int len = AesUtil::encrypt(AES_128_ECB, (unsigned char*)src_value.get_data(), src_value.get_size(),
+                                   (unsigned char*)key_value.get_data(), key_value.get_size(), nullptr, true, (unsigned char*)p);
         if (len < 0) {
             result.append_null();
             continue;
@@ -71,16 +71,16 @@ StatusOr<ColumnPtr> EncryptionFunctions::aes_decrypt(FunctionContext* ctx, const
 
         auto src_value = src_viewer.value(row);
         auto key_value = key_viewer.value(row);
-        if (src_value.size == 0 || key_value.size == 0) {
+        if (src_value.get_size() == 0 || key_value.get_size() == 0) {
             result.append_null();
             continue;
         }
 
-        int cipher_len = src_value.size;
+        int cipher_len = src_value.get_size();
         char p[cipher_len];
 
-        int len = AesUtil::decrypt(AES_128_ECB, (unsigned char*)src_value.data, src_value.size,
-                                   (unsigned char*)key_value.data, key_value.size, nullptr, true, (unsigned char*)p);
+        int len = AesUtil::decrypt(AES_128_ECB, (unsigned char*)src_value.get_data(), src_value.get_size(),
+                                   (unsigned char*)key_value.get_data(), key_value.get_size(), nullptr, true, (unsigned char*)p);
 
         if (len < 0) {
             result.append_null();
@@ -104,16 +104,16 @@ StatusOr<ColumnPtr> EncryptionFunctions::from_base64(FunctionContext* ctx, const
         }
 
         auto src_value = src_viewer.value(row);
-        if (src_value.size == 0) {
+        if (src_value.get_size() == 0) {
             result.append_null();
             continue;
         }
 
-        int cipher_len = src_value.size;
+        int cipher_len = src_value.get_size();
         std::unique_ptr<char[]> p;
         p.reset(new char[cipher_len + 3]);
 
-        int len = base64_decode2(src_value.data, src_value.size, p.get());
+        int len = base64_decode2(src_value.get_data(), src_value.get_size(), p.get());
         if (len < 0) {
             result.append_null();
             continue;
@@ -138,19 +138,19 @@ StatusOr<ColumnPtr> EncryptionFunctions::to_base64(FunctionContext* ctx, const C
 
         auto src_value = src_viewer.value(row);
         auto limit = config::max_length_for_to_base64;
-        if (src_value.size == 0) {
+        if (src_value.get_size() == 0) {
             result.append_null();
             continue;
-        } else if (src_value.size > limit) {
+        } else if (src_value.get_size() > limit) {
             std::stringstream ss;
             ss << "to_base64 not supported length > " << limit;
             throw std::runtime_error(ss.str());
         }
 
-        int cipher_len = (size_t)(4.0 * ceil((double)src_value.size / 3.0)) + 1;
+        int cipher_len = (size_t)(4.0 * ceil((double)src_value.get_size() / 3.0)) + 1;
         char p[cipher_len];
 
-        int len = base64_encode2((unsigned char*)src_value.data, src_value.size, (unsigned char*)p);
+        int len = base64_encode2((unsigned char*)src_value.get_data(), src_value.get_size(), (unsigned char*)p);
         if (len < 0) {
             result.append_null();
             continue;
@@ -178,7 +178,7 @@ StatusOr<ColumnPtr> EncryptionFunctions::md5sum(FunctionContext* ctx, const Colu
                 continue;
             }
             auto v = view.value(row);
-            digest.update(v.data, v.size);
+            digest.update(v.get_data(), v.get_size());
         }
         digest.digest();
 
@@ -203,7 +203,7 @@ StatusOr<ColumnPtr> EncryptionFunctions::md5sum_numeric(FunctionContext* ctx, co
                 continue;
             }
             auto v = view.value(row);
-            digest.update(v.data, v.size);
+            digest.update(v.get_data(), v.get_size());
         }
         digest.digest();
         StringParser::ParseResult parse_res;
@@ -228,7 +228,7 @@ StatusOr<ColumnPtr> EncryptionFunctions::md5(FunctionContext* ctx, const Columns
 
         auto src_value = src_viewer.value(row);
         Md5Digest digest;
-        digest.update(src_value.data, src_value.size);
+        digest.update(src_value.get_data(), src_value.get_size());
         digest.digest();
 
         result.append(Slice(digest.hex().c_str(), digest.hex().size()));
@@ -286,7 +286,7 @@ StatusOr<ColumnPtr> EncryptionFunctions::sha224(FunctionContext* ctx, const Colu
 
         auto src_value = src_viewer.value(row);
         SHA224Digest digest;
-        digest.update(src_value.data, src_value.size);
+        digest.update(src_value.get_data(), src_value.get_size());
         digest.digest();
 
         result.append(Slice(digest.hex().c_str(), digest.hex().size()));
@@ -308,7 +308,7 @@ StatusOr<ColumnPtr> EncryptionFunctions::sha256(FunctionContext* ctx, const Colu
 
         auto src_value = src_viewer.value(row);
         SHA256Digest digest;
-        digest.update(src_value.data, src_value.size);
+        digest.update(src_value.get_data(), src_value.get_size());
         digest.digest();
 
         result.append(Slice(digest.hex().c_str(), digest.hex().size()));
@@ -330,7 +330,7 @@ StatusOr<ColumnPtr> EncryptionFunctions::sha384(FunctionContext* ctx, const Colu
 
         auto src_value = src_viewer.value(row);
         SHA384Digest digest;
-        digest.update(src_value.data, src_value.size);
+        digest.update(src_value.get_data(), src_value.get_size());
         digest.digest();
 
         result.append(Slice(digest.hex().c_str(), digest.hex().size()));
@@ -352,7 +352,7 @@ StatusOr<ColumnPtr> EncryptionFunctions::sha512(FunctionContext* ctx, const Colu
 
         auto src_value = src_viewer.value(row);
         SHA512Digest digest;
-        digest.update(src_value.data, src_value.size);
+        digest.update(src_value.get_data(), src_value.get_size());
         digest.digest();
 
         result.append(Slice(digest.hex().c_str(), digest.hex().size()));
@@ -380,22 +380,22 @@ StatusOr<ColumnPtr> EncryptionFunctions::sha2(FunctionContext* ctx, const Column
 
             if (length == 224) {
                 SHA224Digest digest;
-                digest.update(src_value.data, src_value.size);
+                digest.update(src_value.get_data(), src_value.get_size());
                 digest.digest();
                 result.append(Slice(digest.hex().c_str(), digest.hex().size()));
             } else if (length == 0 || length == 256) {
                 SHA256Digest digest;
-                digest.update(src_value.data, src_value.size);
+                digest.update(src_value.get_data(), src_value.get_size());
                 digest.digest();
                 result.append(Slice(digest.hex().c_str(), digest.hex().size()));
             } else if (length == 384) {
                 SHA384Digest digest;
-                digest.update(src_value.data, src_value.size);
+                digest.update(src_value.get_data(), src_value.get_size());
                 digest.digest();
                 result.append(Slice(digest.hex().c_str(), digest.hex().size()));
             } else if (length == 512) {
                 SHA512Digest digest;
-                digest.update(src_value.data, src_value.size);
+                digest.update(src_value.get_data(), src_value.get_size());
                 digest.digest();
                 result.append(Slice(digest.hex().c_str(), digest.hex().size()));
             } else {

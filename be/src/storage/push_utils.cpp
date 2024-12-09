@@ -115,7 +115,7 @@ ColumnPtr PushBrokerReader::_build_hll_column(const ColumnPtr& column) {
     if (!column->has_null()) {
         for (int row = 0; row < viewer.size(); ++row) {
             auto value = viewer.value(row);
-            HyperLogLog hll(Slice(value.data, value.size));
+            HyperLogLog hll(Slice(value.get_data(), value.get_size()));
             builder.append(&hll);
         }
     } else {
@@ -126,7 +126,7 @@ ColumnPtr PushBrokerReader::_build_hll_column(const ColumnPtr& column) {
             }
 
             auto value = viewer.value(row);
-            HyperLogLog hll(Slice(value.data, value.size));
+            HyperLogLog hll(Slice(value.get_data(), value.get_size()));
             builder.append(&hll);
         }
     }

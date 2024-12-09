@@ -566,6 +566,7 @@ struct GetContainer {
     }
 };
 
+#ifndef SV_TEST
 #define GET_CONTAINER(ltype)                                                                  \
     template <>                                                                               \
     struct GetContainer<ltype> {                                                              \
@@ -576,6 +577,18 @@ struct GetContainer {
             return ColumnHelper::as_raw_column<BinaryColumn>(column.get())->get_proxy_data(); \
         }                                                                                     \
     };
+#else
+#define GET_CONTAINER(ltype)                                                                  \
+    template <>                                                                               \
+    struct GetContainer<ltype> {                                                              \
+        static const auto& get_data(const Column* column) {                                   \
+            return ColumnHelper::as_raw_column<StringColumn>(column)->get_data();       \
+        }                                                                                     \
+        static const auto& get_data(const ColumnPtr& column) {                                \
+            return ColumnHelper::as_raw_column<StringColumn>(column.get())->get_data(); \
+        }                                                                                     \
+    };
+#endif
 APPLY_FOR_ALL_STRING_TYPE(GET_CONTAINER)
 #undef GET_CONTAINER
 

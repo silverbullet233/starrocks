@@ -22,6 +22,7 @@
 
 #include "column/fixed_length_column.h"
 #include "column/type_traits.h"
+#include "column/vectorized_fwd.h"
 #include "exprs/agg/maxmin.h"
 #include "exprs/agg/stream/stream_detail_state.h"
 #include "gutil/casts.h"
@@ -268,8 +269,13 @@ public:
         for (auto iter = detail_state.cbegin(); iter != detail_state.cend(); iter++) {
             // is it possible that count is negative?
             DCHECK_LE(0, iter->second);
+            #ifndef SV_TEST
             column0->append(iter->first);
             column1->append(iter->second);
+            #else
+            // column0->append(StringView(iter->first));
+            column1->append(iter->second);
+            #endif
         }
         auto* count_col = down_cast<Int64Column*>(count);
         count_col->append(detail_state.size());

@@ -371,13 +371,13 @@ Status StringFunctions::concat_prepare(FunctionContext* context, FunctionContext
     for (auto i = 1; i < num_args; ++i) {
         auto const_arg = context->get_constant_column(i);
         auto s = ColumnHelper::get_const_value<TYPE_VARCHAR>(const_arg);
-        if (tail_off + s.size > get_olap_string_max_length()) {
+        if (tail_off + s.get_size() > get_olap_string_max_length()) {
             //oversize
             state->is_oversize = true;
             break;
         }
-        strings::memcpy_inlined(tail_begin + tail_off, s.data, s.size);
-        tail_off += s.size;
+        strings::memcpy_inlined(tail_begin + tail_off, s.get_data(), s.get_size());
+        tail_off += s.get_size();
     }
     if (!state->is_oversize) {
         state->tail.assign(tail_begin, tail_begin + tail_off);
@@ -393,15 +393,32 @@ Status StringFunctions::concat_close(FunctionContext* context, FunctionContext::
     return Status::OK();
 }
 
-static inline void column_builder_null_op(NullableBinaryColumnBuilder* builder, size_t i) {
+static inline void column_builder_null_op(
+    #ifndef SV_TEST
+    NullableBinaryColumnBuilder* builder,
+    #else
+    NullableStringColumnBuilder* builder,
+    #endif
+    size_t i) {
     builder->set_null(i);
 }
 
-static inline void column_builder_empty_op(NullableBinaryColumnBuilder* builder, size_t i) {
+static inline void column_builder_empty_op(
+    #ifndef SV_TEST
+    NullableBinaryColumnBuilder* builder,
+    #else
+    NullableStringColumnBuilder* builder,  
+    #endif
+    size_t i) {
     builder->append_empty(i);
 }
 
-static inline void column_builder_non_empty_op(uint8_t* begin, uint8_t* end, NullableBinaryColumnBuilder* builder,
+static inline void column_builder_non_empty_op(uint8_t* begin, uint8_t* end,
+    #ifndef SV_TEST
+    NullableBinaryColumnBuilder* builder,
+    #else
+    NullableStringColumnBuilder* builder,
+    #endif
                                                size_t i) {
     builder->append(begin, end, i);
 }
@@ -565,7 +582,12 @@ ColumnPtr right_const(SubstrState* state, const Columns& columns) {
 
 static inline void ascii_substr_not_const(const size_t row_nums, ColumnViewer<TYPE_VARCHAR>* str_viewer,
                                           ColumnViewer<TYPE_INT>* off_viewer, ColumnViewer<TYPE_INT>* len_viewer,
-                                          NullableBinaryColumnBuilder* builder) {
+                                              #ifndef SV_TEST
+                                NullableBinaryColumnBuilder* builde
+                                #else
+                                NullableStringColumnBuilder* builder
+                                #endif
+                                          ) {
     for (int row = 0; row < row_nums; row++) {
         if (str_viewer->is_null(row) || off_viewer->is_null(row) || len_viewer->is_null(row)) {
             column_builder_null_op(builder, row);

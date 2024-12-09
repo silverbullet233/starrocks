@@ -257,10 +257,10 @@ StatusOr<ColumnPtr> LikePredicate::match_fn_with_long_constant_pattern(FunctionC
 
         bool v = false;
         if constexpr (full_match) {
-            v = RE2::FullMatch(re2::StringPiece(value_viewer.value(row).data, value_viewer.value(row).size),
+            v = RE2::FullMatch(re2::StringPiece(value_viewer.value(row).get_data(), value_viewer.value(row).get_size()),
                                *(state->re2));
         } else {
-            v = RE2::PartialMatch(re2::StringPiece(value_viewer.value(row).data, value_viewer.value(row).size),
+            v = RE2::PartialMatch(re2::StringPiece(value_viewer.value(row).get_data(), value_viewer.value(row).get_size()),
                                   *(state->re2));
         }
         result.append(v);
@@ -271,7 +271,11 @@ StatusOr<ColumnPtr> LikePredicate::match_fn_with_long_constant_pattern(FunctionC
 
 // constant_ends
 DEFINE_BINARY_FUNCTION_WITH_IMPL(ConstantEndsImpl, value, pattern) {
-    return (value.size >= pattern.size) && (pattern == Slice(value.data + value.size - pattern.size, pattern.size));
+// #ifndef SV_TEST
+    return (value.get_size() >= pattern.get_size()) && (Slice(pattern) == Slice(value.get_data() + value.get_size() - pattern.get_size(), pattern.get_size()));
+// #else
+//     return (value.get_size() >= pattern.get_size()) && (pattern == StringView(value.get_data() + value.get_size() - pattern.get_size(), pattern.get_size()));
+// #endif
 }
 
 StatusOr<ColumnPtr> LikePredicate::constant_ends_with_fn(FunctionContext* context, const starrocks::Columns& columns) {
@@ -285,7 +289,8 @@ StatusOr<ColumnPtr> LikePredicate::constant_ends_with_fn(FunctionContext* contex
 
 // constant_starts
 DEFINE_BINARY_FUNCTION_WITH_IMPL(ConstantStartsImpl, value, pattern) {
-    return (value.size >= pattern.size) && (pattern == Slice(value.data, pattern.size));
+// @TODO change to StringView
+    return (value.get_size() >= pattern.get_size()) && (Slice(pattern) == Slice(value.get_data(), pattern.get_size()));
 }
 
 StatusOr<ColumnPtr> LikePredicate::constant_starts_with_fn(FunctionContext* context,
@@ -430,10 +435,10 @@ StatusOr<ColumnPtr> LikePredicate::_predicate_const_regex(FunctionContext* conte
         }
 
         bool v = false;
-        auto value_size = value_viewer.value(row).size;
+        auto value_size = value_viewer.value(row).get_size();
         [[maybe_unused]] auto status = hs_scan(
                 // Use &_DUMMY_STRING_FOR_EMPTY_PATTERN instead of nullptr to avoid crash.
-                state->database, (value_size) ? value_viewer.value(row).data : &_DUMMY_STRING_FOR_EMPTY_PATTERN,
+                state->database, (value_size) ? value_viewer.value(row).get_data() : &_DUMMY_STRING_FOR_EMPTY_PATTERN,
                 value_size, 0, scratch,
                 [](unsigned int id, unsigned long long from, unsigned long long to, unsigned int flags,
                    void* ctx) -> int {
@@ -567,7 +572,7 @@ StatusOr<ColumnPtr> LikePredicate::regex_match_full(FunctionContext* context, co
             if (!re.ok()) {
                 return Status::InvalidArgument(strings::Substitute("Invalid regex: $0", re_pattern));
             }
-            auto v = RE2::FullMatch(re2::StringPiece(value_viewer.value(row).data, value_viewer.value(row).size), re);
+            auto v = RE2::FullMatch(re2::StringPiece(value_viewer.value(row).get_data(), value_viewer.value(row).get_size()), re);
             result.append(v);
             break;
         }
@@ -618,7 +623,7 @@ StatusOr<ColumnPtr> LikePredicate::regex_match_partial(FunctionContext* context,
             continue;
         }
 
-        auto v = RE2::PartialMatch(re2::StringPiece(value_viewer.value(row).data, value_viewer.value(row).size), re);
+        auto v = RE2::PartialMatch(re2::StringPiece(value_viewer.value(row).get_data(), value_viewer.value(row).get_size()), re);
         result.append(v);
     }
 

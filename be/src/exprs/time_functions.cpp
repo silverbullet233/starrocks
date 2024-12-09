@@ -1434,7 +1434,7 @@ StatusOr<ColumnPtr> TimeFunctions::_t_to_unix_from_datetime_with_format(Function
             continue;
         }
         DateTimeValue tv;
-        if (!tv.from_date_format_str(format.data, format.size, date.data, date.size)) {
+        if (!tv.from_date_format_str(format.get_data(), format.get_size(), date.get_data(), date.get_size())) {
             result.append_null();
             continue;
         }
@@ -1610,7 +1610,7 @@ Status TimeFunctions::from_unix_prepare(FunctionContext* context, FunctionContex
     auto column = context->get_constant_column(1);
     auto format = ColumnHelper::get_const_value<TYPE_VARCHAR>(column);
 
-    if (format.size > DEFAULT_DATE_FORMAT_LIMIT) {
+    if (format.get_size() > DEFAULT_DATE_FORMAT_LIMIT) {
         return Status::InvalidArgument("Time format invalid");
     }
 
@@ -1656,7 +1656,7 @@ StatusOr<ColumnPtr> TimeFunctions::_t_from_unix_with_format_general(FunctionCont
             continue;
         }
         // use lambda to avoid adding method for TimeFunctions.
-        if (format.size > DEFAULT_DATE_FORMAT_LIMIT) {
+        if (format.get_size() > DEFAULT_DATE_FORMAT_LIMIT) {
             result.append_null();
             continue;
         }

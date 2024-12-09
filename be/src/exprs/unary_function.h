@@ -131,6 +131,7 @@ public:
 
         auto result = RunTimeColumnType<TYPE_VARCHAR>::create(std::forward<Args>(args)...);
 
+        #ifndef SV_TEST
         auto& offset = result->get_offset();
         auto& bytes = result->get_bytes();
         int size = v1->size();
@@ -139,6 +140,13 @@ public:
             bytes.insert(bytes.end(), (uint8_t*)ret.data(), (uint8_t*)ret.data() + ret.size());
             offset.emplace_back(bytes.size());
         }
+        #else
+        int size = v1->size();
+        for (int i = 0;i < size; ++i) {
+            std::string ret = OP::template apply<RunTimeCppType<Type>, std::string>(r1[i], std::forward<Args>(args)...);
+            result->append_string(ret);
+        }
+        #endif
 
         return result;
     }

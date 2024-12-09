@@ -727,6 +727,10 @@ public:
         return {};
     }
 
+    Status do_visit(const StringColumn& column) {
+        return Status::NotSupported("StringColumn not supported");
+    }
+
     // Inefficient fallback implementation, it's usually used for Array/Struct/Map/Json
     template <class ColumnT>
     typename std::enable_if_t<is_object<ColumnT>, Status> do_visit(const ColumnT& column) {

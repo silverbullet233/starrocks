@@ -930,7 +930,11 @@ public:
 private:
     static ColumnPtr _join_column_replace_null(const ColumnPtr& src_column, const ColumnPtr& sep_column,
                                                const ColumnPtr& null_replace_column, size_t chunk_size) {
+        #ifndef SV_TEST
         NullableBinaryColumnBuilder res;
+        #else
+        NullableStringColumnBuilder res;
+        #endif
         // byte_size may be smaller or larger than actual used size
         // byte_size is only one reserve size
         size_t byte_size = ColumnHelper::get_data_column(src_column.get())->byte_size() +
@@ -968,7 +972,11 @@ private:
 
     static ColumnPtr _join_column_ignore_null(const ColumnPtr& src_column, const ColumnPtr& sep_column,
                                               size_t chunk_size) {
+        #ifndef SV_TEST                
         NullableBinaryColumnBuilder res;
+        #else
+        NullableStringColumnBuilder res;
+        #endif
         // bytes_size may be smaller or larger then actual used size
         // byte_size is only one reserve size
         size_t byte_size = ColumnHelper::get_data_column(src_column.get())->byte_size() +

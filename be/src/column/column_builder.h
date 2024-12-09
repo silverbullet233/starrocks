@@ -131,6 +131,7 @@ protected:
     bool _has_null;
 };
 
+#ifndef SV_TEST
 class NullableBinaryColumnBuilder : public ColumnBuilder<TYPE_VARCHAR> {
 public:
     using ColumnType = RunTimeColumnType<TYPE_VARCHAR>;
@@ -217,4 +218,52 @@ public:
 
 private:
 };
+#else
+class NullableStringColumnBuilder : public ColumnBuilder<TYPE_VARCHAR> {
+public:
+    NullableStringColumnBuilder(): ColumnBuilder(nullptr) {
+        // @TODO
+    }
+
+    void resize(size_t num_rows, size_t bytes_size) {
+
+    }
+
+    void set_null(size_t idx) {
+
+    }
+
+    void append_empty(size_t idx) {
+
+    }
+
+    void append(uint8_t* begin, uint8_t* end, size_t idx) {
+
+    }
+
+    void append_partial(const uint8_t* begin, const uint8_t* end) {
+        // @TODO
+    }
+
+    void append_partial(const Slice& slice) {
+
+    }
+
+    void append_complete(size_t idx) {
+
+    }
+
+    void rewind(size_t n) {
+
+    }
+
+    NullColumnPtr get_null_column() {
+        return _null_column;
+    }
+
+    NullColumn::Container& get_null_data() {
+        return _null_column->get_data();
+    }
+};
+#endif
 } // namespace starrocks

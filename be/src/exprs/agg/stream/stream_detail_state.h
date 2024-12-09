@@ -17,7 +17,9 @@
 
 #include "column/column.h"
 #include "column/type_traits.h"
+#include "util/hash.h"
 #include "util/phmap/phmap.h"
+#include "util/string_view.h"
 namespace starrocks {
 
 template <LogicalType LT, typename = guard::Guard>
@@ -34,7 +36,11 @@ template <LogicalType LT>
 struct DetailStateMap<LT, StringLTGuard<LT>> {
     using CppType = RunTimeCppValueType<LT>;
     using KeyType = std::string;
+#ifndef SV_TEST
     using HashMap = phmap::flat_hash_map<KeyType, int64_t, SliceHash>;
+#else
+    using HashMap = phmap::flat_hash_map<KeyType, int64_t, StringViewHash>;
+#endif
 };
 
 // TODO: Support detail agg state reusable between different agg stats.
@@ -84,7 +90,7 @@ public:
 private:
     HashMapKeyType _convert_to_key_type(CppType v) {
         if constexpr (lt_is_string<LT>) {
-            return std::string(v.data, v.size);
+            return std::string(v.get_data(), v.get_size());
         } else {
             return v;
         }

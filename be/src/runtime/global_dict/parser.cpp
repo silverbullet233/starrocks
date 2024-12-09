@@ -298,11 +298,11 @@ Status DictOptimizeParser::_eval_and_rewrite(ExprContext* ctx, Expr* expr, DictO
         for (int i = 0; i < num_rows; ++i) {
             if (!viewer.is_null(i)) {
                 auto value = viewer.value(i);
-                Slice slice(value.data, value.size);
+                Slice slice(value.get_data(), value.get_size());
                 result_map.lazy_emplace(slice, [&](const auto& ctor) {
                     id_allocator++;
-                    auto data = _runtime_state->instance_mem_pool()->allocate(value.size);
-                    memcpy(data, value.data, value.size);
+                    auto data = _runtime_state->instance_mem_pool()->allocate(value.get_size());
+                    memcpy(data, value.get_data(), value.get_size());
                     slice = Slice(data, slice.size);
                     ctor(slice, id_allocator);
                     values.emplace_back(slice);

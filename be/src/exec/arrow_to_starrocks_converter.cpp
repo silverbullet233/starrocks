@@ -176,6 +176,7 @@ struct ArrowConverter<AT, LT, is_nullable, is_strict, BinaryATGuard<AT>, StringO
     static void optimize_not_nullable_fixed_size_binary(const ArrowArrayType* array, size_t array_start_idx,
                                                         size_t num_elements, ColumnType* column,
                                                         size_t column_start_idx) {
+        #ifndef SV_TEST
         uint32_t width = array->byte_width();
         column->resize(column->size() + num_elements);
         const auto* array_data = array->GetValue(array_start_idx);
@@ -188,10 +189,13 @@ struct ArrowConverter<AT, LT, is_nullable, is_strict, BinaryATGuard<AT>, StringO
         for (auto i = 0; i < num_elements; ++i) {
             offsets[column_start_idx + i + 1] = base_offset + (i + 1) * width;
         }
+        #else
+        #endif
     }
 
     static void optimize_nullable_fixed_size_binary(const ArrowArrayType* array, size_t array_start_idx,
                                                     size_t num_elements, ColumnType* column, size_t column_start_idx) {
+        #ifndef SV_TEST
         uint32_t width = array->byte_width();
         const auto* array_data = array->GetValue(array_start_idx);
         column->resize(column->size() + num_elements);
@@ -210,10 +214,13 @@ struct ArrowConverter<AT, LT, is_nullable, is_strict, BinaryATGuard<AT>, StringO
             offsets[offsets_idx] = bytes_off;
         }
         bytes.resize(bytes_off);
+        #else
+        #endif
     }
 
     static void optimize_non_fixed_size_binary(const ArrowArrayType* array, size_t array_start_idx, size_t num_elements,
                                                ColumnType* column, size_t column_start_idx) {
+        #ifndef SV_TEST
         using ArrowOffsetType = typename ArrowArrayType::offset_type;
 
         // GetView report error when array contains only empty string.
@@ -232,15 +239,20 @@ struct ArrowConverter<AT, LT, is_nullable, is_strict, BinaryATGuard<AT>, StringO
         auto* arrow_offsets_data = array->raw_value_offsets() + array_start_idx + 1;
         const auto arrow_base_offset = array->value_offset(array_start_idx);
         offsets_copy<ArrowOffsetType>(arrow_offsets_data, arrow_base_offset, num_elements, offsets_data, base_offset);
+        #else
+        #endif
     }
 
     // Fill num_elements# empty string into column, started at position column_start_idx
     static void fill_empty_string(ColumnType* column, size_t column_start_idx, size_t num_elements) {
+        #ifndef SV_TEST
         column->resize(column->size() + num_elements);
         auto& offsets = column->get_offset();
         const auto base_offset = offsets[column_start_idx];
         auto* offsets_data = &offsets[column_start_idx + 1];
         std::fill_n(offsets_data, num_elements, base_offset);
+        #else
+        #endif
     }
 
     static Status length_exceeds_limit_error(int length, int limit) {

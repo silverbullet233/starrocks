@@ -149,7 +149,11 @@ struct PhmapDefaultHashFunc {
         } else if constexpr (lt_is_fixedlength<LT>) {
             return StdHashWithSeed<RunTimeCppType<LT>, seed>()(value);
         } else if constexpr (lt_is_string<LT> || lt_is_binary<LT>) {
+            #ifndef SV_TEST
             return SliceHashWithSeed<seed>()(value);
+            #else
+            return StringViewHashWithSeed<seed>()(value);
+            #endif
         } else {
             assert(false);
         }

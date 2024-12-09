@@ -1078,8 +1078,8 @@ Status OrcChunkReader::_add_conjunct(const Expr* conjunct,
     case type: {                                                                 \
         auto* xrf = dynamic_cast<const RuntimeBloomFilter<type>*>(rf);           \
         if (xrf == nullptr) return false;                                        \
-        auto lower = orc::Literal(xrf->min_value().data, xrf->min_value().size); \
-        auto upper = orc::Literal(xrf->max_value().data, xrf->max_value().size); \
+        auto lower = orc::Literal(xrf->min_value().get_data(), xrf->min_value().get_size()); \
+        auto upper = orc::Literal(xrf->max_value().get_data(), xrf->max_value().get_size()); \
         ADD_RF_TO_BUILDER                                                        \
     }
 

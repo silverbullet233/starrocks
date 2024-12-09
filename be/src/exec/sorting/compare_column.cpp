@@ -200,6 +200,10 @@ public:
         return Status::OK();
     }
 
+    Status do_visit(const StringColumn& column) {
+        return Status::NotSupported("Not support");
+    }
+
     template <typename T>
     Status do_visit(const FixedLengthColumnBase<T>& column) {
         T rhs_data = _rhs_value.get<T>();
@@ -287,6 +291,10 @@ public:
             }
         }
         return Status::OK();
+    }
+
+    Status do_visit(const StringColumn& column) {
+        return Status::NotSupported("Not support");
     }
 
     template <typename T>

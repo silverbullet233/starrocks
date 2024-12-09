@@ -115,6 +115,10 @@ public:
         return Status::OK();
     }
 
+    Status do_visit(const StringColumn& column) {
+        return Status::NotSupported("StringColumn is not supported");
+    }
+
     template <typename T>
     Status do_visit(const FixedLengthColumnBase<T>& column) {
         size_t num_rows = column.size();
@@ -217,6 +221,10 @@ public:
         datas.resize(_selected_size);
         column->append_strings(datas.data(), datas.size());
         return Status::OK();
+    }
+
+    Status do_visit(StringColumn* column) {
+        return Status::NotSupported("StringColumn not supported");
     }
 
     template <typename T>

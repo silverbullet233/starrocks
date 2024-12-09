@@ -107,7 +107,7 @@ Status JsonFunctions::json_path_prepare(FunctionContext* context, FunctionContex
 
     ColumnPtr path = context->get_constant_column(1);
     auto path_value = ColumnHelper::get_const_value<TYPE_VARCHAR>(path);
-    std::string path_str(path_value.data, path_value.size);
+    std::string path_str(path_value.get_data(), path_value.get_size());
     // Must remove or replace the escape sequence.
     path_str.erase(std::remove(path_str.begin(), path_str.end(), '\\'), path_str.end());
     if (path_str.empty()) {

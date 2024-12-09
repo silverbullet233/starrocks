@@ -26,11 +26,11 @@ namespace starrocks {
 
 // find_in_set
 DEFINE_BINARY_FUNCTION_WITH_IMPL(findInSetImpl, str, strlist) {
-    if (strlist.size < str.size) {
+    if (strlist.get_size() < str.get_size()) {
         return 0;
     }
 
-    char* pos = reinterpret_cast<char*>(memchr(str.data, ',', str.size));
+    const char* pos = reinterpret_cast<const char*>(memchr(str.get_data(), ',', str.get_size()));
     if (pos != nullptr) {
         return 0;
     }
@@ -38,17 +38,17 @@ DEFINE_BINARY_FUNCTION_WITH_IMPL(findInSetImpl, str, strlist) {
     int32_t pre_offset = -1;
     int32_t offset = -1;
     int32_t num = 0;
-    while (offset < static_cast<int32_t>(strlist.size)) {
+    while (offset < static_cast<int32_t>(strlist.get_size())) {
         pre_offset = offset;
-        size_t n = strlist.size - offset - 1;
-        char* pos = reinterpret_cast<char*>(memchr(strlist.data + offset + 1, ',', n));
+        size_t n = strlist.get_size() - offset - 1;
+        const char* pos = reinterpret_cast<const char*>(memchr(strlist.get_data() + offset + 1, ',', n));
         if (pos != nullptr) {
-            offset = pos - strlist.data;
+            offset = pos - strlist.get_data();
         } else {
-            offset = strlist.size;
+            offset = strlist.get_size();
         }
         num++;
-        bool is_equal = memequal(str.data, str.size, strlist.data + pre_offset + 1, offset - pre_offset - 1);
+        bool is_equal = memequal(str.get_data(), str.get_size(), strlist.get_data() + pre_offset + 1, offset - pre_offset - 1);
         if (is_equal) {
             return num;
         }

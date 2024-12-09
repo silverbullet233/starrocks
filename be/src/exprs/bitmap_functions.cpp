@@ -61,7 +61,7 @@ StatusOr<ColumnPtr> BitmapFunctions::to_bitmap(FunctionContext* context, const s
         } else {
             StringParser::ParseResult parse_result = StringParser::PARSE_SUCCESS;
             auto slice = viewer.value(row);
-            value = StringParser::string_to_unsigned_int<uint64_t>(slice.data, slice.size, &parse_result);
+            value = StringParser::string_to_unsigned_int<uint64_t>(slice.get_data(), slice.get_size(), &parse_result);
             if (parse_result != StringParser::PARSE_SUCCESS) {
                 context->set_error(strings::Substitute("The input: {0} is not valid, to_bitmap only "
                                                        "support bigint value from 0 to "
@@ -106,7 +106,7 @@ StatusOr<ColumnPtr> BitmapFunctions::bitmap_hash(FunctionContext* context, const
 
         if (!viewer.is_null(row)) {
             auto slice = viewer.value(row);
-            uint32_t hash_value = HashUtil::murmur_hash3_32(slice.data, slice.size, HashUtil::MURMUR3_32_SEED);
+            uint32_t hash_value = HashUtil::murmur_hash3_32(slice.get_data(), slice.get_size(), HashUtil::MURMUR3_32_SEED);
 
             bitmap.add(hash_value);
         }
@@ -215,7 +215,7 @@ StatusOr<ColumnPtr> BitmapFunctions::bitmap_from_string(FunctionContext* context
         auto slice = viewer.value(row);
 
         bits.clear();
-        if (slice.size > INT32_MAX || !SplitStringAndParse({slice.data, (int)slice.size}, ",", &safe_strtou64, &bits)) {
+        if (slice.get_size() > INT32_MAX || !SplitStringAndParse({slice.get_data(), (int)slice.get_size()}, ",", &safe_strtou64, &bits)) {
             builder.append_null();
             continue;
         }
@@ -501,7 +501,7 @@ StatusOr<ColumnPtr> BitmapFunctions::base64_to_bitmap(FunctionContext* context, 
         }
 
         auto src_value = viewer.value(row);
-        int ssize = src_value.size;
+        int ssize = src_value.get_size();
         if (ssize == 0) {
             builder.append_null();
             continue;
@@ -513,7 +513,7 @@ StatusOr<ColumnPtr> BitmapFunctions::base64_to_bitmap(FunctionContext* context, 
             last_len = curr_len;
         }
 
-        int decode_res = base64_decode2(src_value.data, ssize, p.get());
+        int decode_res = base64_decode2(src_value.get_data(), ssize, p.get());
         if (decode_res < 0) {
             builder.append_null();
             continue;
@@ -717,13 +717,13 @@ StatusOr<ColumnPtr> BitmapFunctions::bitmap_from_binary(FunctionContext* context
         }
 
         auto src_value = viewer.value(row);
-        if (src_value.size == 0) {
+        if (src_value.get_size() == 0) {
             builder.append_null();
             continue;
         }
 
         BitmapValue bitmap;
-        bool res = bitmap.valid_and_deserialize(src_value.data, src_value.size);
+        bool res = bitmap.valid_and_deserialize(src_value.get_data(), src_value.get_size());
         if (!res) {
             builder.append_null();
         } else {

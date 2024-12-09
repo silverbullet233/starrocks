@@ -167,10 +167,10 @@ Status MysqlTableWriter::_build_insert_sql(int from, int to, std::string_view* s
                             fmt::format_to(std::back_inserter(_stmt_buffer), "'{}'", viewer.value(i).to_string());
                         } else if constexpr (lt_is_string<type>) {
                             auto slice = viewer.value(i);
-                            _escape_buffer.resize(slice.size * 2 + 1);
+                            _escape_buffer.resize(slice.get_size() * 2 + 1);
 
-                            int sz = mysql_real_escape_string(_mysql_conn, _escape_buffer.data(), slice.data,
-                                                              slice.size);
+                            int sz = mysql_real_escape_string(_mysql_conn, _escape_buffer.data(), slice.get_data(),
+                                                              slice.get_size());
                             _stmt_buffer.push_back('"');
                             _stmt_buffer.append(_escape_buffer.data(), _escape_buffer.data() + sz);
                             _stmt_buffer.push_back('"');
