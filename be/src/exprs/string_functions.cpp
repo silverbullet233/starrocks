@@ -89,13 +89,19 @@ constexpr size_t CONCAT_SMALL_OPTIMIZE_THRESHOLD = 16 << 20;
 // - non_empty_op: invoked when result is non-empty string;
 // - args: extra variadic arguments to emtpy_op and non_empty_op;
 template <bool off_is_negative, bool allow_out_of_left_bound, typename EmptyOp, typename NonEmptyOp, typename... Args>
-static inline void ascii_substr_per_slice(Slice* s, int off, int len, EmptyOp empty_op, NonEmptyOp non_empty_op,
+static inline void ascii_substr_per_slice(
+    #ifndef SV_TEST
+    Slice* s,
+    #else
+    StringView* s,
+    #endif
+    int off, int len, EmptyOp empty_op, NonEmptyOp non_empty_op,
                                           Args&&... args) {
-    const char* begin = s->data;
+    const char* begin = s->get_data();
     auto from_pos = off;
     if constexpr (off_is_negative) {
         // negative offset, count bytes from right side;
-        from_pos = from_pos + s->size;
+        from_pos = from_pos + s->get_size();
         if constexpr (allow_out_of_left_bound) {
             from_pos = std::max(0, from_pos);
         }
@@ -105,15 +111,15 @@ static inline void ascii_substr_per_slice(Slice* s, int off, int len, EmptyOp em
         }
     } else {
         from_pos -= 1;
-        if (UNLIKELY(from_pos >= s->size)) {
+        if (UNLIKELY(from_pos >= s->get_size())) {
             empty_op(std::forward<Args>(args)...);
             return;
         }
     }
     // set end to s.size when end exceeds the string tail.
     auto to_pos = from_pos + len;
-    if (to_pos < 0 || to_pos > s->size) {
-        to_pos = s->size;
+    if (to_pos < 0 || to_pos > s->get_size()) {
+        to_pos = s->get_size();
     }
     // In GCC 7.3, inserting uint8_t* iterator into std::vector<uint8_t> is +65% faster than
     // other iterators, such as char*, int8_t* and default(no type casting);
@@ -134,10 +140,16 @@ static inline void ascii_substr_per_slice(Slice* s, int off, int len, EmptyOp em
 // - non_empty_op: invoked when result is non-empty string;
 // - args: extra variadic arguments to emtpy_op and non_empty_op;
 template <typename EmptyOp, typename NonEmptyOp, typename... Args>
-static inline void utf8_substr_from_left_per_slice(Slice* s, int off, int len, EmptyOp empty_op,
+static inline void utf8_substr_from_left_per_slice(
+    #ifndef SV_TEST
+    Slice* s,
+    #else
+    StringView* s,
+    #endif
+    int off, int len, EmptyOp empty_op,
                                                    NonEmptyOp non_empty_op, Args&&... args) {
-    const char* begin = s->data;
-    const char* end = s->data + s->size;
+    const char* begin = s->get_data();
+    const char* end = s->get_data() + s->get_size();
     const char* from_ptr = skip_leading_utf8(begin, end, off);
     const char* to_ptr = end;
     if (from_ptr >= end) {
@@ -170,11 +182,17 @@ static inline void utf8_substr_from_left_per_slice(Slice* s, int off, int len, E
 // - non_empty_op: invoked when result is non-empty string;
 // - args: extra variadic arguments to emtpy_op and non_empty_op;
 template <bool allow_out_of_left_bound, typename EmptyOp, typename NonEmptyOp, typename... Args>
-static inline void utf8_substr_from_right_per_slice(Slice* s, int off, int len, EmptyOp empty_op,
+static inline void utf8_substr_from_right_per_slice(
+    #ifndef SV_TEST
+    Slice* s,
+    #else
+    StringView* s,
+    #endif
+    int off, int len, EmptyOp empty_op,
                                                     NonEmptyOp non_empty_op, Args&&... args) {
-    const char* begin = s->data;
-    const char* end = s->data + s->size;
-    if (off > s->size) {
+    const char* begin = s->get_data();
+    const char* end = s->get_data() + s->get_size();
+    if (off > s->get_size()) {
         if (allow_out_of_left_bound) {
             non_empty_op((uint8_t*)begin, (uint8_t*)end, std::forward<Args>(args)...);
         } else {
@@ -188,7 +206,7 @@ static inline void utf8_substr_from_right_per_slice(Slice* s, int off, int len, 
     // SMALL_INDEX_MAX, skip_trailing_utf8 is efficient.
     constexpr size_t SMALL_INDEX_MAX = 32;
     uint8_t small_index[SMALL_INDEX_MAX] = {0};
-    if (s->size <= SMALL_INDEX_MAX) {
+    if (s->get_size() <= SMALL_INDEX_MAX) {
         auto small_index_size = get_utf8_small_index(*s, small_index);
         if (off > small_index_size) {
             if constexpr (allow_out_of_left_bound) {
@@ -597,7 +615,7 @@ static inline void ascii_substr_not_const(const size_t row_nums, ColumnViewer<TY
         auto s = str_viewer->value(row);
         auto off = off_viewer->value(row);
         auto len = len_viewer->value(row);
-        if (off == 0 || len <= 0 || s.size == 0) {
+        if (off == 0 || len <= 0 || s.get_size() == 0) {
             column_builder_empty_op(builder, row);
             continue;
         }
@@ -637,7 +655,11 @@ static inline void ascii_right_not_const(const size_t num_rows, ColumnViewer<TYP
 }
 static inline void utf8_substr_not_const(const size_t num_rows, ColumnViewer<TYPE_VARCHAR>* str_viewer,
                                          ColumnViewer<TYPE_INT>* off_viewer, ColumnViewer<TYPE_INT>* len_viewer,
-                                         NullableBinaryColumnBuilder* builder) {
+                                         #ifndef SV_TEST
+                                         NullableBinaryColumnBuilder* builder
+                                         #else
+                                         NullableStringColumnBuilder* builder
+                                         ) {
     for (int row = 0; row < num_rows; row++) {
         if (str_viewer->is_null(row) || off_viewer->is_null(row) || len_viewer->is_null(row)) {
             column_builder_null_op(builder, row);
@@ -646,7 +668,7 @@ static inline void utf8_substr_not_const(const size_t num_rows, ColumnViewer<TYP
         auto s = str_viewer->value(row);
         auto off = off_viewer->value(row);
         auto len = len_viewer->value(row);
-        if (off == INT_MIN || off == 0 || len <= 0 || s.size == 0) {
+        if (off == INT_MIN || off == 0 || len <= 0 || s.get_size() == 0) {
             column_builder_empty_op(builder, row);
             continue;
         }
@@ -661,7 +683,13 @@ static inline void utf8_substr_not_const(const size_t num_rows, ColumnViewer<TYP
 }
 
 static inline void utf8_right_not_const(const size_t row_nums, ColumnViewer<TYPE_VARCHAR>* str_viewer,
-                                        ColumnViewer<TYPE_INT>* len_viewer, NullableBinaryColumnBuilder* builder) {
+                                        ColumnViewer<TYPE_INT>* len_viewer,
+                                        #ifndef SV_TEST
+                                        NullableBinaryColumnBuilder* builder
+                                        #else
+                                        NullableStringColumnBuilder* builder
+                                        #endif
+                                        ) {
     for (int row = 0; row < row_nums; row++) {
         if (str_viewer->is_null(row) || len_viewer->is_null(row)) {
             column_builder_null_op(builder, row);
@@ -669,7 +697,7 @@ static inline void utf8_right_not_const(const size_t row_nums, ColumnViewer<TYPE
         }
         auto s = str_viewer->value(row);
         auto len = len_viewer->value(row);
-        if (len <= 0 || s.size == 0) {
+        if (len <= 0 || s.get_size() == 0) {
             column_builder_empty_op(builder, row);
             continue;
         }
@@ -696,7 +724,11 @@ static inline ColumnPtr substr_not_const(FunctionContext* context, const starroc
     auto* src = down_cast<BinaryColumn*>(data_column);
 
     const auto rows_num = columns[0]->size();
+    #ifndef SV_TEST
     NullableBinaryColumnBuilder result;
+    #else
+    NullableStringColumnBuilder result;
+    #endif
     result.resize(rows_num, src->byte_size());
 
     Bytes& src_bytes = src->get_bytes();
@@ -717,7 +749,11 @@ static inline ColumnPtr right_not_const(FunctionContext* context, const starrock
     auto* src = down_cast<BinaryColumn*>(data_column);
     const auto rows_num = columns[0]->size();
 
+    #ifndef SV_TEST
     NullableBinaryColumnBuilder result;
+    #else
+    NullableStringColumnBuilder result;
+    #endif
 
     Bytes& src_bytes = src->get_bytes();
     auto is_ascii = validate_ascii_fast((const char*)src_bytes.data(), src_bytes.size());

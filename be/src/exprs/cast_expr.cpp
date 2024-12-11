@@ -260,10 +260,10 @@ static ColumnPtr cast_from_string_to_bool_fn(ColumnPtr& column) {
     if (!column->has_null()) {
         for (int row = 0; row < viewer.size(); ++row) {
             auto value = viewer.value(row);
-            auto r = StringParser::string_to_int<int32_t>(value.data, value.size, &result);
+            auto r = StringParser::string_to_int<int32_t>(value.get_data(), value.get_size(), &result);
 
             if (result != StringParser::PARSE_SUCCESS || std::isnan(r) || std::isinf(r)) {
-                bool b = StringParser::string_to_bool(value.data, value.size, &result);
+                bool b = StringParser::string_to_bool(value.get_data(), value.get_size(), &result);
                 if constexpr (AllowThrowException) {
                     if (result != StringParser::PARSE_SUCCESS) {
                         THROW_RUNTIME_ERROR_WITH_TYPES_AND_VALUE(TYPE_VARCHAR, TYPE_BOOLEAN, value.to_string());
@@ -282,10 +282,10 @@ static ColumnPtr cast_from_string_to_bool_fn(ColumnPtr& column) {
             }
 
             auto value = viewer.value(row);
-            auto r = StringParser::string_to_int<int32_t>(value.data, value.size, &result);
+            auto r = StringParser::string_to_int<int32_t>(value.get_data(), value.get_size(), &result);
 
             if (result != StringParser::PARSE_SUCCESS || std::isnan(r) || std::isinf(r)) {
-                bool b = StringParser::string_to_bool(value.data, value.size, &result);
+                bool b = StringParser::string_to_bool(value.get_data(), value.get_size(), &result);
                 if constexpr (AllowThrowException) {
                     if (result != StringParser::PARSE_SUCCESS) {
                         THROW_RUNTIME_ERROR_WITH_TYPES_AND_VALUE(TYPE_VARCHAR, TYPE_BOOLEAN, value.to_string());
@@ -342,7 +342,7 @@ static ColumnPtr cast_from_string_to_bitmap_fn(ColumnPtr& column) {
         auto value = viewer.value(row);
 
         BitmapValue bitmap;
-        if (bitmap.valid_and_deserialize(value.data, value.size)) {
+        if (bitmap.valid_and_deserialize(value.get_data(), value.get_size())) {
             builder.append(&bitmap);
         } else {
             if constexpr (AllowThrowException) {

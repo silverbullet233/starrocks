@@ -122,18 +122,26 @@ public:
         if (ctx->get_num_args() > 1) {
             const auto* column_val = down_cast<const InputColumnType*>(columns[0]);
             if (!ctx->is_notnull_constant_column(1)) {
+
+                #ifndef SV_TEST
                 const auto* column_sep = down_cast<const InputColumnType*>(columns[1]);
+                // @TODO
                 this->data(state).intermediate_string.reserve(column_val->get_bytes().size() +
                                                               column_sep->get_bytes().size());
+                #endif
             } else {
+                #ifndef SV_TEST
                 auto const_column_sep = ctx->get_constant_column(1);
                 Slice sep = ColumnHelper::get_const_value<TYPE_VARCHAR>(const_column_sep);
                 this->data(state).intermediate_string.reserve(column_val->get_bytes().size() +
                                                               sep.get_size() * chunk_size);
+                #endif
             }
         } else {
+            #ifndef SV_TEST
             const auto* column_val = down_cast<const InputColumnType*>(columns[0]);
             this->data(state).intermediate_string.reserve(column_val->get_bytes().size() + 2 * chunk_size);
+            #endif
         }
 
         for (size_t i = 0; i < chunk_size; ++i) {
