@@ -359,7 +359,7 @@ struct DecimalNonDecimalCast<overflow_mode, DecimalType, StringType, DecimalLTGu
         for (auto i = 0; i < num_rows; ++i) {
             auto slice = binary_data->get_slice(i);
             auto overflow = DecimalV3Cast::from_string<DecimalCppType>(
-                    &result_data[i], decimal_precision_limit<DecimalCppType>, scale, slice.data, slice.size);
+                    &result_data[i], decimal_precision_limit<DecimalCppType>, scale, slice.get_data(), slice.get_size());
             if constexpr (check_overflow<overflow_mode>) {
                 if (overflow) {
                     if constexpr (error_if_overflow<overflow_mode>) {

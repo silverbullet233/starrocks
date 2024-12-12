@@ -113,7 +113,12 @@ struct JoinHashTableItems {
     // about the bucket-chained hash table of this kind.
     Buffer<uint32_t> first;
     Buffer<uint32_t> next;
-    Buffer<Slice> build_slice;
+#ifndef SV_TEST
+    using SliceType = Slice;
+#else
+    using SliceType = StringView;
+#endif
+    Buffer<SliceType> build_slice;
     ColumnPtr build_key_column = nullptr;
     uint32_t bucket_size = 0;
     uint32_t row_count = 0; // real row count
@@ -163,7 +168,7 @@ struct HashTableProbeState {
     Buffer<uint8_t> is_nulls;
     Buffer<uint32_t> buckets;
     Buffer<uint32_t> next;
-    Buffer<Slice> probe_slice;
+    Buffer<JoinHashTableItems::SliceType> probe_slice;
     Buffer<uint8_t>* null_array = nullptr;
     ColumnPtr probe_key_column;
     const Columns* key_columns = nullptr;
@@ -436,7 +441,7 @@ private:
 class SerializedJoinBuildFunc {
 public:
     static void prepare(RuntimeState* state, JoinHashTableItems* table_items);
-    static const Buffer<Slice>& get_key_data(const JoinHashTableItems& table_items) { return table_items.build_slice; }
+    static const Buffer<JoinHashTableItems::SliceType>& get_key_data(const JoinHashTableItems& table_items) { return table_items.build_slice; }
     static void construct_hash_table(RuntimeState* state, JoinHashTableItems* table_items,
                                      HashTableProbeState* probe_state);
 
@@ -502,7 +507,7 @@ private:
 
 class SerializedJoinProbeFunc {
 public:
-    static const Buffer<Slice>& get_key_data(const HashTableProbeState& probe_state) { return probe_state.probe_slice; }
+    static const Buffer<JoinHashTableItems::SliceType>& get_key_data(const HashTableProbeState& probe_state) { return probe_state.probe_slice; }
 
     static void prepare(RuntimeState* state, HashTableProbeState* probe_state) {
         probe_state->probe_pool = std::make_unique<MemPool>();

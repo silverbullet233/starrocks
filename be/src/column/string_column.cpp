@@ -89,6 +89,7 @@ void StringColumn::append_value_multiple_times(const Column& src, uint32_t index
     }
     for(size_t i = 0;i < size;i++) {
         append(value);
+
     }
 }
 
@@ -130,7 +131,7 @@ bool StringColumn::append_continuous_strings(const Slice* data, size_t size) {
     // @TODO should we optimize this?
     for (size_t i = 0; i < size; i++) {
         const auto& s = data[i];
-        append(s);
+        append_string(s.get_data(), s.get_size());
     }
     return true;
 }

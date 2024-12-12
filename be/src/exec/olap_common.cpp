@@ -46,6 +46,7 @@
 #include "gutil/strings/substitute.h"
 #include "storage/tuple.h"
 #include "types/large_int_value.h"
+#include "util/string_view.h"
 
 namespace starrocks {
 
@@ -58,6 +59,10 @@ inline size_t difference(const T& low, const T& high) {
 
 template <>
 inline size_t difference<Slice>(const Slice& low, const Slice& high) {
+    return 0;
+}
+template <>
+inline size_t difference<StringView>(const StringView& low, const StringView& high) {
     return 0;
 }
 
@@ -156,6 +161,9 @@ void ColumnValueRange<StringValue>::convert_to_fixed_value() {}
 
 template <>
 void ColumnValueRange<Slice>::convert_to_fixed_value() {}
+
+template <>
+void ColumnValueRange<StringView>::convert_to_fixed_value() {}
 
 template <>
 void ColumnValueRange<DecimalV2Value>::convert_to_fixed_value() {}
@@ -761,6 +769,7 @@ InsitializeColumnValueRange(int64_t);
 InsitializeColumnValueRange(__int128);
 InsitializeColumnValueRange(StringValue);
 InsitializeColumnValueRange(Slice);
+InsitializeColumnValueRange(StringView);
 InsitializeColumnValueRange(DateTimeValue);
 InsitializeColumnValueRange(DecimalV2Value);
 InsitializeColumnValueRange(bool);

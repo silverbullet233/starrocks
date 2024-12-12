@@ -974,8 +974,8 @@ static ColumnPtr cast_from_string_to_time_fn(ColumnPtr& column) {
         }
 
         auto time = viewer_time.value(row);
-        char* first_char = time.get_data();
-        char* end_char = time.get_data() + time.get_size();
+        char* first_char = const_cast<char*>(time.get_data());
+        char* end_char = const_cast<char*>(time.get_data()) + time.get_size();
 
         int hour = 0, minute = 0, second = 0;
         char* first_colon = (char*)memchr(first_char, ':', time.get_size());
@@ -1311,7 +1311,7 @@ DEFINE_STRING_UNARY_FN_WITH_IMPL(DoubleCastToString, v) {
         int size = v1->size();                                                                              \
         for (int i = 0; i < size; ++i) {                                                                    \
             auto f = fmt::format_int(r1[i]);                                                                \
-            result.append_string(f.data(), f.size()); \
+            result->append_string(f.data(), f.size()); \
         }                                                                                                   \
         return result;                                                                                      \
     }

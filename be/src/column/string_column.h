@@ -67,7 +67,7 @@ public:
         return false;
     }
 
-    ~StringColumn() override;
+    ~StringColumn() override = default;
 
     bool is_binary() const override { return false; }
     bool is_large_binary() const override { return false; }
@@ -179,9 +179,15 @@ public:
 
     void append_value_multiple_times(const void* value, size_t count) override;
 
-    void append_default() override;
+    void append_default() override {
+        _views.emplace_back(StringView(""));
+    }
 
-    void append_default(size_t count) override;
+    void append_default(size_t count) override {
+        for (size_t i = 0;i < count;i++) {
+            _views.emplace_back(StringView(""));
+        }
+    }
 
     // ColumnPtr replicate(const Buffer<uint32_t>& offsets) override;
 
