@@ -228,9 +228,9 @@ private:
     template <bool IsDeepCopy>
     CppType _copy(MemPool* mem_pool, const CppType& value) {
         if constexpr (IsDeepCopy && IsSlice<CppType>) {
-            uint8_t* pos = mem_pool->allocate(value.size);
-            std::memcpy(pos, value.data, value.size);
-            return Slice{pos, value.size};
+            uint8_t* pos = mem_pool->allocate(value.get_size());
+            std::memcpy(pos, value.get_data(), value.get_size());
+            return CppType(pos, value.get_size());
         } else {
             return value;
         }

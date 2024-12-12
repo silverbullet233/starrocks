@@ -43,7 +43,11 @@ struct LHashSet {
 
 template <LogicalType Type>
 struct LHashSet<Type, std::enable_if_t<isSliceLT<Type>>> {
+    #ifndef SV_TEST
     using LType = SliceHashSet;
+    #else
+    using LType = StringViewHashSet;
+    #endif
 };
 
 template <LogicalType Type>
@@ -332,7 +336,11 @@ public:
         if constexpr (isSliceLT<Type>) {
             for (auto v : _hash_set) {
                 // v -> SliceWithHash
-                Slice s{v.data, v.size};
+                #ifndef SV_TEST
+                Slice s{v.get_data(), v.get_size()};
+                #else
+                StringView s{v.get_data(), v.get_size()};
+                #endif
                 values->append_datum(s);
             }
         } else {

@@ -473,7 +473,7 @@ ColumnPtr cast_float_from_string_fn(ColumnPtr& column) {
         }
 
         auto value = viewer.value(row);
-        auto r = StringParser::string_to_float<RunTimeCppType<ToType>>(value.data, value.size, &result);
+        auto r = StringParser::string_to_float<RunTimeCppType<ToType>>(value.get_data(), value.get_size(), &result);
 
         bool is_null = (result != StringParser::PARSE_SUCCESS || std::isnan(r) || std::isinf(r));
         if constexpr (AllowThrowException) {
@@ -686,7 +686,7 @@ static ColumnPtr cast_from_string_to_decimalv2_fn(ColumnPtr& column) {
             auto value = viewer.value(row);
             DecimalV2Value v;
 
-            bool ret = v.parse_from_str(value.data, value.size);
+            bool ret = v.parse_from_str(value.get_data(), value.get_size());
             if constexpr (AllowThrowException) {
                 if (ret) {
                     THROW_RUNTIME_ERROR_WITH_TYPES_AND_VALUE(TYPE_VARCHAR, TYPE_DECIMALV2, value.to_string());
@@ -704,7 +704,7 @@ static ColumnPtr cast_from_string_to_decimalv2_fn(ColumnPtr& column) {
             auto value = viewer.value(row);
             DecimalV2Value v;
 
-            bool ret = v.parse_from_str(value.data, value.size);
+            bool ret = v.parse_from_str(value.get_data(), value.get_size());
             if constexpr (AllowThrowException) {
                 if (ret) {
                     THROW_RUNTIME_ERROR_WITH_TYPES_AND_VALUE(TYPE_VARCHAR, TYPE_DECIMALV2, value.to_string());
@@ -773,7 +773,7 @@ static ColumnPtr cast_from_string_to_date_fn(ColumnPtr& column) {
             auto value = viewer.value(row);
             DateValue v;
 
-            bool right = v.from_string(value.data, value.size);
+            bool right = v.from_string(value.get_data(), value.get_size());
             if constexpr (AllowThrowException) {
                 if (!right) {
                     THROW_RUNTIME_ERROR_WITH_TYPES_AND_VALUE(TYPE_VARCHAR, TYPE_DATE, value.to_string());
@@ -791,7 +791,7 @@ static ColumnPtr cast_from_string_to_date_fn(ColumnPtr& column) {
             auto value = viewer.value(row);
             DateValue v;
 
-            bool right = v.from_string(value.data, value.size);
+            bool right = v.from_string(value.get_data(), value.get_size());
             if constexpr (AllowThrowException) {
                 if (!right) {
                     THROW_RUNTIME_ERROR_WITH_TYPES_AND_VALUE(TYPE_VARCHAR, TYPE_DATE, value.to_string());
@@ -974,11 +974,11 @@ static ColumnPtr cast_from_string_to_time_fn(ColumnPtr& column) {
         }
 
         auto time = viewer_time.value(row);
-        char* first_char = time.data;
-        char* end_char = time.data + time.size;
+        char* first_char = time.get_data();
+        char* end_char = time.get_data() + time.get_size();
 
         int hour = 0, minute = 0, second = 0;
-        char* first_colon = (char*)memchr(first_char, ':', time.size);
+        char* first_colon = (char*)memchr(first_char, ':', time.get_size());
         if (first_colon != nullptr) {
             char* second_colon = (char*)memchr(first_colon + 1, ':', end_char - first_colon - 1);
             if (second_colon != nullptr) {
@@ -1282,6 +1282,7 @@ DEFINE_STRING_UNARY_FN_WITH_IMPL(DoubleCastToString, v) {
 // CastToString will copy string when returning value,
 // it will consume 400ms when casting 10^8 rows.
 // It's better to eliminate the CastToString overload.
+#ifndef SV_TEST
 #define DEFINE_INT_CAST_TO_STRING(FROM_TYPE, TO_TYPE)                                                       \
     template <>                                                                                             \
     template <>                                                                                             \
@@ -1300,6 +1301,22 @@ DEFINE_STRING_UNARY_FN_WITH_IMPL(DoubleCastToString, v) {
         }                                                                                                   \
         return result;                                                                                      \
     }
+#else
+#define DEFINE_INT_CAST_TO_STRING(FROM_TYPE, TO_TYPE)                                                       \
+    template <>                                                                                             \
+    template <>                                                                                             \
+    inline ColumnPtr StringUnaryFunction<CastToString>::evaluate<FROM_TYPE, TO_TYPE>(const ColumnPtr& v1) { \
+        auto& r1 = ColumnHelper::cast_to_raw<FROM_TYPE>(v1)->get_data();                                    \
+        auto result = RunTimeColumnType<TO_TYPE>::create();                                                 \
+        int size = v1->size();                                                                              \
+        for (int i = 0; i < size; ++i) {                                                                    \
+            auto f = fmt::format_int(r1[i]);                                                                \
+            result.append_string(f.data(), f.size()); \
+        }                                                                                                   \
+        return result;                                                                                      \
+    }
+#endif
+
 
 DEFINE_INT_CAST_TO_STRING(TYPE_BOOLEAN, TYPE_VARCHAR);
 DEFINE_INT_CAST_TO_STRING(TYPE_TINYINT, TYPE_VARCHAR);

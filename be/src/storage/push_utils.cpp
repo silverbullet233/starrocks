@@ -89,7 +89,7 @@ ColumnPtr PushBrokerReader::_build_object_column(const ColumnPtr& column) {
     if (!column->has_null()) {
         for (int row = 0; row < viewer.size(); ++row) {
             auto value = viewer.value(row);
-            BitmapValue bitmap(value.data);
+            BitmapValue bitmap(value.get_data());
             builder.append(&bitmap);
         }
     } else {
@@ -100,7 +100,7 @@ ColumnPtr PushBrokerReader::_build_object_column(const ColumnPtr& column) {
             }
 
             auto value = viewer.value(row);
-            BitmapValue bitmap(value.data);
+            BitmapValue bitmap(value.get_data());
             builder.append(&bitmap);
         }
     }

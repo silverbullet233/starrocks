@@ -612,8 +612,8 @@ public:
             size += sizeof(_min) + sizeof(_max);
         } else {
             // slice format = | min_size | max_size | min_data | max_data |
-            size += sizeof(_min.size) + _min.size;
-            size += sizeof(_max.size) + _max.size;
+            size += sizeof(_min.get_size()) + _min.get_size();
+            size += sizeof(_max.get_size()) + _max.get_size();
         }
 
         return size;
@@ -641,19 +641,21 @@ public:
             memcpy(data + offset, &_max, sizeof(_max));
             offset += sizeof(_max);
         } else {
-            memcpy(data + offset, &_min.size, sizeof(_min.size));
-            offset += sizeof(_min.size);
-            memcpy(data + offset, &_max.size, sizeof(_max.size));
-            offset += sizeof(_max.size);
+            uint32_t tmp = _min.get_size();
+            memcpy(data + offset, &tmp, sizeof(tmp));
+            offset += sizeof(tmp);
+            tmp = _max.get_size();
+            memcpy(data + offset, &tmp, sizeof(tmp));
+            offset += sizeof(tmp);
 
-            if (_min.size != 0) {
-                memcpy(data + offset, _min.data, _min.size);
-                offset += _min.size;
+            if (_min.get_size() != 0) {
+                memcpy(data + offset, _min.get_data(), _min.get_size());
+                offset += _min.get_size();
             }
 
-            if (_max.size != 0) {
-                memcpy(data + offset, _max.data, _max.size);
-                offset += _max.size;
+            if (_max.get_size() != 0) {
+                memcpy(data + offset, _max.get_data(), _max.get_size());
+                offset += _max.get_size();
             }
         }
         return offset;
@@ -684,25 +686,29 @@ public:
                 memcpy(&_max, data + offset, sizeof(_max));
                 offset += sizeof(_max);
             } else {
-                _min.data = nullptr;
-                _max.data = nullptr;
-                memcpy(&_min.size, data + offset, sizeof(_min.size));
-                offset += sizeof(_min.size);
-                memcpy(&_max.size, data + offset, sizeof(_max.size));
-                offset += sizeof(_max.size);
+                // _min.data = nullptr;
+                // _max.data = nullptr;
+                uint32_t tmp = _min.get_size();
+                memcpy(&tmp, data + offset, sizeof(tmp));
+                offset += sizeof(tmp);
+                tmp = _max.get_size();
+                memcpy(&tmp, data + offset, sizeof(tmp));
+                offset += sizeof(tmp);
 
-                if (_min.size != 0) {
-                    _slice_min.resize(_min.size);
-                    memcpy(_slice_min.data(), data + offset, _min.size);
-                    offset += _min.size;
-                    _min.data = _slice_min.data();
+                if (_min.get_size() != 0) {
+                    _slice_min.resize(_min.get_size());
+                    memcpy(_slice_min.data(), data + offset, _min.get_size());
+                    offset += _min.get_size();
+                    // _min.data = _slice_min.data();
+                    _min = CppType(_slice_min.data(), _slice_min.size());
                 }
 
-                if (_max.size != 0) {
-                    _slice_max.resize(_max.size);
-                    memcpy(_slice_max.data(), data + offset, _max.size);
-                    offset += _max.size;
-                    _max.data = _slice_max.data();
+                if (_max.get_size() != 0) {
+                    _slice_max.resize(_max.get_size());
+                    memcpy(_slice_max.data(), data + offset, _max.get_size());
+                    offset += _max.get_size();
+                    _max = CppType(_slice_max.data(), _slice_max.size());
+                    // _max.data = _slice_max.data();
                 }
             }
         }
@@ -828,15 +834,17 @@ private:
             if constexpr (IsSlice<CppType>) {
                 // maybe we are refering to another runtime filter instance
                 // for security we have to copy that back to our instance.
-                if (_min.size != 0 && _min.data != _slice_min.data()) {
-                    _slice_min.resize(_min.size);
-                    memcpy(_slice_min.data(), _min.data, _min.size);
-                    _min.data = _slice_min.data();
+                if (_min.get_size() != 0 && _min.get_data() != _slice_min.data()) {
+                    _slice_min.resize(_min.get_size());
+                    memcpy(_slice_min.data(), _min.get_data(), _min.get_size());
+                    // _min.data = _slice_min.data();
+                    _min = CppType(_slice_min.data(), _slice_min.size());
                 }
-                if (_max.size != 0 && _max.data != _slice_max.data()) {
-                    _slice_max.resize(_max.size);
-                    memcpy(_slice_max.data(), _max.data, _max.size);
-                    _max.data = _slice_max.data();
+                if (_max.get_size() != 0 && _max.get_data() != _slice_max.data()) {
+                    _slice_max.resize(_max.get_size());
+                    memcpy(_slice_max.data(), _max.get_data(), _max.get_size());
+                    _max = CppType(_slice_max.data(), _slice_max.size());
+                    // _max.data = _slice_max.data();
                 }
             }
         }

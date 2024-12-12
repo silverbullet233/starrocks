@@ -265,6 +265,7 @@ static inline void ascii_substr(BinaryColumn* src, Bytes* bytes, Offsets* offset
 }
 
 static inline void utf8_substr_from_left(BinaryColumn* src, Bytes* bytes, Offsets* offsets, int off, int len) {
+    #ifndef SV_TEST
     const auto size = src->size();
     size_t i = 0;
     for (; i < size; ++i) {
@@ -272,6 +273,7 @@ static inline void utf8_substr_from_left(BinaryColumn* src, Bytes* bytes, Offset
         utf8_substr_from_left_per_slice(&s, off, len, binary_column_empty_op, binary_column_non_empty_op, bytes,
                                         offsets, i);
     }
+    #endif
 }
 
 template <bool allow_out_of_left_bound>
@@ -443,6 +445,7 @@ static inline void column_builder_non_empty_op(uint8_t* begin, uint8_t* end,
 
 ColumnPtr substr_const_not_null(const Columns& columns, BinaryColumn* src, SubstrState* state) {
     ColumnPtr result = BinaryColumn::create();
+    #ifndef SV_TEST
     auto* binary = down_cast<BinaryColumn*>(result.get());
     Bytes& bytes = binary->get_bytes();
     Offsets& offsets = binary->get_offset();
@@ -495,11 +498,14 @@ ColumnPtr substr_const_not_null(const Columns& columns, BinaryColumn* src, Subst
             utf8_substr_from_right<false>(src, &bytes, &offsets, -off, len);
         }
     }
+    #else
+    #endif
     return result;
 }
 
 ColumnPtr right_const_not_null(const Columns& columns, BinaryColumn* src, SubstrState* state) {
     ColumnPtr result = BinaryColumn::create();
+    #ifndef SV_TEST
     auto* binary = down_cast<BinaryColumn*>(result.get());
     Bytes& bytes = binary->get_bytes();
     Offsets& offsets = binary->get_offset();
@@ -531,6 +537,8 @@ ColumnPtr right_const_not_null(const Columns& columns, BinaryColumn* src, Substr
         // allow_out_of_left_bound=true
         utf8_substr_from_right<true>(src, &bytes, &offsets, len, len);
     }
+    #else
+    #endif
     return result;
 }
 
@@ -634,7 +642,13 @@ static inline void ascii_substr_not_const(const size_t row_nums, ColumnViewer<TY
 }
 
 static inline void ascii_right_not_const(const size_t num_rows, ColumnViewer<TYPE_VARCHAR>* str_viewer,
-                                         ColumnViewer<TYPE_INT>* len_viewer, NullableBinaryColumnBuilder* builder) {
+                                         ColumnViewer<TYPE_INT>* len_viewer,
+                                         #ifndef SV_TEST
+                                         NullableBinaryColumnBuilder* builder
+                                         #else
+                                         NullableStringColumnBuilder* builder
+                                         #endif
+                                         ) {
     for (int row = 0; row < num_rows; row++) {
         if (str_viewer->is_null(row) || len_viewer->is_null(row)) {
             column_builder_null_op(builder, row);
@@ -643,7 +657,7 @@ static inline void ascii_right_not_const(const size_t num_rows, ColumnViewer<TYP
 
         auto s = str_viewer->value(row);
         auto len = len_viewer->value(row);
-        if (len <= 0 || s.size == 0) {
+        if (len <= 0 || s.get_size() == 0) {
             column_builder_empty_op(builder, row);
             continue;
         }
@@ -659,6 +673,7 @@ static inline void utf8_substr_not_const(const size_t num_rows, ColumnViewer<TYP
                                          NullableBinaryColumnBuilder* builder
                                          #else
                                          NullableStringColumnBuilder* builder
+                                         #endif
                                          ) {
     for (int row = 0; row < num_rows; row++) {
         if (str_viewer->is_null(row) || off_viewer->is_null(row) || len_viewer->is_null(row)) {
@@ -809,8 +824,8 @@ StatusOr<ColumnPtr> StringFunctions::right(FunctionContext* context, const Colum
 
 // starts_with
 DEFINE_BINARY_FUNCTION_WITH_IMPL(starts_withImpl, str, prefix) {
-    re2::StringPiece str_sp(str.data, str.size);
-    re2::StringPiece prefix_sp(prefix.data, prefix.size);
+    re2::StringPiece str_sp(str.get_data(), str.get_size());
+    re2::StringPiece prefix_sp(prefix.get_data(), prefix.get_size());
     return str_sp.starts_with(prefix_sp);
 }
 
@@ -821,8 +836,8 @@ StatusOr<ColumnPtr> StringFunctions::starts_with(FunctionContext* context, const
 
 // ends_with
 DEFINE_BINARY_FUNCTION_WITH_IMPL(ends_withImpl, str, suffix) {
-    re2::StringPiece str_sp(str.data, str.size);
-    re2::StringPiece suffix_sp(suffix.data, suffix.size);
+    re2::StringPiece str_sp(str.get_data(), str.get_size());
+    re2::StringPiece suffix_sp(suffix.get_data(), suffix.get_size());
     return str_sp.ends_with(suffix_sp);
 }
 
@@ -834,6 +849,7 @@ struct SpaceFunction {
 public:
     template <LogicalType Type, LogicalType ResultType>
     static ColumnPtr evaluate(const ColumnPtr& v1) {
+        #ifndef SV_TEST
         auto len_column = down_cast<Int32Column*>(v1.get());
         auto& len_array = len_column->get_data();
         const auto num_rows = len_column->size();
@@ -860,6 +876,9 @@ public:
         }
         dst_bytes.resize(dst_off, ' ');
         builder.set_has_null(has_null);
+        #else
+        NullableStringColumnBuilder builder;
+        #endif
 
         RETURN_COLUMN(builder.build(v1->is_constant()), "space");
     }
@@ -924,6 +943,7 @@ void fast_repeat(uint8_t* dst, const uint8_t* src, size_t src_size, int32_t repe
 }
 
 static inline ColumnPtr repeat_const_not_null(const Columns& columns, const BinaryColumn* src) {
+    #ifndef SV_TEST
     auto times = ColumnHelper::get_const_value<TYPE_INT>(columns[1]);
 
     auto& src_offsets = src->get_offset();
@@ -981,6 +1001,9 @@ static inline ColumnPtr repeat_const_not_null(const Columns& columns, const Bina
 
     dst_bytes.resize(dst_off);
     builder.set_has_null(has_null);
+    #else
+    NullableStringColumnBuilder builder;
+    #endif
     RETURN_COLUMN(builder.build(ColumnHelper::is_all_const(columns)), "repeat");
 }
 
@@ -989,6 +1012,7 @@ static inline ColumnPtr repeat_const(const Columns& columns) {
 }
 
 static inline ColumnPtr repeat_not_const(const Columns& columns) {
+    #ifndef SV_TEST
     ColumnViewer<TYPE_VARCHAR> str_viewer(columns[0]);
     ColumnViewer<TYPE_INT> times_viewer(columns[1]);
 
@@ -1042,6 +1066,9 @@ static inline ColumnPtr repeat_not_const(const Columns& columns) {
         fast_repeat(dst_begin + dst_offsets[i], (uint8_t*)s.data, s.size, dst_slice_size / s.size);
     }
     builder.set_has_null(has_null);
+    #else
+    NullableStringColumnBuilder builder;
+    #endif
     RETURN_COLUMN(builder.build(ColumnHelper::is_all_const(columns)), "repeat");
 }
 
@@ -1289,6 +1316,7 @@ static inline ColumnPtr translate_with_utf8_const_nonnull_from_and_to(const Colu
     DCHECK(state->is_from_and_to_const);
     DCHECK(!state->is_ascii_map);
 
+    #ifndef SV_TEST
     NullableBinaryColumnBuilder builder;
     auto& dst_offsets = builder.data_column()->get_offset();
     auto& dst_bytes = builder.data_column()->get_bytes();
@@ -1337,7 +1365,9 @@ static inline ColumnPtr translate_with_utf8_const_nonnull_from_and_to(const Colu
 
     dst_bytes.resize(dst_offset);
     builder.set_has_null(has_null);
-
+    #else
+    NullableStringColumnBuilder builder;
+    #endif
     RETURN_COLUMN(builder.build(ColumnHelper::is_all_const(columns)), "translate");
 }
 
@@ -1352,6 +1382,7 @@ static inline ColumnPtr translate_with_utf8_const_nonnull_from_and_to(const Colu
  *  The row will be null, if it exceeds get_olap_string_max_length() after translated.
  */
 ColumnPtr translate_with_non_const_from_or_to(const Columns& columns, const TranslateState* state) {
+    #ifndef SV_TEST
     DCHECK(state == nullptr || !state->is_from_and_to_const);
 
     ColumnViewer<TYPE_VARCHAR> src_viewer(columns[TranslateState::SRC_STR_INDEX]);
@@ -1422,7 +1453,9 @@ ColumnPtr translate_with_non_const_from_or_to(const Columns& columns, const Tran
 
     dst_bytes.resize(dst_offset);
     builder.set_has_null(has_null);
-
+    #else
+    NullableStringColumnBuilder builder;
+    #endif
     RETURN_COLUMN(builder.build(ColumnHelper::is_all_const(columns)), "translate");
 }
 
@@ -1467,7 +1500,7 @@ Status StringFunctions::pad_prepare(FunctionContext* context, FunctionContext::F
 
     state->fill_is_const = true;
     state->fill = ColumnHelper::get_const_value<TYPE_VARCHAR>(pad_column);
-    state->fill_is_utf8 = state->fill.size > get_utf8_index(state->fill, &state->fill_utf8_index);
+    state->fill_is_utf8 = state->fill.get_size() > get_utf8_index(state->fill, &state->fill_utf8_index);
 
     // const null case is handled by non_const implementation.
     if (!context->is_notnull_constant_column(1)) {
@@ -1546,6 +1579,7 @@ static inline ColumnPtr pad_utf8_const(Columns const& columns, BinaryColumn* src
                                        std::vector<size_t> const& fill_utf8_index) {
     static_assert(src_is_utf8 || fill_is_utf8);
 
+    #ifndef SV_TEST
     const auto num_rows = src->size();
     NullableBinaryColumnBuilder builder;
 
@@ -1629,6 +1663,9 @@ static inline ColumnPtr pad_utf8_const(Columns const& columns, BinaryColumn* src
     dst_bytes.resize(dst_off);
     builder.data_column()->get_bytes().swap(reinterpret_cast<Bytes&>(dst_bytes));
     builder.set_has_null(has_null);
+    #else
+    NullableStringColumnBuilder builder;
+    #endif
     return builder.build(ColumnHelper::is_all_const(columns));
 }
 
@@ -1646,23 +1683,23 @@ static inline ColumnPtr pad_const_not_null(const Columns& columns, BinaryColumn*
         return ColumnHelper::create_const_column<TYPE_VARCHAR>(Slice(), columns[1]->size());
     }
     // pad.size == 0, return substr(s, 1, len) according to Snowflake
-    if (fill.size == 0) {
+    if (fill.get_size() == 0) {
         SubstrState state = {.is_const = true, .pos = 1, .len = len};
         return substr_const_not_null(columns, src, &state);
     }
     auto& src_bytes = src->get_bytes();
     auto src_is_utf8 = !validate_ascii_fast((const char*)src_bytes.data(), src_bytes.size());
     if (src_is_utf8 && pad_state->fill_is_utf8) {
-        return pad_utf8_const<true, true, pad_type>(columns, src, (uint8_t*)fill.data, fill.size, len,
+        return pad_utf8_const<true, true, pad_type>(columns, src, (uint8_t*)fill.get_data(), fill.get_size(), len,
                                                     pad_state->fill_utf8_index);
     } else if (src_is_utf8) {
-        return pad_utf8_const<true, false, pad_type>(columns, src, (uint8_t*)fill.data, fill.size, len,
+        return pad_utf8_const<true, false, pad_type>(columns, src, (uint8_t*)fill.get_data(), fill.get_size(), len,
                                                      pad_state->fill_utf8_index);
     } else if (pad_state->fill_is_utf8) {
-        return pad_utf8_const<false, true, pad_type>(columns, src, (uint8_t*)fill.data, fill.size, len,
+        return pad_utf8_const<false, true, pad_type>(columns, src, (uint8_t*)fill.get_data(), fill.get_size(), len,
                                                      pad_state->fill_utf8_index);
     } else {
-        return ascii_pad_ascii_const<pad_type>(columns, src, (uint8_t*)fill.data, fill.size, len);
+        return ascii_pad_ascii_const<pad_type>(columns, src, (uint8_t*)fill.get_data(), fill.get_size(), len);
     }
 }
 
@@ -1691,6 +1728,7 @@ ColumnPtr pad_not_const(const Columns& columns, [[maybe_unused]] const PadState*
     }
 
     const auto num_rows = columns[0]->size();
+    #ifndef SV_TEST
     NullableBinaryColumnBuilder builder;
     builder.resize(num_rows, 0);
     auto& dst_offsets = builder.data_column()->get_offset();
@@ -1733,9 +1771,9 @@ ColumnPtr pad_not_const(const Columns& columns, [[maybe_unused]] const PadState*
         size_t fill_len = 0;
         if constexpr (src_is_ascii) {
             // ASCII case: len is less than str.size
-            if (str.size >= len) {
+            if (str.get_size() >= len) {
                 dst_bytes.resize(dst_off + len);
-                strings::memcpy_inlined(dst_bytes.data() + dst_off, str.data, len);
+                strings::memcpy_inlined(dst_bytes.data() + dst_off, str.get_data(), len);
                 dst_off += len;
                 dst_offsets[i + 1] = dst_off;
                 continue;
@@ -1802,6 +1840,9 @@ ColumnPtr pad_not_const(const Columns& columns, [[maybe_unused]] const PadState*
     DCHECK(dst_bytes.size() == dst_off);
     builder.data_column()->get_bytes().swap(reinterpret_cast<Bytes&>(dst_bytes));
     builder.set_has_null(has_null);
+    #else
+    NullableStringColumnBuilder builder;
+    #endif
     return builder.build(ColumnHelper::is_all_const(columns));
 }
 
@@ -1937,7 +1978,7 @@ StatusOr<ColumnPtr> StringFunctions::append_trailing_char_if_absent(FunctionCont
         ColumnBuilder<TYPE_VARCHAR> dst_builder(row_num);
 
         for (int row = 0; row < row_num; ++row) {
-            if (src_viewer.is_null(row) || tailing_viewer.is_null(row) || tailing_viewer.value(row).size != 1) {
+            if (src_viewer.is_null(row) || tailing_viewer.is_null(row) || tailing_viewer.value(row).get_size() != 1) {
                 dst_builder.append_null();
                 continue;
             }
@@ -1945,13 +1986,13 @@ StatusOr<ColumnPtr> StringFunctions::append_trailing_char_if_absent(FunctionCont
             auto str = src_viewer.value(row);
             auto tailing_char = tailing_viewer.value(row);
 
-            if (str.size == 0 || str.data[str.size - 1] == tailing_char.data[0]) {
+            if (str.get_data() == 0 || str.get_data()[str.get_size() - 1] == tailing_char.get_data()[0]) {
                 dst_builder.append(str);
                 continue;
             }
 
-            std::string s(str.data, str.size);
-            s.append(tailing_char.data, 1);
+            std::string s(str.get_data(), str.get_size());
+            s.append(tailing_char.get_data(), 1);
             dst_builder.append(Slice(s));
         }
 
@@ -1961,7 +2002,7 @@ StatusOr<ColumnPtr> StringFunctions::append_trailing_char_if_absent(FunctionCont
 
 // length
 DEFINE_UNARY_FN_WITH_IMPL(lengthImpl, str) {
-    return str.size;
+    return str.get_size();
 }
 
 StatusOr<ColumnPtr> StringFunctions::length(FunctionContext* context, const Columns& columns) {
@@ -1969,7 +2010,7 @@ StatusOr<ColumnPtr> StringFunctions::length(FunctionContext* context, const Colu
 }
 
 DEFINE_UNARY_FN_WITH_IMPL(utf8LengthImpl, str) {
-    return utf8_len(str.data, str.data + str.size);
+    return utf8_len(str.get_data(), str.get_data() + str.get_size());
 }
 
 StatusOr<ColumnPtr> StringFunctions::utf8_length(FunctionContext* context, const starrocks::Columns& columns) {
@@ -2022,6 +2063,8 @@ struct StringCaseToggleFunction {
 public:
     template <LogicalType Type, LogicalType ResultType>
     static ColumnPtr evaluate(const ColumnPtr& v1) {
+        // @TODO how to use SIMD
+        #ifndef SV_TEST
         auto* src = down_cast<BinaryColumn*>(v1.get());
         Bytes& src_bytes = src->get_bytes();
         Offsets& src_offsets = src->get_offset();
@@ -2034,6 +2077,9 @@ public:
         } else {
             vectorized_toggle_case<'A', 'Z'>(&src_bytes, &dst_bytes);
         }
+        #else
+        auto dst = RunTimeColumnType<TYPE_VARCHAR>::create();
+        #endif
         return dst;
     }
 };
@@ -2277,6 +2323,7 @@ template <TrimType trim_type, size_t simd_threshold, bool trim_single, bool trim
 struct AdaptiveTrimFunction {
     template <LogicalType Type, LogicalType ResultType, class RemoveArg, class Utf8Index>
     static ColumnPtr evaluate(const ColumnPtr& column, RemoveArg&& remove, Utf8Index&& utf8_index) {
+        #ifndef SV_TEST
         auto* src = down_cast<BinaryColumn*>(column.get());
 
         auto dst = RunTimeColumnType<TYPE_VARCHAR>::create();
@@ -2326,6 +2373,9 @@ struct AdaptiveTrimFunction {
                         &trailing_spaces_num);
             }
         }
+        #else
+        auto dst = RunTimeColumnType<TYPE_VARCHAR>::create();
+        #endif
         return dst;
     }
 };
@@ -2423,10 +2473,10 @@ StatusOr<ColumnPtr> StringFunctions::hex_int(FunctionContext* context, const sta
 static constexpr char const* alphabet = "0123456789ABCDEF";
 DEFINE_STRING_UNARY_FN_WITH_IMPL(hex_stringImpl, str) {
     std::string s;
-    raw::stl_string_resize_uninitialized(&s, str.size << 1);
+    raw::stl_string_resize_uninitialized(&s, str.get_size() << 1);
     auto* p = s.data();
-    const auto* q = str.data;
-    const auto* end = str.data + str.size;
+    const auto* q = str.get_data();
+    const auto* end = str.get_data() + str.get_size();
     while (q != end) {
         int ci = static_cast<unsigned char>(*q++);
         *p++ = alphabet[ci >> 4];
@@ -2679,7 +2729,7 @@ StatusOr<ColumnPtr> StringFunctions::sm3(FunctionContext* context, const starroc
 
 // ascii
 DEFINE_UNARY_FN_WITH_IMPL(asciiImpl, str) {
-    return str.size == 0 ? 0 : static_cast<uint8_t>(str.data[0]);
+    return str.get_size() == 0 ? 0 : static_cast<uint8_t>(str.get_data()[0]);
 }
 
 StatusOr<ColumnPtr> StringFunctions::ascii(FunctionContext* context, const Columns& columns) {
@@ -2709,6 +2759,7 @@ StatusOr<ColumnPtr> StringFunctions::strcmp(FunctionContext* context, const Colu
 }
 
 static inline ColumnPtr concat_const_not_null(Columns const& columns, BinaryColumn* src, const ConcatState* state) {
+    #ifndef SV_TEST
     NullableBinaryColumnBuilder builder;
     auto* binary = down_cast<BinaryColumn*>(builder.data_column().get());
     auto& nulls = builder.get_null_data();
@@ -2755,6 +2806,9 @@ static inline ColumnPtr concat_const_not_null(Columns const& columns, BinaryColu
         }
     }
     builder.set_has_null(is_null);
+    #else
+    NullableStringColumnBuilder builder;
+    #endif
     return builder.build(ColumnHelper::is_all_const(columns));
 }
 
@@ -2765,6 +2819,7 @@ static inline ColumnPtr concat_const(Columns const& columns, const ConcatState* 
 static inline ColumnPtr concat_not_const_small(std::vector<ColumnViewer<TYPE_VARCHAR>> const& list,
                                                const size_t num_rows, const size_t dst_bytes_max_size,
                                                const bool is_const) {
+    #ifndef SV_TEST
     NullableBinaryColumnBuilder builder;
     auto& dst_nulls = builder.get_null_data();
     auto& dst_offsets = builder.data_column()->get_offset();
@@ -2796,13 +2851,13 @@ static inline ColumnPtr concat_not_const_small(std::vector<ColumnViewer<TYPE_VAR
         bool oversize = false;
         for (auto& view : list) {
             auto v = view.value(i);
-            if (UNLIKELY(dst_slice_len + v.size > get_olap_string_max_length())) {
+            if (UNLIKELY(dst_slice_len + v.get_size() > get_olap_string_max_length())) {
                 oversize = true;
                 break;
             }
-            strings::memcpy_inlined(dst_begin + dst_off, v.data, v.size);
-            dst_slice_len += v.size;
-            dst_off += v.size;
+            strings::memcpy_inlined(dst_begin + dst_off, v.get_size(), v.get_size());
+            dst_slice_len += v.get_size();
+            dst_off += v.get_size();
         }
 
         if (UNLIKELY(oversize)) {
@@ -2814,6 +2869,9 @@ static inline ColumnPtr concat_not_const_small(std::vector<ColumnViewer<TYPE_VAR
     }
     dst_bytes.resize(dst_off);
     builder.set_has_null(has_null);
+    #else
+    NullableStringColumnBuilder builder;
+    #endif
     return builder.build(is_const);
 }
 
@@ -2832,6 +2890,7 @@ static inline ColumnPtr concat_not_const(Columns const& columns) {
         return concat_not_const_small(list, num_rows, dst_bytes_max_size, is_const);
     }
 
+    #ifndef SV_TEST
     NullableBinaryColumnBuilder builder;
     builder.resize(num_rows, std::min(dst_bytes_max_size, CONCAT_SMALL_OPTIMIZE_THRESHOLD));
     for (int i = 0; i < num_rows; i++) {
@@ -2865,6 +2924,9 @@ static inline ColumnPtr concat_not_const(Columns const& columns) {
             builder.append_complete(i);
         }
     }
+    #else
+    NullableStringColumnBuilder builder;
+    #endif
     return builder.build(is_const);
 }
 /**
@@ -2892,6 +2954,7 @@ StatusOr<ColumnPtr> StringFunctions::concat(FunctionContext* context, const Colu
 
 ColumnPtr concat_ws_small(ColumnViewer<TYPE_VARCHAR>& sep_viewer, std::vector<ColumnViewer<TYPE_VARCHAR>> const& list,
                           const size_t num_rows, const size_t dst_bytes_max_size, const bool is_const) {
+    #ifndef SV_TEST
     NullableBinaryColumnBuilder builder;
     auto& dst_nulls = builder.get_null_data();
     auto& dst_offsets = builder.data_column()->get_offset();
@@ -2950,6 +3013,9 @@ ColumnPtr concat_ws_small(ColumnViewer<TYPE_VARCHAR>& sep_viewer, std::vector<Co
     }
     dst_bytes.resize(dst_off);
     builder.set_has_null(has_null);
+    #else
+    NullableStringColumnBuilder builder;
+    #endif
     return builder.build(is_const);
 }
 // concat_ws
@@ -2984,8 +3050,11 @@ StatusOr<ColumnPtr> StringFunctions::concat_ws(FunctionContext* context, const C
     if (dst_bytes_max_size <= CONCAT_SMALL_OPTIMIZE_THRESHOLD) {
         return concat_ws_small(sep_viewer, list, num_rows, dst_bytes_max_size, is_const);
     }
-
+    #ifndef SV_TEST
     NullableBinaryColumnBuilder builder;
+    #else
+    NullableStringColumnBuilder builder;
+    #endif
     // reserved extra max_sep_size bytes for interpolation of the last separator for each row.
     builder.resize(num_rows, std::min(dst_bytes_max_size, CONCAT_SMALL_OPTIMIZE_THRESHOLD));
     for (auto i = 0; i < num_rows; i++) {
@@ -3002,18 +3071,18 @@ StatusOr<ColumnPtr> StringFunctions::concat_ws(FunctionContext* context, const C
                 continue;
             }
             auto v = view.value(i);
-            builder.append_partial((uint8_t*)v.data, (uint8_t*)v.data + v.size);
-            dst_slice_size += v.size;
-            builder.append_partial((uint8_t*)sep.data, (uint8_t*)sep.data + sep.size);
-            dst_slice_size += sep.size;
+            builder.append_partial((uint8_t*)v.get_data(), (uint8_t*)v.get_data() + v.get_size());
+            dst_slice_size += v.get_size();
+            builder.append_partial((uint8_t*)sep.get_data(), (uint8_t*)sep.get_data() + sep.get_size());
+            dst_slice_size += sep.get_size();
         }
         // return NULL for oversize
-        if (UNLIKELY(dst_slice_size > get_olap_string_max_length() + sep.size)) {
+        if (UNLIKELY(dst_slice_size > get_olap_string_max_length() + sep.get_size())) {
             builder.rewind(dst_slice_size);
             builder.set_null(i);
         } else if (LIKELY(dst_slice_size > 0)) {
             // remove last separator
-            builder.rewind(sep.size);
+            builder.rewind(sep.get_size());
             builder.append_complete(i);
         } else {
             builder.append_complete(i);
@@ -3166,8 +3235,8 @@ Status StringFunctions::regexp_replace_prepare(FunctionContext* context, Functio
     std::string search_string;
     if (pattern_str.size() && RE2::FullMatch(pattern_str, SUBSTRING_RE, &search_string)) {
         state->use_hyperscan = true;
-        state->size_of_pattern = pattern.size;
-        std::string re_pattern(pattern.data, pattern.size);
+        state->size_of_pattern = pattern.get_size();
+        std::string re_pattern(pattern.get_data(), pattern.get_size());
         RETURN_IF_ERROR(hs_compile_and_alloc_scratch(re_pattern, state, context, pattern));
     } else {
         state->use_hyperscan = false;
@@ -3617,6 +3686,7 @@ static StatusOr<ColumnPtr> hyperscan_vec_evaluate(const BinaryColumn* src, Strin
         return src->clone_shared();
     }
 
+    #ifndef SV_TEST
     auto data_count = [&]() {
         size_t res = 0;
         size_t last_to = 0;
@@ -3671,7 +3741,9 @@ static StatusOr<ColumnPtr> hyperscan_vec_evaluate(const BinaryColumn* src, Strin
 
     // resize dst_bytes
     dst_bytes.resize(dst_offsets.back());
-
+    #else
+    auto dst = RunTimeColumnType<TYPE_VARCHAR>::create();
+    #endif
     return dst;
 }
 
@@ -3728,9 +3800,9 @@ StatusOr<ColumnPtr> StringFunctions::regexp_replace_use_hyperscan(StringFunction
 
         auto rpl_value = rpl_viewer.value(row);
 
-        auto value_size = str_viewer.value(row).size;
+        auto value_size = str_viewer.value(row).get_size();
         const char* data =
-                (value_size) ? str_viewer.value(row).data : &StringFunctions::_DUMMY_STRING_FOR_EMPTY_PATTERN;
+                (value_size) ? str_viewer.value(row).get_data() : &StringFunctions::_DUMMY_STRING_FOR_EMPTY_PATTERN;
 
         auto st = hs_scan(
                 // Use &_DUMMY_STRING_FOR_EMPTY_PATTERN instead of nullptr to avoid crash.
@@ -3753,11 +3825,11 @@ StatusOr<ColumnPtr> StringFunctions::regexp_replace_use_hyperscan(StringFunction
         std::string result_str;
         result_str.reserve(value_size);
 
-        const char* start = str_viewer.value(row).data;
+        const char* start = str_viewer.value(row).get_data();
         size_t last_to = 0;
         for (const auto& info : match_info_chain.info_chain) {
             result_str.append(start + last_to, info.from - last_to);
-            result_str.append(rpl_value.data, rpl_value.size);
+            result_str.append(rpl_value.get_data(), rpl_value.get_size());
             last_to = info.to;
         }
         result_str.append(start + last_to, value_size - last_to);
@@ -4382,7 +4454,7 @@ static StatusOr<ColumnPtr> url_extract_parameter_general(const starrocks::Column
         }
         auto url = url_viewer.value(i);
         auto param_key = param_key_viewer.value(i);
-        bool ill_formed = param_key.size == 0 || std::any_of(param_key.data, param_key.data + param_key.size, isspace);
+        bool ill_formed = param_key.get_size() == 0 || std::any_of(param_key.get_data(), param_key.get_data() + param_key.get_size(), isspace);
         if (ill_formed) {
             result.append_null();
             continue;
@@ -4410,7 +4482,7 @@ static StatusOr<ColumnPtr> url_extract_parameter_const_query_params(const starro
             continue;
         }
         auto param_key = param_key_viewer.value(i);
-        bool ill_formed = param_key.size == 0 || std::any_of(param_key.data, param_key.data + param_key.size, isspace);
+        bool ill_formed = param_key.get_size() == 0 || std::any_of(param_key.get_data(), param_key.get_data() + param_key.get_size(), isspace);
         if (ill_formed) {
             result.append_null();
             continue;
@@ -4453,7 +4525,7 @@ Status StringFunctions::url_extract_parameter_prepare(starrocks::FunctionContext
         auto param_key_column = context->get_constant_column(1);
         auto param_key = ColumnHelper::get_const_value<TYPE_VARCHAR>(param_key_column);
         state->opt_const_param_key = param_key.to_string();
-        ill_formed |= param_key.empty() || std::any_of(param_key.data, param_key.data + param_key.size, isspace);
+        ill_formed |= param_key.empty() || std::any_of(param_key.get_data(), param_key.get_data() + param_key.get_size(), isspace);
     }
 
     if (url_is_const) {
@@ -4514,7 +4586,7 @@ StatusOr<ColumnPtr> StringFunctions::url_extract_parameter(starrocks::FunctionCo
 }
 // crc32
 DEFINE_UNARY_FN_WITH_IMPL(crc32Impl, str) {
-    return static_cast<uint32_t>(crc32_z(0L, (const unsigned char*)str.data, str.size));
+    return static_cast<uint32_t>(crc32_z(0L, (const unsigned char*)str.get_data(), str.get_size()));
 }
 
 StatusOr<ColumnPtr> StringFunctions::crc32(FunctionContext* context, const Columns& columns) {

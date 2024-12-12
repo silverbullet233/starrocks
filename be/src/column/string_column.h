@@ -165,6 +165,7 @@ public:
     bool append_nulls(size_t count) override { return false; }
 
     void append_string(const std::string& str);
+    void append_string(const char* data, size_t size);
 
     bool append_strings(const Slice* data, size_t size) override;
 

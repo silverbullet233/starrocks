@@ -91,6 +91,9 @@ using HashSetWithAggStateAllocator =
 using SliceHashSetWithAggStateAllocator = phmap::flat_hash_set<SliceWithHash, HashOnSliceWithHash, EqualOnSliceWithHash,
                                                                AggregateStateAllocator<SliceWithHash>>;
 
+using StringViewHashSetWithAggStateAllocator = phmap::flat_hash_set<StringViewWithHash, HashOnStringViewWithHash, EqualOnStringViewWithHash,
+    AggregateStateAllocator<StringViewWithHash>>;
+
 template <typename T>
 using VectorWithAggStateAllocator = std::vector<T, AggregateStateAllocator<T>>;
 

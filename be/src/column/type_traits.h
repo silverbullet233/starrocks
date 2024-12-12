@@ -46,6 +46,17 @@ constexpr bool IsSlice = false;
 template <>
 inline constexpr bool IsSlice<Slice> = true;
 
+template <>
+inline constexpr bool IsSlice<StringView> = true;
+
+
+template <typename T>
+constexpr bool IsStringView = false;
+template <>
+inline constexpr bool IsStringView<StringView> = true;
+
+
+
 template <typename T>
 constexpr bool IsDateTime = false;
 template <>
@@ -461,8 +472,8 @@ template <LogicalType ltype>
 struct RunTimeTypeLimits<ltype, StringLTGuard<ltype>> {
     using value_type = RunTimeCppType<ltype>;
 
-    static constexpr value_type min_value() { return Slice(&_min, 0); }
-    static constexpr value_type max_value() { return Slice(&_max, 1); }
+    static constexpr value_type min_value() { return value_type(&_min, 0); }
+    static constexpr value_type max_value() { return value_type(&_max, 1); }
 
 private:
     static inline char _min = 0x00;

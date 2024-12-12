@@ -162,6 +162,7 @@ Status JniScanner::_append_primitive_data(const FillColumnArgs& args) {
 
 template <LogicalType type>
 Status JniScanner::_append_string_data(const FillColumnArgs& args) {
+    #ifndef SV_TEST
     int* offset_ptr = static_cast<int*>(next_chunk_meta_as_ptr());
     char* column_ptr = static_cast<char*>(next_chunk_meta_as_ptr());
 
@@ -177,6 +178,7 @@ Status JniScanner::_append_string_data(const FillColumnArgs& args) {
 
     memcpy(offsets.data(), offset_ptr, (args.num_rows + 1) * sizeof(uint32_t));
     memcpy(bytes.data(), column_ptr, total_length);
+    #endif
     return Status::OK();
 }
 

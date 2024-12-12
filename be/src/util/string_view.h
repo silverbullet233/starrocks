@@ -102,6 +102,10 @@ public:
         return ret > 0 || (ret == 0 && left_len > right_len);
     }
 
+    int compare(const StringView& rhs) const {
+        return StringView::compare(*this, rhs);
+    }
+
     static inline int compare(const StringView& lhs, const StringView& rhs) {
         // @TODO pending fix
         if (equals(lhs, rhs)) {

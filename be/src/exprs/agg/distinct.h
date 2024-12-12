@@ -37,6 +37,7 @@
 #include "runtime/mem_pool.h"
 #include "runtime/memory/counting_allocator.h"
 #include "thrift/protocol/TJSONProtocol.h"
+#include "types/logical_type.h"
 #include "util/phmap/phmap_dump.h"
 #include "util/slice.h"
 
@@ -106,33 +107,62 @@ struct DistinctAggregateState<LT, SumLT, FixedLengthLTGuard<LT>> {
 template <LogicalType LT, LogicalType SumLT>
 struct DistinctAggregateState<LT, SumLT, StringLTGuard<LT>> {
     DistinctAggregateState() = default;
+    #ifndef SV_TEST
     using KeyType = typename SliceHashSet::key_type;
+    using ValueType = Slice;
+    #else
+    using KeyType = typename StringViewHashSet::key_type;
+    using ValueType = StringView;
+    #endif
 
-    void update(MemPool* mem_pool, Slice raw_key) {
+    void update(MemPool* mem_pool, ValueType raw_key) {
         KeyType key(raw_key);
 #if defined(__clang__) && (__clang_major__ >= 16)
         set.lazy_emplace(key, [&](const auto& ctor) {
 #else
         set.template lazy_emplace(key, [&](const auto& ctor) {
 #endif
+    #ifndef SV_TEST
             uint8_t* pos = mem_pool->allocate_with_reserve(key.size, SLICE_MEMEQUAL_OVERFLOW_PADDING);
             assert(pos != nullptr);
             memcpy(pos, key.data, key.size);
             ctor(pos, key.size, key.hash);
+    #else
+            if (key.is_inlined()) {
+                ctor(key.get_data(), key.get_size(), key.hash);
+            }  else {
+                uint8_t* pos = mem_pool->allocate_with_reserve(key.get_size(), SLICE_MEMEQUAL_OVERFLOW_PADDING);
+                assert(pos != nullptr);
+                memcpy(pos, key.get_data(), key.get_size());
+                ctor(pos, key.get_size(), key.hash);
+            }
+    #endif
+    
         });
     }
 
-    void update_with_hash(MemPool* mem_pool, Slice raw_key, size_t hash) {
-        KeyType key(reinterpret_cast<uint8_t*>(raw_key.data), raw_key.size, hash);
+    void update_with_hash(MemPool* mem_pool, ValueType raw_key, size_t hash) {
+        KeyType key(reinterpret_cast<const uint8_t*>(raw_key.get_data()), raw_key.get_size(), hash);
 #if defined(__clang__) && (__clang_major__ >= 16)
         set.lazy_emplace_with_hash(key, hash, [&](const auto& ctor) {
 #else
         set.template lazy_emplace_with_hash(key, hash, [&](const auto& ctor) {
 #endif
+        #ifndef SV_TEST
             uint8_t* pos = mem_pool->allocate_with_reserve(key.size, SLICE_MEMEQUAL_OVERFLOW_PADDING);
             assert(pos != nullptr);
             memcpy(pos, key.data, key.size);
             ctor(pos, key.size, key.hash);
+        #else
+            if (key.is_inlined()) {
+                ctor(key.get_data(), key.get_size(), key.hash);
+            }  else {
+                uint8_t* pos = mem_pool->allocate_with_reserve(key.get_size(), SLICE_MEMEQUAL_OVERFLOW_PADDING);
+                assert(pos != nullptr);
+                memcpy(pos, key.get_data(), key.get_size());
+                ctor(pos, key.get_size(), key.hash);
+            }
+        #endif
         });
     }
 
@@ -141,7 +171,7 @@ struct DistinctAggregateState<LT, SumLT, StringLTGuard<LT>> {
     size_t serialize_size() const {
         size_t size = 0;
         for (auto& key : set) {
-            size += key.size + sizeof(uint32_t);
+            size += key.get_size() + sizeof(uint32_t);
         }
         return size;
     }
@@ -150,11 +180,11 @@ struct DistinctAggregateState<LT, SumLT, StringLTGuard<LT>> {
     // then we could only one memcpy.
     void serialize(uint8_t* dst) const {
         for (auto& key : set) {
-            auto size = (uint32_t)key.size;
+            auto size = (uint32_t)key.get_size();
             memcpy(dst, &size, sizeof(uint32_t));
             dst += sizeof(uint32_t);
-            memcpy(dst, key.data, key.size);
-            dst += key.size;
+            memcpy(dst, key.get_data(), key.get_size());
+            dst += key.get_size();
         }
     }
 
@@ -172,17 +202,32 @@ struct DistinctAggregateState<LT, SumLT, StringLTGuard<LT>> {
 #else
             set.template lazy_emplace(key, [&](const auto& ctor) {
 #endif
+            #ifndef SV_TEST
                 uint8_t* pos = mem_pool->allocate_with_reserve(key.size, SLICE_MEMEQUAL_OVERFLOW_PADDING);
                 assert(pos != nullptr);
                 memcpy(pos, key.data, key.size);
                 ctor(pos, key.size, key.hash);
+            #else
+                if (key.is_inlined()) {
+                    ctor(key.get_data(), key.get_size(), key.hash);
+                }  else {
+                    uint8_t* pos = mem_pool->allocate_with_reserve(key.get_size(), SLICE_MEMEQUAL_OVERFLOW_PADDING);
+                    assert(pos != nullptr);
+                    memcpy(pos, key.get_data(), key.get_size());
+                    ctor(pos, key.get_size(), key.hash);
+                }
+            #endif
             });
             src += size;
         }
         DCHECK(src == end);
     }
 
+#ifndef SV_TEST
     SliceHashSetWithAggStateAllocator set;
+#else
+    StringViewHashSetWithAggStateAllocator set;
+#endif
 };
 
 // use a different way to do serialization to gain performance.
@@ -382,7 +427,11 @@ public:
 
         const auto* src_column = down_cast<const ColumnType*>(src[0].get());
         if constexpr (IsSlice<T>) {
+            #ifndef SV_TEST
             bytes.reserve(chunk_size * (sizeof(uint32_t) + src_column->get_slice(0).size));
+            #else
+            bytes.reserve(chunk_size * (sizeof(uint32_t) + src_column->get_view(0).get_size()));
+            #endif
         } else {
             bytes.reserve(chunk_size * sizeof(T));
         }
@@ -391,6 +440,7 @@ public:
         size_t old_size = bytes.size();
         for (size_t i = 0; i < chunk_size; ++i) {
             if constexpr (IsSlice<T>) {
+                #ifndef SV_TEST
                 Slice key = src_column->get_slice(i);
                 size_t new_size = old_size + key.size + sizeof(uint32_t);
                 bytes.resize(new_size);
@@ -401,6 +451,18 @@ public:
                 memcpy(bytes.data() + old_size, key.data, key.size);
                 old_size += key.size;
                 dst_column->get_offset()[i + 1] = new_size;
+                #else
+                StringView key = src_column->get_view(i);
+                size_t new_size = old_size + key.get_size() + sizeof(uint32_t);
+                bytes.resize(new_size);
+
+                auto size = (uint32_t)key.get_size();
+                memcpy(bytes.data() + old_size, &size, sizeof(uint32_t));
+                old_size += sizeof(uint32_t);
+                memcpy(bytes.data() + old_size, key.get_data(), key.get_size());
+                old_size += key.get_size();
+                dst_column->get_offset()[i + 1] = new_size;
+                #endif
             } else {
                 T key = src_column->get_data()[i];
 
@@ -566,7 +628,7 @@ public:
             tglobal_dict.strings.reserve(dict_ids.size());
 
             for (const auto& v : agg_state.set) {
-                tglobal_dict.strings.emplace_back(v.data, v.size);
+                tglobal_dict.strings.emplace_back(v.get_data(), v.get_size());
             }
 
             // Since the id in global dictionary may be used for sorting,

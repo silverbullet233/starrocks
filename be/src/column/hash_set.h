@@ -14,10 +14,12 @@
 
 #pragma once
 
+#include <cstddef>
 #include <cstdint>
 
 #include "column/column_hash.h"
 #include "runtime/memory/counting_allocator.h"
+#include "util/hash.h"
 #include "util/phmap/phmap.h"
 #include "util/phmap/phmap_dump.h"
 #include "util/slice.h"
@@ -80,6 +82,50 @@ public:
 };
 
 using SliceHashSet = phmap::flat_hash_set<SliceWithHash, HashOnSliceWithHash, EqualOnSliceWithHash>;
+
+class StringViewWithHash: public StringView {
+public:
+    size_t hash;
+    StringViewWithHash(const StringView& src): StringView(src) { hash = StringViewHash()(src); }
+    StringViewWithHash(const uint8_t* p, size_t s, size_t h) : StringView(p, s), hash(h) {}
+    StringViewWithHash(const char* p, size_t s, size_t h) : StringView(p, s), hash(h) {}
+};
+
+class HashOnStringViewWithHash {
+public:
+    std::size_t operator()(const StringViewWithHash& sv) const { return sv.hash; }
+};
+
+class EqualOnStringViewWithHash {
+public:
+    bool operator()(const StringViewWithHash& x, const StringViewWithHash& y) const {
+        return x.hash == y.hash && x == y;
+    }
+};
+
+template <PhmapSeed seed>
+class TStringViewWithHash: public StringView {
+public:
+    size_t hash;
+    TStringViewWithHash(const StringView& src): StringView(src) { hash = StringViewHashWithSeed<seed>()(src); }
+    TStringViewWithHash(const uint8_t* p, size_t s, size_t h) : StringView(p, s), hash(h) {}
+};
+
+template <PhmapSeed seed>
+class THashOnStringViewWithHash {
+public:
+    std::size_t operator()(const TStringViewWithHash<seed>& sv) const { return sv.hash; }
+};
+
+template <PhmapSeed seed>
+class TEqualOnStringViewWithHash {
+public:
+    bool operator()(const TStringViewWithHash<seed>& x, const TStringViewWithHash<seed>& y) const {
+        return x.hash == y.hash && x == y;
+    }
+};
+using StringViewHashSet = phmap::flat_hash_set<StringViewWithHash, HashOnStringViewWithHash, EqualOnStringViewWithHash>;
+
 
 using SliceNormalHashSet = phmap::flat_hash_set<Slice, SliceHash, SliceNormalEqual>;
 

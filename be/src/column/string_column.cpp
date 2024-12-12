@@ -92,6 +92,20 @@ void StringColumn::append_value_multiple_times(const Column& src, uint32_t index
     }
 }
 
+void StringColumn::append_string(const std::string& data) {
+    append_string(data.data(), data.size());
+}
+
+void StringColumn::append_string(const char* data, size_t size) {
+    StringView sv;
+    if (size > StringView::kInlineBytes) {
+        sv = _buffer.add_string(data, size);
+    } else {
+        sv = StringView(data, size);
+    }
+    append(sv);
+}
+
 bool StringColumn::append_strings(const Slice* data, size_t size) {
     StringView sv;
     if (data->get_size() > StringView::kInlineBytes) {
