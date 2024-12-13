@@ -78,6 +78,7 @@ set(UTIL_FILES
   md5.cpp
   thrift_rpc_helper.cpp
   faststring.cc
+  string_view.cpp
   slice.cpp
   sm3.cpp
   frame_of_reference_coding.cpp

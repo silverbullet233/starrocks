@@ -11,6 +11,7 @@
 #include "util/memcmp.h"
 
 namespace starrocks {
+class Slice;
 
 class StringView {
 public:
@@ -33,7 +34,7 @@ public:
         }
     }
     StringView(const uint8_t* data, size_t length): StringView(reinterpret_cast<const char*>(data), length) {} 
-    StringView(const Slice& slice): StringView(slice.data, slice.size) {}
+    StringView(const Slice& slice);
     StringView(const std::string& data): StringView(data.data(), data.size()) {}
 
     inline bool is_inlined() const {
@@ -58,7 +59,9 @@ public:
     operator std::string_view() const { return {get_data(), get_size()}; }
 
     struct Comparator {
-        bool operator()(const StringView& lhs, const StringView& rhs) const;
+        bool operator()(const StringView& lhs, const StringView& rhs) const {
+            return StringView::greater_than(rhs, lhs);
+        }
     };
 
 

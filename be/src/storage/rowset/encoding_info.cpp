@@ -84,7 +84,7 @@ struct TypeEncodingTraits<type, PLAIN_ENCODING, Slice> {
 
 template <LogicalType type, typename CppType>
 struct TypeEncodingTraits<type, BIT_SHUFFLE, CppType,
-                          typename std::enable_if<!std::is_same<CppType, Slice>::value>::type> {
+                          typename std::enable_if<!std::is_same<CppType, Slice>::value && !std::is_same<CppType, StringView>::value>::type> {
     static Status create_page_builder(const PageBuilderOptions& opts, PageBuilder** builder) {
         *builder = new BitshufflePageBuilder<type>(opts);
         return Status::OK();

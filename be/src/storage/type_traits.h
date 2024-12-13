@@ -165,11 +165,19 @@ struct CppTypeTraits<TYPE_DATETIME> {
 };
 template <>
 struct CppTypeTraits<TYPE_CHAR> {
+#ifndef SV_TEST
     using CppType = Slice;
+#else
+    using CppType = StringView;
+#endif
 };
 template <>
 struct CppTypeTraits<TYPE_VARCHAR> {
+#ifndef SV_TEST
     using CppType = Slice;
+#else
+    using CppType = StringView;
+#endif
 };
 template <>
 struct CppTypeTraits<TYPE_HLL> {
@@ -189,7 +197,11 @@ struct CppTypeTraits<TYPE_JSON> {
 };
 template <>
 struct CppTypeTraits<TYPE_VARBINARY> {
+#ifndef SV_TEST
     using CppType = Slice;
+#else
+    using CppType = StringView;
+#endif
 };
 template <>
 struct CppTypeTraits<TYPE_ARRAY> {

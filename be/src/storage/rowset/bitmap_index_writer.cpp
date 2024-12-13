@@ -49,6 +49,7 @@
 #include "storage/types.h"
 #include "util/faststring.h"
 #include "util/slice.h"
+#include "util/string_view.h"
 
 namespace starrocks {
 
@@ -174,6 +175,11 @@ struct BitmapIndexTraits {
 template <>
 struct BitmapIndexTraits<Slice> {
     using MemoryIndexType = std::map<Slice, BitmapUpdateContextRefOrSingleValue, Slice::Comparator>;
+};
+
+template <>
+struct BitmapIndexTraits<StringView> {
+    using MemoryIndexType = std::map<StringView, BitmapUpdateContextRefOrSingleValue, StringView::Comparator>;
 };
 
 // Builder for bitmap index. Bitmap index is comprised of two parts

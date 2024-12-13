@@ -17,11 +17,13 @@
 #include "column/chunk.h"
 #include "column/column_helper.h"
 #include "column/const_column.h"
+#include "column/type_traits.h"
 #include "column/vectorized_fwd.h"
 #include "common/statusor.h"
 #include "gutil/port.h"
 #include "gutil/strings/fastmem.h"
 #include "types/constexpr.h"
+#include "types/logical_type.h"
 
 #ifdef STARROCKS_JIT_ENABLE
 #include "exprs/jit/ir_helper.h"
@@ -100,7 +102,7 @@ VectorizedLiteral::VectorizedLiteral(const TExprNode& node) : Expr(node) {
     case TYPE_CHAR:
     case TYPE_VARCHAR: {
         // @IMPORTANT: build slice though get_data, else maybe will cause multi-thread crash in scanner
-        _value = ColumnHelper::create_const_column<TYPE_VARCHAR>(Slice(node.string_literal.value), 1);
+        _value = ColumnHelper::create_const_column<TYPE_VARCHAR>(RunTimeCppType<TYPE_VARCHAR>(node.string_literal.value), 1);
         break;
     }
     case TYPE_TIME: {
@@ -143,7 +145,7 @@ VectorizedLiteral::VectorizedLiteral(const TExprNode& node) : Expr(node) {
     }
     case TYPE_VARBINARY: {
         // @IMPORTANT: build slice though get_data, else maybe will cause multi-thread crash in scanner
-        _value = ColumnHelper::create_const_column<TYPE_VARBINARY>(Slice(node.binary_literal.value), 1);
+        _value = ColumnHelper::create_const_column<TYPE_VARBINARY>(RunTimeCppType<TYPE_VARBINARY>(node.binary_literal.value), 1);
         break;
     }
     default:
