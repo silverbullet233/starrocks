@@ -56,6 +56,13 @@ public:
     std::string to_string() const {
         return is_inlined() ? std::string(value.inlined.data, value.inlined.length): std::string(value.pointer.data, value.pointer.length);
     }
+
+    StringView tolower(std::string& buf) {
+        buf.assign(get_data(), get_size());
+        std::transform(buf.begin(), buf.end(), buf.begin(), [](unsigned char c) { return std::tolower(c);});
+        return StringView(buf.data(), buf.size());
+    }
+
     operator std::string_view() const { return {get_data(), get_size()}; }
 
     struct Comparator {

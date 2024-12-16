@@ -426,6 +426,10 @@ template <>
 struct ColumnTraits<Slice> {
     using ColumnType = BinaryColumn;
 };
+template <>
+struct ColumnTraits<StringView> {
+    using ColumnType = StringColumn;
+};
 
 template <>
 struct ColumnTraits<DateValue> {

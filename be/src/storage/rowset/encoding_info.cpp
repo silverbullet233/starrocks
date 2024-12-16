@@ -82,6 +82,18 @@ struct TypeEncodingTraits<type, PLAIN_ENCODING, Slice> {
     }
 };
 
+template <LogicalType type>
+struct TypeEncodingTraits<type, PLAIN_ENCODING, StringView> {
+    static Status create_page_builder(const PageBuilderOptions& opts, PageBuilder** builder) {
+        *builder = new BinaryPlainPageBuilder(opts);
+        return Status::OK();
+    }
+    static Status create_page_decoder(const Slice& data, PageDecoder** decoder) {
+        *decoder = new BinaryPlainPageDecoder<type>(data);
+        return Status::OK();
+    }
+};
+
 template <LogicalType type, typename CppType>
 struct TypeEncodingTraits<type, BIT_SHUFFLE, CppType,
                           typename std::enable_if<!std::is_same<CppType, Slice>::value && !std::is_same<CppType, StringView>::value>::type> {
@@ -109,6 +121,18 @@ struct TypeEncodingTraits<TYPE_BOOLEAN, RLE, bool> {
 
 template <LogicalType type>
 struct TypeEncodingTraits<type, DICT_ENCODING, Slice> {
+    static Status create_page_builder(const PageBuilderOptions& opts, PageBuilder** builder) {
+        *builder = new BinaryDictPageBuilder(opts);
+        return Status::OK();
+    }
+    static Status create_page_decoder(const Slice& data, PageDecoder** decoder) {
+        *decoder = new BinaryDictPageDecoder<type>(data);
+        return Status::OK();
+    }
+};
+
+template <LogicalType type>
+struct TypeEncodingTraits<type, DICT_ENCODING, StringView> {
     static Status create_page_builder(const PageBuilderOptions& opts, PageBuilder** builder) {
         *builder = new BinaryDictPageBuilder(opts);
         return Status::OK();
@@ -158,6 +182,18 @@ struct TypeEncodingTraits<type, FOR_ENCODING, CppType,
 
 template <LogicalType type>
 struct TypeEncodingTraits<type, PREFIX_ENCODING, Slice> {
+    static Status create_page_builder(const PageBuilderOptions& opts, PageBuilder** builder) {
+        *builder = new BinaryPrefixPageBuilder(opts);
+        return Status::OK();
+    }
+    static Status create_page_decoder(const Slice& data, PageDecoder** decoder) {
+        *decoder = new BinaryPrefixPageDecoder<type>(data);
+        return Status::OK();
+    }
+};
+
+template <LogicalType type>
+struct TypeEncodingTraits<type, PREFIX_ENCODING, StringView> {
     static Status create_page_builder(const PageBuilderOptions& opts, PageBuilder** builder) {
         *builder = new BinaryPrefixPageBuilder(opts);
         return Status::OK();

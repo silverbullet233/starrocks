@@ -44,14 +44,14 @@ void StringColumn::check_or_die() const {
 }
 
 
-void StringColumn::append(const Slice& str) {
-    if (str.get_size() <= StringView::kInlineBytes) {
-        _views.emplace_back(StringView(str.get_data(), str.get_size()));
-    } else {
-        StringView sv = _buffer.add_string(str.get_data(), str.get_size());
-        _views.emplace_back(std::move(sv));
-    }
-}
+// void StringColumn::append(const Slice& str) {
+//     if (str.get_size() <= StringView::kInlineBytes) {
+//         _views.emplace_back(StringView(str.get_data(), str.get_size()));
+//     } else {
+//         StringView sv = _buffer.add_string(str.get_data(), str.get_size());
+//         _views.emplace_back(std::move(sv));
+//     }
+// }
 void StringColumn::append(const StringView& str) {
     if (str.get_size() < StringView::kInlineBytes) {
         _views.emplace_back(str);

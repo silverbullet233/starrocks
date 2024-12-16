@@ -95,14 +95,18 @@ struct ZoneMapDatum<TYPE_CHAR> : public ZoneMapDatumBase<TYPE_CHAR> {
         if (slice->size > _length) {
             _length = std::max<int>(BitUtil::next_power_of_two(slice->size), INIT_SIZE);
             raw::stl_string_resize_uninitialized(&_value_container, _length);
-            value.data = _value_container.data();
-            value.size = 0;
+            // @TODO how to set it
+            value = StringView(_value_container.data(), 0);
+            // value.data = _value_container.data();
+            // value.size = 0;
         }
     }
 
     void reset(TypeInfo* type_info) override {
-        value.data = _value_container.data();
-        value.size = 0;
+        // @TODO
+        value = StringView(_value_container.data(), 0);
+        // value.data = _value_container.data();
+        // value.size = 0;
     }
 
     int _length = 0;

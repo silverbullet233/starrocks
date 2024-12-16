@@ -902,39 +902,43 @@ struct ScalarTypeInfoImpl<TYPE_CHAR> : public ScalarTypeInfoImplBase<TYPE_CHAR> 
                                                        value_len, get_olap_string_max_length()));
         }
 
-        auto slice = unaligned_load<Slice>(buf);
-        memory_copy(slice.data, scan_key.c_str(), value_len);
-        if (slice.size < value_len) {
+        // auto slice = unaligned_load<Slice>(buf);
+        auto slice = unaligned_load<CppType>(buf);
+        memory_copy((void*)slice.get_data(), scan_key.c_str(), value_len);
+        if (slice.get_size() < value_len) {
             /*
              * CHAR type is of fixed length. Size in slice can be modified
              * only if value_len is greater than the fixed length. ScanKey
              * inputed by user may be greater than fixed length.
              */
-            slice.size = value_len;
-            unaligned_store<Slice>(buf, slice);
+            // slice.get_size() = value_len;
+            slice = StringView(slice.get_data(), value_len);
+            unaligned_store<CppType>(buf, slice);
         } else {
             // append \0 to the tail
-            memset(slice.data + value_len, 0, slice.size - value_len);
+            memset(((void*)slice.get_data()) + value_len, 0, slice.get_size() - value_len);
         }
         return Status::OK();
     }
     static std::string to_string(const void* src) {
-        auto slice = unaligned_load<Slice>(src);
+        auto slice = unaligned_load<CppType>(src);
         return slice.to_string();
     }
     static void deep_copy(void* dest, const void* src, MemPool* mem_pool) {
-        auto l_slice = unaligned_load<Slice>(dest);
-        auto r_slice = unaligned_load<Slice>(src);
-        l_slice.data = reinterpret_cast<char*>(mem_pool->allocate(r_slice.size));
-        assert(l_slice.data != nullptr);
-        memory_copy(l_slice.data, r_slice.data, r_slice.size);
-        l_slice.size = r_slice.size;
-        unaligned_store<Slice>(dest, l_slice);
+        auto l_slice = unaligned_load<CppType>(dest);
+        auto r_slice = unaligned_load<CppType>(src);
+        char* ptr = reinterpret_cast<char*>(mem_pool->allocate(r_slice.get_size()));
+        assert(ptr != nullptr);
+        // lslice
+        memory_copy(ptr, r_slice.get_data(), r_slice.get_size());
+        l_slice = CppType(ptr, r_slice.get_size());
+        unaligned_store<CppType>(dest, l_slice);
     }
 
     static void direct_copy(void* dest, const void* src) {
-        auto l_slice = unaligned_load<Slice>(dest);
-        auto r_slice = unaligned_load<Slice>(src);
+        auto l_slice = unaligned_load<CppType>(dest);
+        auto r_slice = unaligned_load<CppType>(src);
+        // @TODO StirngView(xx, 0)
         memory_copy(l_slice.data, r_slice.data, r_slice.size);
         l_slice.size = r_slice.size;
         unaligned_store<Slice>(dest, l_slice);

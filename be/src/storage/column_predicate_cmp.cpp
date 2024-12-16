@@ -27,6 +27,7 @@
 #include "storage/types.h"
 #include "storage/zone_map_detail.h"
 #include "util/string_parser.hpp"
+#include "util/string_view.h"
 
 namespace starrocks {
 class BloomFilter;
@@ -530,20 +531,25 @@ public:
 // Base class for binary column predicate
 template <LogicalType field_type, class Eval>
 class BinaryColumnPredicateCmpBase : public ColumnPredicate {
+#ifndef SV_TEST
     using ValueType = Slice;
+#else
+    using ValueType = StringView;
+#endif
 
 public:
     BinaryColumnPredicateCmpBase(PredicateType predicate_type, const TypeInfoPtr& type_info, ColumnId id,
                                  ValueType value)
             : ColumnPredicate(type_info, id),
               _predicate_type(predicate_type),
-              _zero_padded_str(value.data, value.size),
+              _zero_padded_str(value.get_data(), value.get_size()),
               _value(_zero_padded_str) {}
 
     ~BinaryColumnPredicateCmpBase() override = default;
 
     template <typename Op>
     inline void t_evaluate(const Column* column, uint8_t* selection, uint16_t from, uint16_t to) const {
+        // @TODO StringView no raw_data...
         auto* v = reinterpret_cast<const ValueType*>(column->raw_data());
         auto* sel = selection;
         auto eval = Eval();
@@ -636,7 +642,7 @@ public:
     bool padding_zeros(size_t len) override {
         size_t old_sz = _zero_padded_str.size();
         _zero_padded_str.append(len > old_sz ? len - old_sz : 0, '\0');
-        _value = Slice(_zero_padded_str.data(), old_sz);
+        _value = ValueType(_zero_padded_str.data(), old_sz);
         return true;
     }
 
@@ -649,7 +655,11 @@ protected:
 template <LogicalType field_type>
 class BinaryColumnEqPredicate final : public BinaryColumnPredicateCmpBase<field_type, EqEval<field_type>> {
 public:
+#ifndef SV_TEST
     using ValueType = Slice;
+#else
+    using ValueType = StringView;
+#endif
     using Base = BinaryColumnPredicateCmpBase<field_type, std::equal_to<ValueType>>;
 
     BinaryColumnEqPredicate(const TypeInfoPtr& type_info, ColumnId id, ValueType value)
@@ -702,7 +712,11 @@ public:
 template <LogicalType field_type>
 class BinaryColumnGePredicate final : public BinaryColumnPredicateCmpBase<field_type, GeEval<field_type>> {
 public:
+#ifndef SV_TEST
     using ValueType = Slice;
+#else
+    using ValueType = StringView;
+#endif
     using Base = BinaryColumnPredicateCmpBase<field_type, std::greater_equal<ValueType>>;
 
     BinaryColumnGePredicate(const TypeInfoPtr& type_info, ColumnId id, ValueType value)
@@ -746,7 +760,11 @@ public:
 template <LogicalType field_type>
 class BinaryColumnGtPredicate final : public BinaryColumnPredicateCmpBase<field_type, GtEval<field_type>> {
 public:
+#ifndef SV_TEST
     using ValueType = Slice;
+#else
+    using ValueType = StringView;
+#endif
     using Base = BinaryColumnPredicateCmpBase<field_type, std::greater<ValueType>>;
 
     BinaryColumnGtPredicate(const TypeInfoPtr& type_info, ColumnId id, ValueType value)
@@ -789,7 +807,11 @@ public:
 template <LogicalType field_type>
 class BinaryColumnLtPredicate final : public BinaryColumnPredicateCmpBase<field_type, LtEval<field_type>> {
 public:
+#ifndef SV_TEST
     using ValueType = Slice;
+#else
+    using ValueType = StringView;
+#endif
     using Base = BinaryColumnPredicateCmpBase<field_type, std::less<ValueType>>;
 
     BinaryColumnLtPredicate(const TypeInfoPtr& type_info, ColumnId id, ValueType value)
@@ -833,7 +855,11 @@ public:
 template <LogicalType field_type>
 class BinaryColumnLePredicate final : public BinaryColumnPredicateCmpBase<field_type, LeEval<field_type>> {
 public:
+#ifndef SV_TEST
     using ValueType = Slice;
+#else
+    using ValueType = StringView;
+#endif
     using Base = BinaryColumnPredicateCmpBase<field_type, std::less_equal<ValueType>>;
 
     BinaryColumnLePredicate(const TypeInfoPtr& type_info, ColumnId id, ValueType value)
@@ -876,7 +902,11 @@ public:
 template <LogicalType field_type>
 class BinaryColumnNePredicate final : public BinaryColumnPredicateCmpBase<field_type, NeEval<field_type>> {
 public:
+#ifndef SV_TEST
     using ValueType = Slice;
+#else
+    using ValueType = StringView;
+#endif
     using Base = BinaryColumnPredicateCmpBase<field_type, std::not_equal_to<ValueType>>;
 
     BinaryColumnNePredicate(const TypeInfoPtr& type_info, ColumnId id, ValueType value)

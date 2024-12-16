@@ -50,6 +50,7 @@
 #include "types/logical_type.h"
 #include "util/slice.h"
 #include "util/utf8.h"
+#include "util/string_view.h"
 
 namespace starrocks {
 
@@ -64,6 +65,13 @@ template <>
 struct BloomFilterTraits<Slice> {
     using ValueDict = std::set<Slice, Slice::Comparator>;
 };
+
+template <>
+struct BloomFilterTraits<StringView> {
+    using ValueDict = std::set<StringView, StringView::Comparator>;
+};
+
+
 
 // supported slice types are: TYPE_CHAR|TYPE_VARCHAR
 template <LogicalType type>
@@ -219,7 +227,7 @@ public:
                 // find next ngram
                 size_t cur_ngram_length = j + gram_num < slice_gram_num ? index[j + gram_num] - index[j]
                                                                         : cur_slice->get_size() - index[j];
-                Slice cur_ngram = Slice(cur_slice->data + index[j], cur_ngram_length);
+                CppType cur_ngram = CppType(cur_slice->data + index[j], cur_ngram_length);
 
                 // add this ngram into set
                 if (_values.find(unaligned_load<CppType>(&cur_ngram)) == _values.end()) {
@@ -228,7 +236,7 @@ public:
                     } else {
                         // todo::exist two copy of ngram, need to optimize
                         std::string lower_ngram;
-                        Slice lower_ngram_slice = cur_ngram.tolower(lower_ngram);
+                        CppType lower_ngram_slice = cur_ngram.tolower(lower_ngram);
                         _values.insert(get_value<field_type>(&lower_ngram_slice, this->_typeinfo, &this->_pool));
                     }
                 }

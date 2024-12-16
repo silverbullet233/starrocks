@@ -19,6 +19,7 @@
 #include <lz4/lz4frame.h>
 #include <streamvbyte.h>
 #include <streamvbytedelta.h>
+#include <algorithm>
 #include <cstdint>
 #include <stdexcept>
 
@@ -40,6 +41,7 @@
 #include "util/coding.h"
 #include "util/json.h"
 #include "util/percentile_value.h"
+#include "util/raw_container.h"
 
 namespace starrocks::serde {
 namespace {
@@ -291,12 +293,27 @@ public:
 class StringColumnSerde {
 public:
     static int64_t max_serialized_size(const StringColumn& column, const int encode_level) {
+        // @TODO optimize this stupid implementation
+        // size_t rows_num = column.size();
+        // size_t total_size = 0;
+        // for (const auto& sv: column.get_data()) {
+        //     total_size += sv.get_size();
+        // }
+        // int64_t offset_size = sizeof(uint32_t) * rows_num;
+        // int64_t res = sizeof(uint32_t) + sizeof(uint32_t) * rows_num; // length + offsets of each row
+        // int64_t offset_size = sizeof(uint64_t) * rows_num; // @TODO maybe overflow
+        // @TODO how to zero copy
+        // if (EncodeContext::enable_encode_integer(encode_level) && rows_num * sizeof(uint32_t) >= ENCODE_SIZE_LIMIT) {
+        //     res += sizeof(uint64_t) + std::max((int64_t))
+        // }
+
+
+        // layout: num_rows|offset1|offset2|...|data1|data2...
         throw std::runtime_error("max_serialized_size not support");
         return 0;
     }
 
     static uint8_t* serialize(const StringColumn& column, uint8_t* buff, const int encode_level) {
-        throw std::runtime_error("serialize not support");
         return buff;
     }
 

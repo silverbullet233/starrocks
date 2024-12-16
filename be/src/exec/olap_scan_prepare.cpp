@@ -170,6 +170,10 @@ static bool get_predicate_value(ObjectPool* obj_pool, const SlotDescriptor& slot
         const auto* slice = reinterpret_cast<const Slice*>(data->raw_data());
         std::string* str = obj_pool->add(new std::string(slice->data, slice->size));
         *value = *str;
+    } else if constexpr (std::is_same_v<ValueType, StringView>) {
+        StringView sv = down_cast<const StringColumn*>(data.get())->get_data()[0];
+        std::string* str = obj_pool->add(new std::string(sv.get_data(), sv.get_size()));
+        *value = *str;
     } else {
         *value = *reinterpret_cast<const ValueType*>(data->raw_data());
         if (r->type().is_decimalv3_type()) {

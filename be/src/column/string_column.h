@@ -74,12 +74,12 @@ public:
 
 
     const uint8_t* raw_data() const override {
-        DCHECK(false) << "raw_data is not supported";
+        CHECK(false) << "raw_data is not supported";
         throw std::runtime_error("raw_data is not supported");
     }
 
     uint8_t* mutable_raw_data() override {
-        DCHECK(false) << "mutable_raw_data is not supported";
+        CHECK(false) << "mutable_raw_data is not supported";
         throw std::runtime_error("mutable_raw_data is not supported");
     }
 
@@ -146,14 +146,14 @@ public:
     // No complain about the overloaded-virtual for this function
     DIAGNOSTIC_PUSH
     DIAGNOSTIC_IGNORE("-Woverloaded-virtual")
-    void append(const Slice& str);
+    // void append(const Slice& str);
     // @TODO append sv
     void append(const StringView& sv);
     DIAGNOSTIC_POP
 
 
     void append_datum(const Datum& datum) override {
-        append(datum.get_slice());
+        append(datum.get_string_view());
     }
 
     void append(const Column& src, size_t offset, size_t count) override;
