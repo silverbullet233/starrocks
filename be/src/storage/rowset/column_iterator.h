@@ -203,6 +203,9 @@ public:
     // otherwise -1 is returned.
     // NOTE: this method can be invoked only if `all_page_dict_encoded` returns true.
     virtual int dict_lookup(const Slice& word) { return -1; }
+    virtual Status fetch_all_dict(std::vector<int, Slice>* result) {
+        return Status::NotSupported("");
+    }
 
     // like `next_batch` but instead of return a batch of column values, this method returns a
     // batch of dictionary codes for dictionary encoded values.

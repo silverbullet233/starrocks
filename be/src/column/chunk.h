@@ -219,6 +219,7 @@ public:
     DelCondSatisfied delete_state() const { return _delete_state; }
 
     const SlotHashMap& get_slot_id_to_index_map() const { return _slot_id_to_index; }
+    const ColumnIdHashMap& get_column_id_to_index_map() const { return _cid_to_index; }
 
     // Call `Column::reserve` on each column of |chunk|, with |cap| passed as argument.
     void reserve(size_t cap);

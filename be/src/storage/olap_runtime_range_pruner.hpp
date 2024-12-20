@@ -235,6 +235,7 @@ inline Status OlapRuntimeScanRangePruner::_update(const ColumnIdToGlobalDictMap*
             size_t rf_version = rf->rf_version();
             if (!_arrived_runtime_filters_masks[i] ||
                 (rf_version > _rf_versions[i] && raw_read_rows - _raw_read_rows > rf_update_threshold)) {
+                // LOG(INFO) << "runtime filter arrived, version: " << rf_version << ", raw_read_rows: " << raw_read_rows << ", rf: " << rf->debug_string();
                 ObjectPool pool;
 
                 ASSIGN_OR_RETURN(auto predicates, _get_predicates(global_dictmaps, i, &pool));

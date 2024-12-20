@@ -151,6 +151,7 @@ private:
                     col->resize(range.span_size());
                     continue;
                 }
+                // LOG(INFO) << "read column, idx: " << i << ", column name: " << col->get_name();
                 RETURN_IF_ERROR(_column_iterators[i]->next_batch(range, col.get()));
                 may_has_del_row |= (col->delete_state() != DEL_NOT_SATISFIED);
             }
@@ -466,6 +467,7 @@ SegmentIterator::SegmentIterator(std::shared_ptr<Segment> segment, Schema schema
 }
 
 Status SegmentIterator::_init() {
+    // LOG(INFO) << "segment iterator init";
     SCOPED_RAW_TIMER(&_opts.stats->segment_init_ns);
     if (_opts.is_cancelled != nullptr && _opts.is_cancelled->load(std::memory_order_acquire)) {
         return Status::Cancelled("Cancelled");
@@ -537,6 +539,7 @@ Status SegmentIterator::_init() {
     for (auto column_index : _io_coalesce_column_index) {
         RETURN_IF_ERROR(_column_iterators[column_index]->convert_sparse_range_to_io_range(_scan_range));
     }
+    // LOG(INFO) << "segment iterator init done";
 
     return Status::OK();
 }
@@ -827,13 +830,14 @@ Status SegmentIterator::_init_column_iterator_by_cid(const ColumnId cid, const C
         _column_files[cid] = std::move(dcg_file);
     }
     RETURN_IF_ERROR(_column_iterators[cid]->init(iter_opts));
+    // LOG(INFO) << "init column_iterator, cid: " << cid << ", name: " << col.name() << ", type: " << col.type();
     return Status::OK();
 }
 
 template <bool check_global_dict>
 Status SegmentIterator::_init_column_iterators(const Schema& schema) {
     SCOPED_RAW_TIMER(&_opts.stats->column_iterator_init_ns);
-
+    // LOG(INFO) << "init_column_iterators, check_global_dict: " << check_global_dict;
     const size_t n = std::max<size_t>(1 + ChunkHelper::max_column_id(schema), _column_iterators.size());
     _column_iterators.resize(n);
     if constexpr (check_global_dict) {
@@ -858,10 +862,10 @@ Status SegmentIterator::_init_column_iterators(const Schema& schema) {
             } else {
                 check_dict_enc = has_predicate;
             }
-
             RETURN_IF_ERROR(_init_column_iterator_by_cid(cid, f->uid(), check_dict_enc));
 
             if constexpr (check_global_dict) {
+                // LOG(INFO) << "set column decoder for cid: " << cid << ", all dict encoded: " << _column_iterators[cid]->all_page_dict_encoded();
                 _column_decoders[cid].set_iterator(_column_iterators[cid].get());
                 _column_decoders[cid].set_all_page_dict_encoded(_column_iterators[cid]->all_page_dict_encoded());
                 if (_opts.global_dictmaps->count(cid)) {
@@ -1193,9 +1197,11 @@ Status SegmentIterator::_lookup_ordinal(const SeekTuple& key, bool lower, rowid_
     if (end_iter.valid()) {
         end = end_iter.ordinal() * _segment->num_rows_per_block();
     }
+    // LOG(INFO) << "_lookup_ordinal begin";
 
     // binary search to find the exact key
     ChunkPtr chunk = ChunkHelper::new_chunk(key.schema(), 1);
+    // LOG(INFO) << "_lookup_ordinal done";
     if (lower) {
         while (start < end) {
             chunk->reset();
@@ -1297,6 +1303,7 @@ Status SegmentIterator::_read_columns(const Schema& schema, Chunk* chunk, size_t
         ColumnPtr& column = chunk->get_column_by_index(i);
         size_t nread = nrows;
         RETURN_IF_ERROR(_column_iterators[cid]->next_batch(&nread, column.get()));
+        // LOG(INFO) << "read column idx: " << i << ", cid: " << cid << ", column name: " << column->get_name();
         may_has_del_row = may_has_del_row | (column->delete_state() != DEL_NOT_SATISFIED);
         DCHECK_EQ(nrows, nread);
     }
@@ -1426,7 +1433,7 @@ Status SegmentIterator::_do_get_next(Chunk* result, vector<rowid_t>* rowid) {
         RETURN_IF_ERROR(_read(chunk, rowid, chunk_capacity - chunk_start));
         chunk->check_or_die();
         size_t next_start = chunk->num_rows();
-
+        // @TODO for dict encode column, it is not decoded here, applying rf will wrong...
         if (has_non_expr_predicate) {
             ASSIGN_OR_RETURN(next_start, _filter_by_non_expr_predicates(chunk, rowid, chunk_start, next_start));
             chunk->check_or_die();
@@ -1457,8 +1464,10 @@ Status SegmentIterator::_do_get_next(Chunk* result, vector<rowid_t>* rowid) {
     if (_context->_has_dict_column) {
         chunk = _context->_dict_chunk.get();
         SCOPED_RAW_TIMER(&_opts.stats->decode_dict_ns);
+        // LOG(INFO) << "decode dict codes";
         RETURN_IF_ERROR(_decode_dict_codes(_context));
     }
+    // @TODO should put runtime predicate here????
 
     _build_final_chunk(_context);
     chunk = _context->_final_chunk.get();
@@ -1532,6 +1541,7 @@ Status SegmentIterator::_do_get_next(Chunk* result, vector<rowid_t>* rowid) {
     result->swap_chunk(*chunk);
 
     if (need_switch_context) {
+        // LOG(INFO) << "segment_ierator switch context";
         RETURN_IF_ERROR(_switch_context(_context->_next));
     }
 
@@ -1543,6 +1553,7 @@ FieldPtr SegmentIterator::_make_field(size_t i) {
 }
 
 Status SegmentIterator::_switch_context(ScanContext* to) {
+    // LOG(INFO) << "switch_context";
     if (_context != nullptr) {
         const ordinal_t ordinal = _context->_column_iterators[0]->get_current_ordinal();
         for (ColumnIterator* iter : to->_column_iterators) {
@@ -1552,11 +1563,13 @@ Status SegmentIterator::_switch_context(ScanContext* to) {
     }
 
     if (to->_read_chunk == nullptr) {
+        // LOG(INFO) << "new to read_chunk";
         to->_read_chunk = ChunkHelper::new_chunk(to->_read_schema, _reserve_chunk_size);
     }
 
     if (to->_has_dict_column) {
         if (to->_dict_chunk == nullptr) {
+            // LOG(INFO) << "new to dict_chunk";
             to->_dict_chunk = ChunkHelper::new_chunk(to->_dict_decode_schema, _reserve_chunk_size);
         }
     } else {
@@ -1592,9 +1605,10 @@ Status SegmentIterator::_switch_context(ScanContext* to) {
                 output_schema_idx++;
             }
         }
-
+        // LOG(INFO) << "to final_chunk";
         to->_final_chunk = ChunkHelper::new_chunk(final_chunk_schema, _reserve_chunk_size);
     } else {
+        // LOG(INFO) << "to final_chunk";
         to->_final_chunk = ChunkHelper::new_chunk(this->output_schema(), _reserve_chunk_size);
     }
 
@@ -1615,6 +1629,9 @@ StatusOr<uint16_t> SegmentIterator::_filter_by_non_expr_predicates(Chunk* chunk,
 
     {
         SCOPED_RAW_TIMER(&_opts.stats->vec_cond_evaluate_ns);
+        // for (const auto& [cid, idx]: chunk->get_column_id_to_index_map()) {
+        //     LOG(INFO) << "before eval non_expr_predicate, column_id: " << cid << ", idx: " << idx << ", column: " << chunk->get_column_by_index(idx)->get_name();
+        // }
         RETURN_IF_ERROR(_non_expr_pred_tree.evaluate(chunk, _selection.data(), from, to));
     }
 
@@ -1685,6 +1702,7 @@ bool SegmentIterator::_can_using_global_dict(const FieldPtr& field) const {
 
 template <bool late_materialization>
 Status SegmentIterator::_build_context(ScanContext* ctx) {
+    // LOG(INFO) << "_build_contex, late_materialization: " << late_materialization;
     const size_t predicate_count = _predicate_columns;
     const size_t num_fields = _schema.num_fields();
 
@@ -1744,9 +1762,13 @@ Status SegmentIterator::_build_context(ScanContext* ctx) {
             if (use_global_dict_code) {
                 iter = new GlobalDictCodeColumnIterator(cid, _column_iterators[cid].get(),
                                                         _column_decoders[cid].code_convert_data());
+
+                // LOG(INFO) << "build GlobalDictCodeColumnIterator for column " << cid;
             } else {
+                // LOG(INFO) << "build DictCodeColumnIterator for column " << cid;
                 iter = new DictCodeColumnIterator(cid, _column_iterators[cid].get());
             }
+            // @TODO for dictcode column, should rewrite predicate
 
             _obj_pool.add(iter);
             ctx->_read_schema.append(f2);
@@ -1843,7 +1865,7 @@ Status SegmentIterator::_build_context(ScanContext* ctx) {
 
 Status SegmentIterator::_init_context() {
     _late_materialization_ratio = config::late_materialization_ratio;
-
+    // LOG(INFO) << "_init_context";
     RETURN_IF_ERROR(_init_global_dict_decoder());
 
     if (_predicate_columns == 0 || _opts.pred_tree.empty() ||
@@ -1894,6 +1916,7 @@ Status SegmentIterator::_init_global_dict_decoder() {
 
 Status SegmentIterator::_rewrite_predicates() {
     {
+        // LOG(INFO) << "segment iterator _rewrite_predicates";
         ColumnPredicateRewriter rewriter(_column_iterators, _schema, _predicate_need_rewrite, _predicate_columns,
                                          _scan_range);
         RETURN_IF_ERROR(rewriter.rewrite_predicate(&_obj_pool, _opts.pred_tree));

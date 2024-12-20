@@ -995,6 +995,39 @@ Status ChunkPredicateBuilder<E, Type>::_get_column_predicates(PredicateParser* p
             }
         }
     }
+    // @TODO how to handle low cardinallity column
+    if (config::enable_rf_pushdown) {
+        for (const auto& it : _opts.runtime_filters->descriptors()) {
+            const RuntimeFilterProbeDescriptor* desc = it.second;
+            // const JoinRuntimeFilter* rf = desc->runtime_filter(_opts.driver_sequence);
+            // @TODO how to know
+            SlotId slot_id;
+            if (!desc->is_probe_slot_ref(&slot_id)) {
+                continue;
+            }
+            auto slot_desc = _opts.tuple_desc->get_slot_by_id(slot_id);
+            if (slot_desc == nullptr) {
+                continue;
+            }
+            // @TODO consider decode?
+            // @TODO should convert slot id to cid
+            auto column_id = parser->column_id(*slot_desc);
+            // auto& global_dicts = _opts.runtime_state->get_query_global_dict_map();
+            // if (slot_desc->type().is_string_type()) {
+            //     auto iter = global_dicts.find(slot_desc->id());
+            //     if (iter != global_dicts.end()) {
+            //         LOG(INFO) << "column_id in global_dict, " << column_id;
+            //     } else {
+            //         LOG(INFO) << "column_id not in global_dict, " << column_id;
+            //     }
+            // }
+            // @TODO for string type, if it is dict column ,should decode first
+            std::unique_ptr<ColumnPredicate> p(new_column_bf_contains_predicate(get_type_info(slot_desc->type().type), column_id, desc, _opts.driver_sequence));
+            // LOG(INFO) << "add runtime filter predicate, slot_id=" << slot_id << ", column_id:" << column_id
+            //     << ", rf=" << desc->debug_string() << ", driver_sequence: " << _opts.driver_sequence;
+            col_preds_owner.emplace_back(std::move(p));
+        }
+    }
 
     return Status::OK();
 }

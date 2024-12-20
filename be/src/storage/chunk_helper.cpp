@@ -430,6 +430,7 @@ ChunkUniquePtr ChunkHelper::new_chunk(const Schema& schema, size_t n) {
         const FieldPtr& f = schema.field(i);
         columns.emplace_back(column_from_field(*f));
         columns.back()->reserve(n);
+        // LOG(INFO) << "column " << i << " name: " << f->name() << " type: " << f->type()->type() << ", column: " << columns.back()->get_name();
     }
     return std::make_unique<Chunk>(std::move(columns), std::make_shared<Schema>(schema));
 }

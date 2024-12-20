@@ -423,6 +423,7 @@ void RuntimeFilterProbeCollector::do_evaluate(Chunk* chunk, RuntimeBloomFilterEv
         ColumnPtr column = EVALUATE_NULL_IF_ERROR(ctx, ctx->root(), chunk);
         // for colocate grf
         compute_hash_values(chunk, column.get(), rf_desc, eval_context);
+
         filter->evaluate(column.get(), &eval_context.running_context);
 
         auto true_count = SIMD::count_nonzero(selection);
@@ -562,15 +563,18 @@ void RuntimeFilterProbeCollector::compute_hash_values(Chunk* chunk, Column* colu
     const JoinRuntimeFilter* filter = rf_desc->runtime_filter(eval_context.driver_sequence);
     DCHECK(filter);
     if (filter->num_hash_partitions() == 0) {
+        // LOG(INFO) << "no hash partition, return, hash values: " << eval_context.running_context.hash_values.size();
         return;
     }
 
     if (rf_desc->partition_by_expr_contexts()->empty()) {
+        // LOG(INFO) << "compute_partition_index";
         filter->compute_partition_index(rf_desc->layout(), {column}, &eval_context.running_context);
     } else {
+        // LOG(INFO) << "compute_partition_index";
         // Used to hold generated columns
         std::vector<ColumnPtr> column_holders;
-        std::vector<Column*> partition_by_columns;
+        std::vector<const Column*> partition_by_columns;
         for (auto& partition_ctx : *(rf_desc->partition_by_expr_contexts())) {
             ColumnPtr partition_column = EVALUATE_NULL_IF_ERROR(partition_ctx, partition_ctx->root(), chunk);
             partition_by_columns.push_back(partition_column.get());

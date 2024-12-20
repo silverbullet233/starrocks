@@ -62,12 +62,13 @@ struct RewritePredicateTreeVisitor {
         }
 
         if (!_rewriter._need_rewrite[cid]) {
+            // LOG(INFO) << "column predicate is not need rewrite, cid: " << cid;
             return RewriteStatus::UNCHANGED;
         }
 
         const auto& field = _cid_to_field.find(cid)->second;
         DCHECK(_rewriter._column_iterators[cid]->all_page_dict_encoded());
-
+        // LOG(INFO) << "column predicate need rewrite, cid: " << cid;
         ColumnPredicate* rewrited_pred;
         ASSIGN_OR_RETURN(auto rewrite_status, _rewriter._rewrite_predicate(_pool, field, col_pred, &rewrited_pred));
 
@@ -179,7 +180,7 @@ StatusOr<ColumnPredicateRewriter::RewriteStatus> ColumnPredicateRewriter::_rewri
         return RewriteStatus::UNCHANGED;
     }
     DCHECK(_column_iterators[cid]->all_page_dict_encoded());
-
+    // LOG(INFO) << "rewrite predicate, cid: " << cid << ", type: " << pred->type();
     if (PredicateType::kEQ == pred->type()) {
         Datum value = pred->value();
         int code = _column_iterators[cid]->dict_lookup(value.get_slice());
@@ -316,6 +317,18 @@ StatusOr<ColumnPredicateRewriter::RewriteStatus> ColumnPredicateRewriter::_rewri
         const auto& [dict_column, code_column] = *dict_and_codes_ptr;
 
         return _rewrite_expr_predicate(pool, dict_column, code_column, field->is_nullable(), pred, dest_pred);
+    }
+    if (PredicateType::kBloomFilterContain == pred->type()) {
+        // @TODO support it later
+        return RewriteStatus::ALWAYS_TRUE;
+        // fetch all dict words, compute hash 
+        // std::vector<Slice> all_words;
+        // RETURN_IF_ERROR(_column_iterators[cid]->fetch_all_dict_words(&all_words));
+        // LOG(INFO) << "all words size: " << all_words.size();
+        // for (const auto& word : all_words) {
+        //     LOG(INFO) << "word: " << word.to_string();
+        // }
+        // paas dict words into predicate, once compute, always use
     }
 
     return RewriteStatus::UNCHANGED;

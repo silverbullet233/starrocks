@@ -248,6 +248,18 @@ public:
         }
         return -1;
     }
+    // get all dict code and word
+    const std::vector<std::pair<int, Slice>> get_dict() const {
+        DCHECK(_parsed);
+        std::vector<std::pair<int, Slice>> dict;
+        for (int i = 0;i < _num_elems; i++) {
+            const uint32_t off1 = offset_uncheck(i);
+            const uint32_t off2 = offset(i + 1);
+            Slice s(&_data[off1], off2 - off1);
+            dict.emplace_back(i, Slice(&_data[off1], off2 - off1));
+        }
+        return dict;
+    }
 
     uint32_t max_value_length() const {
         uint32_t max_length = 0;
