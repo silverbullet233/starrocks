@@ -318,7 +318,7 @@ public:
         uint16_t* sel, uint16_t sel_size, std::vector<uint32_t>& hash_values) const = 0;
     virtual void evaluate(Column* input_column, RunningContext* ctx) const = 0;
     virtual uint16_t evaluate(const Column* input_column, const std::vector<uint32_t>& hash_values, uint16_t* sel, uint16_t sel_size) const = 0;
-    // evaluate on raw container
+    // evaluate on raw container?
     // data_column, null_column
 
     size_t size() const { return _size; }

@@ -17,6 +17,7 @@
 #include <util/time.h>
 
 #include "column/chunk.h"
+#include "common/config.h"
 #include "common/status.h"
 #include "common/statusor.h"
 #include "exec/olap_scan_node.h"

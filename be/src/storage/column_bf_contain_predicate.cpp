@@ -31,18 +31,15 @@ public:
         }
 
     Status evaluate(const Column* column, uint8_t* selection, uint16_t from, uint16_t to) const override {
-        LOG(INFO) << "BloomFilterContains::evaluate";
-        return Status::OK();
+        return Status::NotSupported("BloomFilterContains::evaluate");
     }
 
     Status evaluate_and(const Column* column, uint8_t* selection, uint16_t from, uint16_t to) const override {
-        LOG(INFO) << "BloomFilterContains::evaluate_and";
-        return Status::OK();
+        return Status::NotSupported("BloomFilterContains::evaluate_and");
     }
 
     Status evaluate_or(const Column* column, uint8_t* selection, uint16_t from, uint16_t to) const override {
-        LOG(INFO) << "BloomFilterContains::evaluate_or";
-        return Status::OK();
+        return Status::NotSupported("BloomFilterContains::evaluate_or");
     }
 
     StatusOr<uint16_t> evaluate_branchless(const Column* column, uint16_t* sel, uint16_t sel_size) const override {
@@ -88,16 +85,30 @@ public:
 
 private:
     const JoinRuntimeFilter* try_to_get_rf() const {
-        if (_rf) {
+        if (_rf_desc->is_topn_filter()) {
+            if (_rf && _rf->rf_version() == _rf_version) {
+                return _rf;
+            }
+            _rf = _rf_desc->runtime_filter(_driver_sequence);
+            if (_rf) {
+                _rf_version = _rf->rf_version();
+                LOG(INFO) << "update topn rf version to: " << _rf_version;
+            }
+            return _rf;
+        } else {
+            if (_rf) {
+                return _rf;
+            }
+            _rf = _rf_desc->runtime_filter(_driver_sequence);
             return _rf;
         }
-        _rf = _rf_desc->runtime_filter(_driver_sequence);
-        return _rf;
     }
 
     const RuntimeFilterProbeDescriptor* _rf_desc;
     int32_t _driver_sequence;
     mutable const JoinRuntimeFilter* _rf = nullptr;
+    // for tupn filter
+    mutable size_t _rf_version = 0;
     // @TODO for dict code column, skip temporary, will support it later
 };
 
