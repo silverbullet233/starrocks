@@ -344,6 +344,8 @@ std::string RuntimeFilterProbeDescriptor::debug_string() const {
     } else {
         ss << "nullptr";
     }
+    ss << ", is_local=" << _is_local;
+    ss << ", is_topn=" << _is_topn_filter;
     ss << ", rf=";
     const JoinRuntimeFilter* rf = _runtime_filter.load();
     if (rf != nullptr) {
@@ -419,6 +421,11 @@ void RuntimeFilterProbeCollector::do_evaluate(Chunk* chunk, RuntimeBloomFilterEv
         if (filter == nullptr || filter->always_true()) {
             continue;
         }
+        if (rf_desc->has_push_down_to_storage()) {
+            // LOG(INFO) << "skip eval because it is pushdown to storage, rf: " << rf_desc->debug_string();
+            continue;
+        }
+        
         auto* ctx = rf_desc->probe_expr_ctx();
         ColumnPtr column = EVALUATE_NULL_IF_ERROR(ctx, ctx->root(), chunk);
         // for colocate grf
@@ -563,15 +570,12 @@ void RuntimeFilterProbeCollector::compute_hash_values(Chunk* chunk, Column* colu
     const JoinRuntimeFilter* filter = rf_desc->runtime_filter(eval_context.driver_sequence);
     DCHECK(filter);
     if (filter->num_hash_partitions() == 0) {
-        // LOG(INFO) << "no hash partition, return, hash values: " << eval_context.running_context.hash_values.size();
         return;
     }
 
     if (rf_desc->partition_by_expr_contexts()->empty()) {
-        // LOG(INFO) << "compute_partition_index";
         filter->compute_partition_index(rf_desc->layout(), {column}, &eval_context.running_context);
     } else {
-        // LOG(INFO) << "compute_partition_index";
         // Used to hold generated columns
         std::vector<ColumnPtr> column_holders;
         std::vector<const Column*> partition_by_columns;

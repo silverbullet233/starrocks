@@ -39,6 +39,7 @@
 #include "storage/range.h"
 #include "storage/rowset/column_reader.h"
 #include "storage/rowset/scalar_column_iterator.h"
+#include "storage/column_bf_contain_predicate.h"
 
 namespace starrocks {
 
@@ -320,7 +321,20 @@ StatusOr<ColumnPredicateRewriter::RewriteStatus> ColumnPredicateRewriter::_rewri
     }
     if (PredicateType::kBloomFilterContain == pred->type()) {
         // @TODO support it later
-        return RewriteStatus::ALWAYS_TRUE;
+        // LOG(INFO) << "bloom filter predicate , pred: " << pred->debug_string();
+
+        std::vector<Slice> all_words;
+        RETURN_IF_ERROR(_column_iterators[cid]->fetch_all_dict_words(&all_words));
+        std::vector<std::string> dict_words;
+        for (const auto& word : all_words) {
+            dict_words.emplace_back(std::string(word.get_data(), word.get_size()));
+        }
+        auto* bf_pred = const_cast<ColumnBloomFilterContainPredicate*>(down_cast<const ColumnBloomFilterContainPredicate*>(pred));
+        // LOG(INFO) << "bf pred, " << bf_pred->debug_string();
+        bf_pred->set_dict_words(std::move(dict_words));
+
+        return RewriteStatus::UNCHANGED;
+        // return RewriteStatus::ALWAYS_TRUE;
         // fetch all dict words, compute hash 
         // std::vector<Slice> all_words;
         // RETURN_IF_ERROR(_column_iterators[cid]->fetch_all_dict_words(&all_words));

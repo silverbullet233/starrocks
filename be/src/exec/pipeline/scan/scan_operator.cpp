@@ -271,6 +271,7 @@ StatusOr<ChunkPtr> ScanOperator::pull_chunk(RuntimeState* state) {
         begin_pull_chunk(res);
         // for query cache mechanism, we should emit EOS chunk when we receive the last chunk.
         auto [owner_id, is_eos] = _should_emit_eos(res);
+        // @TODO
         eval_runtime_bloom_filters(res.get());
         res->owner_info().set_owner_id(owner_id, is_eos);
     }

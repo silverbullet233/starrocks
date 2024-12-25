@@ -888,9 +888,10 @@ public:
         DCHECK_EQ(hash_values.size(), num_rows);
         // @TODO consider compatibility
         // @TODO handle selection...
-        auto use_reduce = true;
+        auto use_reduce = true && (_join_mode == TRuntimeFilterBuildJoinMode::PARTITIONED ||
+                           _join_mode == TRuntimeFilterBuildJoinMode::SHUFFLE_HASH_BUCKET);
         if (use_reduce) {
-            dispatch_layout<WithModuloArg<ModuloOp>::HashValueCompute>(_global, layout, columns, num_rows,
+            dispatch_layout<WithModuloArg<ReduceOp>::HashValueCompute>(_global, layout, columns, num_rows,
                                                                        _hash_partition_bf.size(), hash_values);
         } else {
             dispatch_layout<WithModuloArg<ModuloOp>::HashValueCompute>(_global, layout, columns, num_rows,
@@ -1111,6 +1112,26 @@ private:
         }
     }
 
+    bool _evaluate_min_max(const CppType& value) const {
+        if constexpr (!IsSlice<CppType>) {
+            return value >= _min && value <= _max;
+        }
+        return true;
+    }
+    uint16_t _evaluate_min_max(const ContainerType& values, uint16_t* sel, uint16_t sel_size) const {
+        if constexpr (!IsSlice<CppType>) {
+            const auto* data = values.data();
+            uint16_t new_size = 0;
+            for (int i = 0;i < sel_size;i++) {
+                uint16_t idx = sel[i];
+                sel[new_size] = idx;
+                new_size += (data[idx] >= _min && data[idx] <= _max);
+            }
+            return new_size;
+        } else {
+            return sel_size;
+        }
+    }
     // @TODO can use hash_value
     template <bool multi_partition = false, bool can_use_bf = true>
     uint16_t _t_evaluate(const Column* column, const std::vector<uint32_t>& hash_values,uint16_t* sel, uint16_t sel_size) const {
@@ -1125,9 +1146,12 @@ private:
             const auto* nullable_column = down_cast<const NullableColumn*>(column);
             const auto& data = GetContainer<Type>::get_data(nullable_column->data_column());
             // @TODO eval min max
+            // _evaluate_min_max(input_data, _selection, size);
+            uint16_t new_sel_size = _evaluate_min_max(data, sel, sel_size);
+            // LOG(INFO) << "after apply min max, old: " << sel_size << ", new: " << new_sel_size;
             if (nullable_column->has_null()) {
                 const uint8_t* null_data = nullable_column->immutable_null_column_data().data();
-                for (int i = 0; i < sel_size; i++) {
+                for (int i = 0; i < new_sel_size; i++) {
                     uint16_t idx = sel[i];
                     sel[new_size] = idx;
                     if (null_data[idx]) {
@@ -1135,26 +1159,34 @@ private:
                     } else {
                         if constexpr (can_use_bf) {
                             new_size += _rf_test_data<multi_partition>(data[idx], multi_partition ? hash_values[idx]: 0);
+                        } else {
+                            new_size ++;
                         }
                     }
                 }
             } else {
                 if constexpr (can_use_bf) {
-                    for (int i = 0; i < sel_size; ++i) {
+                    for (int i = 0; i < new_sel_size; ++i) {
                         uint16_t idx = sel[i];
                         sel[new_size] = idx;
                         new_size += _rf_test_data<multi_partition>(data[idx], multi_partition ? hash_values[idx]: 0);
                     }
+                } else {
+                    new_size = new_sel_size;
                 }
             }
         } else {
             const auto& data = GetContainer<Type>::get_data(column);
+            uint16_t new_sel_size = _evaluate_min_max(data, sel, sel_size);
+            // LOG(INFO) << "after apply min max, old: " << sel_size << ", new: " << new_sel_size;
             if constexpr (can_use_bf) {
-                for (int i = 0; i < sel_size; ++i) {
+                for (int i = 0; i < new_sel_size; ++i) {
                     uint16_t idx = sel[i];
                     sel[new_size] = idx;
                     new_size += _rf_test_data<multi_partition>(data[idx], multi_partition ? hash_values[idx]: 0);
                 }
+            } else {
+                new_size = new_sel_size;
             }
         }
         return new_size;

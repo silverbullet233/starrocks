@@ -1003,34 +1003,26 @@ Status ChunkPredicateBuilder<E, Type>::_get_column_predicates(PredicateParser* p
             // @TODO how to know
             SlotId slot_id;
             if (!desc->is_probe_slot_ref(&slot_id)) {
+                LOG(INFO) << "skip pushdown rf: " << desc->debug_string();
                 continue;
             }
             auto slot_desc = _opts.tuple_desc->get_slot_by_id(slot_id);
             if (slot_desc == nullptr) {
+                LOG(INFO) << "skip pushdown rf: " << desc->debug_string();
                 continue;
             }
-            // if (desc->is_topn_filter()) {
-            //     // @TODO
-            //     LOG(INFO) << "topn rf will be supported later";
-            //     continue;
-            // }
+            if (desc->is_topn_filter()) {
+                continue;
+            }
+            
             // @TODO consider decode?
             // @TODO should convert slot id to cid
             auto column_id = parser->column_id(*slot_desc);
-            // auto& global_dicts = _opts.runtime_state->get_query_global_dict_map();
-            // if (slot_desc->type().is_string_type()) {
-            //     auto iter = global_dicts.find(slot_desc->id());
-            //     if (iter != global_dicts.end()) {
-            //         LOG(INFO) << "column_id in global_dict, " << column_id;
-            //     } else {
-            //         LOG(INFO) << "column_id not in global_dict, " << column_id;
-            //     }
-            // }
             // @TODO for string type, if it is dict column ,should decode first
             desc->set_has_push_down_to_storage(true);
             std::unique_ptr<ColumnPredicate> p(new_column_bf_contains_predicate(get_type_info(slot_desc->type().type), column_id, desc, _opts.driver_sequence));
-            LOG(INFO) << "add runtime filter predicate, slot_id=" << slot_id << ", column_id:" << column_id
-                << ", rf=" << desc->debug_string() << ", driver_sequence: " << _opts.driver_sequence << ", desc:" << (void*)desc;
+            // LOG(INFO) << "add runtime filter predicate, slot_id=" << slot_id << ", column_id:" << column_id
+            //     << ", rf=" << desc->debug_string() << ", driver_sequence: " << _opts.driver_sequence << ", desc:" << (void*)desc;
             col_preds_owner.emplace_back(std::move(p));
         }
     }
