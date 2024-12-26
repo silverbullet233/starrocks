@@ -468,7 +468,7 @@ struct WithModuloArg {
     // only compute for selected row
     template <TRuntimeFilterLayoutMode::type M>
     struct HashValueComputeSelection {
-        void operator()(const RuntimeFilterLayout& layout, const std::vector<Column*>& columns, size_t num_rows,
+        void operator()(const RuntimeFilterLayout& layout, const std::vector<const Column*>& columns, size_t num_rows,
                         uint16_t* sel, uint16_t sel_size,
                         size_t real_num_partitions, std::vector<uint32_t>& hash_values) const {
             if constexpr (layout_is_singleton<M>) {
@@ -478,7 +478,7 @@ struct WithModuloArg {
 
             typedef void (Column::*HashFuncType)(uint32_t*, uint32_t, uint32_t) const;
             auto compute_hash = [&columns, &num_rows, &hash_values](HashFuncType hash_func) {
-                for (Column* input_column : columns) {
+                for (const Column* input_column : columns) {
                     (input_column->*hash_func)(hash_values.data(), 0, num_rows);
                 }
             };
@@ -489,8 +489,8 @@ struct WithModuloArg {
                 [[maybe_unused]] const auto num_instances = layout.num_instances();
                 [[maybe_unused]] const auto num_drivers_per_instance = layout.num_drivers_per_instance();
                 [[maybe_unused]] const auto num_partitions = num_instances * num_drivers_per_instance;
-                for (auto i = 0; i < num_rows; ++i) {
-                    auto& hash_value = hash_values[i];
+                for (uint16_t i = 0;i < sel_size; i++) {
+                    auto& hash_value = hash_values[sel[i]];
                     if constexpr (layout_is_pipeline_shuffle<M>) {
                         hash_value = ModuloFunc()(HashUtil::xorshift32(hash_value), num_drivers_per_instance);
                     } else if constexpr (layout_is_global_shuffle_1l<M>) {
@@ -508,8 +508,8 @@ struct WithModuloArg {
                 [[maybe_unused]] const auto& bucketseq_to_driverseq = layout.bucketseq_to_driverseq();
                 [[maybe_unused]] const auto& bucketseq_to_partition = layout.bucketseq_to_partition();
                 [[maybe_unused]] const auto num_drivers_per_instance = layout.num_drivers_per_instance();
-                for (auto i = 0; i < num_rows; ++i) {
-                    auto& hash_value = hash_values[i];
+                for (uint16_t i = 0;i < sel_size; i++) {
+                    auto& hash_value = hash_values[sel[i]];
                     if constexpr (layout_is_pipeline_bucket<M>) {
                         hash_value = bucketseq_to_driverseq[ModuloFunc()(hash_value, bucketseq_to_driverseq.size())];
                     } else if constexpr (layout_is_pipeline_bucket_lx<M>) {
@@ -891,10 +891,11 @@ public:
         auto use_reduce = true && (_join_mode == TRuntimeFilterBuildJoinMode::PARTITIONED ||
                            _join_mode == TRuntimeFilterBuildJoinMode::SHUFFLE_HASH_BUCKET);
         if (use_reduce) {
-            dispatch_layout<WithModuloArg<ReduceOp>::HashValueCompute>(_global, layout, columns, num_rows,
+            dispatch_layout<WithModuloArg<ReduceOp>::HashValueComputeSelection>(_global, layout, columns, num_rows,
+                                                                        sel, sel_size,
                                                                        _hash_partition_bf.size(), hash_values);
         } else {
-            dispatch_layout<WithModuloArg<ModuloOp>::HashValueCompute>(_global, layout, columns, num_rows,
+            dispatch_layout<WithModuloArg<ModuloOp>::HashValueComputeSelection>(_global, layout, columns, num_rows, sel, sel_size,
                                                                        _hash_partition_bf.size(), hash_values);
         }
     }

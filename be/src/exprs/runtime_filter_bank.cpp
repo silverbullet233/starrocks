@@ -604,6 +604,10 @@ void RuntimeFilterProbeCollector::update_selectivity(Chunk* chunk, RuntimeBloomF
         if (filter == nullptr || filter->always_true()) {
             continue;
         }
+        if (rf_desc->has_push_down_to_storage()) {
+            // LOG(INFO) << "skip eval because it is pushdown to storage, rf: " << rf_desc->debug_string();
+            continue;
+        }
         auto& selection = eval_context.running_context.use_merged_selection
                                   ? eval_context.running_context.merged_selection
                                   : eval_context.running_context.selection;

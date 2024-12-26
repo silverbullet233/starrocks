@@ -28,6 +28,12 @@
 namespace starrocks {
 class ColumnBloomFilterContainPredicate final : public ColumnPredicate {
 public:
+    enum State: uint8_t {
+        WAIT_RF = 0,
+        SAMPLE = 1,
+        DISABLE = 2,
+        ENABLE = 3,
+    };
     explicit ColumnBloomFilterContainPredicate(const TypeInfoPtr& type_info, ColumnId id,
         const RuntimeFilterProbeDescriptor* rf_desc, int32_t driver_sequence):
         ColumnPredicate(type_info, id), _rf_desc(rf_desc), _driver_sequence(driver_sequence) {
@@ -95,61 +101,124 @@ public:
         return Status::OK();
     }
 
-    StatusOr<uint16_t> evaluate_branchless(const Column* column, uint16_t* sel, uint16_t sel_size) const override {
-        // @TODO if dict column, should convert dict code column to dict word
-        if (auto rf = try_to_get_rf()) {
-            if (_is_dict_code_column) {
-                RETURN_IF_ERROR(precompute_for_dict_code());
-                uint16_t new_size = 0;
-                if (column->is_nullable()) {
-                    const auto* nullable_column = down_cast<const NullableColumn*>(column);
-                    // dict code column must be int column
-                    const auto& data = GetContainer<TYPE_INT>::get_data(nullable_column->data_column());
-                    if (nullable_column->has_null()) {
-                        const uint8_t* null_data = nullable_column->immutable_null_column_data().data();
-                        for(int i = 0;i < sel_size;i++) {
-                            uint16_t idx = sel[i];
-                            sel[new_size] = idx;
-                            if (null_data[idx]) {
-                                new_size += rf->has_null();
-                            } else {
-                                new_size += _dict_words_result[data[idx]];
-                            }
-                        }
-                    } else {
-                        for (int i = 0;i < sel_size;i++){
-                            uint16_t idx = sel[i];
-                            sel[new_size] = idx;
+    StatusOr<uint16_t> _evaluate_branchless(const Column* column, uint16_t* sel, uint16_t sel_size) const {
+        DCHECK(_rf) << "_rf should not be null";
+        if (_is_dict_code_column) {
+            RETURN_IF_ERROR(precompute_for_dict_code());
+            uint16_t new_size = 0;
+            if (column->is_nullable()) {
+                const auto* nullable_column = down_cast<const NullableColumn*>(column);
+                // dict code column must be int column
+                const auto& data = GetContainer<TYPE_INT>::get_data(nullable_column->data_column());
+                if (nullable_column->has_null()) {
+                    const uint8_t* null_data = nullable_column->immutable_null_column_data().data();
+                    for(int i = 0;i < sel_size;i++) {
+                        uint16_t idx = sel[i];
+                        sel[new_size] = idx;
+                        if (null_data[idx]) {
+                            new_size += _rf->has_null();
+                        } else {
                             new_size += _dict_words_result[data[idx]];
                         }
                     }
                 } else {
-                    const auto& data = GetContainer<TYPE_INT>::get_data(column);
                     for (int i = 0;i < sel_size;i++){
                         uint16_t idx = sel[i];
                         sel[new_size] = idx;
                         new_size += _dict_words_result[data[idx]];
                     }
                 }
-                // LOG(INFO) << "BloomFilterContains::evaluate_branchless dict input size:" << sel_size << ", ret:" << new_size << ", always_true:" << rf->always_true()
-                //     << ", filter_id: " <<  _rf_desc->filter_id();
-                return new_size;
             } else {
-                std::vector<uint32_t> hash_values;
-                if (rf->num_hash_partitions() > 0) {
-                    // compute hash 
-                    hash_values.resize(column->size());
-                    rf->compute_partition_index(_rf_desc->layout(), {column}, sel, sel_size, hash_values);
+                const auto& data = GetContainer<TYPE_INT>::get_data(column);
+                for (int i = 0;i < sel_size;i++){
+                    uint16_t idx = sel[i];
+                    sel[new_size] = idx;
+                    new_size += _dict_words_result[data[idx]];
                 }
-        
-                uint16_t ret = rf->evaluate(column, hash_values, sel, sel_size);
-                // LOG(INFO) << "BloomFilterContains::evaluate_branchless input size:" << sel_size << ", ret:" << ret << ", always_true:" << rf->always_true()
-                //     << ", filter_id: " <<  _rf_desc->filter_id();
+            }
+            // LOG(INFO) << "BloomFilterContains::evaluate_branchless dict input size:" << sel_size << ", ret:" << new_size << ", always_true:" << rf->always_true()
+            //     << ", filter_id: " <<  _rf_desc->filter_id();
+
+            // @TODO update selectivit
+
+            return new_size;
+        } else {
+            std::vector<uint32_t> hash_values;
+            if (_rf->num_hash_partitions() > 0) {
+                // compute hash 
+                hash_values.resize(column->size());
+                _rf->compute_partition_index(_rf_desc->layout(), {column}, sel, sel_size, hash_values);
+            }
+    
+            uint16_t ret = _rf->evaluate(column, hash_values, sel, sel_size);
+            // LOG(INFO) << "BloomFilterContains::evaluate_branchless input size:" << sel_size << ", ret:" << ret << ", column_size:" << column->size()
+            //     << ", filter_id: " <<  _rf_desc->filter_id();
+            return ret;
+        }
+        // @TODO if selectivity is very poor, should give it up
+        return sel_size;
+    }
+
+    StatusOr<uint16_t> evaluate_branchless(const Column* column, uint16_t* sel, uint16_t sel_size) const override {
+        switch (_state) {
+            case WAIT_RF: {
+                if (auto rf = try_to_get_rf(); rf != nullptr) {
+                    _state = SAMPLE;
+                    // LOG(INFO) << "WAIT_RF to SAMPLE, rf: " << _rf_desc->debug_string();
+                } else {
+                    return sel_size;
+                }
+            }
+            case SAMPLE: {
+                ASSIGN_OR_RETURN(uint16_t ret, _evaluate_branchless(column, sel, sel_size));
+                _input_rows += sel_size;
+                _filtered_rows += sel_size - ret;
+                if (_input_rows >= kSampleRows) {
+                    double filter_ratio = _filtered_rows * 1.0 / _input_rows;
+                    if (filter_ratio < 0.5) {
+                        // selectivity is poor, should skip
+                        _state = DISABLE;
+                    } else {
+                        // selectivity is good, should keep it
+                        _state = ENABLE;
+                    }
+                    // LOG(INFO) << "SAMPLE done, input rows: " << _input_rows << ", filtered rows: " << _filtered_rows
+                    //     << ", ratio: " << filter_ratio << ", go to: " << (_state == DISABLE ? "DISABLE": "ENABLE")
+                    //         << ", rf: " << _rf_desc->debug_string();
+                    _skiped_rows = 0;
+                }
                 return ret;
             }
+            case DISABLE: {
+                _skiped_rows += sel_size;
+                if (_skiped_rows >= kSkipRowsThreshold) {
+                    _state = SAMPLE;
+                    _input_rows = 0;
+                    _filtered_rows = 0;
+                    // LOG(INFO) << "DISABLE done, go back to SAMPLE, skiped rows: " << _skiped_rows << ", rf: "<<  _rf_desc->debug_string();
+                }
+                return sel_size;
+            }
+            case ENABLE: {
+                ASSIGN_OR_RETURN(uint16_t ret, _evaluate_branchless(column, sel, sel_size));
+                _skiped_rows += sel_size;
+                if (_skiped_rows >= kSkipRowsThreshold) {
+                    _state = SAMPLE;
+                    _input_rows = 0;
+                    _filtered_rows = 0;
+                    // LOG(INFO) << "ENABLE done, go back to SAMPLE, skiped rows: " << _skiped_rows << ", rf:" << _rf_desc->debug_string();
+                }
+                return ret;
+            }
+            default:
+                CHECK(false) << "unreachable path";
+                break;
         }
-        // @TODO check if rf received
-        return sel_size;
+        // if (auto rf = try_to_get_rf()) {
+        //     ASSIGN_OR_RETURN(uint16_t ret, _evaluate_branchless(column, sel, sel_size));
+        //     return ret;
+        // } 
+        // return sel_size;
     }
 
     bool can_vectorized() const override {
@@ -181,23 +250,11 @@ public:
 
 private:
     const JoinRuntimeFilter* try_to_get_rf() const {
-        if (_rf_desc->is_topn_filter()) {
-            if (_rf && _rf->rf_version() == _rf_version) {
-                return _rf;
-            }
-            _rf = _rf_desc->runtime_filter(_driver_sequence);
-            if (_rf) {
-                _rf_version = _rf->rf_version();
-                LOG(INFO) << "update topn rf version to: " << _rf_version;
-            }
-            return _rf;
-        } else {
-            if (_rf) {
-                return _rf;
-            }
-            _rf = _rf_desc->runtime_filter(_driver_sequence);
+        if (_rf) {
             return _rf;
         }
+        _rf = _rf_desc->runtime_filter(_driver_sequence);
+        return _rf;
     }
 
     const RuntimeFilterProbeDescriptor* _rf_desc;
@@ -209,5 +266,21 @@ private:
     bool _is_dict_code_column = false;
     std::vector<std::string> _dict_words;
     mutable std::vector<uint8_t> _dict_words_result;
+    // @TODO should consider filter ratio, if selectivy is very poor, just skip it
+    // @TODO calculate filter ratio in 4K rows, if rati
+
+    // @TODO count selectivity each 4K rows, if selectivity is poor, skip use rf in next 128k rows, then try it again
+
+    mutable State _state = State::WAIT_RF;
+    // total skiped rows since disable this filter
+    mutable size_t _skiped_rows = 0;
+    // total input rows in a sample period
+    mutable size_t _input_rows = 0;
+    // total fitlerd rows in a sample period
+    mutable size_t _filtered_rows = 0;
+
+    static const size_t kSampleRows = 4 * 1024;
+    static const size_t kSkipRowsThreshold = 128 * 1024;
+
 };
 }
