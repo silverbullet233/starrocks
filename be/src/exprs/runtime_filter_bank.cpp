@@ -428,6 +428,7 @@ void RuntimeFilterProbeCollector::do_evaluate(Chunk* chunk, RuntimeBloomFilterEv
         
         auto* ctx = rf_desc->probe_expr_ctx();
         ColumnPtr column = EVALUATE_NULL_IF_ERROR(ctx, ctx->root(), chunk);
+
         // for colocate grf
         compute_hash_values(chunk, column.get(), rf_desc, eval_context);
 
@@ -613,6 +614,10 @@ void RuntimeFilterProbeCollector::update_selectivity(Chunk* chunk, RuntimeBloomF
                                   : eval_context.running_context.selection;
         auto ctx = rf_desc->probe_expr_ctx();
         ColumnPtr column = EVALUATE_NULL_IF_ERROR(ctx, ctx->root(), chunk);
+        // if (rf_desc->filter_id() >= 0 && rf_desc->filter_id() <= 5) {
+        //     LOG(INFO) << "eval rf: " << rf_desc->debug_string() << ", column: " << column->get_name()
+        //         << ", ctx: " << ctx->root()->debug_string();
+        // }
         // for colocate grf
         compute_hash_values(chunk, column.get(), rf_desc, eval_context);
         // true count is not accummulated, it is evaluated for each RF respectively

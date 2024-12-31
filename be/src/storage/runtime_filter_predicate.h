@@ -1,0 +1,131 @@
+// Copyright 2021-present StarRocks, Inc. All rights reserved.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     https://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+#pragma once
+#include "common/status.h"
+#include "column/vectorized_fwd.h"
+#include "column/chunk.h"
+#include "exprs/runtime_filter_bank.h"
+
+namespace starrocks {
+class RuntimeFilterProbeDescriptor;
+
+class RuntimeFilterPredicate {
+public:
+    RuntimeFilterPredicate(RuntimeFilterProbeDescriptor* desc, ColumnId column_id): _rf_desc(desc), _column_id(column_id) {}
+    virtual ~RuntimeFilterPredicate() = default;
+
+    virtual Status evaluate(Chunk* chunk, uint8_t* selection, uint16_t from, uint16_t to);
+    ColumnId get_column_id() const {
+        return _column_id;
+    }
+    RuntimeFilterProbeDescriptor* get_rf_desc() const {
+        return _rf_desc;
+    }
+    bool init(int32_t driver_sequence);
+    
+
+protected:
+    RuntimeFilterProbeDescriptor* _rf_desc;
+    const JoinRuntimeFilter* _rf = nullptr;
+    ColumnId _column_id;
+
+    // used to count selectivity
+    size_t _input_rows = 0;
+    size_t _skiped_rows = 0;
+    size_t _filtered_rows = 0;
+    std::vector<uint32_t> hash_values;
+};
+
+class DictColumnRuntimeFilterPredicate final: public RuntimeFilterPredicate {
+public:
+    DictColumnRuntimeFilterPredicate(RuntimeFilterProbeDescriptor* rf_desc, ColumnId column_id, std::vector<std::string> dict_words):
+        RuntimeFilterPredicate(rf_desc, column_id), _dict_words(std::move(dict_words)) {}
+    ~DictColumnRuntimeFilterPredicate() = default;
+
+    Status evaluate(Chunk* chunk, uint8_t* selection, uint16_t from, uint16_t to) override;
+
+private:
+    Status prepare();
+
+    std::vector<std::string> _dict_words;
+    std::vector<uint8_t> _result;
+};
+
+class RuntimeFilterPredicatesRewriter;
+// collect all rf that can be used
+class RuntimeFilterPredicates {
+    friend class RuntimeFilterPredicatesRewriter;
+public:
+    RuntimeFilterPredicates() = default;
+    RuntimeFilterPredicates(int32_t driver_sequence): _driver_sequence(driver_sequence) {}
+
+    void add_predicate(RuntimeFilterPredicate* pred) {
+        // _rf_predicates.emplace_back(std::move(pred));
+        _rf_predicates.emplace_back(pred);
+    }
+    void update_predicate(size_t idx, RuntimeFilterPredicate* pred) {
+        _rf_predicates[idx] = pred;
+    }
+    // @TODO need update?
+    // @TODO support clone
+
+    Status evaluate(Chunk* chunk, uint8_t* selection, uint16_t from, uint16_t to);
+
+    std::set<ColumnId> get_column_ids() const {
+        std::set<ColumnId> column_ids;
+        for (const auto& pred : _rf_predicates) {
+            column_ids.insert(pred->get_column_id());
+        }
+        return column_ids;
+    }
+
+private:
+    void _update_selectivity_map();
+
+    enum State : uint8_t {
+        INIT = 0,
+        SAMPLE = 1,
+        NORMAL = 2,
+    };
+    State _state = INIT;
+    std::vector<RuntimeFilterPredicate*> _rf_predicates; 
+    // will be reused
+    std::vector<uint8_t> _selection;
+    std::vector<RuntimeFilterPredicate*> _sampling_predicates;
+    std::vector<size_t> _filter_rows;
+    size_t _sample_rows = 0;
+    size_t _skip_rows = 0;
+    // maintain all runtime filters
+    // std::vector<RuntimeFilterProbeDescriptor*> _rf_descs;
+    // std::vector<JoinRuntimeFilter*> _rfs;
+    // std::vector<ColumnId> _column_ids;
+
+    // std::map<double, RuntimeFilterProbeDescriptor*> _selectivity_map;
+    std::map<double, RuntimeFilterPredicate*> _selectivity_map;
+
+    int32_t _driver_sequence = -1;
+    // size_t _input_rows = 0;
+    // size_t _skiped_rows = 0;
+    // size_t _filtered_rows = 0;
+    // std::vector<uint32_t> hash_values;
+};
+class ColumnIterator;
+class Schema;
+class RuntimeFilterPredicatesRewriter {
+public:
+    static Status rewrite(ObjectPool* obj_pool, RuntimeFilterPredicates& preds, const std::vector<std::unique_ptr<ColumnIterator>>& column_iterators, const Schema& schema);
+};
+
+}

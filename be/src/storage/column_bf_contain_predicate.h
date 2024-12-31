@@ -18,6 +18,7 @@
 #include "column/column.h"
 #include "column/column_helper.h"
 #include "column/nullable_column.h"
+#include "common/compiler_util.h"
 #include "common/statusor.h"
 #include "exprs/runtime_filter.h"
 #include "gutil/casts.h"
@@ -54,6 +55,9 @@ public:
         if (UNLIKELY(from == to)) {
             return Status::OK();
         }
+        if (config::enable_rf_pushdown) {
+            return Status::OK();
+        }
         // @TODO convert to evalute_branchless?
         std::vector<uint16_t> sel = build_sel(selection, from, to);
         ASSIGN_OR_RETURN(uint16_t ret, evaluate_branchless(column, sel.data(), sel.size()));
@@ -69,6 +73,9 @@ public:
 
     Status evaluate_and(const Column* column, uint8_t* selection, uint16_t from, uint16_t to) const override {
         if (UNLIKELY(from == to)) {
+            return Status::OK();
+        }
+        if (config::enable_rf_pushdown) {
             return Status::OK();
         }
         std::vector<uint16_t> sel = build_sel(selection, from, to);
@@ -88,6 +95,9 @@ public:
         if (UNLIKELY(from == to)) {
             return Status::OK();
         }
+        if (config::enable_rf_pushdown) {
+            return Status::OK();
+        }
         std::vector<uint16_t> sel = build_sel(selection, from, to);
         ASSIGN_OR_RETURN(uint16_t ret, evaluate_branchless(column, sel.data(), sel.size()));
         std::vector<uint8_t> new_selection(to - from, 0);
@@ -102,6 +112,9 @@ public:
     }
 
     StatusOr<uint16_t> _evaluate_branchless(const Column* column, uint16_t* sel, uint16_t sel_size) const {
+        if (config::enable_rf_pushdown) {
+            return sel_size;
+        }
         DCHECK(_rf) << "_rf should not be null";
         if (_is_dict_code_column) {
             RETURN_IF_ERROR(precompute_for_dict_code());
@@ -143,10 +156,12 @@ public:
 
             return new_size;
         } else {
-            std::vector<uint32_t> hash_values;
+            // std::vector<uint32_t> hash_values;
             if (_rf->num_hash_partitions() > 0) {
                 // compute hash 
-                hash_values.resize(column->size());
+                // @TODO compute hash may calculate multi times
+                // hash_values.resize(column->size());
+                hash_values.resize(sel_size);
                 _rf->compute_partition_index(_rf_desc->layout(), {column}, sel, sel_size, hash_values);
             }
     
@@ -184,14 +199,14 @@ public:
                     }
                     // LOG(INFO) << "SAMPLE done, input rows: " << _input_rows << ", filtered rows: " << _filtered_rows
                     //     << ", ratio: " << filter_ratio << ", go to: " << (_state == DISABLE ? "DISABLE": "ENABLE")
-                    //         << ", rf: " << _rf_desc->debug_string();
+                    //         << ", rf: " << _rf_desc->debug_string() << ", " << (void*)this;
                     _skiped_rows = 0;
                 }
                 return ret;
             }
             case DISABLE: {
                 _skiped_rows += sel_size;
-                if (_skiped_rows >= kSkipRowsThreshold) {
+                if (UNLIKELY(_skiped_rows >= kSkipRowsThreshold)) {
                     _state = SAMPLE;
                     _input_rows = 0;
                     _filtered_rows = 0;
@@ -202,11 +217,11 @@ public:
             case ENABLE: {
                 ASSIGN_OR_RETURN(uint16_t ret, _evaluate_branchless(column, sel, sel_size));
                 _skiped_rows += sel_size;
-                if (_skiped_rows >= kSkipRowsThreshold) {
+                if (UNLIKELY(_skiped_rows >= kSkipRowsThreshold)) {
                     _state = SAMPLE;
                     _input_rows = 0;
                     _filtered_rows = 0;
-                    // LOG(INFO) << "ENABLE done, go back to SAMPLE, skiped rows: " << _skiped_rows << ", rf:" << _rf_desc->debug_string();
+                //     LOG(INFO) << "ENABLE done, go back to SAMPLE, skiped rows: " << _skiped_rows << ", rf:" << _rf_desc->debug_string();
                 }
                 return ret;
             }
@@ -278,6 +293,8 @@ private:
     mutable size_t _input_rows = 0;
     // total fitlerd rows in a sample period
     mutable size_t _filtered_rows = 0;
+    // @TODO for reused
+    mutable std::vector<uint32_t> hash_values;
 
     static const size_t kSampleRows = 4 * 1024;
     static const size_t kSkipRowsThreshold = 128 * 1024;

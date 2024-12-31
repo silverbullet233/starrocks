@@ -61,6 +61,7 @@
 #include "storage/rowset/rowid_column_iterator.h"
 #include "storage/rowset/segment.h"
 #include "storage/rowset/short_key_range_option.h"
+#include "storage/runtime_filter_predicate.h"
 #include "storage/types.h"
 #include "storage/update_manager.h"
 #include "types/array_type_info.h"
@@ -334,6 +335,7 @@ private:
 
     PredicateTree _non_expr_pred_tree;
     PredicateTree _expr_pred_tree;
+    RuntimeFilterPredicates _runtime_filter_preds;
 
     // _selection is used to accelerate
     Buffer<uint8_t> _selection;
@@ -400,6 +402,7 @@ SegmentIterator::SegmentIterator(std::shared_ptr<Segment> segment, Schema schema
           _segment(std::move(segment)),
           _opts(std::move(options)),
           _bitmap_index_evaluator(_schema, _opts.pred_tree),
+          // @TODO need also consider runtiem filte predicates
           _predicate_columns(_opts.pred_tree.num_columns()),
           _use_vector_index(_opts.use_vector_index) {
     if (_use_vector_index) {
@@ -796,6 +799,7 @@ Status SegmentIterator::_init_column_iterator_by_cid(const ColumnId cid, const C
     const auto& col = tablet_schema->column(cid);
     ASSIGN_OR_RETURN(auto col_iter, _new_dcg_column_iterator(col, &dcg_filename, &dcg_encryption_info, access_path));
     if (col_iter == nullptr) {
+        // LOG(INFO) << "col_iter == nullptr";
         // not found in delta column group, create normal column iterator
         ASSIGN_OR_RETURN(_column_iterators[cid], _segment->new_column_iterator_or_default(col, access_path));
         const auto encryption_info = _segment->encryption_info();
@@ -821,6 +825,7 @@ Status SegmentIterator::_init_column_iterator_by_cid(const ColumnId cid, const C
             _column_files[cid] = std::move(rfile);
         }
     } else {
+        // LOG(INFO) << "col_iter != nullptr";
         // create delta column iterator
         // TODO io_coalesce
         _column_iterators[cid] = std::move(col_iter);
@@ -869,6 +874,7 @@ Status SegmentIterator::_init_column_iterators(const Schema& schema) {
                 _column_decoders[cid].set_iterator(_column_iterators[cid].get());
                 _column_decoders[cid].set_all_page_dict_encoded(_column_iterators[cid]->all_page_dict_encoded());
                 if (_opts.global_dictmaps->count(cid)) {
+                    LOG(INFO) << "set global dict for cid: " << cid;
                     _column_decoders[cid].set_global_dict(_opts.global_dictmaps->find(cid)->second);
                     _column_decoders[cid].check_global_dict();
                 }
@@ -931,6 +937,8 @@ void SegmentIterator::_init_column_predicates() {
                                   &non_expr_pred_root);
     _expr_pred_tree = PredicateTree::create(std::move(expr_pred_root));
     _non_expr_pred_tree = PredicateTree::create(std::move(non_expr_pred_root));
+    // @TODO should copy
+    _runtime_filter_preds = _opts.runtime_filter_preds;
 }
 
 Status SegmentIterator::_get_row_ranges_by_keys() {
@@ -1460,6 +1468,7 @@ Status SegmentIterator::_do_get_next(Chunk* result, vector<rowid_t>* rowid) {
         // because the chunk is a pointer to _read_chunk instead of _final_chunk.
         return Status::EndOfFile("no more data in segment");
     }
+    // @TODO should apply rf here
 
     if (_context->_has_dict_column) {
         chunk = _context->_dict_chunk.get();
@@ -1634,6 +1643,16 @@ StatusOr<uint16_t> SegmentIterator::_filter_by_non_expr_predicates(Chunk* chunk,
         // }
         RETURN_IF_ERROR(_non_expr_pred_tree.evaluate(chunk, _selection.data(), from, to));
     }
+    {
+        if (config::enable_rf_pushdown) {
+            SCOPED_RAW_TIMER(&_opts.stats->rf_cond_evaluate_ns);
+            // LOG(INFO) << "eval runtime filter"; 
+            // @TODO count filter rows?
+
+            RETURN_IF_ERROR(_runtime_filter_preds.evaluate(chunk, _selection.data(), from, to));
+        }
+    }
+    // @TODO filter by runtime filter predicate
 
     auto hit_count = SIMD::count_nonzero(&_selection[from], to - from);
     uint16_t chunk_size = to;
@@ -1702,7 +1721,6 @@ bool SegmentIterator::_can_using_global_dict(const FieldPtr& field) const {
 
 template <bool late_materialization>
 Status SegmentIterator::_build_context(ScanContext* ctx) {
-    // LOG(INFO) << "_build_contex, late_materialization: " << late_materialization;
     const size_t predicate_count = _predicate_columns;
     const size_t num_fields = _schema.num_fields();
 
@@ -1718,6 +1736,9 @@ Status SegmentIterator::_build_context(ScanContext* ctx) {
 
     ctx->_prune_column_after_index_filter = _opts.prune_column_after_index_filter;
 
+    // LOG(INFO) << "_build_contex, late_materialization: " << late_materialization << ", early_materialize_fields: " << early_materialize_fields
+    //     << ", total fields: " << num_fields;
+
     // init skip dict_decode_code column indexes
     std::set<ColumnId> delete_pred_columns;
     _opts.delete_predicates.get_column_ids(&delete_pred_columns);
@@ -1726,11 +1747,13 @@ Status SegmentIterator::_build_context(ScanContext* ctx) {
         output_columns.insert(field->id());
     }
 
+    // @TODO consider rf
     for (size_t i = 0; i < early_materialize_fields; i++) {
         const FieldPtr& f = _schema.field(i);
         const ColumnId cid = f->id();
         bool use_global_dict_code = _can_using_global_dict(f);
         bool use_dict_code = _can_using_dict_code(f);
+        // LOG(INFO) << "early_materialize_fields[" << i << "], cid: " << cid <<", fid: " << f->id() << ", name: " << f->name();
 
         if (delete_pred_columns.count(f->id()) || output_columns.count(f->id())) {
             ctx->_skip_dict_decode_indexes.push_back(false);
@@ -1921,6 +1944,12 @@ Status SegmentIterator::_rewrite_predicates() {
                                          _scan_range);
         RETURN_IF_ERROR(rewriter.rewrite_predicate(&_obj_pool, _opts.pred_tree));
     }
+    // @TODO rewrite runtime filter predicates
+    {
+        // LOG(INFO) << "rewrite runtime filter predicates";
+        RETURN_IF_ERROR(RuntimeFilterPredicatesRewriter::rewrite(&_obj_pool, _opts.runtime_filter_preds, _column_iterators, _schema));
+    }
+
 
     // for each delete predicate,
     // If the global dictionary optimization is enabled for the column,
@@ -2527,7 +2556,7 @@ void SegmentIterator::close() {
 // materialization easier.
 inline Schema reorder_schema(const Schema& input, const PredicateTree& pred_tree) {
     const std::vector<FieldPtr>& fields = input.fields();
-
+    // @TODO consider rf
     Schema output;
     output.reserve(fields.size());
     for (const auto& field : fields) {

@@ -14,6 +14,7 @@
 #include "storage/column_bf_contain_predicate.h"
 #include "column/vectorized_fwd.h"
 #include "exprs/runtime_filter.h"
+#include "util/stack_util.h"
 
 namespace starrocks {
 
@@ -56,6 +57,7 @@ Status ColumnBloomFilterContainPredicate::precompute_for_dict_code() const {
 
 
 ColumnPredicate* new_column_bf_contains_predicate(const TypeInfoPtr& type_info, ColumnId id, const RuntimeFilterProbeDescriptor* rf_desc, int32_t driver_sequence) {
+    // LOG(INFO) << "new_column_bf_contains_predicate, stack: " << get_stack_trace();
     return new ColumnBloomFilterContainPredicate(type_info, id, rf_desc, driver_sequence);
 }
 }

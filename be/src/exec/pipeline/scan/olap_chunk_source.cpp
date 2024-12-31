@@ -194,6 +194,7 @@ void OlapChunkSource::_init_counter(RuntimeState* state) {
     _block_seek_counter = ADD_CHILD_COUNTER(_runtime_profile, "BlockSeekCount", TUnit::UNIT, segment_read_name);
     _pred_filter_timer = ADD_CHILD_TIMER(_runtime_profile, "PredFilter", segment_read_name);
     _pred_filter_counter = ADD_CHILD_COUNTER(_runtime_profile, "PredFilterRows", TUnit::UNIT, segment_read_name);
+    _rf_pred_filter_timer = ADD_CHILD_TIMER(_runtime_profile, "RuntimeFilter", segment_read_name);
     _del_vec_filter_counter = ADD_CHILD_COUNTER(_runtime_profile, "DelVecFilterRows", TUnit::UNIT, segment_read_name);
     _chunk_copy_timer = ADD_CHILD_TIMER(_runtime_profile, "ChunkCopy", segment_read_name);
     _decompress_timer = ADD_CHILD_TIMER(_runtime_profile, "DecompressT", segment_read_name);
@@ -274,12 +275,16 @@ Status OlapChunkSource::_init_reader_params(const std::vector<std::unique_ptr<Ol
 
     // @TODO how to add unarrived bloom filter into it
     ASSIGN_OR_RETURN(auto pred_tree, _scan_ctx->conjuncts_manager().get_predicate_tree(parser, _predicate_free_pool));
+    if (config::enable_rf_pushdown) {
+        ASSIGN_OR_RETURN(_params.runtime_filter_preds, _scan_ctx->conjuncts_manager().get_runtime_filter_predicates(&_obj_pool, parser));
+    }
     _decide_chunk_size(!pred_tree.empty());
     PredicateAndNode pushdown_pred_root;
     PredicateAndNode non_pushdown_pred_root;
     pred_tree.root().partition_copy([parser](const auto& node) { return parser->can_pushdown(node); },
                                     &pushdown_pred_root, &non_pushdown_pred_root);
     // @TODO pushdown_pred_root can partition by rf and none-rf
+
     _params.pred_tree = PredicateTree::create(std::move(pushdown_pred_root));
     _non_pushdown_pred_tree = PredicateTree::create(std::move(non_pushdown_pred_root));
 
@@ -303,6 +308,7 @@ Status OlapChunkSource::_init_reader_params(const std::vector<std::unique_ptr<Ol
         _params.end_key.push_back(key_range->end_scan_range);
     }
     // @TODO should set rf-related column in reader columns
+
 
     // Return columns
     if (skip_aggregation) {
@@ -511,6 +517,7 @@ Status OlapChunkSource::_init_olap_reader(RuntimeState* runtime_state) {
     //     LOG(INFO) << "final scanner cols: " << id;
     // }
     // schema is new object, but fields not
+    // @TODO put
     starrocks::Schema child_schema = ChunkHelper::convert_schema(_tablet_schema, reader_columns);
     RETURN_IF_ERROR(_init_column_access_paths(&child_schema));
     // will modify schema field, need to copy schema
@@ -685,8 +692,10 @@ void OlapChunkSource::_update_counter() {
     cond_evaluate_ns += _reader->stats().vec_cond_evaluate_ns;
     cond_evaluate_ns += _reader->stats().branchless_cond_evaluate_ns;
     cond_evaluate_ns += _reader->stats().expr_cond_evaluate_ns;
+    // cond_evaluate_ns += _reader->stats().rf_cond_evaluate_ns;
     // In order to avoid exposing too detailed metrics, we still record these infos on `_pred_filter_timer`
     // When we support metric classification, we can disassemble it again.
+    COUNTER_UPDATE(_rf_pred_filter_timer, _reader->stats().rf_cond_evaluate_ns);
     COUNTER_UPDATE(_pred_filter_timer, cond_evaluate_ns);
     COUNTER_UPDATE(_pred_filter_counter, _reader->stats().rows_vec_cond_filtered);
     COUNTER_UPDATE(_del_vec_filter_counter, _reader->stats().rows_del_vec_filtered);

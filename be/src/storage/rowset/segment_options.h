@@ -28,6 +28,7 @@
 #include "storage/predicate_tree/predicate_tree.hpp"
 #include "storage/seek_range.h"
 #include "storage/tablet_schema.h"
+#include "storage/runtime_filter_predicate.h"
 
 namespace starrocks {
 class Condition;
@@ -57,6 +58,7 @@ public:
 
     PredicateTree pred_tree;
     PredicateTree pred_tree_for_zone_map;
+    RuntimeFilterPredicates runtime_filter_preds;
 
     DisjunctivePredicates delete_predicates;
 

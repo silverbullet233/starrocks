@@ -432,6 +432,8 @@ StatusOr<std::unique_ptr<ColumnIterator>> Segment::new_column_iterator_or_defaul
             auto source_type = TypeDescriptor::from_logical_type(_column_readers[id]->column_type());
             auto target_type = TypeDescriptor::from_logical_type(column.type(), column.length(), column.precision(),
                                                                  column.scale());
+            LOG(INFO) << "create cast column iterator for cid: " << id << ", source_type: " << source_type
+                      << ", target_type: " << target_type << ", nullable: " << nullable;
             return std::make_unique<CastColumnIterator>(std::move(source_iter), source_type, target_type, nullable);
         }
     } else if (!column.has_default_value() && !column.is_nullable()) {

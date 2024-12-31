@@ -30,6 +30,7 @@
 #include "storage/olap_runtime_range_pruner.hpp"
 #include "storage/predicate_parser.h"
 #include "storage/predicate_tree/predicate_tree.hpp"
+#include "storage/runtime_filter_predicate.h"
 #include "types/date_value.hpp"
 #include "types/logical_type.h"
 #include "types/logical_type_infra.h"
@@ -1022,8 +1023,11 @@ Status ChunkPredicateBuilder<E, Type>::_get_column_predicates(PredicateParser* p
             desc->set_has_push_down_to_storage(true);
             std::unique_ptr<ColumnPredicate> p(new_column_bf_contains_predicate(get_type_info(slot_desc->type().type), column_id, desc, _opts.driver_sequence));
             // LOG(INFO) << "add runtime filter predicate, slot_id=" << slot_id << ", column_id:" << column_id
-            //     << ", rf=" << desc->debug_string() << ", driver_sequence: " << _opts.driver_sequence << ", desc:" << (void*)desc;
+            //     << ", rf=" << desc->debug_string() << ", driver_sequence: " << _opts.driver_sequence << ", desc:" << (void*)desc
+            //         << ", " << (void*)(p.get());
+            // @TODO as place holder...
             col_preds_owner.emplace_back(std::move(p));
+            // break;
         }
     }
 
@@ -1195,6 +1199,35 @@ StatusOr<PredicateTree> ScanConjunctsManager::get_predicate_tree(PredicateParser
                                                                  ColumnPredicatePtrs& col_preds_owner) {
     ASSIGN_OR_RETURN(auto pred_root, _root_builder.get_predicate_tree_root(parser, col_preds_owner));
     return PredicateTree::create(std::move(pred_root));
+}
+
+StatusOr<RuntimeFilterPredicates> ScanConjunctsManager::get_runtime_filter_predicates(ObjectPool* obj_pool, PredicateParser* parser) {
+    RuntimeFilterPredicates predicates(_opts.driver_sequence);
+    for (const auto& it : _opts.runtime_filters->descriptors()) {
+        RuntimeFilterProbeDescriptor* desc = it.second;
+        SlotId slot_id;
+        if (!desc->is_probe_slot_ref(&slot_id)) {
+            LOG(INFO) << "skip pushdown rf: " << desc->debug_string();
+            continue;
+        }
+        auto slot_desc = _opts.tuple_desc->get_slot_by_id(slot_id);
+        if (slot_desc == nullptr) {
+            LOG(INFO) << "skip pushdown rf: " << desc->debug_string();
+            continue;
+        }
+        if (desc->is_topn_filter()) {
+            continue;
+        }
+        // @TODO make rf  column early read
+        
+        auto column_id = parser->column_id(*slot_desc);
+        desc->set_has_push_down_to_storage(true);
+        // std::unique_ptr<RuntimeFilterPredicate> p(new RuntimeFilterPredicate(desc, column_id));
+        // LOG(INFO) << "add RuntimeFilterPredicate, desc: " << desc->debug_string() << ", column_id: " << column_id
+        //     << ", slot_id: " << slot_id;
+        predicates.add_predicate(obj_pool->add(new RuntimeFilterPredicate(desc, column_id)));
+    }
+    return predicates;
 }
 
 Status ScanConjunctsManager::get_key_ranges(std::vector<std::unique_ptr<OlapScanRange>>* key_ranges) {

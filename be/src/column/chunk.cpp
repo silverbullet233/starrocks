@@ -24,6 +24,7 @@
 #include "runtime/descriptors.h"
 #include "simd/simd.h"
 #include "util/coding.h"
+#include "util/stack_util.h"
 
 namespace starrocks {
 
@@ -126,6 +127,9 @@ std::string_view Chunk::get_column_name(size_t idx) const {
 
 void Chunk::append_column(ColumnPtr column, const FieldPtr& field) {
     DCHECK(!_cid_to_index.contains(field->id()));
+    if (field->id() == 4) {
+        LOG(INFO) << "append column 4, " << column->get_name() << ", " << get_stack_trace();
+    }
     _cid_to_index[field->id()] = _columns.size();
     _columns.emplace_back(std::move(column));
     _schema->append(field);

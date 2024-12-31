@@ -13,6 +13,7 @@
 // limitations under the License.
 
 #include <gutil/strings/fastmem.h>
+#include <type_traits>
 
 #include "column/column_helper.h"
 #include "column/fixed_length_column.h"
@@ -221,6 +222,20 @@ void FixedLengthColumnBase<T>::fnv_hash(uint32_t* hash, uint32_t from, uint32_t 
         hash[i] = HashUtil::fnv_hash(&_data[i], sizeof(ValueType), hash[i]);
     }
 }
+template <typename T>
+void FixedLengthColumnBase<T>::fnv_hash_with_selection(uint32_t* hash, uint8_t* selection, uint16_t from, uint16_t to) const {
+    for (uint16_t i = from;i < to;i++) {
+        if (selection[i]) {
+            hash[i] = HashUtil::fnv_hash(&_data[i], sizeof(ValueType), hash[i]);
+        }
+    }
+}
+template <typename T>
+void FixedLengthColumnBase<T>::fnv_hash_selective(uint32_t* hash, uint16_t* sel, uint16_t sel_size) const {
+    for (uint16_t i = 0;i < sel_size;i++) {
+        hash[i] = HashUtil::fnv_hash(&_data[sel[i]], sizeof(ValueType), hash[i]);
+    }
+}
 
 // Must same with RawValue::zlib_crc32
 template <typename T>
@@ -236,6 +251,42 @@ void FixedLengthColumnBase<T>::crc32_hash(uint32_t* hash, uint32_t from, uint32_
             hash[i] = HashUtil::zlib_crc_hash(&frac_val, sizeof(frac_val), seed);
         } else {
             hash[i] = HashUtil::zlib_crc_hash(&_data[i], sizeof(ValueType), hash[i]);
+        }
+    }
+}
+template <typename T>
+void FixedLengthColumnBase<T>::crc32_hash_with_selection(uint32_t* hash, uint8_t* selection, uint16_t from, uint16_t to) const {
+    for (uint16_t i = from;i < to;i++) {
+        if (!selection[i]) {
+            continue;
+        }
+        if constexpr (IsDate<T> || IsTimestamp<T>) {
+            std::string str = _data[i].to_string();
+            hash[i] = HashUtil::zlib_crc_hash(str.data(), static_cast<int32_t>(str.size()), hash[i]);
+        } else if constexpr (IsDecimal<T>) {
+            int64_t int_val = _data[i].int_value();
+            int32_t frac_val = _data[i].frac_value();
+            uint32_t seed = HashUtil::zlib_crc_hash(&int_val, sizeof(int_val), hash[i]);
+            hash[i] = HashUtil::zlib_crc_hash(&frac_val, sizeof(frac_val), seed);
+        } else {
+            hash[i] = HashUtil::zlib_crc_hash(&_data[i], sizeof(ValueType), hash[i]);
+        }
+    }
+}
+
+template <typename T>
+void FixedLengthColumnBase<T>::crc32_hash_selective(uint32_t* hash, uint16_t* sel, uint16_t sel_size) const {
+    for (uint16_t i = 0;i < sel_size;i++) {
+        if constexpr (IsDate<T> || IsTimestamp<T>) {
+            std::string str = _data[sel[i]].to_string();
+            hash[i] = HashUtil::zlib_crc_hash(str.data(), static_cast<int32_t>(str.size()), hash[i]);
+        } else if constexpr (IsDecimal<T>) {
+            int64_t int_val = _data[sel[i]].int_value();
+            int32_t frac_val = _data[sel[i]].frac_value();
+            uint32_t seed = HashUtil::zlib_crc_hash(&int_val, sizeof(int_val), hash[i]);
+            hash[i] = HashUtil::zlib_crc_hash(&frac_val, sizeof(frac_val), seed);
+        } else {
+            hash[i] = HashUtil::zlib_crc_hash(&_data[sel[i]], sizeof(ValueType), hash[i]);
         }
     }
 }
@@ -341,7 +392,7 @@ std::string FixedLengthColumnBase<T>::get_name() const {
     } else if constexpr (std::is_floating_point_v<T>) {
         return "float-" + std::to_string(sizeof(T));
     } else {
-        return "integral-" + std::to_string(sizeof(T));
+        return "integral-" + std::to_string(sizeof(T)) + (std::is_unsigned<T>::value ? "-unsigned" : "-signed");
     }
 }
 
