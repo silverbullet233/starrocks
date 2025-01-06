@@ -334,6 +334,7 @@ protected:
     PipelineObserver* _observer = nullptr;
 
 private:
+    void _init_rf_counters(bool init_bloom);
     void _init_conjuct_counters();
 
     std::shared_ptr<MemTracker> _mem_tracker;

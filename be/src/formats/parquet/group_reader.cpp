@@ -317,12 +317,14 @@ StatusOr<size_t> GroupReader::_read_range_round_by_round(const Range<uint64_t>& 
             ColumnPtr& column = (*chunk)->get_column_by_slot_id(slot_id);
             temp_chunk->append_column(column, slot_id);
             ASSIGN_OR_RETURN(hit_count, ExecNode::eval_conjuncts_into_filter(ctxs, temp_chunk.get(), filter));
+            // @TODO evaluate runtime filter?
             if (hit_count == 0) {
                 break;
             }
         }
         first_selectivity = first_selectivity < 0 ? hit_count * 1.0 / filter->size() : first_selectivity;
     }
+    // @TODO set runtiem filter
 
     return hit_count;
 }

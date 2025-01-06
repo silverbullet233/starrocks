@@ -568,6 +568,7 @@ void HdfsScannerContext::append_or_update_count_column_to_chunk(ChunkPtr* chunk,
 }
 
 Status HdfsScannerContext::evaluate_on_conjunct_ctxs_by_slot(ChunkPtr* chunk, Filter* filter) {
+    LOG(INFO) << "evaluate_on_conjunct_ctxs_by_slot, size: " << conjunct_ctxs_by_slot.size();
     size_t chunk_size = (*chunk)->num_rows();
     if (conjunct_ctxs_by_slot.size()) {
         filter->assign(chunk_size, 1);

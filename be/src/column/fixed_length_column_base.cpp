@@ -233,7 +233,7 @@ void FixedLengthColumnBase<T>::fnv_hash_with_selection(uint32_t* hash, uint8_t* 
 template <typename T>
 void FixedLengthColumnBase<T>::fnv_hash_selective(uint32_t* hash, uint16_t* sel, uint16_t sel_size) const {
     for (uint16_t i = 0;i < sel_size;i++) {
-        hash[i] = HashUtil::fnv_hash(&_data[sel[i]], sizeof(ValueType), hash[i]);
+        hash[sel[i]] = HashUtil::fnv_hash(&_data[sel[i]], sizeof(ValueType), hash[sel[i]]);
     }
 }
 
@@ -279,14 +279,14 @@ void FixedLengthColumnBase<T>::crc32_hash_selective(uint32_t* hash, uint16_t* se
     for (uint16_t i = 0;i < sel_size;i++) {
         if constexpr (IsDate<T> || IsTimestamp<T>) {
             std::string str = _data[sel[i]].to_string();
-            hash[i] = HashUtil::zlib_crc_hash(str.data(), static_cast<int32_t>(str.size()), hash[i]);
+            hash[sel[i]] = HashUtil::zlib_crc_hash(str.data(), static_cast<int32_t>(str.size()), hash[sel[i]]);
         } else if constexpr (IsDecimal<T>) {
             int64_t int_val = _data[sel[i]].int_value();
             int32_t frac_val = _data[sel[i]].frac_value();
-            uint32_t seed = HashUtil::zlib_crc_hash(&int_val, sizeof(int_val), hash[i]);
-            hash[i] = HashUtil::zlib_crc_hash(&frac_val, sizeof(frac_val), seed);
+            uint32_t seed = HashUtil::zlib_crc_hash(&int_val, sizeof(int_val), hash[sel[i]]);
+            hash[sel[i]] = HashUtil::zlib_crc_hash(&frac_val, sizeof(frac_val), seed);
         } else {
-            hash[i] = HashUtil::zlib_crc_hash(&_data[sel[i]], sizeof(ValueType), hash[i]);
+            hash[sel[i]] = HashUtil::zlib_crc_hash(&_data[sel[i]], sizeof(ValueType), hash[sel[i]]);
         }
     }
 }

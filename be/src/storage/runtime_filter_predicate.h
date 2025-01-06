@@ -27,6 +27,8 @@ public:
     virtual ~RuntimeFilterPredicate() = default;
 
     virtual Status evaluate(Chunk* chunk, uint8_t* selection, uint16_t from, uint16_t to);
+    virtual StatusOr<uint16_t> evaluate(Chunk* chunk, uint16_t* sel, uint16_t sel_size, uint16_t* dst_sel = nullptr);
+
     ColumnId get_column_id() const {
         return _column_id;
     }
@@ -55,6 +57,7 @@ public:
     ~DictColumnRuntimeFilterPredicate() = default;
 
     Status evaluate(Chunk* chunk, uint8_t* selection, uint16_t from, uint16_t to) override;
+    StatusOr<uint16_t> evaluate(Chunk* chunk, uint16_t* sel, uint16_t sel_size, uint16_t* dst_sel = nullptr) override;
 
 private:
     Status prepare();
@@ -82,6 +85,7 @@ public:
     // @TODO support clone
 
     Status evaluate(Chunk* chunk, uint8_t* selection, uint16_t from, uint16_t to);
+    // Status evaluate(Chunk* chunk, uint16_t* sel, uint16_t sel_size);
 
     std::set<ColumnId> get_column_ids() const {
         std::set<ColumnId> column_ids;
@@ -92,7 +96,11 @@ public:
     }
 
 private:
+    Status _evaluate_selection(Chunk* chunk, uint8_t* selection, uint16_t from, uint16_t to);
+    // StatusOr<uint16_t> _evaluate_branchless(Chunk* chunk, uint16_t* sel, uint16_t sel_size, uint8_t* selection);
+
     void _update_selectivity_map();
+
 
     enum State : uint8_t {
         INIT = 0,
@@ -102,10 +110,20 @@ private:
     State _state = INIT;
     std::vector<RuntimeFilterPredicate*> _rf_predicates; 
     // will be reused
-    std::vector<uint8_t> _selection;
+    std::vector<uint8_t> _input_selection;
+    std::vector<uint8_t> _tmp_selection;
+    std::vector<uint16_t> _input_sel;
+    std::vector<uint16_t> _tmp_sel;
+    std::vector<uint16_t> _hit_count;
+    struct SamplingCtx {
+        RuntimeFilterPredicate* pred = nullptr;
+        size_t filter_rows = 0;
+    };
+    std::vector<SamplingCtx> _sampling_ctxs;
     std::vector<RuntimeFilterPredicate*> _sampling_predicates;
     std::vector<size_t> _filter_rows;
     size_t _sample_rows = 0;
+    size_t _sample_times = 0;
     size_t _skip_rows = 0;
     // maintain all runtime filters
     // std::vector<RuntimeFilterProbeDescriptor*> _rf_descs;
@@ -113,7 +131,7 @@ private:
     // std::vector<ColumnId> _column_ids;
 
     // std::map<double, RuntimeFilterProbeDescriptor*> _selectivity_map;
-    std::map<double, RuntimeFilterPredicate*> _selectivity_map;
+    std::map<double, RuntimeFilterPredicate*, std::greater<double>> _selectivity_map;
 
     int32_t _driver_sequence = -1;
     // size_t _input_rows = 0;

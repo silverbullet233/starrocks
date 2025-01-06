@@ -71,6 +71,9 @@ struct GroupReaderParam {
 
     // conjunct_ctxs that column is materialized in group reader
     std::unordered_map<SlotId, std::vector<ExprContext*>> conjunct_ctxs_by_slot;
+    // @TODO runtime filters
+    // @TODO shared by multi group reader?
+    RuntimeFilterPredicates runtime_filter_preds;
 
     // columns
     std::vector<Column> read_cols;

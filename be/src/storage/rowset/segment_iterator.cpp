@@ -1646,10 +1646,14 @@ StatusOr<uint16_t> SegmentIterator::_filter_by_non_expr_predicates(Chunk* chunk,
     {
         if (config::enable_rf_pushdown) {
             SCOPED_RAW_TIMER(&_opts.stats->rf_cond_evaluate_ns);
+            // @TODO rows??
             // LOG(INFO) << "eval runtime filter"; 
             // @TODO count filter rows?
-
+            size_t input_count = SIMD::count_nonzero(&_selection[from], to - from);
             RETURN_IF_ERROR(_runtime_filter_preds.evaluate(chunk, _selection.data(), from, to));
+            size_t output_count = SIMD::count_nonzero(&_selection[from], to - from);
+            _opts.stats->rf_cond_input_rows += input_count;
+            _opts.stats->rf_cond_output_rows += output_count;
         }
     }
     // @TODO filter by runtime filter predicate

@@ -194,7 +194,9 @@ void OlapChunkSource::_init_counter(RuntimeState* state) {
     _block_seek_counter = ADD_CHILD_COUNTER(_runtime_profile, "BlockSeekCount", TUnit::UNIT, segment_read_name);
     _pred_filter_timer = ADD_CHILD_TIMER(_runtime_profile, "PredFilter", segment_read_name);
     _pred_filter_counter = ADD_CHILD_COUNTER(_runtime_profile, "PredFilterRows", TUnit::UNIT, segment_read_name);
-    _rf_pred_filter_timer = ADD_CHILD_TIMER(_runtime_profile, "RuntimeFilter", segment_read_name);
+    _rf_pred_filter_timer = ADD_TIMER(_runtime_profile, "RuntimeFilterEvalTime");
+    _rf_pred_input_rows = ADD_COUNTER(_runtime_profile, "RuntimeFilterInputRows", TUnit::UNIT);
+    _rf_pred_output_rows = ADD_COUNTER(_runtime_profile, "RuntimeFilterOutputRows", TUnit::UNIT);
     _del_vec_filter_counter = ADD_CHILD_COUNTER(_runtime_profile, "DelVecFilterRows", TUnit::UNIT, segment_read_name);
     _chunk_copy_timer = ADD_CHILD_TIMER(_runtime_profile, "ChunkCopy", segment_read_name);
     _decompress_timer = ADD_CHILD_TIMER(_runtime_profile, "DecompressT", segment_read_name);
@@ -696,6 +698,8 @@ void OlapChunkSource::_update_counter() {
     // In order to avoid exposing too detailed metrics, we still record these infos on `_pred_filter_timer`
     // When we support metric classification, we can disassemble it again.
     COUNTER_UPDATE(_rf_pred_filter_timer, _reader->stats().rf_cond_evaluate_ns);
+    COUNTER_UPDATE(_rf_pred_input_rows, _reader->stats().rf_cond_input_rows);
+    COUNTER_UPDATE(_rf_pred_output_rows, _reader->stats().rf_cond_output_rows);
     COUNTER_UPDATE(_pred_filter_timer, cond_evaluate_ns);
     COUNTER_UPDATE(_pred_filter_counter, _reader->stats().rows_vec_cond_filtered);
     COUNTER_UPDATE(_del_vec_filter_counter, _reader->stats().rows_del_vec_filtered);

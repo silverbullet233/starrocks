@@ -605,8 +605,8 @@ template <typename T>
 void BinaryColumnBase<T>::fnv_hash_selective(uint32_t* hashes, uint16_t* sel, uint16_t sel_size) const {
     for (uint16_t i = 0;i < sel_size;i++){
         uint16_t idx = sel[i];
-        hashes[i] = HashUtil::fnv_hash(_bytes.data() + _offsets[idx],
-                                       static_cast<uint32_t>(_offsets[idx + 1] - _offsets[idx]), hashes[i]);
+        hashes[idx] = HashUtil::fnv_hash(_bytes.data() + _offsets[idx],
+                                       static_cast<uint32_t>(_offsets[idx + 1] - _offsets[idx]), hashes[idx]);
     }
 }
 
@@ -634,8 +634,8 @@ template <typename T>
 void BinaryColumnBase<T>::crc32_hash_selective(uint32_t* hashes, uint16_t* sel, uint16_t sel_size) const {
     for (uint16_t i = 0;i < sel_size;i++){
         uint16_t idx = sel[i];
-        hashes[i] = HashUtil::zlib_crc_hash(_bytes.data() + _offsets[idx],
-                                       static_cast<uint32_t>(_offsets[idx + 1] - _offsets[idx]), hashes[i]);
+        hashes[idx] = HashUtil::zlib_crc_hash(_bytes.data() + _offsets[idx],
+                                       static_cast<uint32_t>(_offsets[idx + 1] - _offsets[idx]), hashes[idx]);
     }
 }
 

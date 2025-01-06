@@ -14,6 +14,8 @@
 
 #include "storage/runtime_filter_predicate.h"
 #include <cstring>
+#include "gutil/strings/fastmem.h"
+#include "runtime/mem_tracker.h"
 #include "simd/simd.h"
 #include "storage/rowset/column_iterator.h"
 
@@ -29,44 +31,26 @@ bool RuntimeFilterPredicate::init(int32_t driver_sequence) {
 
 Status RuntimeFilterPredicate::evaluate(Chunk* chunk, uint8_t* selection, uint16_t from, uint16_t to) {
     auto column = chunk->get_column_by_id(_column_id);
-
-    // @TODO change to selection now, will support later
-    // std::vector<uint16_t> sels;
-    // for (uint16_t i = from;i < to;i++) {
-    //     if (selection[i]) {
-    //         sels.push_back(i);
-    //     }
-    // }
-    // if (_rf->num_hash_partitions() == 0) {
-    //     return Status::OK();
-    // }
-    // if (_rf_desc->filter_id() >= 0 && _rf_desc->filter_id() <= 5) {
-    //     LOG(INFO) << "RuntimeFilterPredicate::evaluate, rf: " <<_rf_desc->debug_string() << ", cid: " << _column_id << ", column: " << column->get_name()
-    //     << ", partitions: " << _rf->num_hash_partitions() << ", column: " << column->get_name();
-    //     for (const auto& [cid, idx]: chunk->get_column_id_to_index_map()) {
-    //         LOG(INFO) << "before eval runtime_filter_predicate, column_id: " << cid << ", idx: " << idx << ", column: " << chunk->get_column_by_index(idx)->get_name();
-    //     }
-    // }
-    // JoinRuntimeFilter::RunningContext ctx;
-    // ctx.use_merged_selection = false;
-    // ctx.compatibility = true;
-    // ctx.selection.resize(column->size());
-    // // ctx.merged_selection.resize(column->size());
-    // // memcpy(ctx.selection.data(), selection, column->size());
-    // ctx.hash_values.resize(column->size());
     if (_rf->num_hash_partitions() > 0) {
         hash_values.resize(column->size());
         _rf->compute_partition_index(_rf_desc->layout(), {column.get()}, selection, from, to, hash_values);
-        // _rf->compute_partition_index(_rf_desc->layout(), {column.get()}, &ctx);
-        // _rf->compute_partition_index(_rf_desc->layout(), {column.get()}, sels.data(), sels.size(), hash_values);
     }
-    // _rf->evaluate(column.get(), ctx.hash_values, selection, from, to);
     _rf->evaluate(column.get(), hash_values, selection, from, to);
-    // _rf->evaluate(column.get(), &ctx);
-    // for (uint16_t i = from;i < to;i++) {
-    //     selection[i] &= ctx.selection[i];
-    // }
     return Status::OK();
+}
+
+StatusOr<uint16_t> RuntimeFilterPredicate::evaluate(Chunk* chunk, uint16_t* sel, uint16_t sel_size, uint16_t* dst_sel) {
+    if (sel_size == 0) {
+        return sel_size;
+    }
+    auto column = chunk->get_column_by_id(_column_id);
+    uint16_t* target_sel = (dst_sel != nullptr) ? dst_sel: sel;
+    if (_rf->num_hash_partitions() > 0) {
+        hash_values.resize(column->size());
+        _rf->compute_partition_index(_rf_desc->layout(), {column.get()}, sel, sel_size, hash_values);
+    }
+    uint16_t ret = _rf->evaluate(column.get(), hash_values, sel, sel_size, target_sel);
+    return ret;
 }
 
 Status DictColumnRuntimeFilterPredicate::evaluate(Chunk* chunk, uint8_t* selection, uint16_t from, uint16_t to) {
@@ -101,6 +85,46 @@ Status DictColumnRuntimeFilterPredicate::evaluate(Chunk* chunk, uint8_t* selecti
         }
     }
     return Status::OK();
+}
+
+StatusOr<uint16_t> DictColumnRuntimeFilterPredicate::evaluate(Chunk* chunk, uint16_t* sel, uint16_t sel_size, uint16_t* dst_sel) {
+    if (sel_size == 0) {
+        return sel_size;
+    }
+    RETURN_IF_ERROR(prepare());
+    uint16_t* target_sel = (dst_sel != nullptr) ? dst_sel: sel;
+    auto column = chunk->get_column_by_id(_column_id).get();
+    uint16_t new_size = 0;
+    if (column->is_nullable()) {
+        const auto* nullable_column = down_cast<const NullableColumn*>(column);
+        const auto& data = GetContainer<TYPE_INT>::get_data(nullable_column->data_column());
+        if (nullable_column->has_null()) {
+            const uint8_t* null_data = nullable_column->immutable_null_column_data().data();
+            for (uint16_t i = 0;i < sel_size;i++) {
+                uint16_t idx = sel[i];
+                target_sel[new_size] = idx;
+                if (null_data[idx]) {
+                    new_size += _rf->has_null();
+                } else {
+                    new_size += _result[data[idx]];
+                }
+            }
+        } else {
+            for (uint16_t i = 0;i < sel_size;i++) {
+                uint16_t idx = sel[i];
+                target_sel[new_size] = idx;
+                new_size += _result[data[idx]];
+            }
+        }
+    } else {
+        const auto& data = GetContainer<TYPE_INT>::get_data(column);
+        for (uint16_t i = 0;i < sel_size;i++) {
+            uint16_t idx = sel[i];
+            target_sel[new_size] = idx;
+            new_size += _result[data[idx]];
+        }
+    }
+    return new_size;
 }
 
 Status DictColumnRuntimeFilterPredicate::prepare() {
@@ -140,50 +164,91 @@ Status DictColumnRuntimeFilterPredicate::prepare() {
 void RuntimeFilterPredicates::_update_selectivity_map() {
     // LOG(INFO) << "_update_selectivity_map";
     _selectivity_map.clear();
-    for (size_t i = 0;i < _sampling_predicates.size();i ++) {
-        auto pred = _sampling_predicates[i];
-        double filter_ratio = _filter_rows[i] * 1.0 / _sample_rows;
-        if (filter_ratio <= 0.05) {
+    std::sort(_sampling_ctxs.begin(), _sampling_ctxs.end(), [](const SamplingCtx& a, const SamplingCtx& b) {
+        return a.filter_rows > b.filter_rows;
+    });
+    // for (size_t i = 0;i < _sampling_predicates.size();i ++) {
+    for (size_t i = 0;i < _sampling_ctxs.size();i++) {
+        // auto pred = _sampling_predicates[i];
+        // double filter_ratio = _filter_rows[i] * 1.0 / _sample_rows;
+        auto pred = _sampling_ctxs[i].pred;
+        double filter_ratio = _sampling_ctxs[i].filter_rows * 1.0 / _sample_rows;
+
+        // LOG(INFO) << "filter_id:" << pred->get_rf_desc()->filter_id() << ", filter_rows:" << _filter_rows[i]
+        //     << ", sample_rows:" << _sample_rows << ", filter_ratio:" << filter_ratio << ", " << (void*)this;
+        if (filter_ratio >= 0.95) {
+            // use the best?
             // very good, only keep one
             _selectivity_map.clear();
             _selectivity_map.emplace(filter_ratio, pred);
             // LOG(INFO) << "very good filter, just use this one, filter_ratio: " << filter_ratio << ", filter_id: " << pred->get_rf_desc()->filter_id();
-            return;
+            break;
         }
-        if (filter_ratio <= 0.5) {
+        if (filter_ratio >= 0.5) {
             if (_selectivity_map.size() < 3) {
                 _selectivity_map.emplace(filter_ratio, pred);
             } else {
-                auto iter = _selectivity_map.end();
-                iter --;
-                if (filter_ratio < iter->first) {
-                    _selectivity_map.erase(iter);
-                    _selectivity_map.emplace(filter_ratio, pred);
-                }
+                break;
             }
         }
     }
-    // LOG(INFO) << "selectivity_map size: " << _selectivity_map.size();
+    // LOG(INFO) << "selectivity_map size: " << _selectivity_map.size() << ", " << (void*)this;
     // for (const auto& [ratio, pred]: _selectivity_map) {
-    //     LOG(INFO) << "final used pred, filter_ratio: " << ratio << ", filter_id: " << pred->get_rf_desc()->filter_id();
+    //     LOG(INFO) << "final used pred, filter_ratio: " << ratio << ", filter_id: " << pred->get_rf_desc()->filter_id() << ", " << (void*)this;
     // }
 }
 
 Status RuntimeFilterPredicates::evaluate(Chunk* chunk, uint8_t* selection, uint16_t from, uint16_t to) {
-    // @TODO need maintain state
-    // INIT -> SAMPLE -> NORMAL
+    return _evaluate_selection(chunk, selection, from, to);
+}
+
+Status RuntimeFilterPredicates::_evaluate_selection(Chunk* chunk, uint8_t* selection, uint16_t from, uint16_t to) {
+    if (config::rf_skip_sample) {
+        if (config::enable_rf_branchless) {
+            _input_sel.clear();
+            for (uint16_t i = from;i < to;i++) {
+                if (selection[i]) {
+                    _input_sel.emplace_back(i);
+                }
+            }
+            uint16_t origin_count = _input_sel.size();
+            uint16_t new_count = _input_sel.size();
+            for(auto pred: _rf_predicates) {
+                if (pred->init(_driver_sequence)) {
+                    ASSIGN_OR_RETURN(new_count, pred->evaluate(chunk, _input_sel.data(), new_count));
+                }
+            }
+            memset(selection + from, 0, to - from);
+            for (uint16_t i = 0;i < new_count;i++) {
+                selection[_input_sel[i]] = 1;
+            }
+        } else {
+            for (auto pred: _rf_predicates) {
+                if(pred->init(_driver_sequence)) {
+                    RETURN_IF_ERROR(pred->evaluate(chunk, selection, from, to));
+                }
+            }
+        }
+        // not selection?
+
+        return Status::OK();
+    }
     switch (_state) {
         case INIT: {
-            if (_sampling_predicates.empty()) {
+            // if (_sampling_predicates.empty()) {
+            if (_sampling_ctxs.empty()) {
                 for (auto pred: _rf_predicates) {
                     if (pred->init(_driver_sequence)) {
-                        _sampling_predicates.push_back(pred);
-                        _filter_rows.push_back(0);
+                        _sampling_ctxs.push_back(SamplingCtx{pred, 0});
+                        // _sampling_predicates.push_back(pred);
+                        // _filter_rows.push_back(0);
                     }
                 }
-                if (!_sampling_predicates.empty()) {
+                // if (!_sampling_predicates.empty()) {
+                if (!_sampling_ctxs.empty()) {
                     _state = SAMPLE;
                     _sample_rows = 0;
+                    _sample_times = 0;
                     // LOG(INFO) << "used predicates size: " << _sampling_predicates.size() << ", go to SAMPLE, " << (void*)this;
                 } else {
                     // no filter can be used, just return
@@ -193,49 +258,145 @@ Status RuntimeFilterPredicates::evaluate(Chunk* chunk, uint8_t* selection, uint1
             break;
         }
         case SAMPLE: {
-            size_t old_count = SIMD::count_nonzero(selection + from, to - from);
-            _selection.resize(chunk->num_rows());
-            memcpy(_selection.data() + from, selection + from, to - from);
-
-            std::vector<uint8_t> tmp_selection;
-            tmp_selection.resize(chunk->num_rows());
-            for (size_t i = 0;i < _sampling_predicates.size();i ++) {
-                auto pred = _sampling_predicates[i];
-                auto& filter_rows = _filter_rows[i];
-                memcpy(tmp_selection.data() + from, _selection.data() + from, to - from);
-                RETURN_IF_ERROR(pred->evaluate(chunk, tmp_selection.data(), from, to));
-                size_t new_count = SIMD::count_nonzero(tmp_selection.data() + from, to - from);
-                filter_rows += old_count - new_count;
-
-                for (uint16_t idx = from; idx < to;idx ++) {
-                    selection[idx] = selection[idx] & tmp_selection[idx];
+            // @TODO use branchless mode
+            if (config::enable_rf_branchless) {
+                _input_sel.clear();
+                for (uint16_t i = from;i < to;i++) {
+                    if (selection[i]) {
+                        _input_sel.push_back(i);
+                    }
                 }
+                if (_input_sel.empty()) {
+                    return Status::OK();
+                }
+                uint16_t old_count = _input_sel.size();
+                uint16_t new_count = old_count;
+                if (_sampling_ctxs.size() == 1) {
+                    auto pred = _sampling_ctxs[0].pred;
+                    auto& filter_rows = _sampling_ctxs[0].filter_rows;
+                    ASSIGN_OR_RETURN(new_count, pred->evaluate(chunk, _input_sel.data(), _input_sel.size(), _input_sel.data()));
+                    memset(selection + from, 0, to - from);
+                    for (uint16_t i = 0;i < new_count;i++) {
+                        selection[_input_sel[i]] = 1;
+                    }
+                } else {
+                    // _hit_count.assign(_input_sel.size(), 0);
+                    _hit_count.resize(chunk->num_rows());
+                    memset(_hit_count.data() + from, 0, to - from);
+                    _tmp_sel.resize(_input_sel.size());
+                    for (size_t i = 0;i < _sampling_ctxs.size();i ++) {
+                        auto pred = _sampling_ctxs[i].pred;
+                        auto& filter_rows = _sampling_ctxs[i].filter_rows;
+                        ASSIGN_OR_RETURN(new_count, pred->evaluate(chunk, _input_sel.data(), _input_sel.size(), _tmp_sel.data()));
+                        for (uint16_t j = 0;j < new_count;j++) {
+                            _hit_count[_tmp_sel[j]]++;
+                        }
+                        filter_rows += old_count - new_count;
+                        // LOG(INFO) << "sample, old_count: " << old_count << ", new_count: " << new_count << ", rf:" << pred->get_rf_desc()->filter_id() << ", " << (void*)this;
+                    }
+                    // memset(selection + from, 0, to - from);
+                    uint16_t target_num = _sampling_ctxs.size();
+                    for (uint16_t i = from;i < to;i++) {
+                        selection[i] = (_hit_count[i] == target_num);
+                    }
+                }
+                _sample_rows += old_count;
+                _sample_times++;
+
+            } else {
+                size_t old_count = SIMD::count_nonzero(selection + from, to - from);
+                // if (_sampling_predicates.size() == 1) {
+                if (_sampling_ctxs.size() == 1) {
+                    // no need merge, just evaluate
+                    // auto pred = _sampling_predicates[0];
+                    // auto& filter_rows = _filter_rows[0];
+                    auto pred = _sampling_ctxs[0].pred;
+                    auto& filter_rows = _sampling_ctxs[0].filter_rows;
+                    RETURN_IF_ERROR(pred->evaluate(chunk, selection, from, to));
+                    size_t new_count = SIMD::count_nonzero(selection + from, to - from);
+                    filter_rows += old_count - new_count;
+                } else {
+                    // selection keep the original input
+                    _input_selection.resize(chunk->num_rows());
+                    _tmp_selection.resize(chunk->num_rows());
+                    strings::memcpy_inlined(_input_selection.data() + from, selection + from, to - from);
+
+                    // merged selection keep final result, selection keep tmp result
+                    // for (size_t i = 0;i < _sampling_predicates.size();i ++) {
+                    for (size_t i = 0;i < _sampling_ctxs.size();i ++) {
+                        // auto pred = _sampling_predicates[i];
+                        // auto& filter_rows = _filter_rows[i];
+                        auto pred = _sampling_ctxs[i].pred;
+                        auto& filter_rows = _sampling_ctxs[i].filter_rows;
+                        strings::memcpy_inlined(_tmp_selection.data() + from, _input_selection.data() + from, to - from);
+                        RETURN_IF_ERROR(pred->evaluate(chunk, _tmp_selection.data(), from, to));
+                        size_t new_count = SIMD::count_nonzero(_tmp_selection.data() + from, to - from);
+                        filter_rows += old_count - new_count;
+                        for (uint16_t j = from;j < to;j++) {
+                            selection[j] = selection[j] & _tmp_selection[j];
+                        }
+                    }
+                }
+                _sample_rows += old_count;
+                _sample_times++;
             }
-            _sample_rows += old_count;
-            if (_sample_rows >= 4096) {
+            if (_sample_rows >= config::rf_sample_rows) {
                 // should decide selectivity map
                 _update_selectivity_map();
                 _state = NORMAL;
                 _skip_rows = 0;
-                // LOG(INFO) << "sample rows: " << _sample_rows << ", go to NORMAL, " << (void*)this;
+                // LOG(INFO) << "sample rows: " << _sample_rows << ", times:" << _sample_times << ", go to NORMAL, " << (void*)this;
             }
             return Status::OK();
         }
         case NORMAL: {
-            size_t origin_count = SIMD::count_nonzero(selection, to - from);
-            for (auto& [_, pred]: _selectivity_map) {
-                RETURN_IF_ERROR(pred->evaluate(chunk, selection, from, to));
-                auto remain_count = SIMD::count_nonzero(selection, to - from);
-                if (remain_count == 0) {
-                    break;
+            if (config::enable_rf_branchless) {
+                _input_sel.clear();
+                for (uint16_t i = from;i < to;i++) {
+                    if (selection[i]) {
+                        _input_sel.emplace_back(i);
+                    }
                 }
+                if (_input_sel.empty()) {
+                    return Status::OK();
+                }
+                uint16_t origin_count = _input_sel.size();
+                uint16_t new_count = _input_sel.size();
+                for (auto& [_, pred]: _selectivity_map) {
+                    ASSIGN_OR_RETURN(new_count, pred->evaluate(chunk, _input_sel.data(), new_count));
+                }
+                memset(selection + from, 0, to - from);
+                for (uint16_t i = 0;i < new_count;i++) {
+                    selection[_input_sel[i]] = 1;
+                }
+                _skip_rows += origin_count;
+            } else {
+                // @TODO use branch less mode?
+                size_t origin_count = SIMD::count_nonzero(selection + from, to - from);
+                for (auto& [_, pred]: _selectivity_map) {
+                    RETURN_IF_ERROR(pred->evaluate(chunk, selection, from, to));
+                    auto remain_count = SIMD::count_nonzero(selection + from, to - from);
+                    // LOG(INFO) << "normal eval , input: " << origin_count << ", output: " << remain_count << ", filter_id: " << pred->get_rf_desc()->filter_id()
+                    //     << ", " << (void*)this;
+                    if (remain_count == 0) {
+                        break;
+                    }
+                }
+                _skip_rows += origin_count;
             }
-            _skip_rows += origin_count;
-            if (_skip_rows >= 1024 * 128) {
-                _state = SAMPLE;
+            if (_skip_rows >= config::rf_skip_rows) {
+                _state = INIT;
+                // _sampling_predicates.clear();
+                _sampling_ctxs.clear();
+                // _filter_rows.clear();
                 _sample_rows = 0;
-                // LOG(INFO) << "skip rows: " << _skip_rows << ", go back to SAMPLE";
+                _sample_times = 0;
+                // LOG(INFO) << "skip rows: " << _skip_rows << ", go back to INIT";
             }
+            // LOG(INFO) << "normal input: " << origin_count << ", output: " << SIMD::count_nonzero(selection + from, to - from)
+                // << ", " << (void*)this;
+            // size_t new_count = SIMD::count_nonzero(selection, to - from);
+            // LOG(INFO) << "NORMAL mode, input: " << origin_count << ", output: " << new_count;
             return Status::OK();
         }
         default:
@@ -259,7 +420,6 @@ Status RuntimeFilterPredicates::evaluate(Chunk* chunk, uint8_t* selection, uint1
     return Status::OK();
 }
 
-
 Status RuntimeFilterPredicatesRewriter::rewrite(ObjectPool* obj_pool,
     RuntimeFilterPredicates& preds, const std::vector<std::unique_ptr<ColumnIterator>>& column_iterators, const Schema& schema) {
     
@@ -279,7 +439,7 @@ Status RuntimeFilterPredicatesRewriter::rewrite(ObjectPool* obj_pool,
             dict_words.emplace_back(std::string(word.get_data(), word.get_size()));
         }
         predicates[i] = obj_pool->add(new DictColumnRuntimeFilterPredicate(rf_desc, column_id, std::move(dict_words)));
-        LOG(INFO) << "rewrite runtime filter predicate, column id: " << column_id << ", rf_desc: " << rf_desc->debug_string();
+        // LOG(INFO) << "rewrite runtime filter predicate, column id: " << column_id << ", rf_desc: " << rf_desc->debug_string();
         // @TODO how about global_dict
     }
     return Status::OK();
