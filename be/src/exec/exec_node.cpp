@@ -747,7 +747,7 @@ StatusOr<size_t> ExecNode::eval_conjuncts_into_filter(const std::vector<ExprCont
     if (chunk->num_rows() == 0) {
         return 0;
     }
-    LOG(INFO) << "eval_conjuncts_into_filter, stack: " << starrocks::get_stack_trace(); 
+    // LOG(INFO) << "eval_conjuncts_into_filter, stack: " << starrocks::get_stack_trace(); 
     for (auto* ctx : ctxs) {
         ASSIGN_OR_RETURN(ColumnPtr column, ctx->evaluate(chunk, filter->data()))
         size_t true_count = ColumnHelper::count_true_with_notnull(column);

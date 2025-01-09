@@ -374,7 +374,7 @@ public:
         throw std::runtime_error("not support fnv_hash_with_selection");
     }
     virtual void fnv_hash_selective(uint32_t* seed, uint16_t* sel, uint16_t sel_size) const {
-        throw std::runtime_error("not support fnv_hash_selective");
+        throw std::runtime_error("not support fnv_hash_selective: " + get_name());
     }
 
     // used by data loading compute tablet bucket
@@ -383,7 +383,7 @@ public:
         throw std::runtime_error("not support crc32_hash_with_selection");
     }
     virtual void crc32_hash_selective(uint32_t* seed, uint16_t* sel, uint16_t sel_size) const {
-        throw std::runtime_error("not support crc32_hash_selective");
+        throw std::runtime_error("not support crc32_hash_selective: " + get_name());
     }
 
     virtual void crc32_hash_at(uint32_t* seed, uint32_t idx) const { crc32_hash(seed - idx, idx, idx + 1); }

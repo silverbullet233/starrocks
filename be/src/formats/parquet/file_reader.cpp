@@ -519,6 +519,10 @@ Status FileReader::_init_group_readers() {
 
     // _group_reader_param is used by all group readers
     _group_reader_param.conjunct_ctxs_by_slot = fd_scanner_ctx.conjunct_ctxs_by_slot;
+    //@TODO is this safe?
+    if (config::enable_rf_pushdown) {
+        _group_reader_param.runtime_filter_predicates = &(_scanner_ctx->runtime_filter_preds);
+    }
     _group_reader_param.timezone = fd_scanner_ctx.timezone;
     _group_reader_param.stats = fd_scanner_ctx.stats;
     _group_reader_param.sb_stream = _sb_stream;
@@ -534,6 +538,7 @@ Status FileReader::_init_group_readers() {
     _group_reader_param.min_max_conjunct_ctxs = fd_scanner_ctx.min_max_conjunct_ctxs;
     _group_reader_param.predicate_tree = &fd_scanner_ctx.predicate_tree;
 
+    // @TODO set rf
     int64_t row_group_first_row = 0;
     // select and create row group readers.
     for (size_t i = 0; i < _file_metadata->t_metadata().row_groups.size(); i++) {

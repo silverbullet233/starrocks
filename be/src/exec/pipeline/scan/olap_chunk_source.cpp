@@ -195,7 +195,13 @@ void OlapChunkSource::_init_counter(RuntimeState* state) {
     _pred_filter_timer = ADD_CHILD_TIMER(_runtime_profile, "PredFilter", segment_read_name);
     _pred_filter_counter = ADD_CHILD_COUNTER(_runtime_profile, "PredFilterRows", TUnit::UNIT, segment_read_name);
     _rf_pred_filter_timer = ADD_TIMER(_runtime_profile, "RuntimeFilterEvalTime");
+    _rf_pred_sample_timer = ADD_TIMER(_runtime_profile, "RuntimeFilterSampleTime");
     _rf_pred_input_rows = ADD_COUNTER(_runtime_profile, "RuntimeFilterInputRows", TUnit::UNIT);
+    _rf_pred_sample_input_rows = ADD_COUNTER(_runtime_profile, "RuntimeFilterSampleInputRows", TUnit::UNIT);
+    _rf_pred_sample_output_rows = ADD_COUNTER(_runtime_profile, "RuntimeFilterSampleOutputRows", TUnit::UNIT);
+    _rf_pred_normal_input_rows = ADD_COUNTER(_runtime_profile, "RuntimeFilterNormalInputRows", TUnit::UNIT);
+    _rf_pred_normal_output_rows = ADD_COUNTER(_runtime_profile, "RuntimeFilterNormalOutputRows", TUnit::UNIT);
+    _rf_pred_init_input_rows = ADD_COUNTER(_runtime_profile, "RuntimeFilterInitInputRows", TUnit::UNIT);
     _rf_pred_output_rows = ADD_COUNTER(_runtime_profile, "RuntimeFilterOutputRows", TUnit::UNIT);
     _del_vec_filter_counter = ADD_CHILD_COUNTER(_runtime_profile, "DelVecFilterRows", TUnit::UNIT, segment_read_name);
     _chunk_copy_timer = ADD_CHILD_TIMER(_runtime_profile, "ChunkCopy", segment_read_name);
@@ -278,7 +284,7 @@ Status OlapChunkSource::_init_reader_params(const std::vector<std::unique_ptr<Ol
     // @TODO how to add unarrived bloom filter into it
     ASSIGN_OR_RETURN(auto pred_tree, _scan_ctx->conjuncts_manager().get_predicate_tree(parser, _predicate_free_pool));
     if (config::enable_rf_pushdown) {
-        ASSIGN_OR_RETURN(_params.runtime_filter_preds, _scan_ctx->conjuncts_manager().get_runtime_filter_predicates(&_obj_pool, parser));
+        ASSIGN_OR_RETURN(_params.runtime_filter_preds, _scan_ctx->conjuncts_manager().get_shared_runtime_filter_predicates(&_obj_pool, parser));
     }
     _decide_chunk_size(!pred_tree.empty());
     PredicateAndNode pushdown_pred_root;
@@ -698,6 +704,13 @@ void OlapChunkSource::_update_counter() {
     // In order to avoid exposing too detailed metrics, we still record these infos on `_pred_filter_timer`
     // When we support metric classification, we can disassemble it again.
     COUNTER_UPDATE(_rf_pred_filter_timer, _reader->stats().rf_cond_evaluate_ns);
+    COUNTER_UPDATE(_rf_pred_sample_timer, _reader->stats().rf_sample_evaluate_ns);
+    COUNTER_UPDATE(_rf_pred_sample_input_rows, _reader->stats().rf_sample_input_rows);
+    COUNTER_UPDATE(_rf_pred_sample_output_rows, _reader->stats().rf_sample_output_rows);
+    COUNTER_UPDATE(_rf_pred_normal_input_rows, _reader->stats().rf_normal_input_rows);
+    COUNTER_UPDATE(_rf_pred_normal_output_rows, _reader->stats().rf_normal_output_rows);
+    COUNTER_UPDATE(_rf_pred_init_input_rows, _reader->stats().rf_init_input_rows);
+
     COUNTER_UPDATE(_rf_pred_input_rows, _reader->stats().rf_cond_input_rows);
     COUNTER_UPDATE(_rf_pred_output_rows, _reader->stats().rf_cond_output_rows);
     COUNTER_UPDATE(_pred_filter_timer, cond_evaluate_ns);

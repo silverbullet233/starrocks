@@ -324,7 +324,20 @@ StatusOr<size_t> GroupReader::_read_range_round_by_round(const Range<uint64_t>& 
         }
         first_selectivity = first_selectivity < 0 ? hit_count * 1.0 / filter->size() : first_selectivity;
     }
-    // @TODO set runtiem filter
+    // @TODO how to make sure all column is read first
+    if (_param.runtime_filter_predicates) {
+        if (hit_count > 0) {
+            std::ostringstream oss;
+
+            [[maybe_unused]] size_t origin_count = hit_count;
+            RETURN_IF_ERROR(_param.runtime_filter_predicates->evaluate(chunk->get(), filter->data(), 0, (*chunk)->num_rows()));
+            hit_count = SIMD::count_nonzero(*filter);
+            // if (origin_count != hit_count) {
+            // LOG(INFO) << "evaluate runtiem filter predicates, before: " << origin_count << ", after: " << hit_count
+            //     << ", active_columns: " << _active_column_indices.size() << ", lazy_columns:" << _lazy_column_indices.size();
+            // }
+        }
+    }
 
     return hit_count;
 }
@@ -448,6 +461,17 @@ void GroupReader::_process_columns_and_conjunct_ctxs() {
     if (_active_column_indices.empty()) {
         _active_column_indices.swap(_lazy_column_indices);
     }
+    std::ostringstream oss;
+    oss << "active_column_indices: [";
+    for (auto idx: _active_column_indices) {
+        oss << idx << " ";
+    }
+    oss << "], lazy_column_indices: [";
+    for (auto idx : _lazy_column_indices) {
+        oss << idx << " ";
+    }
+    oss << "]";
+    LOG(INFO) << "_process_columns_and_conjunct_ctxs, " << oss.str();
 }
 
 bool GroupReader::_try_to_use_dict_filter(const GroupReaderParam::Column& column, ExprContext* ctx,

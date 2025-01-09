@@ -187,6 +187,9 @@ Status HdfsScanner::_build_scanner_context() {
         ConnectorPredicateParser predicate_parser{&ctx.slot_descs};
         ASSIGN_OR_RETURN(ctx.predicate_tree,
                          ctx.conjuncts_manager->get_predicate_tree(&predicate_parser, ctx.predicate_free_pool));
+        if (config::enable_rf_pushdown) {
+            ASSIGN_OR_RETURN(ctx.runtime_filter_preds, ctx.conjuncts_manager->get_runtime_filter_predicates(_runtime_state->obj_pool(), &predicate_parser));
+        }
     }
     return Status::OK();
 }

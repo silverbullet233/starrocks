@@ -388,6 +388,17 @@ void NullableColumn::fnv_hash_with_selection(uint32_t* hash, uint8_t* selection,
     }
 }
 
+// void NullableColumn::fnv_hash_selective(uint32_t* hash, uint16_t* sel, uint16_t sel_size) const {
+//     if (!_has_null) {
+//         _data_column->fnv_hash_selective(hash, sel, sel_size);
+//         return;
+//     }
+//     // @TODO: optimize this
+//     throw std::runtime_error("not implement");
+    
+// }
+
+
 void NullableColumn::crc32_hash(uint32_t* hash, uint32_t from, uint32_t to) const {
     // fast path when _has_null is false
     if (!_has_null) {

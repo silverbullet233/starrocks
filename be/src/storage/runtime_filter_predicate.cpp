@@ -199,6 +199,9 @@ void RuntimeFilterPredicates::_update_selectivity_map() {
 }
 
 Status RuntimeFilterPredicates::evaluate(Chunk* chunk, uint8_t* selection, uint16_t from, uint16_t to) {
+    if (_rf_predicates.empty()) {
+        return Status::OK();
+    }
     return _evaluate_selection(chunk, selection, from, to);
 }
 
@@ -213,10 +216,15 @@ Status RuntimeFilterPredicates::_evaluate_selection(Chunk* chunk, uint8_t* selec
             }
             uint16_t origin_count = _input_sel.size();
             uint16_t new_count = _input_sel.size();
+            bool has_rf = false;
             for(auto pred: _rf_predicates) {
                 if (pred->init(_driver_sequence)) {
                     ASSIGN_OR_RETURN(new_count, pred->evaluate(chunk, _input_sel.data(), new_count));
+                    has_rf = true;
                 }
+            }
+            if (has_rf) {
+                _state = SAMPLE;
             }
             memset(selection + from, 0, to - from);
             for (uint16_t i = 0;i < new_count;i++) {
@@ -237,25 +245,32 @@ Status RuntimeFilterPredicates::_evaluate_selection(Chunk* chunk, uint8_t* selec
         case INIT: {
             // if (_sampling_predicates.empty()) {
             if (_sampling_ctxs.empty()) {
+                // std::ostringstream oss;
                 for (auto pred: _rf_predicates) {
                     if (pred->init(_driver_sequence)) {
                         _sampling_ctxs.push_back(SamplingCtx{pred, 0});
+                        // oss << pred->get_rf_desc()->filter_id() << ",";
                         // _sampling_predicates.push_back(pred);
                         // _filter_rows.push_back(0);
                     }
                 }
+                // @TODO wait all ?
                 // if (!_sampling_predicates.empty()) {
                 if (!_sampling_ctxs.empty()) {
                     _state = SAMPLE;
                     _sample_rows = 0;
                     _sample_times = 0;
                     // LOG(INFO) << "used predicates size: " << _sampling_predicates.size() << ", go to SAMPLE, " << (void*)this;
+                    // LOG(INFO) << "used predicates[" << oss.str() << "], go to SAMPLE, " << (void*)this;
                 } else {
+                    // LOG(INFO) << "rf count: " << _rf_predicates.size() << ", no arrived, return... " << (void*)this;
                     // no filter can be used, just return
                     return Status::OK();
                 }
+            } else {
+                break;
             }
-            break;
+            
         }
         case SAMPLE: {
             // @TODO use branchless mode
@@ -279,10 +294,14 @@ Status RuntimeFilterPredicates::_evaluate_selection(Chunk* chunk, uint8_t* selec
                     for (uint16_t i = 0;i < new_count;i++) {
                         selection[_input_sel[i]] = 1;
                     }
+                    filter_rows += old_count - new_count;
                 } else {
                     // _hit_count.assign(_input_sel.size(), 0);
                     _hit_count.resize(chunk->num_rows());
                     memset(_hit_count.data() + from, 0, to - from);
+                    // for (uint16_t i = from;i < to;i++) {
+                    //     _hit_count[i] = 0;
+                    // }
                     _tmp_sel.resize(_input_sel.size());
                     for (size_t i = 0;i < _sampling_ctxs.size();i ++) {
                         auto pred = _sampling_ctxs[i].pred;
@@ -295,12 +314,15 @@ Status RuntimeFilterPredicates::_evaluate_selection(Chunk* chunk, uint8_t* selec
                         // LOG(INFO) << "sample, old_count: " << old_count << ", new_count: " << new_count << ", rf:" << pred->get_rf_desc()->filter_id() << ", " << (void*)this;
                     }
                     // memset(selection + from, 0, to - from);
-                    uint16_t target_num = _sampling_ctxs.size();
+                    size_t target_num = _sampling_ctxs.size();
                     for (uint16_t i = from;i < to;i++) {
                         selection[i] = (_hit_count[i] == target_num);
                     }
+                    new_count = SIMD::count_nonzero(selection + from, to - from);
+                    // LOG(INFO) << "sample rows, old_count: " << old_count << ", new_count: " << new_count << ", " << (void*)this;
                 }
                 _sample_rows += old_count;
+                // _hit_rows += new_count;
                 _sample_times++;
 
             } else {
@@ -345,7 +367,7 @@ Status RuntimeFilterPredicates::_evaluate_selection(Chunk* chunk, uint8_t* selec
                 _update_selectivity_map();
                 _state = NORMAL;
                 _skip_rows = 0;
-                // LOG(INFO) << "sample rows: " << _sample_rows << ", times:" << _sample_times << ", go to NORMAL, " << (void*)this;
+                // LOG(INFO) << "sample rows: " << _sample_rows << ", hit rows: " << _hit_rows << ", times:" << _sample_times << ", go to NORMAL, " << (void*)this;
             }
             return Status::OK();
         }
@@ -391,6 +413,7 @@ Status RuntimeFilterPredicates::_evaluate_selection(Chunk* chunk, uint8_t* selec
                 // _filter_rows.clear();
                 _sample_rows = 0;
                 _sample_times = 0;
+                // _hit_rows = 0;
                 // LOG(INFO) << "skip rows: " << _skip_rows << ", go back to INIT";
             }
             // LOG(INFO) << "normal input: " << origin_count << ", output: " << SIMD::count_nonzero(selection + from, to - from)
@@ -424,6 +447,33 @@ Status RuntimeFilterPredicatesRewriter::rewrite(ObjectPool* obj_pool,
     RuntimeFilterPredicates& preds, const std::vector<std::unique_ptr<ColumnIterator>>& column_iterators, const Schema& schema) {
     
     auto& predicates = preds._rf_predicates;
+    for (size_t i = 0;i < predicates.size();i ++) {
+        auto* pred = predicates[i];
+        ColumnId column_id = pred->get_column_id();
+        if (!column_iterators[column_id]->all_page_dict_encoded()) {
+            continue;
+        }
+        // @TODO consider global dict column
+        auto* rf_desc = pred->get_rf_desc();
+        std::vector<Slice> all_words;
+        RETURN_IF_ERROR(column_iterators[column_id]->fetch_all_dict_words(&all_words));
+        std::vector<std::string> dict_words;
+        for (const auto& word : all_words) {
+            dict_words.emplace_back(std::string(word.get_data(), word.get_size()));
+        }
+        predicates[i] = obj_pool->add(new DictColumnRuntimeFilterPredicate(rf_desc, column_id, std::move(dict_words)));
+        // LOG(INFO) << "rewrite runtime filter predicate, column id: " << column_id << ", rf_desc: " << rf_desc->debug_string();
+        // @TODO how about global_dict
+    }
+    return Status::OK();
+}
+
+Status RuntimeFilterPredicatesRewriter::rewrite(ObjectPool* obj_pool,
+    RuntimeFilterPredicatesPtr& preds, const std::vector<std::unique_ptr<ColumnIterator>>& column_iterators, const Schema& schema) {
+    if (preds == nullptr) {
+        return Status::OK();
+    }
+    auto& predicates = preds->_rf_predicates;
     for (size_t i = 0;i < predicates.size();i ++) {
         auto* pred = predicates[i];
         ColumnId column_id = pred->get_column_id();

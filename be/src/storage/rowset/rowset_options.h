@@ -58,7 +58,8 @@ public:
 
     PredicateTree pred_tree;
     PredicateTree pred_tree_for_zone_map;
-    RuntimeFilterPredicates runtime_filter_preds;
+    // RuntimeFilterPredicates runtime_filter_preds;
+    std::shared_ptr<RuntimeFilterPredicates> runtime_filter_preds;
 
     // whether rowset should return rows in sorted order.
     bool sorted = true;

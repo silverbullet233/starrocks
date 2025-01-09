@@ -238,6 +238,12 @@ struct OlapReaderStatistics {
     int64_t rf_cond_input_rows = 0;
     int64_t rf_cond_output_rows = 0;
     int64_t rf_cond_evaluate_ns = 0;
+    int64_t rf_sample_evaluate_ns = 0;
+    int64_t rf_init_input_rows = 0;
+    int64_t rf_sample_input_rows = 0;
+    int64_t rf_sample_output_rows = 0;
+    int64_t rf_normal_input_rows = 0;
+    int64_t rf_normal_output_rows = 0;
     int64_t vec_cond_chunk_copy_ns = 0;
     int64_t branchless_cond_evaluate_ns = 0;
     int64_t expr_cond_evaluate_ns = 0;

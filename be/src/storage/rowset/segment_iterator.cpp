@@ -335,7 +335,8 @@ private:
 
     PredicateTree _non_expr_pred_tree;
     PredicateTree _expr_pred_tree;
-    RuntimeFilterPredicates _runtime_filter_preds;
+    // RuntimeFilterPredicates _runtime_filter_preds;
+    std::shared_ptr<RuntimeFilterPredicates> _runtime_filter_preds;
 
     // _selection is used to accelerate
     Buffer<uint8_t> _selection;
@@ -937,7 +938,7 @@ void SegmentIterator::_init_column_predicates() {
                                   &non_expr_pred_root);
     _expr_pred_tree = PredicateTree::create(std::move(expr_pred_root));
     _non_expr_pred_tree = PredicateTree::create(std::move(non_expr_pred_root));
-    // @TODO should copy
+    // @TODO should copy?
     _runtime_filter_preds = _opts.runtime_filter_preds;
 }
 
@@ -1645,15 +1646,34 @@ StatusOr<uint16_t> SegmentIterator::_filter_by_non_expr_predicates(Chunk* chunk,
     }
     {
         if (config::enable_rf_pushdown) {
-            SCOPED_RAW_TIMER(&_opts.stats->rf_cond_evaluate_ns);
-            // @TODO rows??
-            // LOG(INFO) << "eval runtime filter"; 
-            // @TODO count filter rows?
-            size_t input_count = SIMD::count_nonzero(&_selection[from], to - from);
-            RETURN_IF_ERROR(_runtime_filter_preds.evaluate(chunk, _selection.data(), from, to));
-            size_t output_count = SIMD::count_nonzero(&_selection[from], to - from);
-            _opts.stats->rf_cond_input_rows += input_count;
-            _opts.stats->rf_cond_output_rows += output_count;
+            if (_runtime_filter_preds) {
+                // auto old_state = _runtime_filter_preds->get_state();
+                // int64_t* scoped_timer = (old_state == 0 || old_state == 1) ? &_opts.stats->rf_sample_evaluate_ns : &_opts.stats->rf_cond_evaluate_ns;
+                SCOPED_RAW_TIMER(&_opts.stats->rf_cond_evaluate_ns);
+                // SCOPED_RAW_TIMER(scoped_timer);
+                // @TODO rows??
+                // LOG(INFO) << "eval runtime filter"; 
+                // @TODO count filter rows?
+                size_t input_count = SIMD::count_nonzero(&_selection[from], to - from);
+                RETURN_IF_ERROR(_runtime_filter_preds->evaluate(chunk, _selection.data(), from, to));
+                size_t output_count = SIMD::count_nonzero(&_selection[from], to - from);
+                _opts.stats->rf_cond_input_rows += input_count;
+                _opts.stats->rf_cond_output_rows += output_count;
+                // auto new_state = _runtime_filter_preds->get_state();
+                // if (old_state == 0 && new_state == 0) {
+                //     // no rf, pass through...
+                //     // LOG(INFO) << "invalid state, old_state: " << (int)old_state << ", input_count: " << input_count << ", output_count: " << output_count << ", " << (void*)this;
+                //     _opts.stats->rf_init_input_rows += input_count;
+                // } else if (old_state == 0 || old_state == 1) {
+                //     _opts.stats->rf_sample_input_rows += input_count;
+                //     _opts.stats->rf_sample_output_rows += output_count;
+                //     // LOG(INFO) << "sample rows, input_count: " << input_count << ", output_count: " << output_count << ", "
+                //     //     << ", old_state:" << (int)old_state << ", new_state:" << (int)new_state;
+                // } else {
+                //     _opts.stats->rf_normal_input_rows += input_count;
+                //     _opts.stats->rf_normal_output_rows += output_count;
+                // }
+            }
         }
     }
     // @TODO filter by runtime filter predicate

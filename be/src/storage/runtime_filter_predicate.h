@@ -71,6 +71,12 @@ class RuntimeFilterPredicatesRewriter;
 class RuntimeFilterPredicates {
     friend class RuntimeFilterPredicatesRewriter;
 public:
+
+    enum State : uint8_t {
+        INIT = 0,
+        SAMPLE = 1,
+        NORMAL = 2,
+    };
     RuntimeFilterPredicates() = default;
     RuntimeFilterPredicates(int32_t driver_sequence): _driver_sequence(driver_sequence) {}
 
@@ -81,8 +87,14 @@ public:
     void update_predicate(size_t idx, RuntimeFilterPredicate* pred) {
         _rf_predicates[idx] = pred;
     }
+    size_t predicate_num() const {
+        return _rf_predicates.size();
+    }
     // @TODO need update?
     // @TODO support clone
+    State get_state() const {
+        return _state;
+    }
 
     Status evaluate(Chunk* chunk, uint8_t* selection, uint16_t from, uint16_t to);
     // Status evaluate(Chunk* chunk, uint16_t* sel, uint16_t sel_size);
@@ -102,11 +114,6 @@ private:
     void _update_selectivity_map();
 
 
-    enum State : uint8_t {
-        INIT = 0,
-        SAMPLE = 1,
-        NORMAL = 2,
-    };
     State _state = INIT;
     std::vector<RuntimeFilterPredicate*> _rf_predicates; 
     // will be reused
@@ -114,7 +121,7 @@ private:
     std::vector<uint8_t> _tmp_selection;
     std::vector<uint16_t> _input_sel;
     std::vector<uint16_t> _tmp_sel;
-    std::vector<uint16_t> _hit_count;
+    std::vector<size_t> _hit_count;
     struct SamplingCtx {
         RuntimeFilterPredicate* pred = nullptr;
         size_t filter_rows = 0;
@@ -124,6 +131,7 @@ private:
     std::vector<size_t> _filter_rows;
     size_t _sample_rows = 0;
     size_t _sample_times = 0;
+    // size_t _hit_rows = 0;
     size_t _skip_rows = 0;
     // maintain all runtime filters
     // std::vector<RuntimeFilterProbeDescriptor*> _rf_descs;
@@ -139,11 +147,13 @@ private:
     // size_t _filtered_rows = 0;
     // std::vector<uint32_t> hash_values;
 };
+using RuntimeFilterPredicatesPtr = std::shared_ptr<RuntimeFilterPredicates>;
 class ColumnIterator;
 class Schema;
 class RuntimeFilterPredicatesRewriter {
 public:
     static Status rewrite(ObjectPool* obj_pool, RuntimeFilterPredicates& preds, const std::vector<std::unique_ptr<ColumnIterator>>& column_iterators, const Schema& schema);
+    static Status rewrite(ObjectPool* obj_pool, RuntimeFilterPredicatesPtr& preds, const std::vector<std::unique_ptr<ColumnIterator>>& column_iterators, const Schema& schema);
 };
 
 }

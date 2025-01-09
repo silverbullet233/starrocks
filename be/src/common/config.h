@@ -1537,6 +1537,6 @@ CONF_mBool(enable_dynamic_batch_size_for_json_parse_many, "true");
 CONF_mBool(enable_rf_pushdown, "true");
 CONF_mInt64(rf_sample_rows, "1024");
 CONF_mInt64(rf_skip_rows, "262144");
-CONF_mBool(enable_rf_branchless, "true");
-CONF_mBool(rf_skip_sample, "true");
+CONF_mBool(enable_rf_branchless, "false");
+CONF_mBool(rf_skip_sample, "false");
 } // namespace starrocks::config

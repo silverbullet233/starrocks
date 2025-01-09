@@ -178,6 +178,7 @@ public:
 
     StatusOr<PredicateTree> get_predicate_tree(PredicateParser* parser, ColumnPredicatePtrs& col_preds_owner);
     StatusOr<RuntimeFilterPredicates> get_runtime_filter_predicates(ObjectPool* obj_pool, PredicateParser* parser);
+    StatusOr<std::shared_ptr<RuntimeFilterPredicates>> get_shared_runtime_filter_predicates(ObjectPool* obj_pool, PredicateParser* parser);
 
     Status get_key_ranges(std::vector<std::unique_ptr<OlapScanRange>>* key_ranges);
 

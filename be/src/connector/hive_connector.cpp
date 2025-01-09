@@ -442,6 +442,7 @@ Status HiveDataSource::_decompose_conjunct_ctxs(RuntimeState* state) {
                 _conjunct_ctxs_by_slot.insert({slot_id, std::vector<ExprContext*>()});
             }
             _conjunct_ctxs_by_slot[slot_id].emplace_back(ctx);
+            LOG(INFO) << "new conjunct ctx, slot_id: " << slot_id << ", ctx: " << ctx->root()->debug_string();
         }
     }
     return Status::OK();

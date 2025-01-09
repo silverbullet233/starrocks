@@ -70,7 +70,8 @@ struct TabletReaderParams {
     std::vector<OlapTuple> start_key;
     std::vector<OlapTuple> end_key;
     PredicateTree pred_tree;
-    RuntimeFilterPredicates runtime_filter_preds;
+    std::shared_ptr<RuntimeFilterPredicates> runtime_filter_preds;
+    // RuntimeFilterPredicates runtime_filter_preds;
     // @TODO runtime filter predicate
 
     RuntimeState* runtime_state = nullptr;
