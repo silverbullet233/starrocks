@@ -18,6 +18,7 @@
 
 #include <algorithm>
 #include <memory>
+#include <sstream>
 #include <utility>
 
 #include "column/chunk.h"
@@ -178,7 +179,13 @@ Status GroupReader::get_next(ChunkPtr* chunk, size_t* row_count) {
         *row_count = 0;
         return Status::EndOfFile("");
     }
-
+    {
+        std::ostringstream oss;
+        for (const auto& [slot_id, _]: (*chunk)->get_slot_id_to_index_map()) {
+            oss << slot_id << ",";
+        }
+        LOG(INFO) << "before GroupReader::get_next, chunk slot: " << oss.str() << ", " << (void*)this;
+    }
     _read_chunk->reset();
 
     ChunkPtr active_chunk = _create_read_chunk(_active_column_indices);
@@ -253,7 +260,30 @@ Status GroupReader::get_next(ChunkPtr* chunk, size_t* row_count) {
                 return Status::InternalError(strings::Substitute("Unmatched row count, active_rows=$0, lazy_rows=$1",
                                                                  active_chunk->num_rows(), lazy_chunk->num_rows()));
             }
+            {
+                std::ostringstream oss;
+                oss << "active_chunk slots: ";
+                for (const auto& [slot_id, _]: active_chunk->get_slot_id_to_index_map()) {
+                    oss << slot_id << ", ";
+                }
+                oss << "lazy_chunk slots: ";
+                for (const auto& [slot_id, _]: lazy_chunk->get_slot_id_to_index_map()) {
+                    oss << slot_id << ", ";
+                }
+                oss << "chunk slots: ";
+                for (const auto& [slot_id, _]: (*chunk)->get_slot_id_to_index_map()) {
+                    oss << slot_id << ",";
+                }
+                LOG(INFO) << "after deal lazy_columns, " << oss.str() << ", " << (void*)this;
+            }
             active_chunk->merge(std::move(*lazy_chunk));
+        }
+        {
+            std::ostringstream oss;
+            for (const auto& [slot_id, _]: (*chunk)->get_slot_id_to_index_map()) {
+                oss << slot_id << ",";
+            }
+            LOG(INFO) << "after deal lazy_columns, chunk slot: " << oss.str() << ", " << (void*)this;
         }
 
         *row_count = active_chunk->num_rows();
@@ -261,8 +291,20 @@ Status GroupReader::get_next(ChunkPtr* chunk, size_t* row_count) {
         SCOPED_RAW_TIMER(&_param.stats->group_dict_decode_ns);
         // convert from _read_chunk to chunk.
         RETURN_IF_ERROR(_fill_dst_chunk(active_chunk, chunk));
+        {
+            std::ostringstream oss;
+            for (const auto& [slot_id, _]: (*chunk)->get_slot_id_to_index_map()) {
+                oss << slot_id << ",";
+            }
+            LOG(INFO) << "after fill_dst_chunk, chunk slot: " << oss.str() << ", " << (void*)this;
+        }
         break;
     }
+    std::ostringstream oss;
+    for (const auto& [slot_id, _]: (*chunk)->get_slot_id_to_index_map()) {
+        oss << slot_id << ",";
+    }
+    LOG(INFO) << "after GroupReader::get_next, chunk slots: " << oss.str() << ", " << (void*)this;
 
     return _range_iter.has_more() ? Status::OK() : Status::EndOfFile("");
 }
@@ -276,6 +318,7 @@ Status GroupReader::_read_range(const std::vector<int>& read_columns, const Rang
     for (int col_idx : read_columns) {
         auto& column = _param.read_cols[col_idx];
         SlotId slot_id = column.slot_id();
+        LOG(INFO) << "GroupReader::_read_range, slot_id: " << slot_id << ", " << (void*)this;
         RETURN_IF_ERROR(_column_readers[slot_id]->read_range(range, filter, (*chunk)->get_column_by_slot_id(slot_id)));
     }
 
@@ -324,11 +367,16 @@ StatusOr<size_t> GroupReader::_read_range_round_by_round(const Range<uint64_t>& 
         }
         first_selectivity = first_selectivity < 0 ? hit_count * 1.0 / filter->size() : first_selectivity;
     }
+    std::ostringstream oss;
+    for (const auto& [slod_id, _]: (*chunk)->get_slot_id_to_index_map()) {
+        oss << slod_id << ",";
+    }
+    LOG(INFO) << "after GroupReader::_read_range_round_by_round, slot id in chunk: " << oss.str() << ", " << (void*)this;
+
+
     // @TODO how to make sure all column is read first
     if (_param.runtime_filter_predicates) {
         if (hit_count > 0) {
-            std::ostringstream oss;
-
             [[maybe_unused]] size_t origin_count = hit_count;
             RETURN_IF_ERROR(_param.runtime_filter_predicates->evaluate(chunk->get(), filter->data(), 0, (*chunk)->num_rows()));
             hit_count = SIMD::count_nonzero(*filter);
@@ -401,7 +449,9 @@ StatusOr<ColumnReaderPtr> GroupReader::_create_column_reader(const GroupReaderPa
 
 Status GroupReader::_prepare_column_readers() const {
     SCOPED_RAW_TIMER(&_param.stats->column_reader_init_ns);
+    std::ostringstream oss;
     for (const auto& [slot_id, column_reader] : _column_readers) {
+        oss << slot_id << ",";
         RETURN_IF_ERROR(column_reader->prepare());
         if (column_reader->get_column_parquet_field() != nullptr &&
             column_reader->get_column_parquet_field()->is_complex_type()) {
@@ -411,6 +461,7 @@ Status GroupReader::_prepare_column_readers() const {
             column_reader->set_need_parse_levels(true);
         }
     }
+    LOG(INFO) << "GroupReader::_prepare_column_readers, columns: " << oss.str() << ", " << (void*)this;
     return Status::OK();
 }
 
@@ -418,8 +469,20 @@ void GroupReader::_process_columns_and_conjunct_ctxs() {
     const auto& conjunct_ctxs_by_slot = _param.conjunct_ctxs_by_slot;
     int read_col_idx = 0;
 
+    std::set<ColumnId> rf_used_columns;
+    if (_param.runtime_filter_predicates != nullptr) {
+        // runtime filter need to use all columns
+        rf_used_columns = _param.runtime_filter_predicates->get_column_ids();
+        std::ostringstream oss;
+        for (auto id: rf_used_columns) {
+            oss << id << ",";
+        }
+        LOG(INFO) << "_process_columns_and_conjunct_ctxs, rf_used_columns: " << oss.str() << ", " << (void*)this;
+    }
+
     for (auto& column : _param.read_cols) {
         SlotId slot_id = column.slot_id();
+        LOG(INFO) << "read_cols slot_id: " << slot_id << ", " << (void*) this;
         if (conjunct_ctxs_by_slot.find(slot_id) != conjunct_ctxs_by_slot.end()) {
             for (ExprContext* ctx : conjunct_ctxs_by_slot.at(slot_id)) {
                 std::vector<std::string> sub_field_path;
@@ -436,6 +499,9 @@ void GroupReader::_process_columns_and_conjunct_ctxs() {
                     }
                 }
             }
+            _active_column_indices.emplace_back(read_col_idx);
+        } else if (rf_used_columns.contains(slot_id)) {
+            LOG(INFO) << "add slot_id: " << slot_id << " to active column indices, " << (void*)this;
             _active_column_indices.emplace_back(read_col_idx);
         } else {
             if (config::parquet_late_materialization_enable) {
@@ -464,14 +530,16 @@ void GroupReader::_process_columns_and_conjunct_ctxs() {
     std::ostringstream oss;
     oss << "active_column_indices: [";
     for (auto idx: _active_column_indices) {
-        oss << idx << " ";
+        oss << _param.read_cols[idx].slot_desc->id() << " ";
+        // oss << idx << " ";
     }
     oss << "], lazy_column_indices: [";
     for (auto idx : _lazy_column_indices) {
-        oss << idx << " ";
+        oss << _param.read_cols[idx].slot_desc->id() << " ";
+        // oss << idx << " ";
     }
     oss << "]";
-    LOG(INFO) << "_process_columns_and_conjunct_ctxs, " << oss.str();
+    LOG(INFO) << "_process_columns_and_conjunct_ctxs, " << oss.str() << ", " << (void*)this;
 }
 
 bool GroupReader::_try_to_use_dict_filter(const GroupReaderParam::Column& column, ExprContext* ctx,
@@ -538,6 +606,7 @@ void GroupReader::_init_read_chunk() {
 }
 
 void GroupReader::_use_as_dict_filter_column(int col_idx, SlotId slot_id, std::vector<std::string>& sub_field_path) {
+    LOG(INFO) << "add dict column, slot_id: " << slot_id << ", " << (void*)this;
     _dict_column_indices.emplace_back(col_idx);
     if (_dict_column_sub_field_paths.find(col_idx) == _dict_column_sub_field_paths.end()) {
         _dict_column_sub_field_paths.insert({col_idx, std::vector<std::vector<std::string>>({sub_field_path})});

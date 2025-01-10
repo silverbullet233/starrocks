@@ -1219,12 +1219,12 @@ StatusOr<RuntimeFilterPredicates> ScanConjunctsManager::get_runtime_filter_predi
             continue;
         }
         // @TODO make rf  column early read
-        
+        LOG(INFO) << "get runtime filter with slot: " << slot_id;
         auto column_id = parser->column_id(*slot_desc);
         desc->set_has_push_down_to_storage(true);
         // std::unique_ptr<RuntimeFilterPredicate> p(new RuntimeFilterPredicate(desc, column_id));
-        // LOG(INFO) << "add RuntimeFilterPredicate, desc: " << desc->debug_string() << ", column_id: " << column_id
-        //     << ", slot_id: " << slot_id;
+        LOG(INFO) << "add RuntimeFilterPredicate, desc: " << desc->debug_string() << ", column_id: " << column_id
+            << ", slot_id: " << slot_id;
         predicates.add_predicate(obj_pool->add(new RuntimeFilterPredicate(desc, column_id)));
     }
     return predicates;

@@ -30,7 +30,9 @@ bool RuntimeFilterPredicate::init(int32_t driver_sequence) {
 }
 
 Status RuntimeFilterPredicate::evaluate(Chunk* chunk, uint8_t* selection, uint16_t from, uint16_t to) {
-    auto column = chunk->get_column_by_id(_column_id);
+    // auto column = chunk->get_column_by_id(_column_id);
+    // @TODO pending fix
+    auto column = chunk->is_cid_exist(_column_id) ? chunk->get_column_by_id(_column_id): chunk->get_column_by_slot_id(_column_id);
     if (_rf->num_hash_partitions() > 0) {
         hash_values.resize(column->size());
         _rf->compute_partition_index(_rf_desc->layout(), {column.get()}, selection, from, to, hash_values);
@@ -43,7 +45,9 @@ StatusOr<uint16_t> RuntimeFilterPredicate::evaluate(Chunk* chunk, uint16_t* sel,
     if (sel_size == 0) {
         return sel_size;
     }
-    auto column = chunk->get_column_by_id(_column_id);
+    // auto column = chunk->get_column_by_id(_column_id);
+
+    auto column = chunk->is_cid_exist(_column_id) ? chunk->get_column_by_id(_column_id): chunk->get_column_by_slot_id(_column_id);
     uint16_t* target_sel = (dst_sel != nullptr) ? dst_sel: sel;
     if (_rf->num_hash_partitions() > 0) {
         hash_values.resize(column->size());
@@ -56,7 +60,9 @@ StatusOr<uint16_t> RuntimeFilterPredicate::evaluate(Chunk* chunk, uint16_t* sel,
 Status DictColumnRuntimeFilterPredicate::evaluate(Chunk* chunk, uint8_t* selection, uint16_t from, uint16_t to) {
     RETURN_IF_ERROR(prepare());
 
-    auto column = chunk->get_column_by_id(_column_id).get();
+    // auto column = chunk->get_column_by_id(_column_id).get();
+
+    auto column = chunk->is_cid_exist(_column_id) ? chunk->get_column_by_id(_column_id).get(): chunk->get_column_by_slot_id(_column_id).get();
     if (column->is_nullable()) {
         const auto* nullable_column = down_cast<const NullableColumn*>(column);
         // dict code column must be int column
@@ -93,7 +99,8 @@ StatusOr<uint16_t> DictColumnRuntimeFilterPredicate::evaluate(Chunk* chunk, uint
     }
     RETURN_IF_ERROR(prepare());
     uint16_t* target_sel = (dst_sel != nullptr) ? dst_sel: sel;
-    auto column = chunk->get_column_by_id(_column_id).get();
+    // auto column = chunk->get_column_by_id(_column_id).get();
+    auto column = chunk->is_cid_exist(_column_id) ? chunk->get_column_by_id(_column_id).get(): chunk->get_column_by_slot_id(_column_id).get();
     uint16_t new_size = 0;
     if (column->is_nullable()) {
         const auto* nullable_column = down_cast<const NullableColumn*>(column);

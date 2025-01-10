@@ -244,6 +244,7 @@ Status HiveDataSource::_init_partition_values() {
         DCHECK(partition_value_col->is_constant());
         partition_chunk->append_column(partition_value_col, slot_id);
     }
+    // @TODO for we should remove partition slot from 
 
     // eval conjuncts and skip if no rows.
     if (_has_scan_range_indicate_const_column) {
@@ -445,6 +446,7 @@ Status HiveDataSource::_decompose_conjunct_ctxs(RuntimeState* state) {
             LOG(INFO) << "new conjunct ctx, slot_id: " << slot_id << ", ctx: " << ctx->root()->debug_string();
         }
     }
+    // add place holder for rf runtime filter?
     return Status::OK();
 }
 

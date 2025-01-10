@@ -364,6 +364,7 @@ void NullableColumn::fnv_hash(uint32_t* hash, uint32_t from, uint32_t to) const 
         from = new_from;
     }
 }
+
 void NullableColumn::fnv_hash_with_selection(uint32_t* hash, uint8_t* selection, uint16_t from, uint16_t to) const {
     if (!_has_null) {
         _data_column->fnv_hash_with_selection(hash, selection, from, to);
@@ -388,15 +389,22 @@ void NullableColumn::fnv_hash_with_selection(uint32_t* hash, uint8_t* selection,
     }
 }
 
-// void NullableColumn::fnv_hash_selective(uint32_t* hash, uint16_t* sel, uint16_t sel_size) const {
-//     if (!_has_null) {
-//         _data_column->fnv_hash_selective(hash, sel, sel_size);
-//         return;
-//     }
-//     // @TODO: optimize this
-//     throw std::runtime_error("not implement");
-    
-// }
+void NullableColumn::fnv_hash_selective(uint32_t* hash, uint16_t* sel, uint16_t sel_size) const {
+    if (!_has_null) {
+        _data_column->fnv_hash_selective(hash, sel, sel_size);
+        return;
+    }
+    const auto& null_data = _null_column->get_data();
+    uint32_t value = 0x9e3779b9;
+    // @TODO can we optimize this?
+    for (uint16_t i = 0;i < sel_size;i++) {
+        if (null_data[sel[i]]) {
+            hash[i] = hash[i] ^ (value + (hash[i] << 6) + (hash[i] >> 2));
+        } else {
+            _data_column->fnv_hash(hash, sel[i], sel[i] + 1);
+        }
+    }
+}
 
 
 void NullableColumn::crc32_hash(uint32_t* hash, uint32_t from, uint32_t to) const {
@@ -447,7 +455,22 @@ void NullableColumn::crc32_hash_with_selection(uint32_t* hash, uint8_t* selectio
         from = new_from;
     }
 }
-
+void NullableColumn::crc32_hash_selective(uint32_t* hash, uint16_t* sel, uint16_t sel_size) const {
+    if (!_has_null) {
+        _data_column->crc32_hash_selective(hash, sel, sel_size);
+        return;
+    }
+    const auto& null_data = _null_column->get_data();
+    static const int INT_VALUE = 0;
+    // @TODO can we optimize this?
+    for (uint16_t i = 0;i < sel_size;i++) {
+        if (null_data[sel[i]]) {
+            hash[i] = HashUtil::zlib_crc_hash(&INT_VALUE, 4, hash[i]);
+        } else {
+            _data_column->crc32_hash(hash, sel[i], sel[i] + 1);
+        }
+    }
+}
 
 int64_t NullableColumn::xor_checksum(uint32_t from, uint32_t to) const {
     if (!_has_null) {

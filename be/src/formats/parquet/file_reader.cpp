@@ -498,6 +498,11 @@ int32_t FileReader::_get_partition_column_idx(const std::string& col_name) const
 }
 
 void FileReader::_prepare_read_columns(std::unordered_set<std::string>& existed_column_names) {
+    std::ostringstream oss;
+    for (const auto& str: existed_column_names) {
+        oss << str << ",";
+    }
+    LOG(INFO) << "existed column names: " << oss.str();
     _meta_helper->prepare_read_columns(_scanner_ctx->materialized_columns, _group_reader_param.read_cols,
                                        existed_column_names);
     _no_materialized_column_scan = (_group_reader_param.read_cols.size() == 0);
