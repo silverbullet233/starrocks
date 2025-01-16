@@ -25,6 +25,7 @@
 #include "storage/olap_common.h"
 #include "storage/predicate_tree/predicate_tree.hpp"
 #include "storage/runtime_range_pruner.h"
+#include "storage/runtime_filter_predicate.h"
 #include "storage/tuple.h"
 
 namespace starrocks {
@@ -72,6 +73,7 @@ struct TabletReaderParams {
     std::vector<OlapTuple> start_key;
     std::vector<OlapTuple> end_key;
     PredicateTree pred_tree;
+    RuntimeFilterPredicates runtime_filter_preds;
 
     RuntimeState* runtime_state = nullptr;
 

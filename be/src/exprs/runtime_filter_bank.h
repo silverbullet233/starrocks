@@ -201,6 +201,9 @@ public:
         _observable.add_observer(state, observer);
     }
 
+    void set_has_push_down_to_storage(bool v) { _has_push_down_to_storage = v; }
+    bool has_push_down_to_storage() const { return _has_push_down_to_storage; }
+
 private:
     friend class HashJoinNode;
     friend class hashJoiner;
@@ -224,6 +227,7 @@ private:
     std::atomic<const JoinRuntimeFilter*> _runtime_filter = nullptr;
     std::shared_ptr<const JoinRuntimeFilter> _shared_runtime_filter = nullptr;
     pipeline::Observable _observable;
+    bool _has_push_down_to_storage = false;
 };
 
 // RuntimeFilterProbeCollector::do_evaluate function apply runtime bloom filter to Operators to filter chunk.

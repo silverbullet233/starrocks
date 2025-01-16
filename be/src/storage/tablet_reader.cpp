@@ -344,6 +344,7 @@ Status TabletReader::get_segment_iterators(const TabletReaderParams& params, std
     RETURN_IF_ERROR(parse_seek_range(_tablet_schema, params.range, params.end_range, params.start_key, params.end_key,
                                      &rs_opts.ranges, &_mempool));
     rs_opts.pred_tree = params.pred_tree;
+    rs_opts.runtime_filter_preds = params.runtime_filter_preds;
     PredicateTree pred_tree_for_zone_map;
     RETURN_IF_ERROR(ZonemapPredicatesRewriter::rewrite_predicate_tree(&_obj_pool, rs_opts.pred_tree,
                                                                       rs_opts.pred_tree_for_zone_map));
