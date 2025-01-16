@@ -393,7 +393,7 @@ std::string FixedLengthColumnBase<T>::get_name() const {
     } else if constexpr (std::is_floating_point_v<T>) {
         return "float-" + std::to_string(sizeof(T));
     } else {
-        return "integral-" + std::to_string(sizeof(T)) + (std::is_unsigned<T>::value ? "-unsigned" : "-signed");
+        return "integral-" + std::to_string(sizeof(T));
     }
 }
 
