@@ -392,7 +392,7 @@ struct WithModuloArg {
             }
 
             typedef void (Column::*HashFuncType)(uint32_t*, uint8_t*, uint16_t, uint16_t) const;
-            auto compute_hash = [&columns, &num_rows, &hash_values, selection, from, to](HashFuncType hash_func) {
+            auto compute_hash = [&columns, &hash_values, selection, from, to](HashFuncType hash_func) {
                 for (const Column* input_column : columns) {
                     (input_column->*hash_func)(hash_values.data(), selection, from, to);
                 }

@@ -956,11 +956,11 @@ void test_pipeline_level_helper(TRuntimeFilterBuildJoinMode::type join_mode, con
         return [is_reduce, layout, num_rows, num_partitions](BinaryColumn* column, std::vector<uint32_t>& hash_values,
                                                              std::vector<size_t>& num_rows_per_partitions) {
             if (is_reduce) {
-                dispatch_layout<WithModuloArg<ReduceOp>::HashValueCompute>(true, layout, std::vector<Column*>{column},
-                                                                           num_rows, num_partitions, hash_values);
+                dispatch_layout<WithModuloArg<ReduceOp>::HashValueCompute>(
+                        true, layout, std::vector<const Column*>{column}, num_rows, num_partitions, hash_values);
             } else {
-                dispatch_layout<WithModuloArg<ModuloOp>::HashValueCompute>(true, layout, std::vector<Column*>{column},
-                                                                           num_rows, num_partitions, hash_values);
+                dispatch_layout<WithModuloArg<ModuloOp>::HashValueCompute>(
+                        true, layout, std::vector<const Column*>{column}, num_rows, num_partitions, hash_values);
             }
             for (auto v : hash_values) {
                 if (v != BUCKET_ABSENT) {
@@ -1086,7 +1086,7 @@ void TestMultiColumnsOnRuntimeFilter(TRuntimeFilterBuildJoinMode::type join_mode
     running_ctx.selection.assign(num_rows, 2);
     running_ctx.use_merged_selection = false;
     running_ctx.compatibility = true;
-    std::vector<Column*> column_ptrs;
+    std::vector<const Column*> column_ptrs;
     for (auto& column : columns) {
         column_ptrs.push_back(column.get());
     }
@@ -1130,7 +1130,7 @@ void TestMultiColumnsOnRuntimeFilter(TRuntimeFilterBuildJoinMode::type join_mode
         auto& grf = gfs[i];
         grf.set_join_mode(join_mode);
         grf.set_global();
-        grf.evaluate(column_ptrs[i], &running_ctx);
+        grf.evaluate(const_cast<Column*>(column_ptrs[i]), &running_ctx);
         auto true_count = SIMD::count_nonzero(running_ctx.selection.data(), num_rows);
         ASSERT_EQ(true_count, num_rows);
     }
