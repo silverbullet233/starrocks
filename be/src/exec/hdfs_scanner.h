@@ -173,6 +173,7 @@ struct HdfsScannerParams {
 
     // runtime bloom filter.
     const RuntimeFilterProbeCollector* runtime_filter_collector = nullptr;
+    RuntimeFilterPredicates runtime_filter_preds;
 
     std::vector<ExprContext*> all_conjunct_ctxs;
     // all conjuncts except `conjunct_ctxs_by_slot`, like compound predicates
@@ -301,6 +302,7 @@ struct HdfsScannerContext {
 
     // runtime filters.
     const RuntimeFilterProbeCollector* runtime_filter_collector = nullptr;
+    RuntimeFilterPredicates runtime_filter_preds;
 
     std::vector<std::string>* hive_column_names = nullptr;
 

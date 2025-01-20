@@ -261,10 +261,12 @@ Status FileReader::_init_group_readers() {
     _group_reader_param.partition_columns = &fd_scanner_ctx.partition_columns;
     _group_reader_param.partition_values = &fd_scanner_ctx.partition_values;
     _group_reader_param.not_existed_slots = &fd_scanner_ctx.not_existed_slots;
+    // @TODO runtime filter preds
     // for pageIndex
     _group_reader_param.min_max_conjunct_ctxs = fd_scanner_ctx.min_max_conjunct_ctxs;
     _group_reader_param.predicate_tree = &fd_scanner_ctx.predicate_tree;
     _group_reader_param.global_dictmaps = fd_scanner_ctx.global_dictmaps;
+    _group_reader_param.runtime_filter_preds = _scanner_ctx->runtime_filter_preds;
 
     int64_t row_group_first_row = 0;
     // select and create row group readers.
