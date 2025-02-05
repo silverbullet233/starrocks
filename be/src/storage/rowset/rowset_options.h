@@ -98,6 +98,7 @@ public:
     VectorSearchOptionPtr vector_search_option = nullptr;
 
     TTableSampleOptions sample_options;
+    bool enable_join_runtime_filter_pushdown = false;
 };
 
 } // namespace starrocks

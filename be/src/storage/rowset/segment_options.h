@@ -119,6 +119,8 @@ public:
     // 2. Partial-Sorted block: leverage data ordering to improve the evenness
     TTableSampleOptions sample_options;
 
+    bool enable_join_runtime_filter_pushdown = false;
+
 public:
     Status convert_to(SegmentReadOptions* dst, const std::vector<LogicalType>& new_types, ObjectPool* obj_pool) const;
 

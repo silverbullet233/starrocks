@@ -1619,18 +1619,17 @@ StatusOr<uint16_t> SegmentIterator::_filter_by_non_expr_predicates(Chunk* chunk,
         SCOPED_RAW_TIMER(&_opts.stats->vec_cond_evaluate_ns);
         RETURN_IF_ERROR(_non_expr_pred_tree.evaluate(chunk, _selection.data(), from, to));
     }
-    {
-        if (config::enable_rf_pushdown && !_runtime_filter_preds.empty()) {
-            SCOPED_RAW_TIMER(&_opts.stats->rf_cond_evaluate_ns);
-            size_t input_count = SIMD::count_nonzero(&_selection[from], to - from);
-            RETURN_IF_ERROR(_runtime_filter_preds.evaluate(chunk, _selection.data(), from, to));
-            size_t output_count = SIMD::count_nonzero(&_selection[from], to - from);
-            _opts.stats->rf_cond_input_rows += input_count;
-            _opts.stats->rf_cond_output_rows += output_count;
-        }
-    }
 
     auto hit_count = SIMD::count_nonzero(&_selection[from], to - from);
+    if (_opts.enable_join_runtime_filter_pushdown && !_runtime_filter_preds.empty()) {
+        SCOPED_RAW_TIMER(&_opts.stats->rf_cond_evaluate_ns);
+        size_t input_count = hit_count;
+        RETURN_IF_ERROR(_runtime_filter_preds.evaluate(chunk, _selection.data(), from, to));
+        hit_count = SIMD::count_nonzero(&_selection[from], to - from);
+        _opts.stats->rf_cond_input_rows += input_count;
+        _opts.stats->rf_cond_output_rows += hit_count;
+    }
+
     uint16_t chunk_size = to;
     SCOPED_RAW_TIMER(&_opts.stats->vec_cond_chunk_copy_ns);
     if (hit_count == 0) {
@@ -1909,7 +1908,7 @@ Status SegmentIterator::_rewrite_predicates() {
                                          _scan_range);
         RETURN_IF_ERROR(rewriter.rewrite_predicate(&_obj_pool, _opts.pred_tree));
     }
-    if (config::enable_rf_pushdown) {
+    if (_opts.enable_join_runtime_filter_pushdown) {
         RETURN_IF_ERROR(RuntimeFilterPredicatesRewriter::rewrite(&_obj_pool, _opts.runtime_filter_preds,
                                                                  _column_iterators, _schema));
     }

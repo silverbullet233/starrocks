@@ -312,8 +312,10 @@ protected:
     std::vector<JoinRuntimeFilter*> _group_colocate_filters;
 };
 
+
 template <typename ModuloFunc>
 struct WithModuloArg {
+
     template <TRuntimeFilterLayoutMode::type M>
     struct HashValueCompute {
         void operator()(const RuntimeFilterLayout& layout, const std::vector<const Column*>& columns, size_t num_rows,

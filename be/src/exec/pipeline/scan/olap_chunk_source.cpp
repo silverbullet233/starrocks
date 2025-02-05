@@ -274,7 +274,8 @@ Status OlapChunkSource::_init_reader_params(const std::vector<std::unique_ptr<Ol
     _morsel->init_tablet_reader_params(&_params);
 
     ASSIGN_OR_RETURN(auto pred_tree, _scan_ctx->conjuncts_manager().get_predicate_tree(parser, _predicate_free_pool));
-    if (config::enable_rf_pushdown) {
+    _params.enable_join_runtime_filter_pushdown = _runtime_state->enable_join_runtime_filter_pushdown();
+    if (_params.enable_join_runtime_filter_pushdown) {
         ASSIGN_OR_RETURN(_params.runtime_filter_preds,
                          _scan_ctx->conjuncts_manager().get_runtime_filter_predicates(&_obj_pool, parser));
     }

@@ -288,6 +288,7 @@ Status TabletReader::_init_collector_for_pk_index_read() {
     rs_opts.is_primary_keys = false;
     rs_opts.use_vector_index = _reader_params->use_vector_index;
     rs_opts.vector_search_option = _reader_params->vector_search_option;
+    rs_opts.enable_join_runtime_filter_pushdown = _reader_params->enable_join_runtime_filter_pushdown;
 
     rs_opts.rowid_range_option = std::make_shared<RowidRangeOption>();
     auto rowid_range = std::make_shared<SparseRange<>>();
@@ -364,6 +365,7 @@ Status TabletReader::get_segment_iterators(const TabletReaderParams& params, std
     rs_opts.use_vector_index = params.use_vector_index;
     rs_opts.vector_search_option = params.vector_search_option;
     rs_opts.sample_options = params.sample_options;
+    rs_opts.enable_join_runtime_filter_pushdown = params.enable_join_runtime_filter_pushdown;
     if (keys_type == KeysType::PRIMARY_KEYS) {
         rs_opts.is_primary_keys = true;
         rs_opts.version = _version.second;
