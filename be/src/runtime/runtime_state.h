@@ -510,7 +510,8 @@ public:
     void set_enable_event_scheduler(bool enable) { _enable_event_scheduler = enable; }
 
     bool enable_join_runtime_filter_pushdown() const {
-        return _query_options.__isset.enable_join_runtime_filter_pushdown && _query_options.enable_join_runtime_filter_pushdown;
+        return _query_options.__isset.enable_join_runtime_filter_pushdown &&
+               _query_options.enable_join_runtime_filter_pushdown;
     }
 
     DebugActionMgr& debug_action_mgr() { return _debug_action_mgr; }

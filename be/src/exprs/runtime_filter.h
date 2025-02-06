@@ -31,6 +31,7 @@
 #include "gen_cpp/PlanNodes_types.h"
 #include "gen_cpp/Types_types.h"
 #include "types/logical_type.h"
+#include "util/hash_util.hpp"
 
 namespace starrocks {
 // 0x1. initial global runtime filter impl
@@ -312,219 +313,149 @@ protected:
     std::vector<JoinRuntimeFilter*> _group_colocate_filters;
 };
 
+struct HashValueIterator {
+    HashValueIterator(std::vector<uint32_t>& hash_values) : hash_values(hash_values) {}
+    virtual ~HashValueIterator() = default;
+    virtual void for_each(const std::function<void(size_t, uint32_t&)>& func) = 0;
 
-template <typename ModuloFunc>
+    std::vector<uint32_t>& hash_values;
+};
+
+struct FullScanIterator final : HashValueIterator {
+    typedef void (Column::*HashFuncType)(uint32_t*, uint32_t, uint32_t) const;
+    static constexpr HashFuncType FNV_HASH = &Column::fnv_hash;
+    static constexpr HashFuncType CRC32_HASH = &Column::crc32_hash;
+
+    FullScanIterator(std::vector<uint32_t>& hash_values, size_t num_rows)
+            : HashValueIterator(hash_values), num_rows(num_rows) {}
+
+    void for_each(const std::function<void(size_t, uint32_t&)>& func) override {
+        for (size_t i = 0; i < num_rows; i++) {
+            func(i, hash_values[i]);
+        }
+    }
+
+    void compute_hash(const std::vector<const Column*>& columns, HashFuncType hash_func) {
+        for (const Column* input_column : columns) {
+            (input_column->*hash_func)(hash_values.data(), 0, num_rows);
+        }
+    }
+
+    size_t num_rows;
+};
+
+struct SelectionIterator final : HashValueIterator {
+    typedef void (Column::*HashFuncType)(uint32_t*, uint8_t*, uint16_t, uint16_t) const;
+    static constexpr HashFuncType FNV_HASH = &Column::fnv_hash_with_selection;
+    static constexpr HashFuncType CRC32_HASH = &Column::crc32_hash_with_selection;
+
+    SelectionIterator(std::vector<uint32_t>& hash_values, uint8_t* selection, uint16_t from, uint16_t to)
+            : HashValueIterator(hash_values), selection(selection), from(from), to(to) {}
+
+    void for_each(const std::function<void(size_t, uint32_t&)>& func) override {
+        for (size_t i = from; i < to; i++) {
+            if (selection[i]) {
+                func(i, hash_values[i]);
+            }
+        }
+    }
+
+    void compute_hash(const std::vector<const Column*>& columns, HashFuncType hash_func) {
+        for (const Column* input_column : columns) {
+            (input_column->*hash_func)(hash_values.data(), selection, from, to);
+        }
+    }
+
+    uint8_t* selection;
+    uint16_t from;
+    uint16_t to;
+};
+
+struct SelectedIndexIterator final : HashValueIterator {
+    typedef void (Column::*HashFuncType)(uint32_t*, uint16_t*, uint16_t) const;
+    static constexpr HashFuncType FNV_HASH = &Column::fnv_hash_selective;
+    static constexpr HashFuncType CRC32_HASH = &Column::crc32_hash_selective;
+
+    SelectedIndexIterator(std::vector<uint32_t>& hash_values, uint16_t* sel, uint16_t sel_size)
+            : HashValueIterator(hash_values), sel(sel), sel_size(sel_size) {}
+
+    void for_each(const std::function<void(size_t, uint32_t&)>& func) override {
+        for (uint16_t i = 0; i < sel_size; i++) {
+            func(sel[i], hash_values[sel[i]]);
+        }
+    }
+
+    void compute_hash(const std::vector<const Column*>& columns, HashFuncType hash_func) {
+        for (const Column* input_column : columns) {
+            (input_column->*hash_func)(hash_values.data(), sel, sel_size);
+        }
+    }
+    uint16_t* sel;
+    uint16_t sel_size;
+};
+
+template <typename ModuloFunc, typename IteratorType = FullScanIterator>
 struct WithModuloArg {
-
     template <TRuntimeFilterLayoutMode::type M>
     struct HashValueCompute {
-        void operator()(const RuntimeFilterLayout& layout, const std::vector<const Column*>& columns, size_t num_rows,
-                        size_t real_num_partitions, std::vector<uint32_t>& hash_values) const {
+        void operator()(const RuntimeFilterLayout& layout, const std::vector<const Column*>& columns,
+                        size_t real_num_partitions, IteratorType iterator) const {
             if constexpr (layout_is_singleton<M>) {
-                hash_values.assign(num_rows, 0);
+                iterator.for_each([&](size_t i, uint32_t& hash_value) { hash_value = 0; });
                 return;
             }
-
-            typedef void (Column::*HashFuncType)(uint32_t*, uint32_t, uint32_t) const;
-            auto compute_hash = [&columns, &num_rows, &hash_values](HashFuncType hash_func) {
-                for (const Column* input_column : columns) {
-                    (input_column->*hash_func)(hash_values.data(), 0, num_rows);
-                }
-            };
-
             if constexpr (layout_is_shuffle<M>) {
-                hash_values.assign(num_rows, HashUtil::FNV_SEED);
-                compute_hash(&Column::fnv_hash);
-                [[maybe_unused]] const auto num_instances = layout.num_instances();
-                [[maybe_unused]] const auto num_drivers_per_instance = layout.num_drivers_per_instance();
-                [[maybe_unused]] const auto num_partitions = num_instances * num_drivers_per_instance;
-                for (auto i = 0; i < num_rows; ++i) {
-                    auto& hash_value = hash_values[i];
-                    if constexpr (layout_is_pipeline_shuffle<M>) {
-                        hash_value = ModuloFunc()(HashUtil::xorshift32(hash_value), num_drivers_per_instance);
-                    } else if constexpr (layout_is_global_shuffle_1l<M>) {
-                        hash_value = ModuloFunc()(hash_value, real_num_partitions);
-                    } else if constexpr (layout_is_global_shuffle_2l<M>) {
-                        auto instance_id = ModuloFunc()(hash_value, num_instances);
-                        auto driver_id = ModuloFunc()(HashUtil::xorshift32(hash_value), num_drivers_per_instance);
-                        hash_value = instance_id * num_drivers_per_instance + driver_id;
-                    }
-                }
+                process_shuffle(layout, columns, real_num_partitions, iterator);
             } else if (layout_is_bucket<M>) {
-                hash_values.assign(num_rows, 0);
-                compute_hash(&Column::crc32_hash);
-                [[maybe_unused]] const auto& bucketseq_to_instance = layout.bucketseq_to_instance();
-                [[maybe_unused]] const auto& bucketseq_to_driverseq = layout.bucketseq_to_driverseq();
-                [[maybe_unused]] const auto& bucketseq_to_partition = layout.bucketseq_to_partition();
-                [[maybe_unused]] const auto num_drivers_per_instance = layout.num_drivers_per_instance();
-                for (auto i = 0; i < num_rows; ++i) {
-                    auto& hash_value = hash_values[i];
-                    if constexpr (layout_is_pipeline_bucket<M>) {
-                        hash_value = bucketseq_to_driverseq[ModuloFunc()(hash_value, bucketseq_to_driverseq.size())];
-                    } else if constexpr (layout_is_pipeline_bucket_lx<M>) {
-                        hash_value = ModuloFunc()(HashUtil::xorshift32(hash_value), num_drivers_per_instance);
-                    } else if constexpr (layout_is_global_bucket_1l<M>) {
-                        hash_value = bucketseq_to_instance[ModuloFunc()(hash_value, bucketseq_to_instance.size())];
-                    } else if constexpr (layout_is_global_bucket_2l<M>) {
-                        hash_value = bucketseq_to_partition[ModuloFunc()(hash_value, bucketseq_to_partition.size())];
-                    } else if constexpr (layout_is_global_bucket_2l_lx<M>) {
-                        const auto bucketseq = ModuloFunc()(hash_value, bucketseq_to_instance.size());
-                        const auto instance = bucketseq_to_instance[bucketseq];
-                        const auto driverseq = ModuloFunc()(HashUtil::xorshift32(hash_value), num_drivers_per_instance);
-                        hash_value = (instance == BUCKET_ABSENT) ? BUCKET_ABSENT
-                                                                 : instance * num_drivers_per_instance + driverseq;
-                    }
-                }
+                process_bucket(layout, columns, real_num_partitions, iterator);
             }
         }
-    };
 
-    template <TRuntimeFilterLayoutMode::type M>
-    struct HashValueComputeWithSelection {
-        void operator()(const RuntimeFilterLayout& layout, const std::vector<const Column*>& columns, size_t num_rows,
-                        uint8_t* selection, uint16_t from, uint16_t to, size_t real_num_partitions,
-                        std::vector<uint32_t>& hash_values) const {
-            if constexpr (layout_is_singleton<M>) {
-                for (uint16_t i = from; i < to; i++) {
-                    if (selection[i]) {
-                        hash_values[i] = 0;
-                    }
+        void process_shuffle(const RuntimeFilterLayout& layout, const std::vector<const Column*>& columns,
+                             size_t real_num_partitions, IteratorType& iterator) const {
+            [[maybe_unused]] const auto num_instances = layout.num_instances();
+            [[maybe_unused]] const auto num_drivers_per_instance = layout.num_drivers_per_instance();
+            [[maybe_unused]] const auto num_partitions = num_instances * num_drivers_per_instance;
+            iterator.for_each([&](size_t i, uint32_t& hash_value) { hash_value = HashUtil::FNV_SEED; });
+            iterator.compute_hash(columns, IteratorType::FNV_HASH);
+            iterator.for_each([&](size_t i, uint32_t& hash_value) {
+                if constexpr (layout_is_pipeline_shuffle<M>) {
+                    hash_value = ModuloFunc()(HashUtil::xorshift32(hash_value), num_drivers_per_instance);
+                } else if constexpr (layout_is_global_shuffle_1l<M>) {
+                    hash_value = ModuloFunc()(hash_value, real_num_partitions);
+                } else if constexpr (layout_is_global_shuffle_2l<M>) {
+                    auto instance_id = ModuloFunc()(hash_value, num_instances);
+                    auto driver_id = ModuloFunc()(HashUtil::xorshift32(hash_value), num_drivers_per_instance);
+                    hash_value = instance_id * num_drivers_per_instance + driver_id;
                 }
-                return;
-            }
-
-            typedef void (Column::*HashFuncType)(uint32_t*, uint8_t*, uint16_t, uint16_t) const;
-            auto compute_hash = [&columns, &hash_values, selection, from, to](HashFuncType hash_func) {
-                for (const Column* input_column : columns) {
-                    (input_column->*hash_func)(hash_values.data(), selection, from, to);
-                }
-            };
-
-            if constexpr (layout_is_shuffle<M>) {
-                for (uint16_t i = from; i < to; i++) {
-                    if (selection[i]) {
-                        hash_values[i] = HashUtil::FNV_SEED;
-                    }
-                }
-                compute_hash(&Column::fnv_hash_with_selection);
-                [[maybe_unused]] const auto num_instances = layout.num_instances();
-                [[maybe_unused]] const auto num_drivers_per_instance = layout.num_drivers_per_instance();
-                [[maybe_unused]] const auto num_partitions = num_instances * num_drivers_per_instance;
-                for (uint16_t i = from; i < to; i++) {
-                    if (!selection[i]) continue;
-                    auto& hash_value = hash_values[i];
-                    if constexpr (layout_is_pipeline_shuffle<M>) {
-                        hash_value = ModuloFunc()(HashUtil::xorshift32(hash_value), num_drivers_per_instance);
-                    } else if constexpr (layout_is_global_shuffle_1l<M>) {
-                        hash_value = ModuloFunc()(hash_value, real_num_partitions);
-                    } else if constexpr (layout_is_global_shuffle_2l<M>) {
-                        auto instance_id = ModuloFunc()(hash_value, num_instances);
-                        auto driver_id = ModuloFunc()(HashUtil::xorshift32(hash_value), num_drivers_per_instance);
-                        hash_value = instance_id * num_drivers_per_instance + driver_id;
-                    }
-                }
-            } else if (layout_is_bucket<M>) {
-                for (uint16_t i = from; i < to; i++) {
-                    if (selection[i]) {
-                        hash_values[i] = 0;
-                    }
-                }
-                compute_hash(&Column::crc32_hash_with_selection);
-                [[maybe_unused]] const auto& bucketseq_to_instance = layout.bucketseq_to_instance();
-                [[maybe_unused]] const auto& bucketseq_to_driverseq = layout.bucketseq_to_driverseq();
-                [[maybe_unused]] const auto& bucketseq_to_partition = layout.bucketseq_to_partition();
-                [[maybe_unused]] const auto num_drivers_per_instance = layout.num_drivers_per_instance();
-                for (uint16_t i = from; i < to; i++) {
-                    if (!selection[i]) continue;
-                    auto& hash_value = hash_values[i];
-                    if constexpr (layout_is_pipeline_bucket<M>) {
-                        hash_value = bucketseq_to_driverseq[ModuloFunc()(hash_value, bucketseq_to_driverseq.size())];
-                    } else if constexpr (layout_is_pipeline_bucket_lx<M>) {
-                        hash_value = ModuloFunc()(HashUtil::xorshift32(hash_value), num_drivers_per_instance);
-                    } else if constexpr (layout_is_global_bucket_1l<M>) {
-                        hash_value = bucketseq_to_instance[ModuloFunc()(hash_value, bucketseq_to_instance.size())];
-                    } else if constexpr (layout_is_global_bucket_2l<M>) {
-                        hash_value = bucketseq_to_partition[ModuloFunc()(hash_value, bucketseq_to_partition.size())];
-                    } else if constexpr (layout_is_global_bucket_2l_lx<M>) {
-                        const auto bucketseq = ModuloFunc()(hash_value, bucketseq_to_instance.size());
-                        const auto instance = bucketseq_to_instance[bucketseq];
-                        const auto driverseq = ModuloFunc()(HashUtil::xorshift32(hash_value), num_drivers_per_instance);
-                        hash_value = (instance == BUCKET_ABSENT) ? BUCKET_ABSENT
-                                                                 : instance * num_drivers_per_instance + driverseq;
-                    }
-                }
-            }
+            });
         }
-    };
 
-    // only compute for selected row
-    template <TRuntimeFilterLayoutMode::type M>
-    struct HashValueComputeSelection {
-        void operator()(const RuntimeFilterLayout& layout, const std::vector<const Column*>& columns, size_t num_rows,
-                        uint16_t* sel, uint16_t sel_size, size_t real_num_partitions,
-                        std::vector<uint32_t>& hash_values) const {
-            if constexpr (layout_is_singleton<M>) {
-                for (uint16_t i = 0; i < sel_size; i++) {
-                    hash_values[sel[i]] = 0;
+        void process_bucket(const RuntimeFilterLayout& layout, const std::vector<const Column*>& columns,
+                            size_t real_num_partitions, IteratorType& iterator) const {
+            [[maybe_unused]] const auto& bucketseq_to_instance = layout.bucketseq_to_instance();
+            [[maybe_unused]] const auto& bucketseq_to_driverseq = layout.bucketseq_to_driverseq();
+            [[maybe_unused]] const auto& bucketseq_to_partition = layout.bucketseq_to_partition();
+            [[maybe_unused]] const auto num_drivers_per_instance = layout.num_drivers_per_instance();
+            iterator.for_each([&](size_t i, uint32_t& hash_value) { hash_value = 0; });
+            iterator.compute_hash(columns, IteratorType::CRC32_HASH);
+            iterator.for_each([&](size_t i, uint32_t& hash_value) {
+                if constexpr (layout_is_pipeline_bucket<M>) {
+                    hash_value = bucketseq_to_driverseq[ModuloFunc()(hash_value, bucketseq_to_driverseq.size())];
+                } else if constexpr (layout_is_pipeline_bucket_lx<M>) {
+                    hash_value = ModuloFunc()(HashUtil::xorshift32(hash_value), num_drivers_per_instance);
+                } else if constexpr (layout_is_global_bucket_1l<M>) {
+                    hash_value = bucketseq_to_instance[ModuloFunc()(hash_value, bucketseq_to_instance.size())];
+                } else if constexpr (layout_is_global_bucket_2l<M>) {
+                    hash_value = bucketseq_to_partition[ModuloFunc()(hash_value, bucketseq_to_partition.size())];
+                } else if constexpr (layout_is_global_bucket_2l_lx<M>) {
+                    const auto bucketseq = ModuloFunc()(hash_value, bucketseq_to_instance.size());
+                    const auto instance = bucketseq_to_instance[bucketseq];
+                    const auto driverseq = ModuloFunc()(HashUtil::xorshift32(hash_value), num_drivers_per_instance);
+                    hash_value = (instance == BUCKET_ABSENT) ? BUCKET_ABSENT
+                                                             : instance * num_drivers_per_instance + driverseq;
                 }
-                return;
-            }
-
-            typedef void (Column::*HashFuncType)(uint32_t*, uint16_t*, uint16_t) const;
-            auto compute_hash = [&columns, sel, sel_size, &hash_values](HashFuncType hash_func) {
-                for (const Column* input_column : columns) {
-                    (input_column->*hash_func)(hash_values.data(), sel, sel_size);
-                }
-            };
-
-            if constexpr (layout_is_shuffle<M>) {
-                for (uint16_t i = 0; i < sel_size; i++) {
-                    hash_values[sel[i]] = HashUtil::FNV_SEED;
-                }
-                compute_hash(&Column::fnv_hash_selective);
-                [[maybe_unused]] const auto num_instances = layout.num_instances();
-                [[maybe_unused]] const auto num_drivers_per_instance = layout.num_drivers_per_instance();
-                [[maybe_unused]] const auto num_partitions = num_instances * num_drivers_per_instance;
-                for (uint16_t i = 0; i < sel_size; i++) {
-                    auto& hash_value = hash_values[sel[i]];
-                    if constexpr (layout_is_pipeline_shuffle<M>) {
-                        hash_value = ModuloFunc()(HashUtil::xorshift32(hash_value), num_drivers_per_instance);
-                    } else if constexpr (layout_is_global_shuffle_1l<M>) {
-                        hash_value = ModuloFunc()(hash_value, real_num_partitions);
-                    } else if constexpr (layout_is_global_shuffle_2l<M>) {
-                        auto instance_id = ModuloFunc()(hash_value, num_instances);
-                        auto driver_id = ModuloFunc()(HashUtil::xorshift32(hash_value), num_drivers_per_instance);
-                        hash_value = instance_id * num_drivers_per_instance + driver_id;
-                    }
-                }
-            } else if (layout_is_bucket<M>) {
-                for (uint16_t i = 0; i < sel_size; i++) {
-                    hash_values[sel[i]] = 0;
-                }
-                compute_hash(&Column::crc32_hash_selective);
-                [[maybe_unused]] const auto& bucketseq_to_instance = layout.bucketseq_to_instance();
-                [[maybe_unused]] const auto& bucketseq_to_driverseq = layout.bucketseq_to_driverseq();
-                [[maybe_unused]] const auto& bucketseq_to_partition = layout.bucketseq_to_partition();
-                [[maybe_unused]] const auto num_drivers_per_instance = layout.num_drivers_per_instance();
-                for (uint16_t i = 0; i < sel_size; i++) {
-                    auto& hash_value = hash_values[sel[i]];
-                    if constexpr (layout_is_pipeline_bucket<M>) {
-                        hash_value = bucketseq_to_driverseq[ModuloFunc()(hash_value, bucketseq_to_driverseq.size())];
-                    } else if constexpr (layout_is_pipeline_bucket_lx<M>) {
-                        hash_value = ModuloFunc()(HashUtil::xorshift32(hash_value), num_drivers_per_instance);
-                    } else if constexpr (layout_is_global_bucket_1l<M>) {
-                        hash_value = bucketseq_to_instance[ModuloFunc()(hash_value, bucketseq_to_instance.size())];
-                    } else if constexpr (layout_is_global_bucket_2l<M>) {
-                        hash_value = bucketseq_to_partition[ModuloFunc()(hash_value, bucketseq_to_partition.size())];
-                    } else if constexpr (layout_is_global_bucket_2l_lx<M>) {
-                        const auto bucketseq = ModuloFunc()(hash_value, bucketseq_to_instance.size());
-                        const auto instance = bucketseq_to_instance[bucketseq];
-                        const auto driverseq = ModuloFunc()(HashUtil::xorshift32(hash_value), num_drivers_per_instance);
-                        hash_value = (instance == BUCKET_ABSENT) ? BUCKET_ABSENT
-                                                                 : instance * num_drivers_per_instance + driverseq;
-                    }
-                }
-            }
+            });
         }
     };
 };
@@ -919,11 +850,11 @@ public:
         auto use_reduce = !ctx->compatibility && (_join_mode == TRuntimeFilterBuildJoinMode::PARTITIONED ||
                                                   _join_mode == TRuntimeFilterBuildJoinMode::SHUFFLE_HASH_BUCKET);
         if (use_reduce) {
-            dispatch_layout<WithModuloArg<ReduceOp>::HashValueCompute>(_global, layout, columns, num_rows,
-                                                                       _hash_partition_bf.size(), _hash_values);
+            dispatch_layout<WithModuloArg<ReduceOp, FullScanIterator>::HashValueCompute>(
+                    _global, layout, columns, _hash_partition_bf.size(), FullScanIterator(_hash_values, num_rows));
         } else {
-            dispatch_layout<WithModuloArg<ModuloOp>::HashValueCompute>(_global, layout, columns, num_rows,
-                                                                       _hash_partition_bf.size(), _hash_values);
+            dispatch_layout<WithModuloArg<ModuloOp, FullScanIterator>::HashValueCompute>(
+                    _global, layout, columns, _hash_partition_bf.size(), FullScanIterator(_hash_values, num_rows));
         }
     }
     void compute_partition_index(const RuntimeFilterLayout& layout, const std::vector<const Column*>& columns,
@@ -935,11 +866,13 @@ public:
         auto use_reduce = true && (_join_mode == TRuntimeFilterBuildJoinMode::PARTITIONED ||
                                    _join_mode == TRuntimeFilterBuildJoinMode::SHUFFLE_HASH_BUCKET);
         if (use_reduce) {
-            dispatch_layout<WithModuloArg<ReduceOp>::HashValueComputeSelection>(
-                    _global, layout, columns, num_rows, sel, sel_size, _hash_partition_bf.size(), hash_values);
+            dispatch_layout<WithModuloArg<ReduceOp, SelectedIndexIterator>::HashValueCompute>(
+                    _global, layout, columns, _hash_partition_bf.size(),
+                    SelectedIndexIterator(hash_values, sel, sel_size));
         } else {
-            dispatch_layout<WithModuloArg<ModuloOp>::HashValueComputeSelection>(
-                    _global, layout, columns, num_rows, sel, sel_size, _hash_partition_bf.size(), hash_values);
+            dispatch_layout<WithModuloArg<ModuloOp, SelectedIndexIterator>::HashValueCompute>(
+                    _global, layout, columns, _hash_partition_bf.size(),
+                    SelectedIndexIterator(hash_values, sel, sel_size));
         }
     }
     void compute_partition_index(const RuntimeFilterLayout& layout, const std::vector<const Column*>& columns,
@@ -951,11 +884,14 @@ public:
         auto use_reduce = true && (_join_mode == TRuntimeFilterBuildJoinMode::PARTITIONED ||
                                    _join_mode == TRuntimeFilterBuildJoinMode::SHUFFLE_HASH_BUCKET);
         if (use_reduce) {
-            dispatch_layout<WithModuloArg<ReduceOp>::HashValueComputeWithSelection>(
-                    _global, layout, columns, num_rows, selection, from, to, _hash_partition_bf.size(), hash_values);
+            dispatch_layout<WithModuloArg<ReduceOp, SelectionIterator>::HashValueCompute>(
+                    _global, layout, columns, _hash_partition_bf.size(),
+                    SelectionIterator(hash_values, selection, from, to));
+
         } else {
-            dispatch_layout<WithModuloArg<ModuloOp>::HashValueComputeWithSelection>(
-                    _global, layout, columns, num_rows, selection, from, to, _hash_partition_bf.size(), hash_values);
+            dispatch_layout<WithModuloArg<ModuloOp, SelectionIterator>::HashValueCompute>(
+                    _global, layout, columns, _hash_partition_bf.size(),
+                    SelectionIterator(hash_values, selection, from, to));
         }
     }
 
