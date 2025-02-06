@@ -21,8 +21,8 @@
 #include "runtime/descriptors.h"
 #include "storage/predicate_tree/predicate_tree_fwd.h"
 #include "storage/predicate_tree_params.h"
-#include "storage/runtime_range_pruner.h"
 #include "storage/runtime_filter_predicate.h"
+#include "storage/runtime_range_pruner.h"
 
 namespace starrocks {
 

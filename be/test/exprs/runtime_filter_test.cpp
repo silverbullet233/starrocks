@@ -956,11 +956,13 @@ void test_pipeline_level_helper(TRuntimeFilterBuildJoinMode::type join_mode, con
         return [is_reduce, layout, num_rows, num_partitions](BinaryColumn* column, std::vector<uint32_t>& hash_values,
                                                              std::vector<size_t>& num_rows_per_partitions) {
             if (is_reduce) {
-                dispatch_layout<WithModuloArg<ReduceOp>::HashValueCompute>(
-                        true, layout, std::vector<const Column*>{column}, num_rows, num_partitions, hash_values);
+                dispatch_layout<WithModuloArg<ReduceOp, FullScanIterator>::HashValueCompute>(
+                        true, layout, std::vector<const Column*>{column}, num_partitions,
+                        FullScanIterator(hash_values, num_rows));
             } else {
-                dispatch_layout<WithModuloArg<ModuloOp>::HashValueCompute>(
-                        true, layout, std::vector<const Column*>{column}, num_rows, num_partitions, hash_values);
+                dispatch_layout<WithModuloArg<ModuloOp, FullScanIterator>::HashValueCompute>(
+                        true, layout, std::vector<const Column*>{column}, num_partitions,
+                        FullScanIterator(hash_values, num_rows));
             }
             for (auto v : hash_values) {
                 if (v != BUCKET_ABSENT) {

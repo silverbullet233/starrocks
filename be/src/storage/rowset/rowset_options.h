@@ -23,8 +23,8 @@
 #include "storage/olap_common.h"
 #include "storage/options.h"
 #include "storage/predicate_tree/predicate_tree.hpp"
-#include "storage/runtime_range_pruner.h"
 #include "storage/runtime_filter_predicate.h"
+#include "storage/runtime_range_pruner.h"
 #include "storage/seek_range.h"
 #include "storage/tablet_schema.h"
 
