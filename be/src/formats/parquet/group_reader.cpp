@@ -415,7 +415,7 @@ void GroupReader::_process_columns_and_conjunct_ctxs() {
                 std::vector<std::string> sub_field_path;
                 if (_try_to_use_dict_filter(column, ctx, sub_field_path, column.decode_needed)) {
                     _use_as_dict_filter_column(read_col_idx, slot_id, sub_field_path);
-                    LOG(INFO) << "use slot_id: " << slot_id << " as dict filter column, " << (void*)this;
+                    // LOG(INFO) << "use slot_id: " << slot_id << " as dict filter column, " << (void*)this;
                     // @TODO should make scan operator can eval this rf?
                     _param.runtime_filter_preds.remove_predicate(slot_id);
                     // rm predicate
