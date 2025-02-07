@@ -82,6 +82,9 @@ public:
     void remove_predicate(ColumnId column_id) {
         _rf_predicates.erase(std::remove_if(_rf_predicates.begin(), _rf_predicates.end(),
                                             [column_id](auto pred) {
+                                                if (pred->get_column_id() == column_id) {
+                                                    LOG(INFO) << "remove dict column rf: " << pred->get_rf_desc()->debug_string();
+                                                }
                                                 return pred->get_column_id() == column_id;
                                             }),
                              _rf_predicates.end());
