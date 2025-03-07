@@ -85,6 +85,11 @@ public class LateMaterializedColumnCollector {
         public Void visitPhysicalDecode(OptExpression optExpression, CollectorContext context) {
             return null;
         }
+
+        @Override
+        public Void visitPhysicalStreamAgg(OptExpression optExpression, CollectorContext context) {
+            return null;
+        }
     }
 
 
