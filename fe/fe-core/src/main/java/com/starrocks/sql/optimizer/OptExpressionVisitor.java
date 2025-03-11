@@ -289,4 +289,8 @@ public abstract class OptExpressionVisitor<R, C> {
     public R visitPhysicalTableFunctionTableScan(OptExpression optExpression, C context) {
         return visit(optExpression, context);
     }
+
+    public R visitPhysicalFetch(OptExpression optExpression, C context) {
+        return visit(optExpression, context);
+    }
 }

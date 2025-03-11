@@ -304,6 +304,12 @@ public class QueryOptimizer extends Optimizer {
         mvScan.stream().map(scan -> ((MaterializedView) scan.getTable()).getDbId()).forEach(currentSqlDbIds::add);
 
         // @TODO generate lm plan
+        if (connectContext.getSessionVariable().isEnableGlobalLateMaterialization()) {
+            // @TORO rewrite
+            LOG.info("generate lm plan");
+            LateMaterializedColumnCollector lateMaterializedColumnCollector = new LateMaterializedColumnCollector();
+            finalPlan = lateMaterializedColumnCollector.rewrite(finalPlan, context);
+        }
 
         try (Timer ignored = Tracers.watchScope("PlanValidate")) {
             // valid the final plan

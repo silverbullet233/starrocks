@@ -14,6 +14,7 @@
 
 package com.starrocks.sql.common;
 
+import com.starrocks.catalog.Table;
 import com.starrocks.sql.optimizer.operator.Operator;
 import com.starrocks.sql.optimizer.operator.OperatorVisitor;
 import com.starrocks.sql.optimizer.operator.logical.LogicalAggregationOperator;
@@ -52,6 +53,7 @@ import com.starrocks.sql.optimizer.operator.physical.PhysicalCTEProduceOperator;
 import com.starrocks.sql.optimizer.operator.physical.PhysicalDistributionOperator;
 import com.starrocks.sql.optimizer.operator.physical.PhysicalEsScanOperator;
 import com.starrocks.sql.optimizer.operator.physical.PhysicalExceptOperator;
+import com.starrocks.sql.optimizer.operator.physical.PhysicalFetchOperator;
 import com.starrocks.sql.optimizer.operator.physical.PhysicalFilterOperator;
 import com.starrocks.sql.optimizer.operator.physical.PhysicalHashAggregateOperator;
 import com.starrocks.sql.optimizer.operator.physical.PhysicalHashJoinOperator;
@@ -79,6 +81,8 @@ import org.jetbrains.annotations.NotNull;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
 import java.util.stream.Collectors;
 
 public class DebugOperatorTracer extends OperatorVisitor<String, Void> {
@@ -503,5 +507,20 @@ public class DebugOperatorTracer extends OperatorVisitor<String, Void> {
     @Override
     public String visitPhysicalNoCTE(PhysicalNoCTEOperator node, Void context) {
         return super.visitPhysicalNoCTE(node, context);
+    }
+
+    @Override
+    public String visitPhysicalFetch(PhysicalFetchOperator node, Void context) {
+        Map<Table, Set<ColumnRefOperator>> tableColumns = node.getTableColumns();
+        StringBuilder sb = new StringBuilder();
+        sb.append("PhysicalFetchOperator {");
+        sb.append(tableColumns.entrySet().stream().map(entry -> {
+            Table table = entry.getKey();
+            Set<ColumnRefOperator> columns = entry.getValue();
+            String str = columns.stream().map(ColumnRefOperator::toString).collect(Collectors.joining(",", "{", "}"));
+            return "table " + table.getId() + " -> " + str;
+        }).collect(Collectors.joining(",", "{", "}")));
+        sb.append("}");
+        return sb.toString();
     }
 }

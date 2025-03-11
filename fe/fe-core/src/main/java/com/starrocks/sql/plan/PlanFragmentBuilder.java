@@ -3955,5 +3955,11 @@ public class PlanFragmentBuilder {
             context.getFragments().add(fragment);
             return fragment;
         }
+
+        @Override
+        public PlanFragment visitPhysicalFetch(OptExpression optExpression, ExecPlan context) {
+            // @TODO create fetch and lookup operator
+            return null;
+        }
     }
 }

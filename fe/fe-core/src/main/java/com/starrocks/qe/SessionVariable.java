@@ -869,6 +869,8 @@ public class SessionVariable implements Serializable, Writable, Cloneable {
     public static final String BACK_PRESSURE_MAX_ROUNDS = "back_pressure_back_rounds";
     public static final String BACK_PRESSURE_THROTTLE_TIME_UPPER_BOUND = "back_pressure_throttle_time_upper_bound";
 
+    public static final String ENABLE_GLOBAL_LATE_MATERIALIZATION = "enable_global_late_materialization";
+
     public static final List<String> DEPRECATED_VARIABLES = ImmutableList.<String>builder()
             .add(CODEGEN_LEVEL)
             .add(MAX_EXECUTION_TIME)
@@ -1701,6 +1703,9 @@ public class SessionVariable implements Serializable, Writable, Cloneable {
     private int backPressureMaxRounds = 3;
     @VarAttr(name = BACK_PRESSURE_THROTTLE_TIME_UPPER_BOUND)
     private long backPressureThrottleTimeUpperBound = 300;
+
+    @VarAttr(name = ENABLE_GLOBAL_LATE_MATERIALIZATION)
+    private boolean enableGlobalLateMaterialization = false;
 
     public int getCboPruneJsonSubfieldDepth() {
         return cboPruneJsonSubfieldDepth;
@@ -4653,6 +4658,10 @@ public class SessionVariable implements Serializable, Writable, Cloneable {
 
     public void setBackPressureThrottleTimeUpperBound(long value) {
         this.backPressureThrottleTimeUpperBound = value;
+    }
+
+    public boolean isEnableGlobalLateMaterialization() {
+        return this.enableGlobalLateMaterialization;
     }
 
     // Serialize to thrift object

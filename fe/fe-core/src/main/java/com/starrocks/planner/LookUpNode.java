@@ -12,7 +12,25 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package com.starrocks.sql.optimizer.operator.physical;
+package com.starrocks.planner;
 
-public class PhysicalLookUpOperator {
+import com.starrocks.analysis.TupleDescriptor;
+import com.starrocks.thrift.TExplainLevel;
+import com.starrocks.thrift.TPlanNode;
+
+public class LookUpNode extends PlanNode {
+    // @TODO should add other info
+    public LookUpNode(PlanNodeId id) {
+        super(id, "LookUp");
+    }
+
+    @Override
+    protected void toThrift(TPlanNode msg) {
+
+    }
+
+    @Override
+    protected String getNodeExplainString(String prefix, TExplainLevel detailLevel) {
+        return null;
+    }
 }

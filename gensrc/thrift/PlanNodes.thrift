@@ -1295,6 +1295,13 @@ struct TStreamAggregationNode {
   24: optional i32 agg_func_set_version = 1
 }
 
+struct TFetchNode {
+  // @TODO all tables and related columns
+}
+
+struct TLookUpNode {
+
+}
 
 // This is essentially a union of all messages corresponding to subclasses
 // of PlanNode.

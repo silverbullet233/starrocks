@@ -60,6 +60,7 @@ import com.starrocks.sql.optimizer.operator.physical.PhysicalDeltaLakeScanOperat
 import com.starrocks.sql.optimizer.operator.physical.PhysicalDistributionOperator;
 import com.starrocks.sql.optimizer.operator.physical.PhysicalEsScanOperator;
 import com.starrocks.sql.optimizer.operator.physical.PhysicalExceptOperator;
+import com.starrocks.sql.optimizer.operator.physical.PhysicalFetchOperator;
 import com.starrocks.sql.optimizer.operator.physical.PhysicalFileScanOperator;
 import com.starrocks.sql.optimizer.operator.physical.PhysicalFilterOperator;
 import com.starrocks.sql.optimizer.operator.physical.PhysicalHashAggregateOperator;
@@ -428,6 +429,10 @@ public abstract class OperatorVisitor<R, C> {
     }
 
     public R visitPhysicalTableFunctionTableScan(PhysicalTableFunctionTableScanOperator node, C context) {
+        return visitOperator(node, context);
+    }
+
+    public R visitPhysicalFetch(PhysicalFetchOperator node, C context) {
         return visitOperator(node, context);
     }
 }

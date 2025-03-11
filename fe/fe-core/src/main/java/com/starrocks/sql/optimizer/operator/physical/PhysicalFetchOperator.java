@@ -16,14 +16,60 @@ package com.starrocks.sql.optimizer.operator.physical;
 
 import com.starrocks.catalog.Column;
 import com.starrocks.catalog.Table;
+import com.starrocks.sql.optimizer.OptExpression;
+import com.starrocks.sql.optimizer.OptExpressionVisitor;
+import com.starrocks.sql.optimizer.RowOutputInfo;
 import com.starrocks.sql.optimizer.operator.OperatorType;
+import com.starrocks.sql.optimizer.operator.OperatorVisitor;
+import com.starrocks.sql.optimizer.operator.scalar.ColumnRefOperator;
 
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
+import java.util.Set;
 
 public class PhysicalFetchOperator extends PhysicalOperator {
-    // @TODO: should describe which columns need to fetch and there slot id
-    public PhysicalFetchOperator(Map<Table, List<Column>> columns) {
+
+    Map<Table, Set<ColumnRefOperator>> tableColumns;
+    Map<ColumnRefOperator, Column> columnRefOperatorColumnMap;
+    public PhysicalFetchOperator(Map<Table, Set<ColumnRefOperator>> tableColumns,
+                                 Map<ColumnRefOperator, Column> columnRefOperatorColumnMap) {
         super(OperatorType.PHYSICAL_FETCH);
+        this.tableColumns = tableColumns;
+        this.columnRefOperatorColumnMap = columnRefOperatorColumnMap;
     }
+
+    public Map<Table, Set<ColumnRefOperator>> getTableColumns() {
+        return tableColumns;
+    }
+
+    @Override
+    public RowOutputInfo deriveRowOutputInfo(List<OptExpression> inputs) {
+        // @TODO pending fix
+        return projectInputRow(inputs.get(0).getRowOutputInfo());
+    }
+
+    @Override
+    public <R, C> R accept(OperatorVisitor<R, C> visitor, C context) {
+        return visitor.visitPhysicalFetch(this, context);
+    }
+
+    @Override
+    public <R, C> R accept(OptExpressionVisitor<R, C> visitor, OptExpression optExpression, C context) {
+        return visitor.visitPhysicalFetch(optExpression, context);
+    }
+
+    @Override
+    public boolean equals(Object o) {
+        if (this == o) {
+            return true;
+        }
+        if (!super.equals(o)) {
+            return false;
+        }
+        PhysicalFetchOperator that = (PhysicalFetchOperator) o;
+        return Objects.equals(tableColumns, that.tableColumns) &&
+                Objects.equals(columnRefOperatorColumnMap, that.columnRefOperatorColumnMap);
+    }
+
 }
