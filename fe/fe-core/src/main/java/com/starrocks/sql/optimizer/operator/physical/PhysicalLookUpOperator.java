@@ -14,5 +14,65 @@
 
 package com.starrocks.sql.optimizer.operator.physical;
 
-public class PhysicalLookUpOperator {
+import com.starrocks.catalog.Column;
+import com.starrocks.catalog.Table;
+import com.starrocks.sql.optimizer.OptExpression;
+import com.starrocks.sql.optimizer.OptExpressionVisitor;
+import com.starrocks.sql.optimizer.RowOutputInfo;
+import com.starrocks.sql.optimizer.operator.OperatorType;
+import com.starrocks.sql.optimizer.operator.OperatorVisitor;
+import com.starrocks.sql.optimizer.operator.scalar.ColumnRefOperator;
+
+import java.util.List;
+import java.util.Map;
+import java.util.Objects;
+import java.util.Set;
+
+public class PhysicalLookUpOperator extends PhysicalOperator {
+
+    Map<Table, Set<ColumnRefOperator>> tableColumns;
+    Map<ColumnRefOperator, Column> columnRefOperatorColumnMap;
+
+    public PhysicalLookUpOperator(Map<Table, Set<ColumnRefOperator>> tableColumns,
+                                  Map<ColumnRefOperator, Column> columnRefOperatorColumnMap) {
+        super(OperatorType.PHYSICAL_LOOKUP);
+        this.tableColumns = tableColumns;
+        this.columnRefOperatorColumnMap = columnRefOperatorColumnMap;
+    }
+
+    public Map<Table, Set<ColumnRefOperator>> getTableColumns() {
+        return tableColumns;
+    }
+    public Map<ColumnRefOperator, Column> getColumnRefOperatorColumnMap() {
+        return columnRefOperatorColumnMap;
+    }
+
+    @Override
+    public RowOutputInfo deriveRowOutputInfo(List<OptExpression> inputs) {
+        return null;
+    }
+
+    @Override
+    public <R, C> R accept(OperatorVisitor<R, C> visitor, C context) {
+        return visitor.visitPhysicalLookUp(this, context);
+    }
+
+    @Override
+    public <R, C> R accept(OptExpressionVisitor<R, C> visitor, OptExpression optExpression, C context) {
+        return visitor.visitPhysicalLookUp(optExpression, context);
+    }
+
+    @Override
+    public boolean equals(Object o) {
+        if (this == o) {
+            return true;
+        }
+        if (!super.equals(o)) {
+            return false;
+        }
+        PhysicalLookUpOperator that = (PhysicalLookUpOperator) o;
+        return Objects.equals(tableColumns, that.tableColumns) &&
+                Objects.equals(columnRefOperatorColumnMap, that.columnRefOperatorColumnMap);
+    }
+
 }

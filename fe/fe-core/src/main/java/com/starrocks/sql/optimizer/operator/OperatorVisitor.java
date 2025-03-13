@@ -74,6 +74,7 @@ import com.starrocks.sql.optimizer.operator.physical.PhysicalIntersectOperator;
 import com.starrocks.sql.optimizer.operator.physical.PhysicalJDBCScanOperator;
 import com.starrocks.sql.optimizer.operator.physical.PhysicalKuduScanOperator;
 import com.starrocks.sql.optimizer.operator.physical.PhysicalLimitOperator;
+import com.starrocks.sql.optimizer.operator.physical.PhysicalLookUpOperator;
 import com.starrocks.sql.optimizer.operator.physical.PhysicalMergeJoinOperator;
 import com.starrocks.sql.optimizer.operator.physical.PhysicalMetaScanOperator;
 import com.starrocks.sql.optimizer.operator.physical.PhysicalMysqlScanOperator;
@@ -433,6 +434,10 @@ public abstract class OperatorVisitor<R, C> {
     }
 
     public R visitPhysicalFetch(PhysicalFetchOperator node, C context) {
+        return visitOperator(node, context);
+    }
+
+    public R visitPhysicalLookUp(PhysicalLookUpOperator node, C context) {
         return visitOperator(node, context);
     }
 }

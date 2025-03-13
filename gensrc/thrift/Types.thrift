@@ -100,7 +100,8 @@ enum TPrimitiveType {
   DECIMAL128,
   JSON,
   FUNCTION,
-  VARBINARY
+  VARBINARY,
+  ROW_ID
 }
 
 enum TTypeNodeType {

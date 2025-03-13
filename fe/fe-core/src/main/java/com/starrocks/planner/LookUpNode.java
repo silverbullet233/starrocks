@@ -15,13 +15,22 @@
 package com.starrocks.planner;
 
 import com.starrocks.analysis.TupleDescriptor;
+import com.starrocks.catalog.Table;
 import com.starrocks.thrift.TExplainLevel;
 import com.starrocks.thrift.TPlanNode;
 
+import java.util.List;
+
 public class LookUpNode extends PlanNode {
     // @TODO should add other info
-    public LookUpNode(PlanNodeId id) {
+
+    private List<Table> tables;
+    private List<TupleDescriptor> descs;
+
+    public LookUpNode(PlanNodeId id, List<Table> tables, List<TupleDescriptor> descs) {
         super(id, "LookUp");
+        this.tables = tables;
+        this.descs = descs;
     }
 
     @Override

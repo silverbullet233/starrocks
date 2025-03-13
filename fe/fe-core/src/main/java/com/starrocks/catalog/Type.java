@@ -156,6 +156,7 @@ public abstract class Type implements Cloneable {
     public static final ScalarType UNKNOWN_TYPE = ScalarType.createUnknownType();
     public static final ScalarType FUNCTION = new ScalarType(PrimitiveType.FUNCTION);
     public static final ScalarType VARBINARY = new ScalarType(PrimitiveType.VARBINARY);
+    public static final ScalarType ROW_ID = new ScalarType(PrimitiveType.ROW_ID);
 
     public static final PseudoType ANY_ELEMENT = PseudoType.ANY_ELEMENT;
     public static final PseudoType ANY_ARRAY = PseudoType.ANY_ARRAY;

@@ -1295,12 +1295,23 @@ struct TStreamAggregationNode {
   24: optional i32 agg_func_set_version = 1
 }
 
+struct TFetchColumns {
+  1: optional list<Types.TSlotId> slot_ids
+}
+
 struct TFetchNode {
   // @TODO all tables and related columns
+  // @TODO how to know tuple desc
+  // 1. slot desc for each row_id columns
+  // 1: optional map<TSlotId, TFetchColumns> row_id_columns
+  // tuple and slot
+  1: optional map<Types.TSlotId, Types.TTupleId> tuples
+  // 2. slot desc for each read columns
+  // 3. mapping table <=> columns
 }
 
 struct TLookUpNode {
-
+  1: optional map<Types.TSlotId, Types.TTupleId> tuples
 }
 
 // This is essentially a union of all messages corresponding to subclasses

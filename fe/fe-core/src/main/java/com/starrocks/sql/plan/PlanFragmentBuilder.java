@@ -156,6 +156,7 @@ import com.starrocks.sql.optimizer.operator.physical.PhysicalDecodeOperator;
 import com.starrocks.sql.optimizer.operator.physical.PhysicalDeltaLakeScanOperator;
 import com.starrocks.sql.optimizer.operator.physical.PhysicalDistributionOperator;
 import com.starrocks.sql.optimizer.operator.physical.PhysicalEsScanOperator;
+import com.starrocks.sql.optimizer.operator.physical.PhysicalFetchOperator;
 import com.starrocks.sql.optimizer.operator.physical.PhysicalFileScanOperator;
 import com.starrocks.sql.optimizer.operator.physical.PhysicalFilterOperator;
 import com.starrocks.sql.optimizer.operator.physical.PhysicalHashAggregateOperator;
@@ -169,6 +170,7 @@ import com.starrocks.sql.optimizer.operator.physical.PhysicalJDBCScanOperator;
 import com.starrocks.sql.optimizer.operator.physical.PhysicalJoinOperator;
 import com.starrocks.sql.optimizer.operator.physical.PhysicalKuduScanOperator;
 import com.starrocks.sql.optimizer.operator.physical.PhysicalLimitOperator;
+import com.starrocks.sql.optimizer.operator.physical.PhysicalLookUpOperator;
 import com.starrocks.sql.optimizer.operator.physical.PhysicalMergeJoinOperator;
 import com.starrocks.sql.optimizer.operator.physical.PhysicalMetaScanOperator;
 import com.starrocks.sql.optimizer.operator.physical.PhysicalMysqlScanOperator;
@@ -3959,6 +3961,23 @@ public class PlanFragmentBuilder {
         @Override
         public PlanFragment visitPhysicalFetch(OptExpression optExpression, ExecPlan context) {
             // @TODO create fetch and lookup operator
+            // @TODO create tuple desc for each table?
+            PhysicalFetchOperator fetchOperator = (PhysicalFetchOperator) optExpression.getOp();
+            // @TODO should put lookup into another fragment
+            return null;
+        }
+
+        @Override
+        public PlanFragment visitPhysicalLookUp(OptExpression optExpression, ExecPlan context) {
+            PhysicalLookUpOperator lookUpOperator = (PhysicalLookUpOperator) optExpression.getOp();
+            Map<Table, Set<ColumnRefOperator>> tableColumns = lookUpOperator.getTableColumns();
+            // create tuple descs for each table
+            Map<ColumnRefOperator, Column> columnRefOperatorColumnMap = lookUpOperator.getColumnRefOperatorColumnMap();
+            for (Map.Entry<Table, Set<ColumnRefOperator>> entry : tableColumns.entrySet()) {
+                Table table = entry.getKey();
+                Set<ColumnRefOperator> columns = entry.getValue();
+                context.getDescTbl().addReferencedTable(table);
+            }
             return null;
         }
     }

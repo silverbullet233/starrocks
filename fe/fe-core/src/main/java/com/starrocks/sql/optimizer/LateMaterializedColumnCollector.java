@@ -20,6 +20,7 @@ import com.starrocks.catalog.Column;
 import com.starrocks.catalog.KeysType;
 import com.starrocks.catalog.OlapTable;
 import com.starrocks.catalog.Table;
+import com.starrocks.catalog.Type;
 import com.starrocks.sql.optimizer.base.ColumnRefFactory;
 import com.starrocks.sql.optimizer.base.ColumnRefSet;
 import com.starrocks.sql.optimizer.base.DistributionCol;
@@ -32,6 +33,7 @@ import com.starrocks.sql.optimizer.operator.physical.PhysicalFilterOperator;
 import com.starrocks.sql.optimizer.operator.physical.PhysicalHashJoinOperator;
 import com.starrocks.sql.optimizer.operator.physical.PhysicalJoinOperator;
 import com.starrocks.sql.optimizer.operator.physical.PhysicalLimitOperator;
+import com.starrocks.sql.optimizer.operator.physical.PhysicalLookUpOperator;
 import com.starrocks.sql.optimizer.operator.physical.PhysicalOlapScanOperator;
 import com.starrocks.sql.optimizer.operator.physical.PhysicalOperator;
 import com.starrocks.sql.optimizer.operator.physical.PhysicalTopNOperator;
@@ -66,13 +68,13 @@ public class LateMaterializedColumnCollector {
         adjustFetchPositions(collectorContext);
         LOG.info("after adjust, " + collectorContext);
 
-        OptExpression newRoot = rewritePlan(root, collectorContext);
+        OptExpression newRoot = rewritePlan(root, context, collectorContext);
         LOG.info("after PlanRewriter, " + newRoot.debugString());
         return root;
     }
 
-    private OptExpression rewritePlan(OptExpression root, CollectorContext collectorContext) {
-        PlanRewriter rewriter = new PlanRewriter();
+    private OptExpression rewritePlan(OptExpression root, OptimizerContext optimizerContext, CollectorContext collectorContext) {
+        PlanRewriter rewriter = new PlanRewriter(optimizerContext);
         OptExpression newRoot = root.getOp().accept(rewriter, root, collectorContext);
         // @TODO consider un-materialized column
         if (!collectorContext.unMaterializedColumns.isEmpty()) {
@@ -90,8 +92,11 @@ public class LateMaterializedColumnCollector {
             });
 
             PhysicalFetchOperator physicalFetchOperator = new PhysicalFetchOperator(tableColumns, columnRefOperatorColumnMap);
+            PhysicalLookUpOperator physicalLookUpOperator =
+                    new PhysicalLookUpOperator(tableColumns, columnRefOperatorColumnMap);
             // create new OptExpression
             OptExpression result = OptExpression.create(physicalFetchOperator, newRoot);
+            result.getInputs().add(OptExpression.create(physicalLookUpOperator));
             return result;
         }
         return newRoot;
@@ -363,6 +368,11 @@ public class LateMaterializedColumnCollector {
 
     // rewrite OptExpression, insert PhysicalFetchOperator
     public static class PlanRewriter extends OptExpressionVisitor<OptExpression, CollectorContext> {
+        private OptimizerContext optimizerContext;
+
+        public PlanRewriter(OptimizerContext optimizerContext) {
+            this.optimizerContext = optimizerContext;
+        }
 
         private List<OptExpression> visitChildren(OptExpression optExpression, CollectorContext context) {
             List<OptExpression> inputs = Lists.newArrayList();
@@ -391,8 +401,13 @@ public class LateMaterializedColumnCollector {
                     }
                 });
 
-                PhysicalFetchOperator physicalFetchOperator = new PhysicalFetchOperator(tableColumns, columnRefOperatorColumnMap);
+                PhysicalFetchOperator physicalFetchOperator =
+                        new PhysicalFetchOperator(tableColumns, columnRefOperatorColumnMap);
+                // @TODO create lookup
+                PhysicalLookUpOperator physicalLookUpOperator =
+                        new PhysicalLookUpOperator(tableColumns, columnRefOperatorColumnMap);
                 // create new OptExpression
+                inputs.add(OptExpression.create(physicalLookUpOperator));
                 OptExpression child = OptExpression.create(physicalFetchOperator, inputs);
                 OptExpression result = OptExpression.builder().with(optExpression).setInputs(Arrays.asList(child)).build();
                 return result;
@@ -423,7 +438,10 @@ public class LateMaterializedColumnCollector {
                     scanOperator.getColRefToColumnMetaMap().entrySet().stream()
                             .filter(entry -> columnRefOperators.contains(entry.getKey()))
                             .collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue));
-
+            // @TODO need row id column
+            Column rowIdColumn = new Column("ROW_ID", Type.ROW_ID, false);
+            ColumnRefOperator columnRefOperator = optimizerContext.getColumnRefFactory().create("ROW_ID", Type.ROW_ID, false);
+            newColumnRefMap.put(columnRefOperator, rowIdColumn);
             LOG.info("rewrite PhysicalOlapScan, newColumnRefMap: " + newColumnRefMap.size());
             // build a new optExpressions
             PhysicalOlapScanOperator.Builder builder = PhysicalOlapScanOperator.builder().withOperator(scanOperator);

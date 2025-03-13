@@ -63,6 +63,7 @@ import com.starrocks.sql.optimizer.operator.physical.PhysicalIcebergScanOperator
 import com.starrocks.sql.optimizer.operator.physical.PhysicalIntersectOperator;
 import com.starrocks.sql.optimizer.operator.physical.PhysicalJDBCScanOperator;
 import com.starrocks.sql.optimizer.operator.physical.PhysicalLimitOperator;
+import com.starrocks.sql.optimizer.operator.physical.PhysicalLookUpOperator;
 import com.starrocks.sql.optimizer.operator.physical.PhysicalMetaScanOperator;
 import com.starrocks.sql.optimizer.operator.physical.PhysicalMysqlScanOperator;
 import com.starrocks.sql.optimizer.operator.physical.PhysicalNestLoopJoinOperator;
@@ -514,6 +515,21 @@ public class DebugOperatorTracer extends OperatorVisitor<String, Void> {
         Map<Table, Set<ColumnRefOperator>> tableColumns = node.getTableColumns();
         StringBuilder sb = new StringBuilder();
         sb.append("PhysicalFetchOperator {");
+        sb.append(tableColumns.entrySet().stream().map(entry -> {
+            Table table = entry.getKey();
+            Set<ColumnRefOperator> columns = entry.getValue();
+            String str = columns.stream().map(ColumnRefOperator::toString).collect(Collectors.joining(",", "{", "}"));
+            return "table " + table.getId() + " -> " + str;
+        }).collect(Collectors.joining(",", "{", "}")));
+        sb.append("}");
+        return sb.toString();
+    }
+
+    @Override
+    public String visitPhysicalLookUp(PhysicalLookUpOperator node, Void context) {
+        Map<Table, Set<ColumnRefOperator>> tableColumns = node.getTableColumns();
+        StringBuilder sb = new StringBuilder();
+        sb.append("PhysicalLookUpOperator {");
         sb.append(tableColumns.entrySet().stream().map(entry -> {
             Table table = entry.getKey();
             Set<ColumnRefOperator> columns = entry.getValue();
