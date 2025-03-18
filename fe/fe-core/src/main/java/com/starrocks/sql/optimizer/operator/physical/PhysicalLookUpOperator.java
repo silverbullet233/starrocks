@@ -14,11 +14,13 @@
 
 package com.starrocks.sql.optimizer.operator.physical;
 
+import com.google.common.collect.Lists;
 import com.starrocks.catalog.Column;
 import com.starrocks.catalog.Table;
 import com.starrocks.sql.optimizer.OptExpression;
 import com.starrocks.sql.optimizer.OptExpressionVisitor;
 import com.starrocks.sql.optimizer.RowOutputInfo;
+import com.starrocks.sql.optimizer.operator.ColumnOutputInfo;
 import com.starrocks.sql.optimizer.operator.OperatorType;
 import com.starrocks.sql.optimizer.operator.OperatorVisitor;
 import com.starrocks.sql.optimizer.operator.scalar.ColumnRefOperator;
@@ -49,7 +51,11 @@ public class PhysicalLookUpOperator extends PhysicalOperator {
 
     @Override
     public RowOutputInfo deriveRowOutputInfo(List<OptExpression> inputs) {
-        return null;
+        List<ColumnOutputInfo> entryList = Lists.newArrayList();
+        columnRefOperatorColumnMap.keySet().forEach(key -> {
+            entryList.add(new ColumnOutputInfo(key, key));
+        });
+        return new RowOutputInfo(entryList);
     }
 
     @Override

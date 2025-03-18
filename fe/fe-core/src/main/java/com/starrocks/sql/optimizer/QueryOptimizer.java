@@ -309,6 +309,8 @@ public class QueryOptimizer extends Optimizer {
             LOG.info("generate lm plan");
             LateMaterializedColumnCollector lateMaterializedColumnCollector = new LateMaterializedColumnCollector();
             finalPlan = lateMaterializedColumnCollector.rewrite(finalPlan, context);
+            // @TODO lm skip plan validate
+            return finalPlan;
         }
 
         try (Timer ignored = Tracers.watchScope("PlanValidate")) {

@@ -249,6 +249,7 @@ public abstract class Type implements Cloneable {
                     .putAll(SUPPORT_SCALAR_TYPE_LIST.stream()
                             .collect(Collectors.toMap(Type::getPrimitiveType, x -> (ScalarType) x)))
                     .put(INVALID.getPrimitiveType(), INVALID)
+                    .put(ROW_ID.getPrimitiveType(), ROW_ID)
                     .build();
 
     /**

@@ -26,7 +26,9 @@ import com.starrocks.sql.optimizer.base.ColumnRefSet;
 import com.starrocks.sql.optimizer.base.DistributionCol;
 import com.starrocks.sql.optimizer.base.DistributionSpec;
 import com.starrocks.sql.optimizer.base.HashDistributionSpec;
+import com.starrocks.sql.optimizer.base.LogicalProperty;
 import com.starrocks.sql.optimizer.base.Ordering;
+import com.starrocks.sql.optimizer.operator.Projection;
 import com.starrocks.sql.optimizer.operator.physical.PhysicalDistributionOperator;
 import com.starrocks.sql.optimizer.operator.physical.PhysicalFetchOperator;
 import com.starrocks.sql.optimizer.operator.physical.PhysicalFilterOperator;
@@ -76,6 +78,24 @@ public class LateMaterializedColumnCollector {
     private OptExpression rewritePlan(OptExpression root, OptimizerContext optimizerContext, CollectorContext collectorContext) {
         PlanRewriter rewriter = new PlanRewriter(optimizerContext);
         OptExpression newRoot = root.getOp().accept(rewriter, root, collectorContext);
+        {
+            PhysicalOperator child = (PhysicalOperator) root.getOp();
+            Projection projection = child.getProjection();
+            // @TODO consider row_id
+            if (projection != null) {
+                // @TODO should consider row id column
+                // intersect
+                // @TODO if not fetched column, remove it
+                projection.getColumnRefMap().entrySet().removeIf(entry -> {
+                    ColumnRefOperator columnRef = entry.getKey();
+                    if (!collectorContext.fetchedColumns.contains(columnRef)) {
+                        LOG.info("remove column " + columnRef + " from operator: " + child);
+                        return true;
+                    }
+                    return false;
+                });
+            }
+        }
         // @TODO consider un-materialized column
         if (!collectorContext.unMaterializedColumns.isEmpty()) {
             // if there are still un-materialized columns, should add a fetch at the top of root
@@ -182,6 +202,9 @@ public class LateMaterializedColumnCollector {
         // @TODo should maintain a path between scan and root, this will be used to adjust fetch operator position
         // use this to find path to root?
         Map<PhysicalOperator, PhysicalOperator> parents = new HashMap<>();
+
+        // already fetched columns
+        Set<ColumnRefOperator> fetchedColumns = new HashSet<>();
 
         // @TODO pass from Optimizer
         ColumnRefFactory columnRefFactory;
@@ -332,7 +355,6 @@ public class LateMaterializedColumnCollector {
 
             ColumnRefSet requiredColumns = joinOperator.getJoinConditionUsedColumns();
             List<ColumnRefOperator> columnRefOperators = requiredColumns.getColumnRefOperators(context.columnRefFactory);
-            // @TODO add fetch operator here
             for (ColumnRefOperator columnRefOperator : columnRefOperators) {
                 if (!context.columnSources.containsKey(columnRefOperator)) {
                     LOG.info("column " + columnRefOperator.getId() + " is not original column, skip");
@@ -340,6 +362,7 @@ public class LateMaterializedColumnCollector {
                 }
                 materializedBefore(columnRefOperator, joinOperator, context);
             }
+            // @TODO remove projection columns?
             return null;
         }
 
@@ -386,10 +409,30 @@ public class LateMaterializedColumnCollector {
         public OptExpression visit(OptExpression optExpression, CollectorContext context) {
             // @TODO insert physical fetch operator
             List<OptExpression> inputs = visitChildren(optExpression, context);
+            // @TODO adjust projection?
+            for (OptExpression input : optExpression.getInputs()) {
+                PhysicalOperator child = (PhysicalOperator) input.getOp();
+                Projection projection = child.getProjection();
+                if (projection != null) {
+                    projection.getColumnRefMap().entrySet().removeIf(entry -> {
+                        ColumnRefOperator columnRef = entry.getKey();
+                        if (!context.fetchedColumns.contains(columnRef)) {
+                            LOG.info("remove column " + columnRef + " from operator: " + child);
+                            return true;
+                        }
+                        return false;
+                    });
+                }
+            }
+            LogicalProperty logicalProperty = optExpression.getLogicalProperty();
+            optExpression.deriveLogicalPropertyItself();
+            LOG.info("operator + " + optExpression.getOp() + ", logical properties: " + logicalProperty.getOutputColumns());
             // insert FetchOperator
             PhysicalOperator physicalOperator = (PhysicalOperator) optExpression.getOp();
             if (context.fetchPositions.containsRow(physicalOperator)) {
                 Map<PhysicalOlapScanOperator, Set<ColumnRefOperator>> columns = context.fetchPositions.row(physicalOperator);
+
+                // @TODO change child's projection?
                 Map<Table, Set<ColumnRefOperator>> tableColumns = new HashMap<>();
                 Map<ColumnRefOperator, Column> columnRefOperatorColumnMap = new HashMap<>();
                 columns.forEach((scanOperator, columnRefs) -> {
@@ -398,9 +441,12 @@ public class LateMaterializedColumnCollector {
                     Map<ColumnRefOperator, Column> columnRefMap = scanOperator.getColRefToColumnMetaMap();
                     for (ColumnRefOperator columnRef : columnRefs) {
                         columnRefOperatorColumnMap.put(columnRef, columnRefMap.get(columnRef));
+                        // @TODO remove late-materialized column from projection
                     }
                 });
+                // @TODo update child's projection
 
+                context.fetchedColumns.addAll(columnRefOperatorColumnMap.keySet());
                 PhysicalFetchOperator physicalFetchOperator =
                         new PhysicalFetchOperator(tableColumns, columnRefOperatorColumnMap);
                 // @TODO create lookup
@@ -415,7 +461,10 @@ public class LateMaterializedColumnCollector {
                 OptExpression result = OptExpression.builder().with(optExpression).setInputs(inputs).build();
                 return result;
             }
+            // @TODO rewrite logical properties
         }
+
+        // @TODO should remove unused column
 
         @Override
         public OptExpression visitPhysicalOlapScan(OptExpression optExpression, CollectorContext context) {
@@ -430,6 +479,7 @@ public class LateMaterializedColumnCollector {
             Set<ColumnRefOperator> columnRefOperators = context.fetchPositions.get(scanOperator, scanOperator);
             if (columnRefOperators.size() == scanOperator.getColRefToColumnMetaMap().size()) {
                 // all column need fetch, no need to rewrite
+                context.fetchedColumns.addAll(columnRefOperators);
                 return optExpression;
             }
 
@@ -438,6 +488,7 @@ public class LateMaterializedColumnCollector {
                     scanOperator.getColRefToColumnMetaMap().entrySet().stream()
                             .filter(entry -> columnRefOperators.contains(entry.getKey()))
                             .collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue));
+            context.fetchedColumns.addAll(newColumnRefMap.keySet());
             // @TODO need row id column
             Column rowIdColumn = new Column("ROW_ID", Type.ROW_ID, false);
             ColumnRefOperator columnRefOperator = optimizerContext.getColumnRefFactory().create("ROW_ID", Type.ROW_ID, false);
@@ -448,6 +499,11 @@ public class LateMaterializedColumnCollector {
             builder.setColRefToColumnMetaMap(newColumnRefMap);
 
             OptExpression result = OptExpression.builder().with(optExpression).setOp(builder.build()).build();
+            LogicalProperty newProperty = new LogicalProperty(optExpression.getLogicalProperty());
+            newProperty.setOutputColumns(new ColumnRefSet(newColumnRefMap.keySet()));
+            result.setLogicalProperty(newProperty);
+            LOG.info("operator + " + result.getOp() +
+                    ", logical properties: " + result.getLogicalProperty().getOutputColumns());
             return result;
         }
     }

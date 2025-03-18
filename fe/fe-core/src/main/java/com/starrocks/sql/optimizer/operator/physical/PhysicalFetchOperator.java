@@ -14,11 +14,13 @@
 
 package com.starrocks.sql.optimizer.operator.physical;
 
+import com.google.common.collect.Lists;
 import com.starrocks.catalog.Column;
 import com.starrocks.catalog.Table;
 import com.starrocks.sql.optimizer.OptExpression;
 import com.starrocks.sql.optimizer.OptExpressionVisitor;
 import com.starrocks.sql.optimizer.RowOutputInfo;
+import com.starrocks.sql.optimizer.operator.ColumnOutputInfo;
 import com.starrocks.sql.optimizer.operator.OperatorType;
 import com.starrocks.sql.optimizer.operator.OperatorVisitor;
 import com.starrocks.sql.optimizer.operator.scalar.ColumnRefOperator;
@@ -45,8 +47,13 @@ public class PhysicalFetchOperator extends PhysicalOperator {
 
     @Override
     public RowOutputInfo deriveRowOutputInfo(List<OptExpression> inputs) {
-        // @TODO pending fix
-        return projectInputRow(inputs.get(0).getRowOutputInfo());
+        List<ColumnOutputInfo> entryList = Lists.newArrayList();
+        for (OptExpression input : inputs) {
+            for (ColumnOutputInfo entry : input.getRowOutputInfo().getColumnOutputInfo()) {
+                entryList.add(new ColumnOutputInfo(entry.getColumnRef(), entry.getColumnRef()));
+            }
+        }
+        return new RowOutputInfo(entryList);
     }
 
     @Override
