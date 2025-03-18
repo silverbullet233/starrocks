@@ -142,7 +142,10 @@ const char* logical_type_to_string(LogicalType type) {
         return "MAX_VALUE";
     case TYPE_VARBINARY:
         return "VARBINARY";
+    case TYPE_ROW_ID:
+        return "ROW_ID";
     }
+
     return "";
 }
 
@@ -157,6 +160,8 @@ LogicalType thrift_to_type(TPrimitiveType::type ttype) {
         return TYPE_UNKNOWN;
     case TPrimitiveType::NULL_TYPE:
         return TYPE_NULL;
+    case TPrimitiveType::ROW_ID:
+        return TYPE_ROW_ID;
 #define M(ttype)                \
     case TPrimitiveType::ttype: \
         return TYPE_##ttype;
@@ -183,7 +188,8 @@ TPrimitiveType::type to_thrift(LogicalType ltype) {
         return TPrimitiveType::INVALID_TYPE;
     case TYPE_NULL:
         return TPrimitiveType::NULL_TYPE;
-
+    case TYPE_ROW_ID:
+        return TPrimitiveType::ROW_ID;
 #define M(thrift_name)       \
     case TYPE_##thrift_name: \
         return TPrimitiveType::thrift_name;
@@ -213,6 +219,8 @@ std::string type_to_string(LogicalType t) {
         return "INVALID";
     case TYPE_NULL:
         return "NULL";
+    case TYPE_ROW_ID:
+        return "ROW_ID";
 #define M(ttype)       \
     case TYPE_##ttype: \
         return #ttype;

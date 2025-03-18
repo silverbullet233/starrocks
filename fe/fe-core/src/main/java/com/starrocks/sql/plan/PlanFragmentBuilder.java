@@ -82,6 +82,7 @@ import com.starrocks.planner.ExceptNode;
 import com.starrocks.planner.ExchangeNode;
 import com.starrocks.planner.ExecGroup;
 import com.starrocks.planner.ExecGroupSets;
+import com.starrocks.planner.FetchNode;
 import com.starrocks.planner.FileScanNode;
 import com.starrocks.planner.FileTableScanNode;
 import com.starrocks.planner.FragmentNormalizer;
@@ -94,6 +95,7 @@ import com.starrocks.planner.IntersectNode;
 import com.starrocks.planner.JDBCScanNode;
 import com.starrocks.planner.JoinNode;
 import com.starrocks.planner.KuduScanNode;
+import com.starrocks.planner.LookUpNode;
 import com.starrocks.planner.MergeJoinNode;
 import com.starrocks.planner.MetaScanNode;
 import com.starrocks.planner.MultiCastPlanFragment;
@@ -3960,11 +3962,16 @@ public class PlanFragmentBuilder {
 
         @Override
         public PlanFragment visitPhysicalFetch(OptExpression optExpression, ExecPlan context) {
-            // @TODO create fetch and lookup operator
-            // @TODO create tuple desc for each table?
             PhysicalFetchOperator fetchOperator = (PhysicalFetchOperator) optExpression.getOp();
-            // @TODO should put lookup into another fragment
-            return null;
+            // @TODO should ensure the last child of fetch operator is lookup
+
+            PlanFragment childFragment = visit(optExpression.getInputs().get(0), context);
+            PlanFragment lookUpFragment = visit(optExpression.getInputs().get(1), context);
+            FetchNode fetchNode = new FetchNode(context.getNextNodeId(),
+                    childFragment.getPlanRoot(), lookUpFragment.getFragmentId());
+            // @TODO how to connect fetch and lookup
+            childFragment.setPlanRoot(fetchNode);
+            return childFragment;
         }
 
         @Override
@@ -3978,7 +3985,10 @@ public class PlanFragmentBuilder {
                 Set<ColumnRefOperator> columns = entry.getValue();
                 context.getDescTbl().addReferencedTable(table);
             }
-            return null;
+            // @TODO
+            LookUpNode lookUpNode = new LookUpNode(context.getNextNodeId(), Lists.newArrayList(), Lists.newArrayList());
+            PlanFragment fragment = new PlanFragment(context.getNextFragmentId(), lookUpNode, DataPartition.RANDOM);
+            return fragment;
         }
     }
 }

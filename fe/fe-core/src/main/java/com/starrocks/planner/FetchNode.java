@@ -22,8 +22,12 @@ import com.starrocks.thrift.TPlanNode;
 import java.util.List;
 
 public class FetchNode extends PlanNode {
-    FetchNode(PlanNodeId id, PlanNode inputNode) {
+
+    PlanFragmentId targetFragmentId;
+    // @TODO should know target LookUpNode
+    public FetchNode(PlanNodeId id, PlanNode inputNode, PlanFragmentId targetFragmentId) {
         super(id, inputNode, "FETCH");
+        this.targetFragmentId = targetFragmentId;
     }
 
     @Override
@@ -45,6 +49,7 @@ public class FetchNode extends PlanNode {
     @Override
     protected String getNodeExplainString(String detailPrefix, TExplainLevel detailLevel) {
         StringBuilder output = new StringBuilder();
+        output.append("FETCH ").append(targetFragmentId);
         return output.toString();
     }
 
