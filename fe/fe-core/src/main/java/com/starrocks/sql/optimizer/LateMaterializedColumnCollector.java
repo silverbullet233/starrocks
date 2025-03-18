@@ -70,7 +70,7 @@ public class LateMaterializedColumnCollector {
 
         OptExpression newRoot = rewritePlan(root, context, collectorContext);
         LOG.info("after PlanRewriter, " + newRoot.debugString());
-        return root;
+        return newRoot;
     }
 
     private OptExpression rewritePlan(OptExpression root, OptimizerContext optimizerContext, CollectorContext collectorContext) {
