@@ -423,9 +423,10 @@ public class LateMaterializedColumnCollector {
                         return false;
                     });
                 }
+                // change output property?
             }
             LogicalProperty logicalProperty = optExpression.getLogicalProperty();
-            optExpression.deriveLogicalPropertyItself();
+            // optExpression.deriveLogicalPropertyItself();
             LOG.info("operator + " + optExpression.getOp() + ", logical properties: " + logicalProperty.getOutputColumns());
             // insert FetchOperator
             PhysicalOperator physicalOperator = (PhysicalOperator) optExpression.getOp();
