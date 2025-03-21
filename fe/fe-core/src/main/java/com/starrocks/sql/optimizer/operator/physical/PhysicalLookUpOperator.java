@@ -34,12 +34,15 @@ public class PhysicalLookUpOperator extends PhysicalOperator {
 
     Map<Table, Set<ColumnRefOperator>> tableColumns;
     Map<ColumnRefOperator, Column> columnRefOperatorColumnMap;
+    Map<Table, ColumnRefOperator> rowidColumns;
 
     public PhysicalLookUpOperator(Map<Table, Set<ColumnRefOperator>> tableColumns,
-                                  Map<ColumnRefOperator, Column> columnRefOperatorColumnMap) {
+                                  Map<ColumnRefOperator, Column> columnRefOperatorColumnMap,
+                                  Map<Table, ColumnRefOperator> rowidColumns) {
         super(OperatorType.PHYSICAL_LOOKUP);
         this.tableColumns = tableColumns;
         this.columnRefOperatorColumnMap = columnRefOperatorColumnMap;
+        this.rowidColumns = rowidColumns;
     }
 
     public Map<Table, Set<ColumnRefOperator>> getTableColumns() {
@@ -47,6 +50,9 @@ public class PhysicalLookUpOperator extends PhysicalOperator {
     }
     public Map<ColumnRefOperator, Column> getColumnRefOperatorColumnMap() {
         return columnRefOperatorColumnMap;
+    }
+    public Map<Table, ColumnRefOperator> getRowidColumns() {
+        return rowidColumns;
     }
 
     @Override

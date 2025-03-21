@@ -14,32 +14,66 @@
 
 package com.starrocks.planner;
 
+import com.starrocks.analysis.SlotDescriptor;
+import com.starrocks.analysis.SlotId;
 import com.starrocks.analysis.TupleDescriptor;
+import com.starrocks.analysis.TupleId;
 import com.starrocks.catalog.Table;
 import com.starrocks.thrift.TExplainLevel;
+import com.starrocks.thrift.TLookUpNode;
 import com.starrocks.thrift.TPlanNode;
+import com.starrocks.thrift.TPlanNodeType;
+import org.sparkproject.guava.collect.Lists;
+import software.amazon.awssdk.services.lexruntimev2.model.Slot;
 
 import java.util.List;
+import java.util.Map;
+import java.util.stream.Collectors;
 
 public class LookUpNode extends PlanNode {
     // @TODO should add other info
 
     private List<Table> tables;
     private List<TupleDescriptor> descs;
+    // @TODO how to know slot id of rowid column
+    private Map<TupleId, SlotId> rowidSlots;
 
-    public LookUpNode(PlanNodeId id, List<Table> tables, List<TupleDescriptor> descs) {
+    public LookUpNode(PlanNodeId id, List<Table> tables, List<TupleDescriptor> descs, Map<TupleId, SlotId> rowidSlots) {
         super(id, "LookUp");
         this.tables = tables;
         this.descs = descs;
+        this.rowidSlots = rowidSlots;
+    }
+
+    public List<TupleDescriptor> getDescs() {
+        return descs;
+    }
+
+    public Map<TupleId, SlotId> getRowidSlots() {
+        return rowidSlots;
     }
 
     @Override
     protected void toThrift(TPlanNode msg) {
-
+        msg.node_type = TPlanNodeType.LOOKUP_NODE;
+        msg.look_up_node = new TLookUpNode();
+        msg.look_up_node.tuples = descs.stream().map(desc -> desc.getId().asInt()).collect(Collectors.toList());
     }
 
     @Override
     protected String getNodeExplainString(String prefix, TExplainLevel detailLevel) {
-        return null;
+        StringBuilder output = new StringBuilder();
+        output.append(prefix).append("LOOKUP\n");
+        // output each tabel and slot
+        for (TupleDescriptor tupleDesc : descs) {
+            Table table = tupleDesc.getTable();
+            output.append(prefix).append("table: ").append(table.getName()).append("\n");
+            List<SlotDescriptor> slotDescs = tupleDesc.getSlots();
+            for (SlotDescriptor slotDesc : slotDescs) {
+                output.append(prefix).
+                        append(slotDesc.getId()).append(" => ").append(slotDesc.getColumn().getName()).append("\n");
+            }
+        }
+        return output.toString();
     }
 }

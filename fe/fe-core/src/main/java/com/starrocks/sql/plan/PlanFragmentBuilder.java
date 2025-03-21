@@ -3962,15 +3962,25 @@ public class PlanFragmentBuilder {
 
         @Override
         public PlanFragment visitPhysicalFetch(OptExpression optExpression, ExecPlan context) {
-            PhysicalFetchOperator fetchOperator = (PhysicalFetchOperator) optExpression.getOp();
             // @TODO should ensure the last child of fetch operator is lookup
 
             PlanFragment childFragment = visit(optExpression.getInputs().get(0), context);
             PlanFragment lookUpFragment = visit(optExpression.getInputs().get(1), context);
+
+            PhysicalFetchOperator fetchOperator = (PhysicalFetchOperator) optExpression.getOp();
+            LookUpNode lookupNode = (LookUpNode) lookUpFragment.getPlanRoot();
+
             FetchNode fetchNode = new FetchNode(context.getNextNodeId(),
-                    childFragment.getPlanRoot(), lookUpFragment.getFragmentId());
+                    childFragment.getPlanRoot(), lookUpFragment.getPlanRoot().getId(),
+                    lookupNode.getDescs(), lookupNode.getRowidSlots());
+            // @TODO: add fetch columns into colRefToExpr
             // @TODO how to connect fetch and lookup
             childFragment.setPlanRoot(fetchNode);
+            childFragment.addChild(lookUpFragment);
+            context.getFragments().remove(childFragment);
+            context.getFragments().remove(lookUpFragment);
+            context.getFragments().add(lookUpFragment);
+            context.getFragments().add(childFragment);
             return childFragment;
         }
 
@@ -3980,14 +3990,37 @@ public class PlanFragmentBuilder {
             Map<Table, Set<ColumnRefOperator>> tableColumns = lookUpOperator.getTableColumns();
             // create tuple descs for each table
             Map<ColumnRefOperator, Column> columnRefOperatorColumnMap = lookUpOperator.getColumnRefOperatorColumnMap();
+            Map<Table, ColumnRefOperator> rowidColumns = lookUpOperator.getRowidColumns();
+
+            List<TupleDescriptor> tupleDescriptors = Lists.newArrayList();
+            List<Table> tables = Lists.newArrayList();
+            Map<TupleId, SlotId> rowidSlots = new HashMap<>();
             for (Map.Entry<Table, Set<ColumnRefOperator>> entry : tableColumns.entrySet()) {
                 Table table = entry.getKey();
                 Set<ColumnRefOperator> columns = entry.getValue();
                 context.getDescTbl().addReferencedTable(table);
+                // @TODO update slot ref
+                TupleDescriptor tupleDescriptor = context.getDescTbl().createTupleDescriptor();
+                tupleDescriptor.setTable(table);
+                for (ColumnRefOperator columnRefOperator : columns) {
+                    SlotDescriptor slotDescriptor =
+                            context.getDescTbl().addSlotDescriptor(tupleDescriptor, new SlotId(columnRefOperator.getId()));
+                    slotDescriptor.setColumn(columnRefOperatorColumnMap.get(columnRefOperator));
+                    // @TODO set nullable
+                    context.getColRefToExpr().put(columnRefOperator, new SlotRef(columnRefOperator.toString(), slotDescriptor));
+                }
+                // @TODO
+                rowidSlots.put(tupleDescriptor.getId(), new SlotId(rowidColumns.get(table).getId()));
+
+                tupleDescriptor.computeMemLayout();
+                tables.add(table);
+                tupleDescriptors.add(tupleDescriptor);
             }
             // @TODO
-            LookUpNode lookUpNode = new LookUpNode(context.getNextNodeId(), Lists.newArrayList(), Lists.newArrayList());
+            LookUpNode lookUpNode = new LookUpNode(context.getNextNodeId(), tables, tupleDescriptors, rowidSlots);
             PlanFragment fragment = new PlanFragment(context.getNextFragmentId(), lookUpNode, DataPartition.RANDOM);
+            fragment.setPlanRoot(lookUpNode);
+            context.getFragments().add(fragment);
             return fragment;
         }
     }

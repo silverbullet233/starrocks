@@ -16,18 +16,33 @@ package com.starrocks.planner;
 
 import com.starrocks.analysis.DescriptorTable;
 import com.starrocks.analysis.SlotId;
+import com.starrocks.analysis.TupleDescriptor;
+import com.starrocks.analysis.TupleId;
 import com.starrocks.thrift.TExplainLevel;
+import com.starrocks.thrift.TFetchNode;
 import com.starrocks.thrift.TPlanNode;
+import com.starrocks.thrift.TPlanNodeType;
+import software.amazon.awssdk.services.lexruntimev2.model.Slot;
 
 import java.util.List;
+import java.util.Map;
+import java.util.stream.Collectors;
 
 public class FetchNode extends PlanNode {
 
-    PlanFragmentId targetFragmentId;
+    PlanNodeId targetNodeId;
+    // @TODO which to fetch
+    List<TupleDescriptor> descs;
+    // row id slot for each table
+    Map<TupleId, SlotId> rowidSlots;
+    // rowid column slots
     // @TODO should know target LookUpNode
-    public FetchNode(PlanNodeId id, PlanNode inputNode, PlanFragmentId targetFragmentId) {
+    public FetchNode(PlanNodeId id, PlanNode inputNode,
+                     PlanNodeId targetNodeId, List<TupleDescriptor> descs, Map<TupleId, SlotId> rowidSlots) {
         super(id, inputNode, "FETCH");
-        this.targetFragmentId = targetFragmentId;
+        this.targetNodeId = targetNodeId;
+        this.descs = descs;
+        this.rowidSlots = rowidSlots;
     }
 
     @Override
@@ -37,7 +52,9 @@ public class FetchNode extends PlanNode {
 
     @Override
     protected void toThrift(TPlanNode msg) {
-        // @TODO
+        msg.node_type = TPlanNodeType.FETCH_NODE;
+        msg.fetch_node = new TFetchNode();
+        msg.fetch_node.tuples = descs.stream().map(desc -> desc.getId().asInt()).collect(Collectors.toList());
     }
 
     @Override
@@ -49,7 +66,7 @@ public class FetchNode extends PlanNode {
     @Override
     protected String getNodeExplainString(String detailPrefix, TExplainLevel detailLevel) {
         StringBuilder output = new StringBuilder();
-        output.append("FETCH ").append(targetFragmentId);
+        output.append(detailPrefix).append("FETCH ").append(targetNodeId);
         return output.toString();
     }
 

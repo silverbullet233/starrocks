@@ -72,48 +72,43 @@ public class LateMaterializedColumnCollector {
 
         OptExpression newRoot = rewritePlan(root, context, collectorContext);
         LOG.info("after PlanRewriter, " + newRoot.debugString());
+        // @TODO we should refine LogicalProperty
         return newRoot;
     }
 
     private OptExpression rewritePlan(OptExpression root, OptimizerContext optimizerContext, CollectorContext collectorContext) {
-        PlanRewriter rewriter = new PlanRewriter(optimizerContext);
-        OptExpression newRoot = root.getOp().accept(rewriter, root, collectorContext);
-        {
-            PhysicalOperator child = (PhysicalOperator) root.getOp();
-            Projection projection = child.getProjection();
-            // @TODO consider row_id
-            if (projection != null) {
-                // @TODO should consider row id column
-                // intersect
-                // @TODO if not fetched column, remove it
-                projection.getColumnRefMap().entrySet().removeIf(entry -> {
-                    ColumnRefOperator columnRef = entry.getKey();
-                    if (!collectorContext.fetchedColumns.contains(columnRef)) {
-                        LOG.info("remove column " + columnRef + " from operator: " + child);
-                        return true;
-                    }
-                    return false;
-                });
-            }
-        }
+        PlanRewriter rewriter = new PlanRewriter(optimizerContext, collectorContext);
+
+        RewriteContext rewriteContext = new RewriteContext();
+        // @TODO need deep clone
+        collectorContext.unMaterializedColumns.entrySet().forEach(entry -> {
+            rewriteContext.unFetchedColumns.put(entry.getKey(), new HashSet<>());
+            rewriteContext.unFetchedColumns.get(entry.getKey()).addAll(entry.getValue());
+        });
+
+        OptExpression newRoot = root.getOp().accept(rewriter, root, rewriteContext);
         // @TODO consider un-materialized column
         if (!collectorContext.unMaterializedColumns.isEmpty()) {
             // if there are still un-materialized columns, should add a fetch at the top of root
             Map<PhysicalOlapScanOperator, Set<ColumnRefOperator>> columns = collectorContext.unMaterializedColumns;
             Map<Table, Set<ColumnRefOperator>> tableColumns = new HashMap<>();
             Map<ColumnRefOperator, Column> columnRefOperatorColumnMap = new HashMap<>();
+            Map<Table, ColumnRefOperator> rowidColumns = new HashMap<>();
+
             columns.forEach((scanOperator, columnRefs) -> {
                 Table table = scanOperator.getTable();
                 tableColumns.put(table, columnRefs);
+                rowidColumns.put(table, rewriteContext.rowIdColumns.get(scanOperator));
                 Map<ColumnRefOperator, Column> columnRefMap = scanOperator.getColRefToColumnMetaMap();
                 for (ColumnRefOperator columnRef : columnRefs) {
                     columnRefOperatorColumnMap.put(columnRef, columnRefMap.get(columnRef));
                 }
             });
 
-            PhysicalFetchOperator physicalFetchOperator = new PhysicalFetchOperator(tableColumns, columnRefOperatorColumnMap);
+            PhysicalFetchOperator physicalFetchOperator =
+                    new PhysicalFetchOperator(tableColumns, columnRefOperatorColumnMap, rowidColumns);
             PhysicalLookUpOperator physicalLookUpOperator =
-                    new PhysicalLookUpOperator(tableColumns, columnRefOperatorColumnMap);
+                    new PhysicalLookUpOperator(tableColumns, columnRefOperatorColumnMap, rowidColumns);
             // create new OptExpression
             OptExpression result = OptExpression.create(physicalFetchOperator, newRoot);
             result.getInputs().add(OptExpression.create(physicalLookUpOperator));
@@ -206,6 +201,10 @@ public class LateMaterializedColumnCollector {
         // already fetched columns
         Set<ColumnRefOperator> fetchedColumns = new HashSet<>();
 
+        // @TODO for a scan operator, we may fetch columns in multi places, we should know when we don't need rowid anymore
+
+        // @TODO record rowid column ref for each table
+        Map<PhysicalOlapScanOperator, ColumnRefOperator> rowIdColumns = new HashMap();
         // @TODO pass from Optimizer
         ColumnRefFactory columnRefFactory;
 
@@ -368,7 +367,7 @@ public class LateMaterializedColumnCollector {
 
         @Override
         public Void visitPhysicalNestLoopJoin(OptExpression optExpression, CollectorContext context) {
-            return null;
+            return visit(optExpression, context);
         }
 
         @Override
@@ -389,95 +388,164 @@ public class LateMaterializedColumnCollector {
 
     // top-down add FetchOperator
 
-    // rewrite OptExpression, insert PhysicalFetchOperator
-    public static class PlanRewriter extends OptExpressionVisitor<OptExpression, CollectorContext> {
-        private OptimizerContext optimizerContext;
+    public static class RewriteContext {
+        // row id column of each olap scan operator
+        Map<PhysicalOlapScanOperator, ColumnRefOperator> rowIdColumns = new HashMap<>();
+        // un-fetched columns
+        Map<PhysicalOlapScanOperator, Set<ColumnRefOperator>> unFetchedColumns = new HashMap<>();
 
-        public PlanRewriter(OptimizerContext optimizerContext) {
+        // already fetchd columns
+        Set<ColumnRefOperator> fetchedColumns = new HashSet<>();
+
+        public RewriteContext() {
+
+        }
+    }
+
+    // rewrite OptExpression, insert PhysicalFetchOperator
+
+    // what will do:
+    // 1. add row_id column in OlapScanOperator
+    // 2. update projection and logical property if necessary
+    // 3. update RowOutputInfo
+    public static class PlanRewriter extends OptExpressionVisitor<OptExpression, RewriteContext> {
+        private OptimizerContext optimizerContext;
+        private CollectorContext collectorContext;
+
+        public PlanRewriter(OptimizerContext optimizerContext, CollectorContext collectorContext) {
             this.optimizerContext = optimizerContext;
+            this.collectorContext = collectorContext;
         }
 
-        private List<OptExpression> visitChildren(OptExpression optExpression, CollectorContext context) {
+        private List<OptExpression> visitChildren(OptExpression optExpression, RewriteContext context) {
             List<OptExpression> inputs = Lists.newArrayList();
             for (OptExpression input : optExpression.getInputs()) {
-                inputs.add(input.getOp().accept(this, input, context));
+                RewriteContext ctx = new RewriteContext();
+                ctx.unFetchedColumns = context.unFetchedColumns;
+                inputs.add(input.getOp().accept(this, input, ctx));
+                // merge ctx
+                context.rowIdColumns.putAll(ctx.rowIdColumns);
+                context.fetchedColumns.addAll(ctx.fetchedColumns);
             }
             return inputs;
         }
 
+        public void updateProjection(OptExpression optExpression, RewriteContext context) {
+            PhysicalOperator op = (PhysicalOperator) optExpression.getOp();
+            Projection projection = op.getProjection();
+            if (projection != null) {
+                // we should remove un fetched column
+                projection.getColumnRefMap().entrySet().removeIf(entry -> {
+                    ColumnRefOperator columnRef = entry.getKey();
+                    if (!collectorContext.fetchedColumns.contains(columnRef)) {
+                        LOG.info("remove column " + columnRef + " from operator: " + op);
+                        return true;
+                    }
+                    return false;
+                });
+
+                // @TODO add rowid to projection
+                context.rowIdColumns.values().forEach(columnRef -> {
+                    projection.getColumnRefMap().put(columnRef, columnRef);
+                    LOG.info("add rowid column " + columnRef + " to operator: " + op);
+                });
+            }
+            // @TODO update logical property
+            LogicalProperty logicalProperty = optExpression.getLogicalProperty();
+            ColumnRefFactory columnRefFactory = optimizerContext.getColumnRefFactory();
+            List<ColumnRefOperator> outputColumns
+                    = logicalProperty.getOutputColumns().getColumnRefOperators(columnRefFactory);
+            // 1. remove unfetched column
+            List<ColumnRefOperator> newOutputColumns = outputColumns.stream().filter(columnRefOperator -> {
+                if (!columnRefFactory.getColumnRefToColumns().containsKey(columnRefOperator)) {
+                    // not original column, should keep
+                    return true;
+                }
+                // not fetched, should remove
+                // @TODO should consider must have column
+                if (!context.fetchedColumns.contains(columnRefOperator)) {
+                    LOG.info("remove column " + columnRefOperator + " from logical property of " + op);
+                    return false;
+                }
+                return true;
+            }).collect(Collectors.toList());
+            // 2. add necessary row id
+            context.rowIdColumns.values().forEach(entry -> {
+                LOG.info("add row id column " + entry + " to logical property of " + op);
+                newOutputColumns.add(entry);
+            });
+            logicalProperty.setOutputColumns(new ColumnRefSet(newOutputColumns));
+            // 1. remove un fetched columns
+        }
+
         @Override
-        public OptExpression visit(OptExpression optExpression, CollectorContext context) {
+        public OptExpression visit(OptExpression optExpression, RewriteContext context) {
             // @TODO insert physical fetch operator
             List<OptExpression> inputs = visitChildren(optExpression, context);
             // @TODO adjust projection?
-            for (OptExpression input : optExpression.getInputs()) {
-                PhysicalOperator child = (PhysicalOperator) input.getOp();
-                Projection projection = child.getProjection();
-                if (projection != null) {
-                    projection.getColumnRefMap().entrySet().removeIf(entry -> {
-                        ColumnRefOperator columnRef = entry.getKey();
-                        if (!context.fetchedColumns.contains(columnRef)) {
-                            LOG.info("remove column " + columnRef + " from operator: " + child);
-                            return true;
-                        }
-                        return false;
-                    });
-                }
-                // change output property?
-            }
+            updateProjection(optExpression, context);
+            // @TODO how to add ROW_ID column into projection
             LogicalProperty logicalProperty = optExpression.getLogicalProperty();
             // optExpression.deriveLogicalPropertyItself();
             LOG.info("operator + " + optExpression.getOp() + ", logical properties: " + logicalProperty.getOutputColumns());
             // insert FetchOperator
             PhysicalOperator physicalOperator = (PhysicalOperator) optExpression.getOp();
-            if (context.fetchPositions.containsRow(physicalOperator)) {
-                Map<PhysicalOlapScanOperator, Set<ColumnRefOperator>> columns = context.fetchPositions.row(physicalOperator);
+            if (collectorContext.fetchPositions.containsRow(physicalOperator)) {
+                Map<PhysicalOlapScanOperator, Set<ColumnRefOperator>> columns =
+                        collectorContext.fetchPositions.row(physicalOperator);
 
                 // @TODO change child's projection?
                 Map<Table, Set<ColumnRefOperator>> tableColumns = new HashMap<>();
+                Map<Table, ColumnRefOperator> rowidColumns = new HashMap<>();
                 Map<ColumnRefOperator, Column> columnRefOperatorColumnMap = new HashMap<>();
                 columns.forEach((scanOperator, columnRefs) -> {
                     Table table = scanOperator.getTable();
                     tableColumns.put(table, columnRefs);
+                    rowidColumns.put(table, context.rowIdColumns.get(scanOperator));
                     Map<ColumnRefOperator, Column> columnRefMap = scanOperator.getColRefToColumnMetaMap();
                     for (ColumnRefOperator columnRef : columnRefs) {
                         columnRefOperatorColumnMap.put(columnRef, columnRefMap.get(columnRef));
                         // @TODO remove late-materialized column from projection
                     }
                 });
-                // @TODo update child's projection
-
+                // @TODO we should update logical properties of fetch
                 context.fetchedColumns.addAll(columnRefOperatorColumnMap.keySet());
+
+                // @TODO rowid column of each table
                 PhysicalFetchOperator physicalFetchOperator =
-                        new PhysicalFetchOperator(tableColumns, columnRefOperatorColumnMap);
+                        new PhysicalFetchOperator(tableColumns, columnRefOperatorColumnMap, rowidColumns);
                 // @TODO create lookup
                 PhysicalLookUpOperator physicalLookUpOperator =
-                        new PhysicalLookUpOperator(tableColumns, columnRefOperatorColumnMap);
+                        new PhysicalLookUpOperator(tableColumns, columnRefOperatorColumnMap, rowidColumns);
                 // create new OptExpression
                 inputs.add(OptExpression.create(physicalLookUpOperator));
                 OptExpression child = OptExpression.create(physicalFetchOperator, inputs);
+                LogicalProperty newLogicalProperty = new LogicalProperty(logicalProperty);
+                newLogicalProperty.getOutputColumns().union(columnRefOperatorColumnMap.keySet());
+                child.setLogicalProperty(new LogicalProperty(logicalProperty));
                 OptExpression result = OptExpression.builder().with(optExpression).setInputs(Arrays.asList(child)).build();
                 return result;
             } else {
                 OptExpression result = OptExpression.builder().with(optExpression).setInputs(inputs).build();
                 return result;
             }
-            // @TODO rewrite logical properties
+            // @TODO rewrite logical properties?
         }
 
         // @TODO should remove unused column
 
+
         @Override
-        public OptExpression visitPhysicalOlapScan(OptExpression optExpression, CollectorContext context) {
+        public OptExpression visitPhysicalOlapScan(OptExpression optExpression, RewriteContext context) {
             // @TODO only handle duplicate key and primary key table
             // find all read column, record which table from
             PhysicalOlapScanOperator scanOperator = (PhysicalOlapScanOperator) optExpression.getOp();
-            if (!context.needLookupSources.contains(scanOperator)) {
+            if (!collectorContext.needLookupSources.contains(scanOperator)) {
                 return optExpression;
             }
 
             // @TODO rewrite?
-            Set<ColumnRefOperator> columnRefOperators = context.fetchPositions.get(scanOperator, scanOperator);
+            Set<ColumnRefOperator> columnRefOperators = collectorContext.fetchPositions.get(scanOperator, scanOperator);
             if (columnRefOperators.size() == scanOperator.getColRefToColumnMetaMap().size()) {
                 // all column need fetch, no need to rewrite
                 context.fetchedColumns.addAll(columnRefOperators);
@@ -494,6 +562,8 @@ public class LateMaterializedColumnCollector {
             Column rowIdColumn = new Column("ROW_ID", Type.ROW_ID, false);
             ColumnRefOperator columnRefOperator = optimizerContext.getColumnRefFactory().create("ROW_ID", Type.ROW_ID, false);
             newColumnRefMap.put(columnRefOperator, rowIdColumn);
+            context.rowIdColumns.put(scanOperator, columnRefOperator);
+
             LOG.info("rewrite PhysicalOlapScan, newColumnRefMap: " + newColumnRefMap.size());
             // build a new optExpressions
             PhysicalOlapScanOperator.Builder builder = PhysicalOlapScanOperator.builder().withOperator(scanOperator);

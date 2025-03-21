@@ -85,6 +85,8 @@ enum TPlanNodeType {
   STREAM_AGG_NODE,
   LAKE_META_SCAN_NODE,
   CAPTURE_VERSION_NODE,
+  FETCH_NODE,
+  LOOKUP_NODE,
 }
 
 // phases of an execution node
@@ -1300,18 +1302,14 @@ struct TFetchColumns {
 }
 
 struct TFetchNode {
-  // @TODO all tables and related columns
-  // @TODO how to know tuple desc
-  // 1. slot desc for each row_id columns
-  // 1: optional map<TSlotId, TFetchColumns> row_id_columns
-  // tuple and slot
-  1: optional map<Types.TSlotId, Types.TTupleId> tuples
-  // 2. slot desc for each read columns
-  // 3. mapping table <=> columns
+  1: optional i32 target_node_id
+  2: optional list<Types.TTupleId> tuples
+  3: optional map<Types.TTupleId, Types.TSlotId> row_id_slots;
 }
 
 struct TLookUpNode {
-  1: optional map<Types.TSlotId, Types.TTupleId> tuples
+  1: optional list<Types.TTupleId> tuples
+  2: optional map<Types.TTupleId, Types.TSlotId> row_id_slots;
 }
 
 // This is essentially a union of all messages corresponding to subclasses
@@ -1390,6 +1388,8 @@ struct TPlanNode {
   72: optional TStreamAggregationNode stream_agg_node;
 
   81: optional TSelectNode select_node; 
+  82: optional TFetchNode fetch_node;
+  83: optional TLookUpNode look_up_node;
 }
 
 // A flattened representation of a tree of PlanNodes, obtained by depth-first

@@ -34,15 +34,23 @@ public class PhysicalFetchOperator extends PhysicalOperator {
 
     Map<Table, Set<ColumnRefOperator>> tableColumns;
     Map<ColumnRefOperator, Column> columnRefOperatorColumnMap;
+    Map<Table, ColumnRefOperator> rowidColumns;
+    // @TODO should know rowid column of each table
     public PhysicalFetchOperator(Map<Table, Set<ColumnRefOperator>> tableColumns,
-                                 Map<ColumnRefOperator, Column> columnRefOperatorColumnMap) {
+                                 Map<ColumnRefOperator, Column> columnRefOperatorColumnMap,
+                                 Map<Table, ColumnRefOperator> rowidColumns) {
         super(OperatorType.PHYSICAL_FETCH);
         this.tableColumns = tableColumns;
         this.columnRefOperatorColumnMap = columnRefOperatorColumnMap;
+        this.rowidColumns = rowidColumns;
     }
 
     public Map<Table, Set<ColumnRefOperator>> getTableColumns() {
         return tableColumns;
+    }
+
+    public Map<Table, ColumnRefOperator> getRowidColumns() {
+        return rowidColumns;
     }
 
     @Override
