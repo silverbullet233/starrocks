@@ -26,6 +26,8 @@ import com.starrocks.thrift.TPlanNodeType;
 import org.sparkproject.guava.collect.Lists;
 import software.amazon.awssdk.services.lexruntimev2.model.Slot;
 
+import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
@@ -39,7 +41,7 @@ public class LookUpNode extends PlanNode {
     private Map<TupleId, SlotId> rowidSlots;
 
     public LookUpNode(PlanNodeId id, List<Table> tables, List<TupleDescriptor> descs, Map<TupleId, SlotId> rowidSlots) {
-        super(id, "LookUp");
+        super(id, new ArrayList<>(descs.stream().map(desc -> desc.getId()).collect(Collectors.toList())), "LookUp");
         this.tables = tables;
         this.descs = descs;
         this.rowidSlots = rowidSlots;
@@ -58,6 +60,10 @@ public class LookUpNode extends PlanNode {
         msg.node_type = TPlanNodeType.LOOKUP_NODE;
         msg.look_up_node = new TLookUpNode();
         msg.look_up_node.tuples = descs.stream().map(desc -> desc.getId().asInt()).collect(Collectors.toList());
+        msg.look_up_node.row_id_slots = new HashMap<>();
+        rowidSlots.forEach((tupleId, slotId) -> {
+            msg.look_up_node.row_id_slots.put(tupleId.asInt(), slotId.asInt());
+        });
     }
 
     @Override

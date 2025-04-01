@@ -257,7 +257,15 @@ Status DataSink::decompose_data_sink_to_pipeline(pipeline::PipelineBuilderContex
                                                  const TDataSink& thrift_sink, const std::vector<TExpr>& output_exprs) {
     using namespace pipeline;
     auto fragment_ctx = context->fragment_context();
+    // if (context->source_operator(prev_operators)->get_raw_name() == "lookup") {
+    //     LOG(INFO) << "skip decompose_data_sink for lookup pipeline";
+    //     return Status::OK();
+    // }
     size_t dop = context->source_operator(prev_operators)->degree_of_parallelism();
+                                                    
+    // @TODO if source operator is lookup, do nothing
+
+
     // TODO: port the following code to detail DataSink subclasses
     if (typeid(*this) == typeid(starrocks::ResultSink)) {
         auto* result_sink = down_cast<starrocks::ResultSink*>(this);
@@ -280,6 +288,15 @@ Status DataSink::decompose_data_sink_to_pipeline(pipeline::PipelineBuilderContex
         }
         // Add result sink operator to last pipeline
         prev_operators.emplace_back(op);
+        if (result_sink->get_sink_type() == TResultSinkType::MYSQL_PROTOCAL) {
+            std::ostringstream oss;
+            oss << "prev_oprators: ";
+            for (const auto& op: prev_operators) {
+                oss << op->get_name() << "," << op->id() << " =>";
+            }
+            LOG(INFO) << oss.str();
+        }
+        // @TODO fetch operator
         context->add_pipeline(std::move(prev_operators));
 
     } else if (typeid(*this) == typeid(starrocks::BlackHoleTableSink)) {

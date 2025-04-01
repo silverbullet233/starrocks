@@ -100,6 +100,7 @@
 #include "util/pretty_printer.h"
 #include "util/priority_thread_pool.hpp"
 #include "util/starrocks_metrics.h"
+#include "runtime/lookup_stream_mgr.h"
 
 #ifdef STARROCKS_JIT_ENABLE
 #include "exprs/jit/jit_engine.h"
@@ -529,6 +530,7 @@ Status ExecEnv::init(const std::vector<StorePath>& store_paths, bool as_cn) {
     _external_scan_context_mgr = new ExternalScanContextMgr(this);
     _metrics = StarRocksMetrics::instance()->metrics();
     _stream_mgr = new DataStreamMgr();
+    _lookup_dispatcher_mgr = new LookUpDispatcherMgr();
     _result_mgr = new ResultBufferMgr();
     _result_queue_mgr = new ResultQueueMgr();
     _backend_client_cache = new BackendServiceClientCache(config::max_client_cache_size_per_host);
@@ -827,6 +829,9 @@ void ExecEnv::stop() {
     if (_stream_mgr != nullptr) {
         _stream_mgr->close();
     }
+    if (_lookup_dispatcher_mgr != nullptr) {
+        _lookup_dispatcher_mgr->close();
+    }
 
     if (_pipeline_sink_io_pool) {
         _pipeline_sink_io_pool->shutdown();
@@ -939,6 +944,7 @@ void ExecEnv::destroy() {
     SAFE_DELETE(_result_queue_mgr);
     SAFE_DELETE(_result_mgr);
     SAFE_DELETE(_stream_mgr);
+    SAFE_DELETE(_lookup_dispatcher_mgr);
     SAFE_DELETE(_batch_write_mgr);
     SAFE_DELETE(_external_scan_context_mgr);
     SAFE_DELETE(_lake_tablet_manager);

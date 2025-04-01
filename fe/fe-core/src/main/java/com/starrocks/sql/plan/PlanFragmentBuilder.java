@@ -72,6 +72,7 @@ import com.starrocks.planner.AggregationNode;
 import com.starrocks.planner.AnalyticEvalNode;
 import com.starrocks.planner.AssertNumRowsNode;
 import com.starrocks.planner.BinlogScanNode;
+import com.starrocks.planner.BlackHoleTableSink;
 import com.starrocks.planner.DataPartition;
 import com.starrocks.planner.DataSink;
 import com.starrocks.planner.DecodeNode;
@@ -3971,7 +3972,7 @@ public class PlanFragmentBuilder {
             LookUpNode lookupNode = (LookUpNode) lookUpFragment.getPlanRoot();
 
             FetchNode fetchNode = new FetchNode(context.getNextNodeId(),
-                    childFragment.getPlanRoot(), lookUpFragment.getPlanRoot().getId(),
+                    childFragment.getPlanRoot(), lookupNode.getId(),
                     lookupNode.getDescs(), lookupNode.getRowidSlots());
             // @TODO: add fetch columns into colRefToExpr
             // @TODO how to connect fetch and lookup
@@ -4002,10 +4003,13 @@ public class PlanFragmentBuilder {
                 // @TODO update slot ref
                 TupleDescriptor tupleDescriptor = context.getDescTbl().createTupleDescriptor();
                 tupleDescriptor.setTable(table);
+                tupleDescriptor.setIsMaterialized(true);
                 for (ColumnRefOperator columnRefOperator : columns) {
                     SlotDescriptor slotDescriptor =
                             context.getDescTbl().addSlotDescriptor(tupleDescriptor, new SlotId(columnRefOperator.getId()));
                     slotDescriptor.setColumn(columnRefOperatorColumnMap.get(columnRefOperator));
+                    slotDescriptor.setIsMaterialized(true);
+                    slotDescriptor.setIsNullable(columnRefOperator.isNullable());
                     // @TODO set nullable
                     context.getColRefToExpr().put(columnRefOperator, new SlotRef(columnRefOperator.toString(), slotDescriptor));
                 }
@@ -4020,6 +4024,7 @@ public class PlanFragmentBuilder {
             LookUpNode lookUpNode = new LookUpNode(context.getNextNodeId(), tables, tupleDescriptors, rowidSlots);
             PlanFragment fragment = new PlanFragment(context.getNextFragmentId(), lookUpNode, DataPartition.RANDOM);
             fragment.setPlanRoot(lookUpNode);
+            fragment.setSink(new BlackHoleTableSink());
             context.getFragments().add(fragment);
             return fragment;
         }

@@ -296,9 +296,11 @@ StatusOr<ProtobufChunkMeta> build_protobuf_chunk_meta(const RowDescriptor& row_d
     size_t column_index = 0;
     chunk_meta.types.resize(chunk_pb.is_nulls().size());
     for (auto* tuple_desc : row_desc.tuple_descriptors()) {
+        // LOG(INFO) << "tuple_id: " << tuple_desc->id();
         const std::vector<SlotDescriptor*>& slots = tuple_desc->slots();
         for (const auto& kv : chunk_meta.slot_id_to_index) {
             for (auto slot : slots) {
+                // LOG(INFO) << "slot_id: " << slot->debug_string();
                 if (kv.first == slot->id()) {
                     chunk_meta.types[kv.second] = slot->type();
                     ++column_index;
@@ -309,7 +311,8 @@ StatusOr<ProtobufChunkMeta> build_protobuf_chunk_meta(const RowDescriptor& row_d
     }
 
     if (UNLIKELY(column_index != chunk_meta.is_nulls.size())) {
-        return Status::InternalError("build chunk _meta error");
+        LOG(INFO) << "column_index: " << column_index << ", null_size: " << chunk_meta.is_nulls.size();
+        return Status::InternalError("build chunk_meta error");
     }
     return std::move(chunk_meta);
 }

@@ -528,12 +528,12 @@ void PInternalServiceImplBase<T>::_cancel_plan_fragment(google::protobuf::RpcCon
     auto reason_string =
             request->has_cancel_reason() ? cancel_reason_to_string(request->cancel_reason()) : "UnknownReason";
     bool cancel_query_ctx = tid.hi == 0 && tid.lo == 0;
-    if (cancel_query_ctx) {
-        DCHECK(request->has_query_id());
-        LOG(INFO) << "cancel query ctx, query_id=" << print_id(request->query_id()) << ", reason: " << reason_string;
-    } else {
-        LOG(INFO) << "cancel fragment, fragment_instance_id=" << print_id(tid) << ", reason: " << reason_string;
-    }
+    // if (cancel_query_ctx) {
+    //     DCHECK(request->has_query_id());
+    //     LOG(INFO) << "cancel query ctx, query_id=" << print_id(request->query_id()) << ", reason: " << reason_string;
+    // } else {
+    //     LOG(INFO) << "cancel fragment, fragment_instance_id=" << print_id(tid) << ", reason: " << reason_string;
+    // }
 
     if (request->has_is_pipeline() && request->is_pipeline()) {
         TUniqueId query_id;
@@ -1294,6 +1294,50 @@ void PInternalServiceImplBase<T>::update_transaction_state(google::protobuf::Rpc
                                                            google::protobuf::Closure* done) {
     ClosureGuard closure_guard(done);
     _exec_env->batch_write_mgr()->update_transaction_state(request, response);
+}
+
+template <typename T>
+void PInternalServiceImplBase<T>::lookup(google::protobuf::RpcController* cntl_base, const PLookUpRequest* request, PLookUpResponse *response, google::protobuf::Closure* done) {
+    auto* cntl = static_cast<brpc::Controller*>(cntl_base);
+    auto* req = const_cast<PLookUpRequest*>(request);
+    LOG(INFO) << "receive lookup request, query: " << print_id(request->query_id()) << ", target_node: " << request->lookup_node_id()
+        << ", attachment size: " << cntl->request_attachment().size();
+    
+    Status st;
+    DeferOp defer([&]() {
+        if (!st.ok()) {
+            st.to_protobuf(response->mutable_status());
+            done->Run();
+        }
+    });
+
+    if (cntl->request_attachment().size() > 0) {
+        // parse chunk
+        // butil::IOBuf& io_buf = cntl->request_attachment();
+        butil::IOBuf& io_buf = cntl->request_attachment();
+        for (size_t i = 0;i < request->row_id_columns_size();i++) {
+            auto p_row_id_column = req->mutable_row_id_columns(i);
+            if (UNLIKELY(io_buf.size() < p_row_id_column->data_size())) {
+                auto msg = fmt::format("io_buf size {} is less than row_id_column data size {}", io_buf.size(), p_row_id_column->data_size());
+                LOG(WARNING) << msg;
+                st = Status::InternalError(msg);
+                return;
+            }
+            size_t size = io_buf.cutn(p_row_id_column->mutable_data(), p_row_id_column->data_size());
+            if (UNLIKELY(size != p_row_id_column->data_size())) {
+                auto msg = fmt::format("iobuf read {} != expected {}", size, p_row_id_column->data_size());
+                LOG(WARNING) << msg;
+                st = Status::InternalError(msg);
+                return;
+            }
+        }
+        // put PLookUpRequest and done into dispatcher
+    } else {
+        st = Status::InternalError("no attachment in lookup request");
+        return;
+    }
+    st = _exec_env->lookup_dispatcher_mgr()->lookup({cntl, request, response, done});
+    // @TODO get chunk PB
 }
 
 template class PInternalServiceImplBase<PInternalService>;

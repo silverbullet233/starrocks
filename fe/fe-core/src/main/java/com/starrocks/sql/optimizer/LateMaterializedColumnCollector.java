@@ -437,7 +437,10 @@ public class LateMaterializedColumnCollector {
                 // we should remove un fetched column
                 projection.getColumnRefMap().entrySet().removeIf(entry -> {
                     ColumnRefOperator columnRef = entry.getKey();
-                    if (!collectorContext.fetchedColumns.contains(columnRef)) {
+                    // @TODO if a column is not fetched and it is not required, we can remove it
+                    // @TODO if this column is required by its parent, we should keepit , but how?
+                    if (!context.fetchedColumns.contains(columnRef)) {
+                        // @TODO
                         LOG.info("remove column " + columnRef + " from operator: " + op);
                         return true;
                     }

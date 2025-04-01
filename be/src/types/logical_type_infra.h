@@ -154,6 +154,7 @@ auto type_dispatch_all(LogicalType ltype, Functor fun, Args... args) {
         _TYPE_DISPATCH_CASE(TYPE_HLL)
         _TYPE_DISPATCH_CASE(TYPE_OBJECT)
         _TYPE_DISPATCH_CASE(TYPE_PERCENTILE)
+        _TYPE_DISPATCH_CASE(TYPE_ROW_ID)
     default:
         CHECK(false) << "Unknown type: " << ltype;
         __builtin_unreachable();
@@ -168,6 +169,7 @@ auto type_dispatch_column(LogicalType ltype, Functor fun, Args... args) {
         _TYPE_DISPATCH_CASE(TYPE_HLL)
         _TYPE_DISPATCH_CASE(TYPE_OBJECT)
         _TYPE_DISPATCH_CASE(TYPE_PERCENTILE)
+        _TYPE_DISPATCH_CASE(TYPE_ROW_ID)
     default:
         CHECK(false) << "Unknown type: " << ltype;
         __builtin_unreachable();

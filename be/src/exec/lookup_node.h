@@ -15,19 +15,18 @@
 #pragma once
 
 #include "exec/exec_node.h"
+#include "runtime/lookup_stream_mgr.h"
 
 namespace starrocks {
+class LookUpDispatcher;
+
 class LookUpNode final : public ExecNode {
 public:
     LookUpNode(ObjectPool* pool, const TPlanNode& tnode, const DescriptorTbl& descs);
     ~LookUpNode() override = default;
 
-    Status init(const TPlanNode& tnode, RuntimeState* state = nullptr) override {
-        return Status::OK();
-    }
-    Status prepare(RuntimeState* state) override {
-        return Status::OK();
-    }
+    Status init(const TPlanNode& tnode, RuntimeState* state = nullptr) override;
+    Status prepare(RuntimeState* state) override;
     // Blocks until the first batch is available for consumption via GetNext().
     Status open(RuntimeState* state) override {
         return Status::OK();
@@ -44,9 +43,10 @@ public:
     void close(RuntimeState* state) override {}
 
     std::vector<std::shared_ptr<pipeline::OperatorFactory>> decompose_to_pipeline(
-            pipeline::PipelineBuilderContext* context) override {
-                return {};
-            }
-
+            pipeline::PipelineBuilderContext* context) override;
+private:
+    std::vector<TupleId> _tuple_ids;
+    std::unordered_map<TupleId, SlotId> _row_id_slots;
+    std::shared_ptr<LookUpDispatcher> _dispatcher;
 };
 }

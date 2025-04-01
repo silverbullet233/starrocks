@@ -1305,6 +1305,7 @@ struct TFetchNode {
   1: optional i32 target_node_id
   2: optional list<Types.TTupleId> tuples
   3: optional map<Types.TTupleId, Types.TSlotId> row_id_slots;
+  4: optional Descriptors.TNodesInfo nodes_info
 }
 
 struct TLookUpNode {

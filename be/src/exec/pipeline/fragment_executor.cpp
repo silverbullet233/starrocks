@@ -450,9 +450,11 @@ Status FragmentExecutor::_prepare_exec_plan(ExecEnv* exec_env, const UnifiedExec
 
     // Set up plan
     _fragment_ctx->move_tplan(*const_cast<TPlan*>(&fragment.plan));
+    // LOG(INFO) << "prepare tplan: " << apache::thrift::ThriftDebugString(_fragment_ctx->tplan());
     RETURN_IF_ERROR(
             ExecNode::create_tree(runtime_state, obj_pool, _fragment_ctx->tplan(), desc_tbl, &_fragment_ctx->plan()));
     ExecNode* plan = _fragment_ctx->plan();
+    // LOG(INFO) << "prepare plan: " << plan->debug_string();
     std::unordered_set<int32_t> filter_ids;
     collect_non_broadcast_rf_ids(plan, filter_ids);
     runtime_state->set_non_broadcast_rf_ids(std::move(filter_ids));
@@ -744,6 +746,7 @@ Status FragmentExecutor::_prepare_pipeline_driver(ExecEnv* exec_env, const Unifi
         }
         RETURN_IF_ERROR(DataSink::create_data_sink(runtime_state, tsink, fragment.output_exprs, params,
                                                    request.sender_id(), plan->row_desc(), &datasink));
+        // @TODO why LookUpNode is prev operators
         RETURN_IF_ERROR(datasink->decompose_data_sink_to_pipeline(&context, runtime_state, std::move(exec_ops), request,
                                                                   tsink, fragment.output_exprs));
     }

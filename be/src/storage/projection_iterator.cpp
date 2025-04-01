@@ -77,6 +77,7 @@ Status ProjectionIterator::do_get_next(Chunk* chunk) {
         DCHECK_GT(_child->output_schema().num_fields(), 0);
         _chunk = ChunkHelper::new_chunk(_child->output_schema(), _chunk_size);
     }
+    // LOG(INFO) << "ProjectionIterator::do_get_next, chunk: " << _chunk->debug_columns();
     _chunk->reset();
     Status st = _child->get_next(_chunk.get());
     if (st.ok()) {

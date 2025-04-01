@@ -310,6 +310,13 @@ struct RunTimeTypeTraits<TYPE_ARRAY> {
     using ProxyContainerType = void;
 };
 
+template <>
+struct RunTimeTypeTraits<TYPE_ROW_ID> {
+    using CppType = int96_t;
+    using ColumnType = RowIdColumn;
+    using ProxyContainerType = ColumnType::Container;
+};
+
 template <LogicalType Type>
 using RunTimeCppType = typename RunTimeTypeTraits<Type>::CppType;
 

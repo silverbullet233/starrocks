@@ -328,6 +328,8 @@ struct TQueryOptions {
   152: optional double k_factor;
 
   160: optional bool enable_join_runtime_filter_pushdown;
+  
+  161: optional bool enable_global_late_materialization;
 }
 
 // A scan range plus the parameters needed to execute that scan.

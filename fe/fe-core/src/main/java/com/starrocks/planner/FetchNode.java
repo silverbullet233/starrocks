@@ -18,12 +18,16 @@ import com.starrocks.analysis.DescriptorTable;
 import com.starrocks.analysis.SlotId;
 import com.starrocks.analysis.TupleDescriptor;
 import com.starrocks.analysis.TupleId;
+import com.starrocks.server.GlobalStateMgr;
+import com.starrocks.server.WarehouseManager;
 import com.starrocks.thrift.TExplainLevel;
 import com.starrocks.thrift.TFetchNode;
+import com.starrocks.thrift.TNodesInfo;
 import com.starrocks.thrift.TPlanNode;
 import com.starrocks.thrift.TPlanNodeType;
 import software.amazon.awssdk.services.lexruntimev2.model.Slot;
 
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
@@ -35,11 +39,13 @@ public class FetchNode extends PlanNode {
     List<TupleDescriptor> descs;
     // row id slot for each table
     Map<TupleId, SlotId> rowidSlots;
+    private long warehouseId = WarehouseManager.DEFAULT_WAREHOUSE_ID;
     // rowid column slots
     // @TODO should know target LookUpNode
     public FetchNode(PlanNodeId id, PlanNode inputNode,
                      PlanNodeId targetNodeId, List<TupleDescriptor> descs, Map<TupleId, SlotId> rowidSlots) {
         super(id, inputNode, "FETCH");
+        addChild(inputNode);
         this.targetNodeId = targetNodeId;
         this.descs = descs;
         this.rowidSlots = rowidSlots;
@@ -54,7 +60,14 @@ public class FetchNode extends PlanNode {
     protected void toThrift(TPlanNode msg) {
         msg.node_type = TPlanNodeType.FETCH_NODE;
         msg.fetch_node = new TFetchNode();
+        msg.fetch_node.setTarget_node_id(targetNodeId.asInt());
         msg.fetch_node.tuples = descs.stream().map(desc -> desc.getId().asInt()).collect(Collectors.toList());
+        msg.fetch_node.row_id_slots = new HashMap<>();
+        rowidSlots.forEach(((tupleId, slotId) -> {
+            msg.fetch_node.row_id_slots.put(tupleId.asInt(), slotId.asInt());
+        }));
+        msg.fetch_node.nodes_info = GlobalStateMgr.getCurrentState().createNodesInfo(warehouseId,
+                GlobalStateMgr.getCurrentState().getNodeMgr().getClusterInfo());
     }
 
     @Override

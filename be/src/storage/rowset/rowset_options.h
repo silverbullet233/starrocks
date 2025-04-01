@@ -99,6 +99,9 @@ public:
 
     TTableSampleOptions sample_options;
     bool enable_join_runtime_filter_pushdown = false;
+    bool enable_global_late_materialization = false;
+    int row_id_column_id = -1;
+    SlotId row_id_column_slot = -1;
 };
 
 } // namespace starrocks

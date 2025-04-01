@@ -280,6 +280,7 @@ Status OlapChunkSource::_init_reader_params(const std::vector<std::unique_ptr<Ol
         ASSIGN_OR_RETURN(_params.runtime_filter_preds,
                          _scan_ctx->conjuncts_manager().get_runtime_filter_predicates(&_obj_pool, parser));
     }
+    _params.enable_global_late_materialization = _runtime_state->enable_global_late_materialization();
     _decide_chunk_size(!pred_tree.empty());
     PredicateAndNode pushdown_pred_root;
     PredicateAndNode non_pushdown_pred_root;
@@ -330,12 +331,19 @@ Status OlapChunkSource::_init_reader_params(const std::vector<std::unique_ptr<Ol
 
 Status OlapChunkSource::_init_scanner_columns(std::vector<uint32_t>& scanner_columns) {
     for (auto slot : *_slots) {
+        // LOG(INFO) << "init scanner column: " << slot->col_name();
         DCHECK(slot->is_materialized());
         int32_t index;
         if (_use_vector_index && !_use_ivfpq && slot->id() == _vector_slot_id) {
             index = _tablet_schema->num_columns();
             _params.vector_search_option->vector_column_id = index;
             _params.vector_search_option->vector_slot_id = slot->id();
+        } else if (slot->type().is_row_id_type()) {
+            // @TODO scannner columns should not contain row id??
+            index = _tablet_schema->num_columns() + 1;
+            _params.row_id_column_id = index;
+            _params.row_id_column_slot = slot->id();
+            LOG(INFO) << "row id slot, column id: " << index << ", slot id: " << slot->id();
         } else {
             index = _tablet_schema->field_index(slot->col_name());
         }
@@ -346,6 +354,7 @@ Status OlapChunkSource::_init_scanner_columns(std::vector<uint32_t>& scanner_col
             return Status::InternalError(ss.str());
         }
         scanner_columns.push_back(index);
+        
         if (!_unused_output_column_ids.count(index)) {
             _query_slots.push_back(slot);
         }
@@ -538,6 +547,7 @@ Status OlapChunkSource::_init_olap_reader(RuntimeState* runtime_state) {
     }
 
     DCHECK(_params.global_dictmaps != nullptr);
+    // @TODO should we add ROW_ID into schema
     RETURN_IF_ERROR(_prj_iter->init_encoded_schema(*_params.global_dictmaps));
     RETURN_IF_ERROR(_prj_iter->init_output_schema(*_params.unused_output_column_ids));
     _reader->set_is_asc_hint(_scan_op->is_asc());
@@ -550,6 +560,8 @@ Status OlapChunkSource::_init_olap_reader(RuntimeState* runtime_state) {
 
 Status OlapChunkSource::_read_chunk(RuntimeState* state, ChunkPtr* chunk) {
     chunk->reset(ChunkHelper::new_chunk_pooled(_prj_iter->output_schema(), _runtime_state->chunk_size()));
+    // @TODO row_id not in schema
+    // LOG(INFO) << "read chunk, schema: " << _prj_iter->output_schema() << ", chunk: " << (*chunk)->debug_columns();
     auto scope = IOProfiler::scope(IOProfiler::TAG_QUERY, _tablet->tablet_id());
     return _read_chunk_from_storage(_runtime_state, (*chunk).get());
 }
@@ -595,6 +607,15 @@ Status OlapChunkSource::_read_chunk_from_storage(RuntimeState* state, Chunk* chu
         TRY_CATCH_ALLOC_SCOPE_START()
 
         for (auto slot : _query_slots) {
+            // @TODO handle ROW_ID?
+            if (slot->type().is_row_id_type()) {
+                // @TODO pending fix
+                DCHECK_EQ(slot->id(), _params.row_id_column_slot);
+                // @TODO column id is not index
+                chunk->set_slot_id_to_index(slot->id(), chunk->schema()->num_fields());
+                // chunk->schema()->num_fields();
+                continue;
+            }
             size_t column_index = chunk->schema()->get_field_index_by_name(slot->col_name());
             chunk->set_slot_id_to_index(slot->id(), column_index);
         }
@@ -616,6 +637,7 @@ Status OlapChunkSource::_read_chunk_from_storage(RuntimeState* state, Chunk* chu
 
     } while (chunk->num_rows() == 0);
     _update_realtime_counter(chunk);
+    // LOG(INFO) << "read_chunk_from_storage: " << chunk->debug_columns();
     // Improve for select * from table limit x, x is small
     if (_limit != -1 && _num_rows_read >= _limit) {
         return Status::EndOfFile("limit reach");

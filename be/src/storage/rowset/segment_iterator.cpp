@@ -19,6 +19,7 @@
 #include <unordered_map>
 #include <utility>
 
+#include "agent/master_info.h"
 #include "column/chunk.h"
 #include "column/column_helper.h"
 #include "column/datum_tuple.h"
@@ -380,7 +381,13 @@ private:
     std::shared_ptr<tenann::IndexMeta> _index_meta;
 #endif
 
-    bool _always_build_rowid() const { return _use_vector_index && !_use_ivfpq; }
+    bool _always_build_rowid() const {
+        if (_opts.v_id != -1) {
+            // global late materialization
+            return true;
+        }
+        return  _use_vector_index && !_use_ivfpq;
+    }
 
     bool _use_vector_index;
     std::string _vector_distance_column_name;
@@ -1336,7 +1343,11 @@ inline Status SegmentIterator::_read(Chunk* chunk, vector<rowid_t>* rowids, size
                 rowids->push_back(i);
             }
         }
+        if (_opts.v_id != -1) {
+            // fill row id column
+        }
     }
+    // @TODO set rowid column ??
 
     _cur_rowid = range.end();
     _opts.stats->raw_rows_read += read_num;
@@ -1495,6 +1506,7 @@ Status SegmentIterator::_do_get_next(Chunk* result, vector<rowid_t>* rowid) {
 
     _build_final_chunk(_context);
     chunk = _context->_final_chunk.get();
+    // LOG(INFO) << "after build final chunk: " << chunk->debug_columns();
 
     bool need_switch_context = false;
     if (_context->_late_materialize) {
@@ -1509,6 +1521,7 @@ Status SegmentIterator::_do_get_next(Chunk* result, vector<rowid_t>* rowid) {
         need_switch_context = true;
         _context_switch_count++;
     }
+    // LOG(INFO) << "need switch ctx: " << need_switch_context;
 
     // remove (logical) deleted rows.
     if (chunk_size > 0 && chunk->delete_state() != DEL_NOT_SATISFIED && !_opts.delete_predicates.empty()) {
@@ -1561,13 +1574,38 @@ Status SegmentIterator::_do_get_next(Chunk* result, vector<rowid_t>* rowid) {
         // TODO: plan vector column in FE Planner
         chunk->append_vector_column(std::move(distance_column), _make_field(_vector_column_id), _vector_slot_id);
     }
+    if (_opts.v_id != -1) {
+        // enable global lm, v_id is virtual segment id
+        DCHECK(rowid != nullptr);
+        // LOG(INFO) << "fill rowid column, column_id: " << _opts.row_id_column_id << ", slot: " << _opts.row_id_column_slot;
+        // append row id column
+        RowIdColumn::MutablePtr row_id_column = RowIdColumn::create();
+        auto be_id_opt = get_backend_id();
+        if (!be_id_opt.has_value()) {
+            return Status::InternalError("can't get backend_id");
+        }
+        int64_t be_id = be_id_opt.value();
+        for (const auto& rid : *rowid) {
+            int96_t row_id;
+            row_id.hi = be_id;
+            row_id.lo = ((uint64_t)_opts.v_id << 32) | rid;
+            // LOG(INFO) << "append row_id: " << be_id << ", seg_id: " << _opts.v_id << ", ord_id: " << rid;
+            row_id_column->append_datum(row_id);
+        }
+        chunk->append_column(std::move(row_id_column), _opts.row_id_column_slot);
+        // @TODO append column
+    }
 
+    // @TODO fill row id column?
+    // LOG(INFO) << "before swap: " << chunk->debug_columns() << ", result: " << result->debug_columns();
     result->swap_chunk(*chunk);
+    // LOG(INFO) << "after swap: " << chunk->debug_columns() << ", result: " << result->debug_columns();
 
     if (need_switch_context) {
         RETURN_IF_ERROR(_switch_context(_context->_next));
     }
-
+    // LOG(INFO) << "segment iterator result: " << result->debug_columns();
+    result->check_or_die();
     return Status::OK();
 }
 
@@ -2061,6 +2099,7 @@ Status SegmentIterator::_finish_late_materialization(ScanContext* ctx) {
 }
 
 void SegmentIterator::_build_final_chunk(ScanContext* ctx) {
+    // LOG(INFO) << "final chunk: " << ctx->_final_chunk->debug_columns();
     // trim all use less columns
     Columns& input_columns = ctx->_dict_chunk->columns();
     for (size_t i = 0; i < ctx->_read_index_map.size(); i++) {

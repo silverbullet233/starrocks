@@ -182,7 +182,7 @@ Status HashJoiner::append_chunk_to_ht(const ChunkPtr& chunk) {
     if (!chunk || chunk->is_empty()) {
         return Status::OK();
     }
-
+    // LOG(INFO) << "append_chunk_to_ht: " << chunk->debug_columns();
     update_build_rows(chunk->num_rows());
     return _hash_join_builder->append_chunk(chunk);
 }

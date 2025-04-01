@@ -121,6 +121,11 @@ public:
 
     bool enable_join_runtime_filter_pushdown = false;
 
+    // virtual id, used by global late materialization
+    int32_t v_id = -1;
+    int row_id_column_id = -1;
+    SlotId row_id_column_slot = -1;
+
 public:
     Status convert_to(SegmentReadOptions* dst, const std::vector<LogicalType>& new_types, ObjectPool* obj_pool) const;
 

@@ -25,6 +25,7 @@ using RowsetSharedPtr = std::shared_ptr<Rowset>;
 
 namespace pipeline {
 
+
 class OlapScanContext;
 using OlapScanContextPtr = std::shared_ptr<OlapScanContext>;
 class OlapScanContextFactory;
