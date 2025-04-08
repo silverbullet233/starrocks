@@ -16,6 +16,8 @@
 
 #include <algorithm>
 #include <utility>
+#include "column/field.h"
+#include "types/logical_type.h"
 
 namespace starrocks {
 
@@ -44,7 +46,14 @@ Schema::Schema(Schema* schema, const std::vector<ColumnId>& cids)
     _fields.resize(cids.size());
     auto ori_sort_idxes = schema->sort_key_idxes();
     std::map<ColumnId, int32_t> cids_to_field_id;
+    // @TODO handle global row id field
     for (int i = 0; i < cids.size(); i++) {
+        // if (cids[i] == Schema::GLOBAL_ROW_ID_COLUMN_ID) {
+        //     LOG(INFO) << "insert global rowid field";
+        //     _fields[i] = std::make_shared<Field>(cids[i], "global_row_id", TYPE_ROW_ID, false);
+        //     cids_to_field_id[cids[i]] = i;
+        //     continue;
+        // }
         if (cids[i] >= schema->_fields.size()) {
             _fields.resize(_fields.size() - 1);
             continue;
@@ -119,6 +128,7 @@ Schema::Schema(const Schema& schema)
         _build_index_map(_fields);
     }
     _init_sort_key_idxes();
+    _output_global_rowid = schema._output_global_rowid;
 }
 
 // if we use this constructor and share the name_to_index with another schema,
@@ -141,6 +151,7 @@ Schema& Schema::operator=(const Schema& other) {
         this->_share_name_to_index = false;
         _build_index_map(this->_fields);
     }
+    this->_output_global_rowid = other._output_global_rowid;
     return *this;
 }
 

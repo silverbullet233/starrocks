@@ -347,6 +347,7 @@ private:
     void _init_hash_table_param(HashTableParam* param);
 
     Status _prepare_key_columns(Columns& key_columns, const ChunkPtr& chunk, const vector<ExprContext*>& expr_ctxs) {
+        // LOG(INFO) << "_prepare_key_columns, chunk: " << chunk->debug_columns();
         key_columns.resize(0);
         for (auto& expr_ctx : expr_ctxs) {
             ASSIGN_OR_RETURN(auto column_ptr, expr_ctx->evaluate(chunk.get()));

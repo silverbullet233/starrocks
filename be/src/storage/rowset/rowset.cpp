@@ -54,6 +54,7 @@
 #include "storage/projection_iterator.h"
 #include "storage/rowset/metadata_cache.h"
 #include "storage/rowset/rowid_range_option.h"
+#include "storage/rowset/segment.h"
 #include "storage/rowset/short_key_range_option.h"
 #include "storage/storage_engine.h"
 #include "storage/tablet_index.h"
@@ -802,7 +803,8 @@ Status Rowset::get_segment_iterators(const Schema& schema, const RowsetReadOptio
             seg_options.v_id = options.runtime_state->query_ctx()->global_late_materialization_ctx()->register_segment(seg_info);
             seg_options.row_id_column_id = options.row_id_column_id;
             seg_options.row_id_column_slot = options.row_id_column_slot;
-            LOG(INFO) << "register v_id: " << seg_options.v_id << ", column id: " << options.row_id_column_id << ", slot id: " << options.row_id_column_slot;
+            segment_schema.set_output_global_rowid(true);
+            // LOG(INFO) << "register v_id: " << seg_options.v_id << ", column id: " << options.row_id_column_id << ", slot id: " << options.row_id_column_slot;
         }
 
         auto res = seg_ptr->new_iterator(segment_schema, seg_options);

@@ -89,6 +89,7 @@ Status ChunkSource::buffer_next_batch_chunks_blocking(RuntimeState* state, size_
             }
 
             chunk->owner_info().set_owner_id(owner_id, false);
+            // LOG(INFO) << "ChunkSource::read_chunk: " << chunk->debug_columns();
             _chunk_buffer.put(_scan_operator_seq, std::move(chunk), std::move(_chunk_token));
         }
 

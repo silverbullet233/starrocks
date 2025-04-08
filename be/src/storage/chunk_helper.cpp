@@ -622,7 +622,8 @@ bool ChunkPipelineAccumulator::is_finished() const {
 template <class ColumnT>
 inline constexpr bool is_object = std::is_same_v<ColumnT, ArrayColumn> || std::is_same_v<ColumnT, StructColumn> ||
                                   std::is_same_v<ColumnT, MapColumn> || std::is_same_v<ColumnT, JsonColumn> ||
-                                  std::is_same_v<ObjectColumn<typename ColumnT::ValueType>, ColumnT>;
+                                  std::is_same_v<ObjectColumn<typename ColumnT::ValueType>, ColumnT> ||
+                                  std::is_same_v<ColumnT, RowIdColumn>;
 
 // Selective-copy data from SegmentedColumn according to provided index
 class SegmentedColumnSelectiveCopy final : public ColumnVisitorAdapter<SegmentedColumnSelectiveCopy> {
@@ -770,6 +771,11 @@ public:
     }
 
     Status do_visit(const ConstColumn& column) { return Status::NotSupported("SegmentedColumnVisitor"); }
+
+    Status do_visit(const RowIdColumn& column) {
+        // @TODO
+        return Status::OK();
+    }
 
     ColumnPtr result() { return _result; }
 

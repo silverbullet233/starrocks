@@ -527,6 +527,15 @@ ColumnPtr& StructColumn::field_column(const std::string& field_name) {
     size_t idx = _find_field_idx_by_name(field_name);
     return _fields[idx];
 }
+const ColumnPtr& StructColumn::field_column(size_t idx) const {
+    DCHECK_LT(idx, _fields.size());
+    return _fields.at(idx);
+}
+
+ColumnPtr& StructColumn::field_column(size_t idx) {
+    DCHECK_LT(idx, _fields.size());
+    return _fields[idx];
+}
 
 Status StructColumn::unfold_const_children(const starrocks::TypeDescriptor& type) {
     DCHECK(type.children.size() == _fields.size()) << "Struct schema does not match data's";

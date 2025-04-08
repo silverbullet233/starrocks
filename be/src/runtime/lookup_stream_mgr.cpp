@@ -61,7 +61,7 @@ Status LookUpDispatcherMgr::lookup(const LookUpRequestCtx& ctx) {
     t_query_id.hi = query_id.hi();
     t_query_id.lo = query_id.lo();
     const auto lookup_node_id = ctx.request->lookup_node_id();
-    LOG(INFO) << "receive lookup from query_id=" << print_id(query_id) << ", lookup_node_id=" << lookup_node_id;
+    // LOG(INFO) << "receive lookup from query_id=" << print_id(query_id) << ", lookup_node_id=" << lookup_node_id;
     ASSIGN_OR_RETURN(auto dispatcher, get_dispatcher(t_query_id, lookup_node_id));
     RETURN_IF_ERROR(dispatcher->add_request(ctx));
     return Status::OK();

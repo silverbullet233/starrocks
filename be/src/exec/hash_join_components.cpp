@@ -61,7 +61,9 @@ private:
 
 Status SingleHashJoinProberImpl::push_probe_chunk(RuntimeState* state, ChunkPtr&& chunk) {
     DCHECK(!_probe_chunk);
+    // LOG(INFO) << "before move: " << chunk->debug_columns();
     _probe_chunk = std::move(chunk);
+    // LOG(INFO) << "after move: " << _probe_chunk->debug_columns();
     _current_probe_has_remain = true;
     RETURN_IF_ERROR(_hash_joiner.prepare_probe_key_columns(&_key_columns, _probe_chunk));
     return Status::OK();

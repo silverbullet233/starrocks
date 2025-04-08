@@ -15,6 +15,7 @@
 #pragma once
 
 #include <butil/iobuf.h>
+#include <event2/http.h>
 #include "exec/pipeline/operator.h"
 #include "exec/tablet_info.h"
 #include "runtime/descriptors.h"
@@ -30,12 +31,18 @@ namespace starrocks::pipeline {
 
 class FetchOperator final : public Operator {
 private:
+    // row_id_slot => row_id, position
+    using RequestColumns = phmap::flat_hash_map<uint32_t, std::pair<ColumnPtr, ColumnPtr>>;
+    using RequestColumnsPtr = std::shared_ptr<RequestColumns>;
     struct FetchContext {
         uint32_t be_id; // @TODO target address
         butil::IOBuf iobuf;
-        ChunkPtr chunk;
-        ChunkPtr result;
+        RequestColumnsPtr request_columns;
+        // slot id => column
+        mutable phmap::flat_hash_map<SlotId, ColumnPtr> response_columns;
+        int64_t send_ts = 0;
     };
+    using FetchContextPtr = std::shared_ptr<FetchContext>;
 public:
     FetchOperator(OperatorFactory* factory, int32_t id, int32_t plan_node_id, int32_t driver_sequence,
                 int32_t target_node_id, const std::vector<TupleId>& tuple_ids, const std::unordered_map<TupleId, SlotId>& row_id_slots, std::shared_ptr<StarRocksNodesInfo> nodes_info);
@@ -67,12 +74,12 @@ private:
     using PLookUpRequestPtr = std::shared_ptr<PLookUpRequest>;
     StatusOr<ChunkPtr> build_row_id_chunk(RuntimeState* state);
     // split original chunk to multiple chunks for each be
-    Status gen_request_chunk(RuntimeState* state, const ChunkPtr& row_id_chunk, phmap::flat_hash_map<uint32_t, ChunkPtr>* request_chunks);
+    Status gen_request_chunk(RuntimeState* state, const ChunkPtr& row_id_chunk, phmap::flat_hash_map<uint32_t, RequestColumnsPtr>* request_chunks);
 
     Status serialize_chunk(const Chunk* src, ChunkPB* dst);
     Status build_output_chunk(RuntimeState* state);
 
-    Status send_fetch_request(RuntimeState* state, const phmap::flat_hash_map<uint32_t, ChunkPtr>& request_chunks);
+    Status send_fetch_request(RuntimeState* state, const phmap::flat_hash_map<uint32_t, RequestColumnsPtr>& request_chunks);
 
     Status fetch_data(RuntimeState* state);
     void _set_io_task_status(const Status& status) {
@@ -85,6 +92,9 @@ private:
         std::lock_guard<SpinLock> l(_lock);
         return _io_task_status;
     }
+
+    StatusOr<ChunkPtr> _sort_chunk(RuntimeState* state, const ChunkPtr& chunk, const Columns& order_by_columns);
+
     [[maybe_unused]] int32_t _target_node_id;
     [[maybe_unused]] const std::vector<TupleId>& _tuple_ids;
     [[maybe_unused]] const std::unordered_map<TupleId, SlotId>& _row_id_slots;
@@ -99,6 +109,7 @@ private:
     // need a queue for all output chunks?
     // @TODO used to sort
     Permutation _permutation;
+    raw::RawString _serialize_buffer;
 
     mutable std::mutex _mu;
     mutable SpinLock _lock;
@@ -113,6 +124,15 @@ private:
     // std::vector<std::shared_ptr<FetchContext>> _fetch_ctxs;
 
     static const size_t kMaxBufferChunkNums = 8;
+
+    RuntimeProfile::Counter* _build_row_id_chunk_timer = nullptr;
+    RuntimeProfile::Counter* _gen_request_chunk_timer = nullptr;
+    RuntimeProfile::Counter* _serialize_timer = nullptr;
+    RuntimeProfile::Counter* _deserialize_timer = nullptr;
+    RuntimeProfile::Counter* _build_output_chunk_timer = nullptr;
+
+    RuntimeProfile::Counter* _rpc_count = nullptr;
+    RuntimeProfile::Counter* _network_timer = nullptr;
 };
 
 class FetchOperatorFactory final : public OperatorFactory {

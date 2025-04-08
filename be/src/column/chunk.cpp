@@ -451,7 +451,7 @@ std::string Chunk::debug_columns() const {
     for (const auto& [column_id, idx]: _cid_to_index) {
         os << column_id << ":" << idx << ", ";
     }
-    os << "]";
+    os << "]," << (void*)this;
     return os.str();
 }
 

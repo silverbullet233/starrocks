@@ -39,6 +39,7 @@
 #include "storage/rowset/segment_iterator.h"
 #include "storage/rowset/segment_options.h"
 #include "util/defer_op.h"
+#include "util/raw_container.h"
 
 namespace starrocks::pipeline {
 
@@ -76,6 +77,9 @@ private:
     LookUpRequestCtx _ctx;
     std::atomic_bool _is_running = false;
 
+    Permutation _permutation;
+    raw::RawString _serialize_buffer;
+
     [[maybe_unused]] LookUpOperator* _parent = nullptr;
 
     serde::ProtobufChunkMeta _chunk_meta; // all data should be same
@@ -89,7 +93,7 @@ Status LookUpProcessor::process(RuntimeState* state) {
     // @TODO get data from xx
     auto request = _ctx.request;
     DCHECK(request != nullptr) << "request should not be null";
-    LOG(INFO) << "process lookup request, row_id_column num: " << request->row_id_columns_size();
+    // LOG(INFO) << "process lookup request, row_id_column num: " << request->row_id_columns_size();
     auto response = _ctx.response;
     auto* cntl = static_cast<brpc::Controller*>(_ctx.cntl);
 
@@ -104,6 +108,9 @@ Status LookUpProcessor::process(RuntimeState* state) {
     // @TODO get SparseRange for each segment
 
     for (const auto& [tuple_id, slot_id]: _parent->_row_id_slots) {
+        if (!row_id_columns.contains(slot_id)) {
+            continue;
+        }
         const auto& row_id_column = row_id_columns[slot_id];
         // seg original index
         UInt32Column::Ptr position_column = UInt32Column::create();
@@ -113,6 +120,9 @@ Status LookUpProcessor::process(RuntimeState* state) {
             position_data[i] = i;
         }
         {
+            // for(size_t i = 0;i < row_id_column->size();i++) {
+            //     LOG(INFO) << "origin: " << row_id_column->debug_item(i);
+            // }
             // const auto& row_id_data = row_id_column->get_data();
             // for (size_t i = 0;i < row_id_data.size();i++) {
             //     uint32_t seg_id = (row_id_data[i].lo >> 32);
@@ -121,36 +131,47 @@ Status LookUpProcessor::process(RuntimeState* state) {
             // }
         }
         // sort by row_id
-        SortDescs sort_descs;
-        sort_descs.descs = {SortDesc{true, true}};
-        Permutation permutation;
-        permutation.resize(0);
+
+        // Permutation permutation;
+        _permutation.resize(0);
+        // permutation.resize(0);
 
         auto input_chunk = std::make_shared<Chunk>();
         input_chunk->append_column(row_id_column, slot_id);
         input_chunk->append_column(position_column, Chunk::SORT_ORDINAL_COLUMN_SLOT_ID);
         input_chunk->check_or_die();
-        for (size_t i = 0;i < input_chunk->num_rows();i++) {
-            LOG(INFO) << "input: " << input_chunk->debug_row(i);
-        }
+        // for (size_t i = 0;i < input_chunk->num_rows();i++) {
+        //     LOG(INFO) << "input: " << input_chunk->debug_row(i);
+        // }
         Columns order_by_columns{row_id_column};
+        SortDescs sort_descs;
+        sort_descs.descs = {SortDesc{true, true}, SortDesc{true, true}, SortDesc{true, true}};
 
-        RETURN_IF_ERROR(sort_and_tie_columns(state->cancelled_ref(), order_by_columns, sort_descs, &permutation));
+        RETURN_IF_ERROR(sort_and_tie_columns(state->cancelled_ref(), row_id_column->columns(), sort_descs, &_permutation));
 
         auto sorted_chunk = input_chunk->clone_empty_with_slot(input_chunk->num_rows());
 
-        materialize_by_permutation(sorted_chunk.get(), {input_chunk}, permutation);
-        for (size_t i = 0;i < sorted_chunk->num_rows();i++) {
-            LOG(INFO) << "sorted: " << sorted_chunk->debug_row(i);
-        }
-        LOG(INFO) << "tuple_id: " << tuple_id << ", slot_id: " << slot_id << ", sorted chunk: " << sorted_chunk->debug_columns();
+        materialize_by_permutation(sorted_chunk.get(), {input_chunk}, _permutation);
+        // for (size_t i = 0;i < sorted_chunk->num_rows();i++) {
+        //     LOG(INFO) << "sorted: " << sorted_chunk->debug_row(i);
+        // }
+        // LOG(INFO) << "tuple_id: " << tuple_id << ", slot_id: " << slot_id << ", sorted chunk: " << sorted_chunk->debug_columns();
         // data is sorted by row id
-        auto ordered_row_id_column = sorted_chunk->get_column_by_slot_id(slot_id);
-        const auto& ordered_row_id_data = down_cast<RowIdColumn*>(ordered_row_id_column.get())->get_data();
+        // auto ordered_row_id_column = sorted_chunk->get_column_by_slot_id(slot_id);
+        // const auto& ordered_row_id_data = down_cast<RowIdColumn*>(ordered_row_id_column.get())->get_data();
+        auto ordered_row_id_column = down_cast<RowIdColumn*>(sorted_chunk->get_column_by_slot_id(slot_id).get());
+
+        const auto& seg_ids = UInt32Column::static_pointer_cast(ordered_row_id_column->seg_ids_column())->get_data();
+        const auto& ord_ids = UInt32Column::static_pointer_cast(ordered_row_id_column->ord_ids_column())->get_data();
+        // const auto& ord_ids = down_cast<RowIdColumn*>(ordered_row_id_column.get())->ord_ids_column()->get_data();
+        size_t num_rows = ordered_row_id_column->size();
         // build parse range
 
-        uint32_t cur_seg_id = (ordered_row_id_data[0].lo >> 32);
-        uint32_t cur_ord_id = (ordered_row_id_data[0].lo & 0xFFFFFFFF);
+        uint32_t cur_seg_id = seg_ids[0];
+        uint32_t cur_ord_id = ord_ids[0];
+
+        // uint32_t cur_seg_id = (ordered_row_id_data[0].lo >> 32);
+        // uint32_t cur_ord_id = (ordered_row_id_data[0].lo & 0xFFFFFFFF);
         // LOG(INFO) << "seg id: " << cur_seg_id << ", ord id: " << cur_ord_id;
         Range<rowid_t> cur_range(cur_ord_id, cur_ord_id + 1);
         // determine the range of each segment
@@ -165,9 +186,11 @@ Status LookUpProcessor::process(RuntimeState* state) {
         replicate_offsets.emplace_back(1);
 
         // @TODO what if there are duplicated row ids
-        for (size_t i = 1;i < ordered_row_id_data.size();i++) {
-            uint32_t seg_id = (ordered_row_id_data[i].lo >> 32);
-            uint32_t ord_id = (ordered_row_id_data[i].lo & 0xFFFFFFFF);
+        for (size_t i = 1;i < num_rows;i++) {
+            uint32_t seg_id = seg_ids[i];
+            uint32_t ord_id = ord_ids[i];
+            // uint32_t seg_id = (ordered_row_id_data[i].lo >> 32);
+            // uint32_t ord_id = (ordered_row_id_data[i].lo & 0xFFFFFFFF);
             // LOG(INFO) << "seg id: " << seg_id << ", ord id: " << ord_id;
             if (seg_id == cur_seg_id) {
                 // @TODO consider ord == cur_range.end() - 1
@@ -200,10 +223,10 @@ Status LookUpProcessor::process(RuntimeState* state) {
         auto [iter, _] = seg_ranges.try_emplace(cur_seg_id, std::make_shared<SparseRange<rowid_t>>());
         iter->second->add(cur_range);
         // replicate_offsets.emplace_back(replicate_offsets.back() + 1);
-        for (const auto& [seg_id, range]: seg_ranges) {
-            LOG(INFO) << "ranges for seg: " << seg_id << ", range: " << range->to_string();
-        }
-        LOG(INFO) << "last offset: " << replicate_offsets.back() << ", num_rows: " << ordered_row_id_data.size();
+        // for (const auto& [seg_id, range]: seg_ranges) {
+        //     LOG(INFO) << "ranges for seg: " << seg_id << ", range: " << range->to_string();
+        // }
+        // LOG(INFO) << "last offset: " << replicate_offsets.back() << ", num_rows: " << num_rows;
         // for(const auto& offset: replicate_offsets) {
         //     LOG(INFO) << "replicate offsets: " << offset;
         // }
@@ -219,13 +242,14 @@ Status LookUpProcessor::process(RuntimeState* state) {
             auto seg_info = glm_ctx->get_segment(seg_id);
             auto segment = seg_info.segment;
             auto tablet_schema = segment->tablet_schema_share_ptr();
+            // LOG(INFO) << "segment schema: " << tablet_schema->debug_string();
             // build cid
             std::vector<ColumnId> cids;
             phmap::flat_hash_map<ColumnId, SlotId> cid_to_slot_id;
             for (const auto& slot : slots) {
                 auto idx = tablet_schema->field_index(slot->col_name());
-                DCHECK(idx >= 0) << "not find col: " << slot->col_name();
-                LOG(INFO) << "name: " << slot->col_name() << ", cid: " << idx << ", slot id: " << slot->id();
+                DCHECK(idx != static_cast<size_t>(-1)) << "not find col: " << slot->col_name();
+                // LOG(INFO) << "name: " << slot->col_name() << ", cid: " << idx << ", slot id: " << slot->id();
                 cids.push_back(idx);
                 cid_to_slot_id.emplace(idx, slot->id());
             }
@@ -244,17 +268,17 @@ Status LookUpProcessor::process(RuntimeState* state) {
                 
                 auto status = segment_iterator->get_next(tmp.get());
                 if (status.is_end_of_file()) {
-                    LOG(INFO) << "reach end of file, " << tmp->debug_columns();
+                    // LOG(INFO) << "reach end of file, " << tmp->debug_columns();
                     break;
                 } else if (!status.ok()) {
                     LOG(INFO) << "get next error: " << status.to_string();
                     return status;
                 }
                 if (tmp->is_empty()) {
-                    LOG(INFO) << "reach end of segment";
+                    // LOG(INFO) << "reach end of segment";
                     break;
                 }
-                LOG(INFO) << "tmp chunk: " << tmp->debug_columns() << ", seg: " << seg_id;
+                // LOG(INFO) << "tmp chunk: " << tmp->debug_columns() << ", seg: " << seg_id;
                 if (result_chunk == nullptr) {
                     // should 
                     result_chunk = std::make_shared<Chunk>();
@@ -264,7 +288,7 @@ Status LookUpProcessor::process(RuntimeState* state) {
                         auto tmp_column = tmp->get_column_by_index(idx)->clone();
                         SlotId sid = cid_to_slot_id[cid];
                         result_chunk->append_or_update_column(std::move(tmp_column), sid);
-                        LOG(INFO) << "append column with slot: " << sid;
+                        // LOG(INFO) << "append column with slot: " << sid;
                     }
                 } else {
                     // should append data
@@ -278,47 +302,47 @@ Status LookUpProcessor::process(RuntimeState* state) {
             } while(true);
             // @TODO we should append chunk into final chunk
         }
-        LOG(INFO) << "result chunk: " << result_chunk->debug_columns();
+        // LOG(INFO) << "result chunk: " << result_chunk->debug_columns();
         // @TODO
         // 1. re-sort columns by position column
         {
-            for (size_t i = 0;i < result_chunk->num_rows();i++) {
-                LOG(INFO) << "result chunk: " << result_chunk->debug_row(i);
-            }
+            // for (size_t i = 0;i < result_chunk->num_rows();i++) {
+            //     LOG(INFO) << "result chunk: " << result_chunk->debug_row(i);
+            // }
             for (const auto& [slot_id, _]: result_chunk->get_slot_id_to_index_map()) {
                 auto old_column = result_chunk->get_column_by_slot_id(slot_id);
                 ASSIGN_OR_RETURN(auto new_column, old_column->replicate(replicate_offsets));
                 result_chunk->append_or_update_column(std::move(new_column), slot_id);
             }
-            LOG(INFO) << "result chunk after replicate: " << result_chunk->debug_columns();
+            // LOG(INFO) << "result chunk after replicate: " << result_chunk->debug_columns();
 
 
             // @TODO duplicate result_sink, we should handle duplicated row ids
             // @TODO append pos column to result_chunk, and resort
             result_chunk->append_column(sorted_chunk->get_column_by_slot_id(Chunk::SORT_ORDINAL_COLUMN_SLOT_ID), Chunk::SORT_ORDINAL_COLUMN_SLOT_ID);
-            for (size_t i = 0;i < result_chunk->num_rows();i++) {
-                LOG(INFO) << "result chunk: " << result_chunk->debug_row(i);
-            }
+            // for (size_t i = 0;i < result_chunk->num_rows();i++) {
+            //     LOG(INFO) << "result chunk: " << result_chunk->debug_row(i);
+            // }
             result_chunk->check_or_die();
             // resort
-            LOG(INFO) << "result chunk: " << result_chunk->debug_columns();
-            permutation.resize(0);
+            // LOG(INFO) << "result chunk: " << result_chunk->debug_columns();
+            _permutation.resize(0);
             order_by_columns = {result_chunk->get_column_by_slot_id(Chunk::SORT_ORDINAL_COLUMN_SLOT_ID)};
             sort_descs.descs = {SortDesc{true, true}};
-            RETURN_IF_ERROR(sort_and_tie_columns(state->cancelled_ref(), order_by_columns, sort_descs, &permutation));
+            RETURN_IF_ERROR(sort_and_tie_columns(state->cancelled_ref(), order_by_columns, sort_descs, &_permutation));
             auto sorted_result_chunk = result_chunk->clone_empty_with_slot(result_chunk->num_rows());
-            materialize_by_permutation(sorted_result_chunk.get(), {result_chunk}, permutation);
+            materialize_by_permutation(sorted_result_chunk.get(), {result_chunk}, _permutation);
             sorted_result_chunk->check_or_die();
 
             // @TODO append data into reposonse;
-            std::string serialize_buffer;
             size_t max_serialize_size = 0;
             for (const auto& slot: slots) {
                 auto column = sorted_result_chunk->get_column_by_slot_id(slot->id());
                 max_serialize_size += serde::ColumnArraySerde::max_serialized_size(*column);
             }
-            serialize_buffer.resize(max_serialize_size);
-            uint8_t* buff = reinterpret_cast<uint8_t*>(serialize_buffer.data());
+            _serialize_buffer.clear();
+            _serialize_buffer.resize(max_serialize_size);
+            uint8_t* buff = reinterpret_cast<uint8_t*>(_serialize_buffer.data());
             uint8_t* begin = buff;
             for (const auto& slot: slots) {
                 auto column = sorted_result_chunk->get_column_by_slot_id(slot->id());
@@ -327,21 +351,18 @@ Status LookUpProcessor::process(RuntimeState* state) {
                 uint8_t* start = buff;
                 buff = serde::ColumnArraySerde::serialize(*column, buff);
                 pcolumn->set_data_size(buff - start);
-                LOG(INFO) << "append column to response, slot_id: " << slot->id() << ", size: " << pcolumn->data_size();
-                // @TODO we can put into attachment?
-                // @OTOD
-                // pcolumn->mutable_data()->assign(reinterpret_cast<const char*>(start), buff - start);
+                // LOG(INFO) << "append column to response, slot_id: " << slot->id() << ", size: " << pcolumn->data_size();
             }
-            LOG(INFO) << "total serialize size: " << (buff - begin);
+            // LOG(INFO) << "total serialize size: " << (buff - begin);
             size_t actual_serialize_size = buff - begin;
-            cntl->response_attachment().append(serialize_buffer.data(), actual_serialize_size);
+            cntl->response_attachment().append(_serialize_buffer.data(), actual_serialize_size);
 
         }
         // 2. append data into response
     }
     // @TODO re-sort result_chunk by position
     _ctx.done->Run();
-    LOG(INFO) << "reset current ctx";
+    // LOG(INFO) << "reset current ctx";
     _ctx.reset();
     return Status::OK();
 }
@@ -352,8 +373,8 @@ Status LookUpProcessor::_deserialize_row_id_columns(const PLookUpRequest* reques
         const auto& pcolumn = request->row_id_columns(i);
         // deserialize
         int32_t slot_id = pcolumn.slot_id();
-        int64_t data_size = pcolumn.data_size();
-        LOG(INFO) << "row id column data_size: " << data_size << ", slot: " << slot_id;
+        [[maybe_unused]] int64_t data_size = pcolumn.data_size();
+        // LOG(INFO) << "row id column data_size: " << data_size << ", slot: " << slot_id;
         RowIdColumn::Ptr row_id_column = RowIdColumn::create();
         const uint8_t* buff = reinterpret_cast<const uint8_t*>(pcolumn.data().data());
         auto ret = serde::ColumnArraySerde::deserialize(buff, row_id_column.get());
@@ -362,7 +383,7 @@ Status LookUpProcessor::_deserialize_row_id_columns(const PLookUpRequest* reques
             return Status::InternalError("deserialize row id column error");
         }
         row_id_columns->emplace(slot_id, row_id_column);
-        LOG(INFO) << "deserialize row id column success, slot_id: " << slot_id << ", size: " << row_id_column->size();
+        // LOG(INFO) << "deserialize row id column success, slot_id: " << slot_id << ", size: " << row_id_column->size();
     }
     return Status::OK();
 }
@@ -387,12 +408,12 @@ LookUpOperator::LookUpOperator(OperatorFactory* factory, int32_t id, int32_t pla
     for (int32_t i = 0;i < kIoTasksPerOperator;i++) {
         _processors.emplace_back(std::make_shared<LookUpProcessor>(this));
     }
-    for (const auto tuple_id : _tuple_ids) {
-        LOG(INFO) << "tuple_id: " << tuple_id;
-    }
-    for (const auto& [tuple_id, row_id] : _row_id_slots) {
-        LOG(INFO) << "tuple_id: " << tuple_id << ", row_id: " << row_id;
-    }
+    // for (const auto tuple_id : _tuple_ids) {
+    //     LOG(INFO) << "tuple_id: " << tuple_id;
+    // }
+    // for (const auto& [tuple_id, row_id] : _row_id_slots) {
+    //     LOG(INFO) << "tuple_id: " << tuple_id << ", row_id: " << row_id;
+    // }
 }
 
 Status LookUpOperator::prepare(RuntimeState* state) {
@@ -423,7 +444,7 @@ bool LookUpOperator::has_output() const {
     // if we can trigger new io task
     for (auto& processor: _processors) {
         if (!processor->is_running() && _dispatcher->has_data(_driver_sequence)) {
-            LOG(INFO) << "can submit new io task";
+            // LOG(INFO) << "can submit new io task";
             return true;
         }
     }
@@ -436,7 +457,7 @@ bool LookUpOperator::is_finished() const {
 }
 
 Status LookUpOperator::set_finishing(RuntimeState* state) {
-    LOG(INFO) << "LookUpOperator::set_finishing";
+    // LOG(INFO) << "LookUpOperator::set_finishing";
     _is_finished = true;
     return Status::OK();
 }
@@ -469,7 +490,7 @@ Status LookUpOperator::_try_to_trigger_io_task(RuntimeState* state) {
                     processor->set_running(false);
                 });
                 if (auto sp = wp.lock()) {
-                    LOG(INFO) << "run processor " << idx;
+                    // LOG(INFO) << "run processor " << idx;
                     Status status = processor->process(state);
                     // @TODO consider eof
                     if (!status.ok()) {

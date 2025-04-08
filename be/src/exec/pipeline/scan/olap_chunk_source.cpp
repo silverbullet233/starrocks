@@ -15,6 +15,7 @@
 #include "exec/pipeline/scan/olap_chunk_source.h"
 
 #include <cstdint>
+#include <sstream>
 #include <string_view>
 #include <unordered_map>
 
@@ -280,6 +281,7 @@ Status OlapChunkSource::_init_reader_params(const std::vector<std::unique_ptr<Ol
         ASSIGN_OR_RETURN(_params.runtime_filter_preds,
                          _scan_ctx->conjuncts_manager().get_runtime_filter_predicates(&_obj_pool, parser));
     }
+    // @TODO we should not use global var, we can set it in OlapScanNode
     _params.enable_global_late_materialization = _runtime_state->enable_global_late_materialization();
     _decide_chunk_size(!pred_tree.empty());
     PredicateAndNode pushdown_pred_root;
@@ -343,7 +345,7 @@ Status OlapChunkSource::_init_scanner_columns(std::vector<uint32_t>& scanner_col
             index = _tablet_schema->num_columns() + 1;
             _params.row_id_column_id = index;
             _params.row_id_column_slot = slot->id();
-            LOG(INFO) << "row id slot, column id: " << index << ", slot id: " << slot->id();
+            // LOG(INFO) << "row id slot, column id: " << index << ", slot id: " << slot->id();
         } else {
             index = _tablet_schema->field_index(slot->col_name());
         }
@@ -512,6 +514,20 @@ Status OlapChunkSource::_init_olap_reader(RuntimeState* runtime_state) {
     RETURN_IF_ERROR(_init_reader_params(_scan_ctx->key_ranges(), scanner_columns, reader_columns));
 
     // schema is new object, but fields not
+    // {
+    //     std::ostringstream oss;
+    //     oss << "reader_columns[";
+    //     for (const auto id: reader_columns) {
+    //         oss << id << ",";
+    //     }
+    //     oss << "]";
+    //     oss << ", scanner_columns[";
+    //     for (const auto id: scanner_columns) {
+    //         oss << id << ",";
+    //     }
+    //     oss << "]";
+    //     LOG(INFO) << "tablet_schema: " << _tablet_schema->debug_string() << ", " << oss.str();
+    // }
     starrocks::Schema child_schema = ChunkHelper::convert_schema(_tablet_schema, reader_columns);
     RETURN_IF_ERROR(_init_column_access_paths(&child_schema));
     // will modify schema field, need to copy schema
@@ -528,6 +544,17 @@ Status OlapChunkSource::_init_olap_reader(RuntimeState* runtime_state) {
     if (reader_columns.size() == scanner_columns.size()) {
         _prj_iter = _reader;
     } else {
+        std::ostringstream oss;
+        oss << "reader_columns[";
+        for (auto index : reader_columns) {
+            oss << index << ",";
+        }
+        oss << "], scanner_columns[";
+        for (auto index: scanner_columns) {
+            oss << index << ",";
+        }
+        oss << "]";
+        LOG(INFO) << oss.str();
         starrocks::Schema output_schema = ChunkHelper::convert_schema(_tablet_schema, scanner_columns);
         _prj_iter = new_projection_iterator(output_schema, _reader);
     }
@@ -603,11 +630,10 @@ Status OlapChunkSource::_read_chunk_from_storage(RuntimeState* state, Chunk* chu
     do {
         RETURN_IF_ERROR(state->check_mem_limit("read chunk from storage"));
         RETURN_IF_ERROR(_prj_iter->get_next(chunk));
-
+        // LOG(INFO) << "get_next from _prj_iter: " << chunk->debug_columns();
         TRY_CATCH_ALLOC_SCOPE_START()
 
         for (auto slot : _query_slots) {
-            // @TODO handle ROW_ID?
             if (slot->type().is_row_id_type()) {
                 // @TODO pending fix
                 DCHECK_EQ(slot->id(), _params.row_id_column_slot);
@@ -636,6 +662,7 @@ Status OlapChunkSource::_read_chunk_from_storage(RuntimeState* state, Chunk* chu
         TRY_CATCH_ALLOC_SCOPE_END()
 
     } while (chunk->num_rows() == 0);
+    // LOG(INFO) << "final chunk: " << chunk->debug_columns();
     _update_realtime_counter(chunk);
     // LOG(INFO) << "read_chunk_from_storage: " << chunk->debug_columns();
     // Improve for select * from table limit x, x is small

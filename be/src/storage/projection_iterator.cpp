@@ -41,6 +41,11 @@ public:
         RETURN_IF_ERROR(ChunkIterator::init_output_schema(unused_output_column_ids));
         RETURN_IF_ERROR(_child->init_output_schema(unused_output_column_ids));
         _index_map.clear();
+        LOG(INFO) << "init output schema";
+        // @TODO too tricky
+        if (this->_schema.is_output_global_rowid()) {
+            this->_output_schema.set_output_global_rowid(true);
+        }
         build_index_map(this->_output_schema, _child->output_schema());
         return Status::OK();
     }
@@ -58,8 +63,10 @@ private:
 };
 
 void ProjectionIterator::build_index_map(const Schema& output, const Schema& input) {
+    // @TODO consider row-id column
     DCHECK_LE(output.num_fields(), input.num_fields());
-
+    // DCHECK_EQ(output.is_output_global_rowid(), input.is_output_global_rowid());
+    LOG(INFO) << "build_index_map, " << (void*)this;
     std::unordered_map<ColumnId, size_t> input_indexes;
     for (size_t i = 0; i < input.num_fields(); i++) {
         input_indexes[input.field(i)->id()] = i;
@@ -70,6 +77,19 @@ void ProjectionIterator::build_index_map(const Schema& output, const Schema& inp
         DCHECK(input_indexes.count(output.field(i)->id()) > 0);
         _index_map[i] = input_indexes[output.field(i)->id()];
     }
+    // if need output global rowid, should consider rowid column
+    // if (output.is_output_global_rowid()) {
+    //     _index_map.emplace_back(input.num_fields());
+    //     std::ostringstream oss;
+    //     oss << "build_index_map, output global rowid, output: " << _index_map.size() - 1
+    //         << ", input:" << _index_map.back() << " [";
+    //     for (size_t i = 0; i < _index_map.size(); i++) {
+    //         oss << _index_map[i] << ", ";
+    //     }
+    //     oss << "], " << (void*)this;
+    //     LOG(INFO) << oss.str();
+
+    // }
 }
 
 Status ProjectionIterator::do_get_next(Chunk* chunk) {
@@ -77,15 +97,19 @@ Status ProjectionIterator::do_get_next(Chunk* chunk) {
         DCHECK_GT(_child->output_schema().num_fields(), 0);
         _chunk = ChunkHelper::new_chunk(_child->output_schema(), _chunk_size);
     }
-    // LOG(INFO) << "ProjectionIterator::do_get_next, chunk: " << _chunk->debug_columns();
     _chunk->reset();
     Status st = _child->get_next(_chunk.get());
+
+    LOG(INFO) << "ProjectionIterator::do_get_next, chunk: " << _chunk->debug_columns() << ", " << (void*)this;
     if (st.ok()) {
         Columns& input_columns = _chunk->columns();
+        LOG(INFO) << "input columns: " << input_columns.size() << ", output columns: " << _index_map.size();
         for (size_t i = 0; i < _index_map.size(); i++) {
+            LOG(INFO) << "output column: " << i << ", input column: " << _index_map[i];
             chunk->get_column_by_index(i).swap(input_columns[_index_map[i]]);
         }
     }
+    LOG(INFO) << "ProjectionIterator::do_get_next result, chunk: " << chunk->debug_columns();
 #ifndef NDEBUG
     if (st.ok()) {
         CHECK(chunk->num_rows() > 0);

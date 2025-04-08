@@ -32,6 +32,7 @@ public:
     Schema& operator=(Schema&&) = default;
 
     inline static const std::string FULL_ROW_COLUMN = "__row";
+    inline static const ColumnId GLOBAL_ROW_ID_COLUMN_ID = -2;
 
 #ifdef BE_TEST
     explicit Schema(Fields fields);
@@ -100,6 +101,13 @@ public:
 
     void init_sort_key_idxes() { _init_sort_key_idxes(); }
 
+    void set_output_global_rowid(bool val) {
+        _output_global_rowid = val;
+    }
+    bool is_output_global_rowid() const {
+        return _output_global_rowid;
+    }
+
 private:
     void _build_index_map(const Fields& fields);
     void _init_sort_key_idxes() {
@@ -131,6 +139,8 @@ private:
     mutable bool _share_name_to_index = false;
 
     uint8_t _keys_type = static_cast<uint8_t>(DUP_KEYS);
+    // if output global rowid, idx num_fields.size() - 1 is the idx of rowid
+    bool _output_global_rowid = false;
 };
 
 inline std::ostream& operator<<(std::ostream& os, const Schema& schema) {

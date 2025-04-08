@@ -111,6 +111,7 @@ public class LateMaterializedColumnCollector {
                     new PhysicalLookUpOperator(tableColumns, columnRefOperatorColumnMap, rowidColumns);
             // create new OptExpression
             OptExpression result = OptExpression.create(physicalFetchOperator, newRoot);
+            result.setStatistics(newRoot.getStatistics());
             result.getInputs().add(OptExpression.create(physicalLookUpOperator));
             return result;
         }
@@ -256,6 +257,10 @@ public class LateMaterializedColumnCollector {
                 context.fetchPositions.get(operator, sourceOperator).add(columnRefOperator);
                 if (context.unMaterializedColumns.containsKey(sourceOperator)) {
                     context.unMaterializedColumns.get(sourceOperator).remove(columnRefOperator);
+                    if (context.unMaterializedColumns.get(sourceOperator).isEmpty()) {
+                        context.unMaterializedColumns.remove(sourceOperator);
+                    }
+
                 }
                 LOG.info("materialize column " + columnRefOperator + " before " + operator);
             }
@@ -526,6 +531,7 @@ public class LateMaterializedColumnCollector {
                 LogicalProperty newLogicalProperty = new LogicalProperty(logicalProperty);
                 newLogicalProperty.getOutputColumns().union(columnRefOperatorColumnMap.keySet());
                 child.setLogicalProperty(new LogicalProperty(logicalProperty));
+                child.setStatistics(optExpression.getStatistics());
                 OptExpression result = OptExpression.builder().with(optExpression).setInputs(Arrays.asList(child)).build();
                 return result;
             } else {

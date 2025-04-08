@@ -1579,21 +1579,32 @@ Status SegmentIterator::_do_get_next(Chunk* result, vector<rowid_t>* rowid) {
         DCHECK(rowid != nullptr);
         // LOG(INFO) << "fill rowid column, column_id: " << _opts.row_id_column_id << ", slot: " << _opts.row_id_column_slot;
         // append row id column
-        RowIdColumn::MutablePtr row_id_column = RowIdColumn::create();
         auto be_id_opt = get_backend_id();
         if (!be_id_opt.has_value()) {
             return Status::InternalError("can't get backend_id");
         }
+        size_t num_rows = rowid->size();
+
+        RowIdColumn::MutablePtr row_id_column = RowIdColumn::create(num_rows);
         int64_t be_id = be_id_opt.value();
-        for (const auto& rid : *rowid) {
-            int96_t row_id;
-            row_id.hi = be_id;
-            row_id.lo = ((uint64_t)_opts.v_id << 32) | rid;
-            // LOG(INFO) << "append row_id: " << be_id << ", seg_id: " << _opts.v_id << ", ord_id: " << rid;
-            row_id_column->append_datum(row_id);
+        auto& be_ids = UInt32Column::static_pointer_cast(row_id_column->be_ids_column())->get_data();
+        auto& seg_ids = UInt32Column::static_pointer_cast(row_id_column->seg_ids_column())->get_data();
+        auto& ord_ids = UInt32Column::static_pointer_cast(row_id_column->ord_ids_column())->get_data();
+        for (size_t i = 0;i < num_rows;i++) {
+            be_ids[i] = be_id;
+            seg_ids[i] = _opts.v_id;
+            ord_ids[i] = (*rowid)[i];
         }
-        chunk->append_column(std::move(row_id_column), _opts.row_id_column_slot);
-        // @TODO append column
+        if (chunk->is_slot_exist(_opts.row_id_column_slot)) {
+            // if row id column already exists, just update it
+            chunk->get_column_by_slot_id(_opts.row_id_column_slot)->append(*row_id_column);
+        } else {
+            chunk->append_column(std::move(row_id_column), _opts.row_id_column_slot);
+        }
+        chunk->check_or_die();
+
+        // @TODO row id column may be exists
+
     }
 
     // @TODO fill row id column?
@@ -2611,6 +2622,9 @@ ChunkIteratorPtr new_segment_iterator(const std::shared_ptr<Segment>& segment, c
         return std::make_shared<SegmentIterator>(segment, schema, options);
     } else {
         Schema ordered_schema = reorder_schema(schema, options.pred_tree);
+        LOG(INFO) << "new_projection_iterator, output_global_rowid: " << schema.is_output_global_rowid();
+        // ordered_schema.set_output_global_rowid(schema.is_output_global_rowid());
+        // @TODO handle row_id
         auto seg_iter = std::make_shared<SegmentIterator>(segment, ordered_schema, options);
         return new_projection_iterator(schema, seg_iter);
     }

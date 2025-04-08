@@ -1300,8 +1300,8 @@ template <typename T>
 void PInternalServiceImplBase<T>::lookup(google::protobuf::RpcController* cntl_base, const PLookUpRequest* request, PLookUpResponse *response, google::protobuf::Closure* done) {
     auto* cntl = static_cast<brpc::Controller*>(cntl_base);
     auto* req = const_cast<PLookUpRequest*>(request);
-    LOG(INFO) << "receive lookup request, query: " << print_id(request->query_id()) << ", target_node: " << request->lookup_node_id()
-        << ", attachment size: " << cntl->request_attachment().size();
+    // LOG(INFO) << "receive lookup request, query: " << print_id(request->query_id()) << ", target_node: " << request->lookup_node_id()
+    //     << ", attachment size: " << cntl->request_attachment().size();
     
     Status st;
     DeferOp defer([&]() {

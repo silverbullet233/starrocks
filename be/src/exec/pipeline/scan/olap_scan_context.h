@@ -16,6 +16,7 @@
 
 #include <atomic>
 #include <condition_variable>
+#include <functional>
 #include <mutex>
 
 #include "column/column_access_path.h"
@@ -27,6 +28,7 @@
 #include "fs/fs.h"
 #include "runtime/global_dict/parser.h"
 #include "storage/rowset/rowset.h"
+#include "util/hash.h"
 #include "util/phmap/phmap.h"
 #include "util/phmap/phmap_fwd_decl.h"
 
@@ -68,7 +70,8 @@ struct GlobalLateMaterilizationCtx {
     }
 
     std::atomic<int32_t> _next_id{0};
-    phmap::parallel_flat_hash_map<int32_t, SegmentInfo> _segments;
+    phmap::parallel_flat_hash_map<int32_t, SegmentInfo, StdHash<int32_t>, std::equal_to<int32_t>,
+        std::allocator<std::pair<int32_t, SegmentInfo>>, 5, std::mutex, true> _segments;
 };
 
 class ConcurrentJitRewriter {

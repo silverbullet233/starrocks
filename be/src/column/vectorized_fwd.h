@@ -52,6 +52,7 @@ class MapColumn;
 class StructColumn;
 class NullableColumn;
 class ConstColumn;
+class RowIdColumn;
 
 template <typename T>
 class FixedLengthColumn;
@@ -85,7 +86,7 @@ using Decimal64Column = DecimalV3Column<int64_t>;
 using Decimal128Column = DecimalV3Column<int128_t>;
 using BinaryColumn = BinaryColumnBase<uint32_t>;
 using LargeBinaryColumn = BinaryColumnBase<uint64_t>;
-using RowIdColumn = FixedLengthColumn<int96_t>;
+// using RowIdColumn = FixedLengthColumn<int96_t>;
 
 template <typename T>
 constexpr bool is_decimal_column = false;

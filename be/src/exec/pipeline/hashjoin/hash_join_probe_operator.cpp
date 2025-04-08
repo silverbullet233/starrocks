@@ -78,6 +78,7 @@ bool HashJoinProbeOperator::is_ready() const {
 
 Status HashJoinProbeOperator::push_chunk(RuntimeState* state, const ChunkPtr& chunk) {
     RETURN_IF_ERROR(_reference_builder_hash_table_once());
+    // LOG(INFO) << "HashJoinProbeOperator::push_chunk, chunk: " << chunk->debug_columns();
     RETURN_IF_ERROR(_join_prober->push_chunk(state, std::move(const_cast<ChunkPtr&>(chunk))));
     return Status::OK();
 }
