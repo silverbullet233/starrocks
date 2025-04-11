@@ -795,7 +795,7 @@ Status Rowset::get_segment_iterators(const Schema& schema, const RowsetReadOptio
         }
         
         seg_options.v_id = -1;
-        if (options.enable_global_late_materialization) {
+        if (options.need_generate_global_rowid) {
             pipeline::GlobalLateMaterilizationCtx::SegmentInfo seg_info;
             seg_info.segment = seg_ptr;
             ASSIGN_OR_RETURN(seg_info.fs, FileSystem::CreateSharedFromString(_rowset_path));
@@ -803,7 +803,6 @@ Status Rowset::get_segment_iterators(const Schema& schema, const RowsetReadOptio
             seg_options.v_id = options.runtime_state->query_ctx()->global_late_materialization_ctx()->register_segment(seg_info);
             seg_options.row_id_column_id = options.row_id_column_id;
             seg_options.row_id_column_slot = options.row_id_column_slot;
-            segment_schema.set_output_global_rowid(true);
             // LOG(INFO) << "register v_id: " << seg_options.v_id << ", column id: " << options.row_id_column_id << ", slot id: " << options.row_id_column_slot;
         }
 

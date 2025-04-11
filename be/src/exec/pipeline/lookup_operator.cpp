@@ -40,6 +40,7 @@
 #include "storage/rowset/segment_options.h"
 #include "util/defer_op.h"
 #include "util/raw_container.h"
+#include "exec/pipeline/fetch_operator.h"
 
 namespace starrocks::pipeline {
 
@@ -92,13 +93,25 @@ Status LookUpProcessor::process(RuntimeState* state) {
     // @TODO use SegmentIterator to get data
     // @TODO get data from xx
     auto request = _ctx.request;
-    DCHECK(request != nullptr) << "request should not be null";
+    if (_ctx.fetch_ctx == nullptr) {
+        DCHECK(request != nullptr) << "request should not be null";
+    }
     // LOG(INFO) << "process lookup request, row_id_column num: " << request->row_id_columns_size();
     auto response = _ctx.response;
     auto* cntl = static_cast<brpc::Controller*>(_ctx.cntl);
 
     phmap::flat_hash_map<SlotId, RowIdColumn::Ptr> row_id_columns;
-    RETURN_IF_ERROR(_deserialize_row_id_columns(request, &row_id_columns));
+    // @TODO if local 
+    if (_ctx.fetch_ctx != nullptr) {
+        // this is local pass through request, we don't serialize data
+        LOG(INFO) << "process lookup request, local pass through";
+        for (const auto& [slot_id, columns]: *_ctx.fetch_ctx->request_columns) {
+            auto row_id_column = RowIdColumn::static_pointer_cast(columns.first);
+            row_id_columns[slot_id] = row_id_column;
+        }
+    } else {
+        RETURN_IF_ERROR(_deserialize_row_id_columns(request, &row_id_columns));
+    }
     // use row id columns to get data from storage
     // collect row id
 
@@ -119,17 +132,6 @@ Status LookUpProcessor::process(RuntimeState* state) {
         for (size_t i = 0;i < row_id_column->size();i++) {
             position_data[i] = i;
         }
-        {
-            // for(size_t i = 0;i < row_id_column->size();i++) {
-            //     LOG(INFO) << "origin: " << row_id_column->debug_item(i);
-            // }
-            // const auto& row_id_data = row_id_column->get_data();
-            // for (size_t i = 0;i < row_id_data.size();i++) {
-            //     uint32_t seg_id = (row_id_data[i].lo >> 32);
-            //     uint32_t ord_id = (row_id_data[i].lo & 0xFFFFFFFF);
-            //     LOG(INFO) << "origin seg id: " << seg_id << ", ord id: " << ord_id;
-            // }
-        }
         // sort by row_id
 
         // Permutation permutation;
@@ -146,7 +148,8 @@ Status LookUpProcessor::process(RuntimeState* state) {
         Columns order_by_columns{row_id_column};
         SortDescs sort_descs;
         sort_descs.descs = {SortDesc{true, true}, SortDesc{true, true}, SortDesc{true, true}};
-
+        
+        // @TODO since be_id is same, we only sort by seg_id + ord_id
         RETURN_IF_ERROR(sort_and_tie_columns(state->cancelled_ref(), row_id_column->columns(), sort_descs, &_permutation));
 
         auto sorted_chunk = input_chunk->clone_empty_with_slot(input_chunk->num_rows());
@@ -170,9 +173,6 @@ Status LookUpProcessor::process(RuntimeState* state) {
         uint32_t cur_seg_id = seg_ids[0];
         uint32_t cur_ord_id = ord_ids[0];
 
-        // uint32_t cur_seg_id = (ordered_row_id_data[0].lo >> 32);
-        // uint32_t cur_ord_id = (ordered_row_id_data[0].lo & 0xFFFFFFFF);
-        // LOG(INFO) << "seg id: " << cur_seg_id << ", ord id: " << cur_ord_id;
         Range<rowid_t> cur_range(cur_ord_id, cur_ord_id + 1);
         // determine the range of each segment
         // segment_id => ranges, make sure that data range is ordered
@@ -189,11 +189,8 @@ Status LookUpProcessor::process(RuntimeState* state) {
         for (size_t i = 1;i < num_rows;i++) {
             uint32_t seg_id = seg_ids[i];
             uint32_t ord_id = ord_ids[i];
-            // uint32_t seg_id = (ordered_row_id_data[i].lo >> 32);
-            // uint32_t ord_id = (ordered_row_id_data[i].lo & 0xFFFFFFFF);
             // LOG(INFO) << "seg id: " << seg_id << ", ord id: " << ord_id;
             if (seg_id == cur_seg_id) {
-                // @TODO consider ord == cur_range.end() - 1
                 // same segment, check if need add a new range
                 if (ord_id == cur_range.end() - 1) {
                     // duplicated ord_ids, do nothing, we should mark which idx is duplicated
@@ -311,6 +308,7 @@ Status LookUpProcessor::process(RuntimeState* state) {
             // }
             for (const auto& [slot_id, _]: result_chunk->get_slot_id_to_index_map()) {
                 auto old_column = result_chunk->get_column_by_slot_id(slot_id);
+                // @TODO if nothing changed, we should avoid replivate
                 ASSIGN_OR_RETURN(auto new_column, old_column->replicate(replicate_offsets));
                 result_chunk->append_or_update_column(std::move(new_column), slot_id);
             }
@@ -335,33 +333,51 @@ Status LookUpProcessor::process(RuntimeState* state) {
             sorted_result_chunk->check_or_die();
 
             // @TODO append data into reposonse;
-            size_t max_serialize_size = 0;
-            for (const auto& slot: slots) {
-                auto column = sorted_result_chunk->get_column_by_slot_id(slot->id());
-                max_serialize_size += serde::ColumnArraySerde::max_serialized_size(*column);
+            if (_ctx.fetch_ctx != nullptr) {
+                // this is local pass through request, we don't serialize data
+                // LOG(INFO) << "local pass through, do nothing";
+                // fill data 
+                LOG(INFO) << "fill response for local request";
+                for (const auto& slot: slots) {
+                    auto column = sorted_result_chunk->get_column_by_slot_id(slot->id());
+                    _ctx.fetch_ctx->response_columns[slot->id()] = column;
+                    LOG(INFO) << "append column to response, slot_id: " << slot->id() << ", size: " << column->size();
+                }
+            } else {
+                size_t max_serialize_size = 0;
+                for (const auto& slot: slots) {
+                    auto column = sorted_result_chunk->get_column_by_slot_id(slot->id());
+                    max_serialize_size += serde::ColumnArraySerde::max_serialized_size(*column);
+                }
+                _serialize_buffer.clear();
+                _serialize_buffer.resize(max_serialize_size);
+                uint8_t* buff = reinterpret_cast<uint8_t*>(_serialize_buffer.data());
+                uint8_t* begin = buff;
+                for (const auto& slot: slots) {
+                    auto column = sorted_result_chunk->get_column_by_slot_id(slot->id());
+                    auto pcolumn = response->add_columns();
+                    pcolumn->set_slot_id(slot->id());
+                    uint8_t* start = buff;
+                    buff = serde::ColumnArraySerde::serialize(*column, buff);
+                    pcolumn->set_data_size(buff - start);
+                    // LOG(INFO) << "append column to response, slot_id: " << slot->id() << ", size: " << pcolumn->data_size();
+                }
+                // LOG(INFO) << "total serialize size: " << (buff - begin);
+                size_t actual_serialize_size = buff - begin;
+                cntl->response_attachment().append(_serialize_buffer.data(), actual_serialize_size);
             }
-            _serialize_buffer.clear();
-            _serialize_buffer.resize(max_serialize_size);
-            uint8_t* buff = reinterpret_cast<uint8_t*>(_serialize_buffer.data());
-            uint8_t* begin = buff;
-            for (const auto& slot: slots) {
-                auto column = sorted_result_chunk->get_column_by_slot_id(slot->id());
-                auto pcolumn = response->add_columns();
-                pcolumn->set_slot_id(slot->id());
-                uint8_t* start = buff;
-                buff = serde::ColumnArraySerde::serialize(*column, buff);
-                pcolumn->set_data_size(buff - start);
-                // LOG(INFO) << "append column to response, slot_id: " << slot->id() << ", size: " << pcolumn->data_size();
-            }
-            // LOG(INFO) << "total serialize size: " << (buff - begin);
-            size_t actual_serialize_size = buff - begin;
-            cntl->response_attachment().append(_serialize_buffer.data(), actual_serialize_size);
 
         }
         // 2. append data into response
     }
     // @TODO re-sort result_chunk by position
-    _ctx.done->Run();
+    if (_ctx.fetch_ctx != nullptr) {
+        // @TODO
+        _ctx.fetch_ctx->callback(Status::OK());
+    } else {
+        _ctx.done->Run();
+        // @TODO reduce in flight request num
+    }
     // LOG(INFO) << "reset current ctx";
     _ctx.reset();
     return Status::OK();

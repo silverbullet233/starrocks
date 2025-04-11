@@ -32,7 +32,7 @@ public:
     Schema& operator=(Schema&&) = default;
 
     inline static const std::string FULL_ROW_COLUMN = "__row";
-    inline static const ColumnId GLOBAL_ROW_ID_COLUMN_ID = -2;
+    inline static const size_t INVALID_ROW_ID_FIELD_IDX = UINT64_MAX;
 
 #ifdef BE_TEST
     explicit Schema(Fields fields);
@@ -92,6 +92,7 @@ public:
     void set_field_by_name(FieldPtr field, const std::string& name);
 
     size_t get_field_index_by_name(const std::string& name) const;
+    size_t get_row_id_field_index() const;
 
     std::vector<ColumnId> field_column_ids(bool use_rowstore = false) const;
 
@@ -100,13 +101,6 @@ public:
     KeysType keys_type() const { return static_cast<KeysType>(_keys_type); }
 
     void init_sort_key_idxes() { _init_sort_key_idxes(); }
-
-    void set_output_global_rowid(bool val) {
-        _output_global_rowid = val;
-    }
-    bool is_output_global_rowid() const {
-        return _output_global_rowid;
-    }
 
 private:
     void _build_index_map(const Fields& fields);
@@ -139,8 +133,7 @@ private:
     mutable bool _share_name_to_index = false;
 
     uint8_t _keys_type = static_cast<uint8_t>(DUP_KEYS);
-    // if output global rowid, idx num_fields.size() - 1 is the idx of rowid
-    bool _output_global_rowid = false;
+    [[maybe_unused]] size_t _row_id_field_idx = INVALID_ROW_ID_FIELD_IDX;
 };
 
 inline std::ostream& operator<<(std::ostream& os, const Schema& schema) {

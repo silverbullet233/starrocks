@@ -26,26 +26,31 @@
 namespace starrocks {
 class PLookUpRequest;
 class PLookUpResponse;
+class LookUpDispatcher;
 }
 namespace starrocks::pipeline {
+using RequestColumns = phmap::flat_hash_map<uint32_t, std::pair<ColumnPtr, ColumnPtr>>;
+using RequestColumnsPtr = std::shared_ptr<RequestColumns>;
+struct FetchContext {
+    uint32_t be_id; // @TODO target address
+    butil::IOBuf iobuf;
+    // row_id_slot => row_id, position
+    RequestColumnsPtr request_columns;
+    // slot id => column
+    mutable phmap::flat_hash_map<SlotId, ColumnPtr> response_columns;
+    // only used in local pass through request
+    std::function<void(const Status&)> callback;
+    int64_t send_ts = 0;
+};
+
+using FetchContextPtr = std::shared_ptr<FetchContext>;
 
 class FetchOperator final : public Operator {
-private:
-    // row_id_slot => row_id, position
-    using RequestColumns = phmap::flat_hash_map<uint32_t, std::pair<ColumnPtr, ColumnPtr>>;
-    using RequestColumnsPtr = std::shared_ptr<RequestColumns>;
-    struct FetchContext {
-        uint32_t be_id; // @TODO target address
-        butil::IOBuf iobuf;
-        RequestColumnsPtr request_columns;
-        // slot id => column
-        mutable phmap::flat_hash_map<SlotId, ColumnPtr> response_columns;
-        int64_t send_ts = 0;
-    };
-    using FetchContextPtr = std::shared_ptr<FetchContext>;
 public:
     FetchOperator(OperatorFactory* factory, int32_t id, int32_t plan_node_id, int32_t driver_sequence,
-                int32_t target_node_id, const std::vector<TupleId>& tuple_ids, const std::unordered_map<TupleId, SlotId>& row_id_slots, std::shared_ptr<StarRocksNodesInfo> nodes_info);
+                int32_t target_node_id, const std::vector<TupleId>& tuple_ids,
+                const std::unordered_map<TupleId, SlotId>& row_id_slots, std::shared_ptr<StarRocksNodesInfo> nodes_info,
+                std::shared_ptr<LookUpDispatcher> dispatcher);
 
     Status prepare(RuntimeState* state) override;
 
@@ -122,6 +127,8 @@ private:
     std::atomic_int32_t _in_flight_request_num = 0;
     phmap::flat_hash_map<uint32_t, std::shared_ptr<FetchContext>> _fetch_ctxs;
     // std::vector<std::shared_ptr<FetchContext>> _fetch_ctxs;
+    uint32_t _local_be_id = 0;
+    std::shared_ptr<LookUpDispatcher> _local_dispatcher = nullptr;
 
     static const size_t kMaxBufferChunkNums = 8;
 
@@ -138,18 +145,22 @@ private:
 class FetchOperatorFactory final : public OperatorFactory {
 public:
     FetchOperatorFactory(int32_t id, int32_t plan_node_id, int32_t target_node_id, 
-            std::vector<TupleId> tuple_ids, std::unordered_map<TupleId, SlotId> row_id_slots, std::shared_ptr<StarRocksNodesInfo> nodes_info):
-             OperatorFactory(id, "fetch", plan_node_id), _target_node_id(target_node_id), _tuple_ids(std::move(tuple_ids)), _row_id_slots(std::move(row_id_slots)), _nodes_info(std::move(nodes_info)) {}
+            std::vector<TupleId> tuple_ids, std::unordered_map<TupleId, SlotId> row_id_slots,
+            std::shared_ptr<StarRocksNodesInfo> nodes_info, std::shared_ptr<LookUpDispatcher> dispatcher):
+             OperatorFactory(id, "fetch", plan_node_id),
+             _target_node_id(target_node_id), _tuple_ids(std::move(tuple_ids)), _row_id_slots(std::move(row_id_slots)),
+             _nodes_info(std::move(nodes_info)), _local_dispatcher(std::move(dispatcher)) {}
 
     ~FetchOperatorFactory() override = default;
 
     OperatorPtr create(int32_t degree_of_parallelism, int32_t driver_sequence) override {
-        return std::make_shared<FetchOperator>(this, _id, _plan_node_id, driver_sequence, _target_node_id, _tuple_ids, _row_id_slots, _nodes_info);
+        return std::make_shared<FetchOperator>(this, _id, _plan_node_id, driver_sequence, _target_node_id, _tuple_ids, _row_id_slots, _nodes_info, _local_dispatcher);
     }
 private:
     [[maybe_unused]] int32_t _target_node_id;
     std::vector<TupleId> _tuple_ids;
     std::unordered_map<TupleId, SlotId> _row_id_slots;
     std::shared_ptr<StarRocksNodesInfo> _nodes_info;
+    std::shared_ptr<LookUpDispatcher> _local_dispatcher;
 };
 }

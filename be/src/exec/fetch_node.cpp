@@ -47,13 +47,15 @@ Status FetchNode::init(const TPlanNode& tnode, RuntimeState* state) {
 Status FetchNode::prepare(RuntimeState* state) {
         RETURN_IF_ERROR(ExecNode::prepare(state));
         LOG(INFO) << "FetchNOde::prepare";
+        _dispatcher = state->exec_env()->lookup_dispatcher_mgr()->create_dispatcher(state, state->query_id(), _target_node_id);
         return Status::OK();
 }
 
 pipeline::OpFactories FetchNode::decompose_to_pipeline(
         pipeline::PipelineBuilderContext* context) {
         OpFactories operators = _children[0]->decompose_to_pipeline(context);
-        auto op_factory = std::make_shared<pipeline::FetchOperatorFactory>(context->next_operator_id(), id(), _target_node_id, _tuple_ids, _row_id_slots, _nodes_info);
+        auto op_factory = std::make_shared<pipeline::FetchOperatorFactory>(
+                context->next_operator_id(), id(), _target_node_id, _tuple_ids, _row_id_slots, _nodes_info, _dispatcher);
 
         operators.emplace_back(op_factory);
         return operators;

@@ -29,18 +29,22 @@
 #include "util/blocking_queue.hpp"
 
 namespace starrocks {
-
+namespace pipeline {
+class FetchContext;
+}
 struct LookUpRequestCtx {
     // cntl
     ::google::protobuf::RpcController* cntl = nullptr;
     const PLookUpRequest* request = nullptr;
     PLookUpResponse* response = nullptr;
     ::google::protobuf::Closure* done = nullptr;
+    std::shared_ptr<pipeline::FetchContext> fetch_ctx = nullptr; // only used for local pass through
     void reset() {
         cntl = nullptr;
         request = nullptr;
         response = nullptr;
         done = nullptr;
+        fetch_ctx.reset();
     }
 };
 
@@ -76,6 +80,7 @@ public:
     LookUpDispatcherPtr create_dispatcher(RuntimeState* state, const TUniqueId& query_id, PlanNodeId target_node_id);
 
     StatusOr<LookUpDispatcherPtr> get_dispatcher(const TUniqueId& query_id, PlanNodeId target_node_id);
+    // add local
     // @TODO need resp too
     Status lookup(const LookUpRequestCtx& ctx);
 

@@ -20,6 +20,7 @@
 #include <memory>
 #include <sstream>
 #include <unordered_map>
+#include "agent/master_info.h"
 #include "column/column_helper.h"
 #include "column/vectorized_fwd.h"
 #include "common/global_types.h"
@@ -29,6 +30,7 @@
 #include "exec/tablet_info.h"
 #include "exprs/expr_context.h"
 #include "runtime/descriptors.h"
+#include "runtime/lookup_stream_mgr.h"
 #include "serde/column_array_serde.h"
 #include "serde/encode_context.h"
 #include "serde/protobuf_serde.h"
@@ -43,9 +45,11 @@
 namespace starrocks::pipeline {
 FetchOperator::FetchOperator(OperatorFactory* factory, int32_t id, int32_t plan_node_id, int32_t driver_sequence,
                 int32_t target_node_id, const std::vector<TupleId>& tuple_ids,
-                const std::unordered_map<TupleId, SlotId>& row_id_slots, std::shared_ptr<StarRocksNodesInfo> nodes_info):
+                const std::unordered_map<TupleId, SlotId>& row_id_slots, std::shared_ptr<StarRocksNodesInfo> nodes_info,
+                std::shared_ptr<LookUpDispatcher> local_dispatcher):
         Operator(factory, id, "Fetch", plan_node_id, true, driver_sequence),
-        _target_node_id(target_node_id), _tuple_ids(tuple_ids), _row_id_slots(row_id_slots), _nodes_info(std::move(nodes_info)) {
+        _target_node_id(target_node_id), _tuple_ids(tuple_ids), _row_id_slots(row_id_slots),
+        _nodes_info(std::move(nodes_info)), _local_dispatcher(std::move(local_dispatcher)) {
                 _input_partial_chunks.reserve(kMaxBufferChunkNums);
         }
 
@@ -53,6 +57,14 @@ Status FetchOperator::prepare(RuntimeState* state) {
     RETURN_IF_ERROR(Operator::prepare(state));
     // LOG(INFO) << "FetchOperator::prepare, " << get_name();
     // LOG(INFO) << "desc_tbl: " << state->desc_tbl().debug_string();
+    if (auto opt = get_backend_id(); opt.has_value()) {
+        _local_be_id = opt.value();
+    } else {
+        return Status::InternalError("can't get backend id");
+    }
+    // get or create dispatcher
+
+
     for (const auto& tuple_id: _tuple_ids) {
         // LOG(INFO) << "tuple_id: " << tuple_id;
         const auto& tuple_desc = state->desc_tbl().get_tuple_descriptor(tuple_id);
@@ -194,6 +206,8 @@ StatusOr<ChunkPtr> FetchOperator::pull_chunk(RuntimeState* state) {
     return nullptr;
 }
 
+// @TODO
+// 1. for local request, use local pass through
 Status FetchOperator::build_output_chunk(RuntimeState* state) {
     // merge response from fetch_ctxs
     // build a final chunk and split 
@@ -272,10 +286,30 @@ Status FetchOperator::send_fetch_request(RuntimeState* state, const phmap::flat_
     for (const auto& [be_id, request_columns]: request_chunks) {
         auto fetch_ctx = std::make_shared<FetchContext>();
         fetch_ctx->be_id = be_id;
-        // fetch_ctx->chunk = chunk;
         fetch_ctx->request_columns = request_columns;
         fetch_ctx->send_ts = MonotonicNanos();
+        // @TODO local request
         _fetch_ctxs[be_id] = fetch_ctx;
+        // if (be_id == _local_be_id && config::enable_fetch_local_pass_through) {
+        //     // @TODO just add request to dispatcher
+        //     fetch_ctx->callback = [this] (const Status& status) {
+        //         LOG(INFO) << "call back for local request";
+        //         DeferOp defer([&]() {
+        //             if (--_in_flight_request_num == 0) {
+        //                 _pending_consumed_chunks = _input_partial_chunks.size();
+        //             }
+        //         });
+        //         if (!status.ok()) {
+        //             _set_io_task_status(std::move(status));
+        //         }
+
+        //     };
+        //     LookUpRequestCtx lookup_ctx;
+        //     lookup_ctx.fetch_ctx = fetch_ctx;
+        //     RETURN_IF_ERROR(_local_dispatcher->add_request(std::move(lookup_ctx)));
+        //     LOG(INFO) << "add local request";
+        //     continue;
+        // }
 
         auto* closure = new DisposableClosure<PLookUpResponse, FetchContextPtr>(fetch_ctx);
         closure->addSuccessHandler([this, closure](const FetchContextPtr& ctx, const PLookUpResponse& result) noexcept {
@@ -311,6 +345,7 @@ Status FetchOperator::send_fetch_request(RuntimeState* state, const phmap::flat_
                         // @TODO set status
                         return;
                     }
+                    // @TODO reuse buffer
                     std::string buffer;
                     buffer.resize(pcolumn.data_size());
                     size_t size = io_buf.cutn(buffer.data(), pcolumn.data_size());

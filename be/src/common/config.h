@@ -1591,4 +1591,5 @@ CONF_mInt64(rf_sample_ratio, "32");
 CONF_mInt64(rf_branchless_ratio, "8");
 
 CONF_mInt64(fetch_max_buffer_chunk_num, "8");
+CONF_mBool(enable_fetch_local_pass_through, "false");
 } // namespace starrocks::config

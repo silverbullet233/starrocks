@@ -48,12 +48,6 @@ Schema::Schema(Schema* schema, const std::vector<ColumnId>& cids)
     std::map<ColumnId, int32_t> cids_to_field_id;
     // @TODO handle global row id field
     for (int i = 0; i < cids.size(); i++) {
-        // if (cids[i] == Schema::GLOBAL_ROW_ID_COLUMN_ID) {
-        //     LOG(INFO) << "insert global rowid field";
-        //     _fields[i] = std::make_shared<Field>(cids[i], "global_row_id", TYPE_ROW_ID, false);
-        //     cids_to_field_id[cids[i]] = i;
-        //     continue;
-        // }
         if (cids[i] >= schema->_fields.size()) {
             _fields.resize(_fields.size() - 1);
             continue;
@@ -128,7 +122,6 @@ Schema::Schema(const Schema& schema)
         _build_index_map(_fields);
     }
     _init_sort_key_idxes();
-    _output_global_rowid = schema._output_global_rowid;
 }
 
 // if we use this constructor and share the name_to_index with another schema,
@@ -151,13 +144,16 @@ Schema& Schema::operator=(const Schema& other) {
         this->_share_name_to_index = false;
         _build_index_map(this->_fields);
     }
-    this->_output_global_rowid = other._output_global_rowid;
     return *this;
 }
 
 void Schema::append(const FieldPtr& field) {
     _fields.emplace_back(field);
     _num_keys += field->is_key();
+    // if (field->type()->type() == TYPE_ROW_ID) {
+    //     DCHECK_EQ(_row_id_field_idx, INVALID_ROW_ID_FIELD_IDX);
+    //     _row_id_field_idx = _fields.size() - 1;
+    // }
     if (!_share_name_to_index) {
         if (_name_to_index == nullptr) {
             _name_to_index.reset(new std::unordered_map<std::string_view, size_t>());
@@ -273,8 +269,13 @@ void Schema::set_field_by_name(FieldPtr field, const std::string& name) {
 
 void Schema::_build_index_map(const Fields& fields) {
     _name_to_index.reset(new std::unordered_map<std::string_view, size_t>());
+    // _row_id_field_idx = INVALID_ROW_ID_FIELD_IDX;
     for (size_t i = 0; i < fields.size(); i++) {
         _name_to_index->emplace(fields[i]->name(), i);
+        // if (fields[i]->type()->type() == TYPE_ROW_ID) {
+        //     DCHECK_EQ(_row_id_field_idx, INVALID_ROW_ID_FIELD_IDX) << "row id field should be unique";
+        //     _row_id_field_idx = i;
+        // }
     }
 }
 
@@ -295,6 +296,15 @@ size_t Schema::get_field_index_by_name(const std::string& name) const {
         }
     }
     return p->second;
+}
+size_t Schema::get_row_id_field_index() const {
+    size_t num_field = _fields.size();
+    for (size_t i = 0;i < num_field;i++) {
+        if (_fields[i]->type()->type() == TYPE_ROW_ID) {
+            return i;
+        }
+    }
+    return INVALID_ROW_ID_FIELD_IDX;
 }
 
 void Schema::convert_to(Schema* new_schema, const std::vector<LogicalType>& new_types) const {

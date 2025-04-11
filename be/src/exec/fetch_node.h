@@ -18,8 +18,11 @@
 #include "common/global_types.h"
 #include "exec/exec_node.h"
 #include "exec/tablet_info.h"
+#include "runtime/lookup_stream_mgr.h"
 
 namespace starrocks {
+class LookUpDispatcher;
+
 class FetchNode final : public ExecNode {
 public:
     FetchNode(ObjectPool* pool, const TPlanNode& tnode, const DescriptorTbl& descs);
@@ -51,5 +54,6 @@ private:
     std::vector<TupleId> _tuple_ids;
     std::unordered_map<TupleId, SlotId> _row_id_slots;
     std::shared_ptr<StarRocksNodesInfo> _nodes_info;
+    std::shared_ptr<LookUpDispatcher> _dispatcher;
 };
 }

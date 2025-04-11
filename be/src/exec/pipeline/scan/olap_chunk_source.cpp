@@ -15,6 +15,7 @@
 #include "exec/pipeline/scan/olap_chunk_source.h"
 
 #include <cstdint>
+#include <memory>
 #include <sstream>
 #include <string_view>
 #include <unordered_map>
@@ -282,7 +283,7 @@ Status OlapChunkSource::_init_reader_params(const std::vector<std::unique_ptr<Ol
                          _scan_ctx->conjuncts_manager().get_runtime_filter_predicates(&_obj_pool, parser));
     }
     // @TODO we should not use global var, we can set it in OlapScanNode
-    _params.enable_global_late_materialization = _runtime_state->enable_global_late_materialization();
+    // _params.enable_global_late_materialization = _runtime_state->enable_global_late_materialization();
     _decide_chunk_size(!pred_tree.empty());
     PredicateAndNode pushdown_pred_root;
     PredicateAndNode non_pushdown_pred_root;
@@ -342,9 +343,15 @@ Status OlapChunkSource::_init_scanner_columns(std::vector<uint32_t>& scanner_col
             _params.vector_search_option->vector_slot_id = slot->id();
         } else if (slot->type().is_row_id_type()) {
             // @TODO scannner columns should not contain row id??
-            index = _tablet_schema->num_columns() + 1;
-            _params.row_id_column_id = index;
+            // index = _tablet_schema->num_columns() + 1;
+            // index = Schema::GLOBAL_ROW_ID_COLUMN_ID;
+            _params.need_generate_global_rowid = true;
+            // @TODO handle column id
+            // _params.row_id_column_id = index;
             _params.row_id_column_slot = slot->id();
+            // @TODO pending fix
+            _query_slots.push_back(slot);
+            continue;
             // LOG(INFO) << "row id slot, column id: " << index << ", slot id: " << slot->id();
         } else {
             index = _tablet_schema->field_index(slot->col_name());
@@ -528,7 +535,13 @@ Status OlapChunkSource::_init_olap_reader(RuntimeState* runtime_state) {
     //     oss << "]";
     //     LOG(INFO) << "tablet_schema: " << _tablet_schema->debug_string() << ", " << oss.str();
     // }
+    // @TODO consider row id
     starrocks::Schema child_schema = ChunkHelper::convert_schema(_tablet_schema, reader_columns);
+    if (_params.need_generate_global_rowid) {
+        _params.row_id_column_id = child_schema.num_fields();
+        child_schema.append(std::make_shared<Field>(child_schema.num_fields(), "global_row_id", TYPE_ROW_ID, false));
+    }
+
     RETURN_IF_ERROR(_init_column_access_paths(&child_schema));
     // will modify schema field, need to copy schema
     RETURN_IF_ERROR(_prune_schema_by_access_paths(&child_schema));
@@ -637,8 +650,11 @@ Status OlapChunkSource::_read_chunk_from_storage(RuntimeState* state, Chunk* chu
             if (slot->type().is_row_id_type()) {
                 // @TODO pending fix
                 DCHECK_EQ(slot->id(), _params.row_id_column_slot);
-                // @TODO column id is not index
-                chunk->set_slot_id_to_index(slot->id(), chunk->schema()->num_fields());
+                // @TODO row_id index may be changed
+                // we should get column_id?
+                chunk->set_slot_id_to_index(slot->id(), chunk->schema()->get_row_id_field_index());
+
+                // chunk->set_slot_id_to_index(slot->id(), chunk->schema()->num_fields());
                 // chunk->schema()->num_fields();
                 continue;
             }

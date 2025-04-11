@@ -158,6 +158,7 @@ inline bool is_scalar_field_type(LogicalType type) {
     case TYPE_DECIMAL32:
     case TYPE_DECIMAL64:
     case TYPE_DECIMAL128:
+    case TYPE_ROW_ID:
         return false;
     default:
         return true;
