@@ -120,6 +120,7 @@ private:
     mutable SpinLock _lock;
     Status _io_task_status;
 
+    // use a queue
     // std::atomic_int32_t _un_fetched_chunks = 0;
     std::atomic_int32_t _pending_fetched_chunks = 0;
     std::atomic_int32_t _pending_consumed_chunks = 0;

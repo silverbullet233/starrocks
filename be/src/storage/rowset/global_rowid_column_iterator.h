@@ -29,7 +29,7 @@ using TypeInfoPtr = std::shared_ptr<TypeInfo>;
 class GlobalRowIdColumnIterator final : public ColumnIterator {
 public:
     GlobalRowIdColumnIterator(uint32_t be_id, uint32_t seg_id): _be_id(be_id), _seg_id(seg_id) {
-        LOG(INFO) << "create GlobalRowIdColumnIterator, " << be_id << ", " << seg_id;
+        // LOG(INFO) << "create GlobalRowIdColumnIterator, " << be_id << ", " << seg_id;
     }
 
     Status init(const ColumnIteratorOptions& opts) override {

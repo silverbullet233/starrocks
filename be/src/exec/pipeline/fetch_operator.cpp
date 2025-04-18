@@ -55,24 +55,16 @@ FetchOperator::FetchOperator(OperatorFactory* factory, int32_t id, int32_t plan_
 
 Status FetchOperator::prepare(RuntimeState* state) {
     RETURN_IF_ERROR(Operator::prepare(state));
-    // LOG(INFO) << "FetchOperator::prepare, " << get_name();
-    // LOG(INFO) << "desc_tbl: " << state->desc_tbl().debug_string();
     if (auto opt = get_backend_id(); opt.has_value()) {
         _local_be_id = opt.value();
     } else {
-        return Status::InternalError("can't get backend id");
+        return Status::InternalError("can't get local backend id");
     }
-    // get or create dispatcher
-
 
     for (const auto& tuple_id: _tuple_ids) {
-        // LOG(INFO) << "tuple_id: " << tuple_id;
         const auto& tuple_desc = state->desc_tbl().get_tuple_descriptor(tuple_id);
         for (const auto& slot: tuple_desc->slots()) {
-            // LOG(INFO) << "slot: " << slot->debug_string();
-            // @TODO move to operator factory
             _slot_id_to_desc.insert({slot->id(), slot});
-
         }
     }
     _build_row_id_chunk_timer = ADD_TIMER(_unique_metrics, "BuildRowIdChunkTime");
@@ -82,11 +74,6 @@ Status FetchOperator::prepare(RuntimeState* state) {
     _build_output_chunk_timer = ADD_TIMER(_unique_metrics, "BuildOutputChunkTime");
     _rpc_count = ADD_COUNTER(_unique_metrics, "RpcCount", TUnit::UNIT);
     _network_timer = ADD_TIMER(_unique_metrics, "NetworkTime");
-    // @TODO need slot -> slot desc mapping
-    // for (const auto& [tuple_id, slot_id]: _row_id_slots) {
-    // LOG(INFO)  << "tuple: " << tuple_id << ", slot: " << slot_id;
-    // }
-    // LOG(INFO) << _nodes_info->debug_string();
     return Status::OK();
 }
 void FetchOperator::close(RuntimeState* state) {
@@ -115,9 +102,7 @@ bool FetchOperator::has_output() const {
     
     // has set_finishing, but still has request
     if (_in_flight_request_num == 0 && _next_output_idx < _input_partial_chunks.size()) {
-        // @TODO how to distinguish has output and has un-fetched data...
         // no in flight request and still has output
-        // LOG(INFO) << "has output, but no in flight request, " << _next_output_idx << ", size: " << _input_partial_chunks.size();
         return true;
     }
     if (!_input_partial_chunks.empty() && _fetch_ctxs.empty()) {
