@@ -784,9 +784,7 @@ public:
     Status do_visit(const ConstColumn& column) { return Status::NotSupported("SegmentedColumnVisitor"); }
 
     Status do_visit(const RowIdColumn& column) {
-        // @TODO
         return Status::NotSupported("SegmentColumnVisitor not support row id column");
-        // return Status::OK();
     }
 
     ColumnPtr result() { return _result; }

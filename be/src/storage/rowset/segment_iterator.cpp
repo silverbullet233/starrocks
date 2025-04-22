@@ -513,9 +513,7 @@ Status SegmentIterator::_init() {
     // initialize the iterator and check if certain optimizations can be applied
     _init_column_access_paths();
     RETURN_IF_ERROR(_check_low_cardinality_optimization());
-    // LOG(INFO) << "_init_column_iterator begin";
     RETURN_IF_ERROR(_init_column_iterators<true>(_schema));
-    // LOG(INFO) << "_init_column_iterator end";
     RETURN_IF_ERROR(_init_ann_reader());
     // filter by index stage
     // Use indexes and predicates to filter some data page
@@ -852,10 +850,7 @@ Status SegmentIterator::_init_column_iterator_by_cid(const ColumnId cid, const C
 template <bool check_global_dict>
 Status SegmentIterator::_init_column_iterators(const Schema& schema) {
     SCOPED_RAW_TIMER(&_opts.stats->column_iterator_init_ns);
-    // @TODO consider global row_id
-    // LOG(INFO) << "init stack: " << get_stack_trace();
     const size_t n = std::max<size_t>(1 + ChunkHelper::max_column_id(schema), _column_iterators.size());
-    // LOG(INFO) << "column iterators size: " << n;
     _column_iterators.resize(n);
     if constexpr (check_global_dict) {
         _column_decoders.resize(n);
@@ -865,7 +860,6 @@ Status SegmentIterator::_init_column_iterators(const Schema& schema) {
     _predicate_need_rewrite.resize(n, false);
     for (const FieldPtr& f : schema.fields()) {
         const ColumnId cid = f->id();
-        // LOG(INFO) << "init column iterator for f: " << f->name() << " cid: " << cid << ", need: " << (_column_iterators[cid] == nullptr);
         if (_column_iterators[cid] == nullptr) {
 
             bool check_dict_enc;
@@ -890,7 +884,6 @@ Status SegmentIterator::_init_column_iterators(const Schema& schema) {
                     return Status::InternalError("can't get backend_id");
                 }
                 _column_iterators[cid] = std::make_unique<GlobalRowIdColumnIterator>(be_id_opt.value(), _opts.v_id);
-                // LOG(INFO) << "create place holder iterator for row id column, cid: " << cid;
             } else {
                 RETURN_IF_ERROR(_init_column_iterator_by_cid(cid, f->uid(), check_dict_enc));
             }
@@ -1369,11 +1362,8 @@ inline Status SegmentIterator::_read(Chunk* chunk, vector<rowid_t>* rowids, size
                 rowids->push_back(i);
             }
         }
-        if (_opts.v_id != -1) {
-            // fill row id column
-        }
+
     }
-    // @TODO set rowid column ??
 
     _cur_rowid = range.end();
     _opts.stats->raw_rows_read += read_num;
@@ -1532,7 +1522,6 @@ Status SegmentIterator::_do_get_next(Chunk* result, vector<rowid_t>* rowid) {
 
     _build_final_chunk(_context);
     chunk = _context->_final_chunk.get();
-    // LOG(INFO) << "after build final chunk: " << chunk->debug_columns();
 
     bool need_switch_context = false;
     if (_context->_late_materialize) {
@@ -1547,7 +1536,6 @@ Status SegmentIterator::_do_get_next(Chunk* result, vector<rowid_t>* rowid) {
         need_switch_context = true;
         _context_switch_count++;
     }
-    // LOG(INFO) << "need switch ctx: " << need_switch_context;
 
     // remove (logical) deleted rows.
     if (chunk_size > 0 && chunk->delete_state() != DEL_NOT_SATISFIED && !_opts.delete_predicates.empty()) {
@@ -1613,18 +1601,13 @@ Status SegmentIterator::_do_get_next(Chunk* result, vector<rowid_t>* rowid) {
         // }
         // #endif
         chunk->check_or_die();
-        // @TODO row id column may be exists
     }
 
-    // @TODO fill row id column?
-    // LOG(INFO) << "before swap: " << chunk->debug_columns() << ", result: " << result->debug_columns();
     result->swap_chunk(*chunk);
-    // LOG(INFO) << "after swap: " << chunk->debug_columns() << ", result: " << result->debug_columns();
 
     if (need_switch_context) {
         RETURN_IF_ERROR(_switch_context(_context->_next));
     }
-    // LOG(INFO) << "segment iterator result: " << result->debug_columns();
     result->check_or_die();
     return Status::OK();
 }
@@ -1807,7 +1790,6 @@ Status SegmentIterator::_build_context(ScanContext* ctx) {
     for (const auto& field : output_schema().fields()) {
         output_columns.insert(field->id());
     }
-    // LOG(INFO) << "early m f: " << early_materialize_fields;
     for (size_t i = 0; i < early_materialize_fields; i++) {
         const FieldPtr& f = _schema.field(i);
         const ColumnId cid = f->id();
@@ -1848,7 +1830,6 @@ Status SegmentIterator::_build_context(ScanContext* ctx) {
             } else {
                 iter = new DictCodeColumnIterator(cid, _column_iterators[cid].get());
             }
-            // LOG(INFO) << "new dict column iteratr: " << cid << ", " << f->name() << ", " << use_global_dict_code;
 
             _obj_pool.add(iter);
             ctx->_read_schema.append(f2);
@@ -1900,7 +1881,6 @@ Status SegmentIterator::_build_context(ScanContext* ctx) {
         auto f = std::make_shared<Field>(cid, "ordinal", TYPE_UNSIGNED_INT, -1, -1, false);
         auto* iter = new RowIdColumnIterator();
         _obj_pool.add(iter);
-        // LOG(INFO) << "append oridnal column, " << ctx->_column_iterators.size() << ", " << ctx->_read_schema.num_fields();
         ctx->_read_schema.append(f);
         ctx->_dict_decode_schema.append(f);
         ctx->_column_iterators.emplace_back(iter);
@@ -2105,7 +2085,6 @@ Status SegmentIterator::_finish_late_materialization(ScanContext* ctx) {
             col->reserve(ordinals->size());
             col->resize(0);
             
-            // @TODO handle global_row_id
             RETURN_IF_ERROR(_column_decoders[cid].decode_values_by_rowid(*ordinals, col.get()));
             DCHECK_EQ(ordinals->size(), col->size());
             may_has_del_row |= (col->delete_state() != DEL_NOT_SATISFIED);
@@ -2128,7 +2107,6 @@ Status SegmentIterator::_finish_late_materialization(ScanContext* ctx) {
 }
 
 void SegmentIterator::_build_final_chunk(ScanContext* ctx) {
-    // LOG(INFO) << "final chunk: " << ctx->_final_chunk->debug_columns();
     // trim all use less columns
     Columns& input_columns = ctx->_dict_chunk->columns();
     for (size_t i = 0; i < ctx->_read_index_map.size(); i++) {
