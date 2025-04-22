@@ -115,6 +115,8 @@ public enum OperatorType {
     PHYSICAL_STREAM_AGG,
     PHYSICAL_TABLE_FUNCTION_TABLE_SCAN,
 
+    PHYSICAL_FETCH,
+    PHYSICAL_LOOKUP,
     /**
      * Scalar operator
      */

@@ -31,6 +31,7 @@ class DateValue;
 class TimestampValue;
 
 typedef __int128 int128_t;
+class int96_t;
 
 class Chunk;
 class Field;
@@ -51,6 +52,7 @@ class MapColumn;
 class StructColumn;
 class NullableColumn;
 class ConstColumn;
+class RowIdColumn;
 
 template <typename T>
 class FixedLengthColumn;

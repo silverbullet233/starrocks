@@ -99,6 +99,7 @@ public class RemoteFragmentAssignmentStrategy implements FragmentAssignmentStrat
         // of hostSet, that it to say, each backend has exactly one fragment.
         Set<Long> workerIdSet = Sets.newHashSet();
         int maxParallelism = 0;
+        // @TODO lookup fragment should same with scan
 
         List<Long> selectedComputedNodes = workerProvider.selectAllComputeNodes();
         if (workerProvider.isPreferComputeNode() && !selectedComputedNodes.isEmpty()) {

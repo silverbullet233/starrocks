@@ -52,6 +52,7 @@
 #include "types/large_int_value.h"
 #include "types/map_type_info.h"
 #include "types/struct_type_info.h"
+#include "types/row_id_type_info.h"
 #include "util/hash_util.hpp"
 #include "util/mem_util.hpp"
 #include "util/mysql_global.h"
@@ -340,6 +341,8 @@ TypeInfoPtr get_type_info(LogicalType field_type, [[maybe_unused]] int precision
         return get_type_info(field_type);
     } else if (field_type == TYPE_DECIMAL32 || field_type == TYPE_DECIMAL64 || field_type == TYPE_DECIMAL128) {
         return get_decimal_type_info(field_type, precision, scale);
+    } else if (field_type == TYPE_ROW_ID) {
+        return get_row_id_type_info();
     } else {
         return nullptr;
     }

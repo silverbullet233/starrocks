@@ -72,6 +72,7 @@ import com.starrocks.planner.AggregationNode;
 import com.starrocks.planner.AnalyticEvalNode;
 import com.starrocks.planner.AssertNumRowsNode;
 import com.starrocks.planner.BinlogScanNode;
+import com.starrocks.planner.BlackHoleTableSink;
 import com.starrocks.planner.DataPartition;
 import com.starrocks.planner.DataSink;
 import com.starrocks.planner.DecodeNode;
@@ -82,6 +83,7 @@ import com.starrocks.planner.ExceptNode;
 import com.starrocks.planner.ExchangeNode;
 import com.starrocks.planner.ExecGroup;
 import com.starrocks.planner.ExecGroupSets;
+import com.starrocks.planner.FetchNode;
 import com.starrocks.planner.FileScanNode;
 import com.starrocks.planner.FileTableScanNode;
 import com.starrocks.planner.FragmentNormalizer;
@@ -94,6 +96,7 @@ import com.starrocks.planner.IntersectNode;
 import com.starrocks.planner.JDBCScanNode;
 import com.starrocks.planner.JoinNode;
 import com.starrocks.planner.KuduScanNode;
+import com.starrocks.planner.LookUpNode;
 import com.starrocks.planner.MergeJoinNode;
 import com.starrocks.planner.MetaScanNode;
 import com.starrocks.planner.MultiCastPlanFragment;
@@ -156,6 +159,7 @@ import com.starrocks.sql.optimizer.operator.physical.PhysicalDecodeOperator;
 import com.starrocks.sql.optimizer.operator.physical.PhysicalDeltaLakeScanOperator;
 import com.starrocks.sql.optimizer.operator.physical.PhysicalDistributionOperator;
 import com.starrocks.sql.optimizer.operator.physical.PhysicalEsScanOperator;
+import com.starrocks.sql.optimizer.operator.physical.PhysicalFetchOperator;
 import com.starrocks.sql.optimizer.operator.physical.PhysicalFileScanOperator;
 import com.starrocks.sql.optimizer.operator.physical.PhysicalFilterOperator;
 import com.starrocks.sql.optimizer.operator.physical.PhysicalHashAggregateOperator;
@@ -169,6 +173,7 @@ import com.starrocks.sql.optimizer.operator.physical.PhysicalJDBCScanOperator;
 import com.starrocks.sql.optimizer.operator.physical.PhysicalJoinOperator;
 import com.starrocks.sql.optimizer.operator.physical.PhysicalKuduScanOperator;
 import com.starrocks.sql.optimizer.operator.physical.PhysicalLimitOperator;
+import com.starrocks.sql.optimizer.operator.physical.PhysicalLookUpOperator;
 import com.starrocks.sql.optimizer.operator.physical.PhysicalMergeJoinOperator;
 import com.starrocks.sql.optimizer.operator.physical.PhysicalMetaScanOperator;
 import com.starrocks.sql.optimizer.operator.physical.PhysicalMysqlScanOperator;
@@ -3952,6 +3957,74 @@ public class PlanFragmentBuilder {
             context.getScanNodes().add(scanNode);
             PlanFragment fragment =
                     new PlanFragment(context.getNextFragmentId(), scanNode, DataPartition.RANDOM);
+            context.getFragments().add(fragment);
+            return fragment;
+        }
+
+        @Override
+        public PlanFragment visitPhysicalFetch(OptExpression optExpression, ExecPlan context) {
+            // @TODO should ensure the last child of fetch operator is lookup
+
+            PlanFragment childFragment = visit(optExpression.getInputs().get(0), context);
+            PlanFragment lookUpFragment = visit(optExpression.getInputs().get(1), context);
+
+            PhysicalFetchOperator fetchOperator = (PhysicalFetchOperator) optExpression.getOp();
+            LookUpNode lookupNode = (LookUpNode) lookUpFragment.getPlanRoot();
+
+            FetchNode fetchNode = new FetchNode(context.getNextNodeId(),
+                    childFragment.getPlanRoot(), lookupNode.getId(),
+                    lookupNode.getDescs(), lookupNode.getRowidSlots());
+            // @TODO: add fetch columns into colRefToExpr
+            // @TODO how to connect fetch and lookup
+            childFragment.setPlanRoot(fetchNode);
+            childFragment.addChild(lookUpFragment);
+            context.getFragments().remove(childFragment);
+            context.getFragments().remove(lookUpFragment);
+            context.getFragments().add(lookUpFragment);
+            context.getFragments().add(childFragment);
+            return childFragment;
+        }
+
+        @Override
+        public PlanFragment visitPhysicalLookUp(OptExpression optExpression, ExecPlan context) {
+            PhysicalLookUpOperator lookUpOperator = (PhysicalLookUpOperator) optExpression.getOp();
+            Map<Table, Set<ColumnRefOperator>> tableColumns = lookUpOperator.getTableColumns();
+            // create tuple descs for each table
+            Map<ColumnRefOperator, Column> columnRefOperatorColumnMap = lookUpOperator.getColumnRefOperatorColumnMap();
+            Map<Table, ColumnRefOperator> rowidColumns = lookUpOperator.getRowidColumns();
+
+            List<TupleDescriptor> tupleDescriptors = Lists.newArrayList();
+            List<Table> tables = Lists.newArrayList();
+            Map<TupleId, SlotId> rowidSlots = new HashMap<>();
+            for (Map.Entry<Table, Set<ColumnRefOperator>> entry : tableColumns.entrySet()) {
+                Table table = entry.getKey();
+                Set<ColumnRefOperator> columns = entry.getValue();
+                context.getDescTbl().addReferencedTable(table);
+                // @TODO update slot ref
+                TupleDescriptor tupleDescriptor = context.getDescTbl().createTupleDescriptor();
+                tupleDescriptor.setTable(table);
+                tupleDescriptor.setIsMaterialized(true);
+                for (ColumnRefOperator columnRefOperator : columns) {
+                    SlotDescriptor slotDescriptor =
+                            context.getDescTbl().addSlotDescriptor(tupleDescriptor, new SlotId(columnRefOperator.getId()));
+                    slotDescriptor.setColumn(columnRefOperatorColumnMap.get(columnRefOperator));
+                    slotDescriptor.setIsMaterialized(true);
+                    slotDescriptor.setIsNullable(columnRefOperator.isNullable());
+                    // @TODO set nullable
+                    context.getColRefToExpr().put(columnRefOperator, new SlotRef(columnRefOperator.toString(), slotDescriptor));
+                }
+                // @TODO
+                rowidSlots.put(tupleDescriptor.getId(), new SlotId(rowidColumns.get(table).getId()));
+
+                tupleDescriptor.computeMemLayout();
+                tables.add(table);
+                tupleDescriptors.add(tupleDescriptor);
+            }
+            // @TODO
+            LookUpNode lookUpNode = new LookUpNode(context.getNextNodeId(), tables, tupleDescriptors, rowidSlots);
+            PlanFragment fragment = new PlanFragment(context.getNextFragmentId(), lookUpNode, DataPartition.RANDOM);
+            fragment.setPlanRoot(lookUpNode);
+            fragment.setSink(new BlackHoleTableSink());
             context.getFragments().add(fragment);
             return fragment;
         }

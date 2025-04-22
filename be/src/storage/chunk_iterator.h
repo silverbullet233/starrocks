@@ -20,6 +20,7 @@
 #include "column/schema.h"
 #include "runtime/global_dict/types.h"
 #include "storage/row_source_mask.h"
+#include "storage/rowset/common.h"
 #include "util/runtime_profile.h"
 
 namespace starrocks {
@@ -82,6 +83,7 @@ public:
         DCHECK_CHUNK(chunk);
         return st;
     }
+
 
     // Release resources associated with this iterator, e.g, deallocate memory.
     // This routine can be called at most once.

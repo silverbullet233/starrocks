@@ -15,7 +15,7 @@
 package com.starrocks.server;
 
 import com.google.common.annotations.VisibleForTesting;
-import com.google.common.base.Preconditions;
+// import com.google.common.base.Preconditions;
 import com.google.common.collect.HashBasedTable;
 import com.google.common.collect.Lists;
 import com.google.common.collect.Maps;
@@ -62,7 +62,7 @@ public class TemporaryTableMgr {
 
         public void addTable(Long databaseId, String tableName, Long tableId) {
             try (CloseableLock ignored = CloseableLock.lock(this.rwLock.writeLock())) {
-                Preconditions.checkArgument(!temporaryTables.contains(databaseId, tableName), "table already exists");
+                // Preconditions.checkArgument(!temporaryTables.contains(databaseId, tableName), "table already exists");
                 temporaryTables.put(databaseId, tableName, tableId);
             }
         }

@@ -84,6 +84,8 @@
 #include "simd/simd.h"
 #include "util/debug_util.h"
 #include "util/runtime_profile.h"
+#include "exec/fetch_node.h"
+#include "exec/lookup_node.h"
 
 namespace starrocks {
 
@@ -570,6 +572,14 @@ Status ExecNode::create_vectorized_node(starrocks::RuntimeState* state, starrock
     }
     case TPlanNodeType::CAPTURE_VERSION_NODE: {
         *node = pool->add(new CaptureVersionNode(pool, tnode, descs));
+        return Status::OK();
+    }
+    case TPlanNodeType::FETCH_NODE: {
+        *node = pool->add(new FetchNode(pool, tnode, descs));
+        return Status::OK();
+    }
+    case TPlanNodeType::LOOKUP_NODE: {
+        *node = pool->add(new LookUpNode(pool, tnode, descs));
         return Status::OK();
     }
     default:
