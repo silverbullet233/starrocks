@@ -258,6 +258,8 @@ Status DataSink::decompose_data_sink_to_pipeline(pipeline::PipelineBuilderContex
     using namespace pipeline;
     auto fragment_ctx = context->fragment_context();
     size_t dop = context->source_operator(prev_operators)->degree_of_parallelism();
+                                                    
+
     // TODO: port the following code to detail DataSink subclasses
     if (typeid(*this) == typeid(starrocks::ResultSink)) {
         auto* result_sink = down_cast<starrocks::ResultSink*>(this);

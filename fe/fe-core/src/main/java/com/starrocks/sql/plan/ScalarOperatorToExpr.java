@@ -57,6 +57,7 @@ import com.starrocks.analysis.VarBinaryLiteral;
 import com.starrocks.catalog.Function;
 import com.starrocks.catalog.Type;
 import com.starrocks.sql.analyzer.AnalyzerUtils;
+import com.starrocks.sql.analyzer.SemanticException;
 import com.starrocks.sql.ast.ArrayExpr;
 import com.starrocks.sql.ast.DictionaryGetExpr;
 import com.starrocks.sql.ast.LambdaFunctionExpr;
@@ -141,6 +142,9 @@ public class ScalarOperatorToExpr {
          * So we need to do some hack when transforming ScalarOperator to Expr.
          */
         private static void hackTypeNull(Expr expr) {
+            if (expr == null) {
+                throw new SemanticException("ha");
+            }
             // For primitive types, this can be any legitimate type, for simplicity, we pick boolean.
             Type previousType = expr.getType();
             Type type = AnalyzerUtils.replaceNullType2Boolean(previousType);

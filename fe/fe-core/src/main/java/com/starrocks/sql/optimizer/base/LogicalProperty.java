@@ -159,6 +159,9 @@ public class LogicalProperty implements Property {
     static class OneTabletExecutorVisitor extends OperatorVisitor<OneTabletProperty, ExpressionContext> {
         @Override
         public OneTabletProperty visitOperator(Operator node, ExpressionContext context) {
+            if (context.arity() == 0) {
+                Preconditions.checkState(false);
+            }
             Preconditions.checkState(context.arity() != 0);
             return context.oneTabletProperty(0);
         }

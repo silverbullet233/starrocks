@@ -303,6 +303,13 @@ public class QueryOptimizer extends Optimizer {
         Set<Long> currentSqlDbIds = context.getConnectContext().getCurrentSqlDbIds();
         mvScan.stream().map(scan -> ((MaterializedView) scan.getTable()).getDbId()).forEach(currentSqlDbIds::add);
 
+        if (connectContext.getSessionVariable().isEnableGlobalLateMaterialization()) {
+            LateMaterializationRewriter lateMaterializationRewriter = new LateMaterializationRewriter();
+            finalPlan = lateMaterializationRewriter.rewrite(finalPlan, context);
+            // @TODO support plan validate
+            return finalPlan;
+        }
+
         try (Timer ignored = Tracers.watchScope("PlanValidate")) {
             // valid the final plan
             PlanValidator.getInstance().validatePlan(finalPlan, rootTaskContext);

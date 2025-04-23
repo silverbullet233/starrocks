@@ -16,6 +16,7 @@
 
 #include <atomic>
 #include <condition_variable>
+#include <functional>
 #include <mutex>
 
 #include "column/column_access_path.h"
@@ -24,8 +25,11 @@
 #include "exec/pipeline/operator.h"
 #include "exec/pipeline/scan/balanced_chunk_buffer.h"
 #include "exec/pipeline/schedule/observer.h"
+#include "fs/fs.h"
 #include "runtime/global_dict/parser.h"
 #include "storage/rowset/rowset.h"
+#include "util/hash.h"
+#include "util/phmap/phmap.h"
 #include "util/phmap/phmap_fwd_decl.h"
 
 namespace starrocks {
@@ -35,6 +39,8 @@ class Tablet;
 using TabletSharedPtr = std::shared_ptr<Tablet>;
 class Rowset;
 using RowsetSharedPtr = std::shared_ptr<Rowset>;
+class Segment;
+using SegmentPtr = std::shared_ptr<Segment>;
 
 class RuntimeFilterProbeCollector;
 
@@ -44,6 +50,29 @@ class OlapScanContext;
 using OlapScanContextPtr = std::shared_ptr<OlapScanContext>;
 class OlapScanContextFactory;
 using OlapScanContextFactoryPtr = std::shared_ptr<OlapScanContextFactory>;
+
+struct GlobalLateMaterilizationCtx {
+    struct SegmentInfo {
+        SegmentPtr segment;
+        std::shared_ptr<FileSystem> fs;
+    };
+    using SegmentInfoPtr = std::shared_ptr<SegmentInfo>;
+
+    int32_t register_segment(SegmentInfo segment) {
+        int32_t id = _next_id++;
+        _segments.insert({id, std::move(segment)});
+        return id;
+    }
+    SegmentInfo get_segment(int32_t id) const {
+        auto iter = _segments.find(id);
+        DCHECK(iter != _segments.end()) << "segment id not exists: " << id;
+        return iter->second;
+    }
+
+    std::atomic<int32_t> _next_id{0};
+    phmap::parallel_flat_hash_map<int32_t, SegmentInfo, StdHash<int32_t>, std::equal_to<int32_t>,
+        std::allocator<std::pair<int32_t, SegmentInfo>>, 5, std::mutex, true> _segments;
+};
 
 class ConcurrentJitRewriter {
 public:
