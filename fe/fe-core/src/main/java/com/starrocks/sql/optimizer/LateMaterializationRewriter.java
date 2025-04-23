@@ -29,7 +29,6 @@ import com.starrocks.sql.optimizer.base.DistributionSpec;
 import com.starrocks.sql.optimizer.base.HashDistributionSpec;
 import com.starrocks.sql.optimizer.base.LogicalProperty;
 import com.starrocks.sql.optimizer.base.Ordering;
-import com.starrocks.sql.optimizer.operator.OperatorBuilderFactory;
 import com.starrocks.sql.optimizer.operator.Projection;
 import com.starrocks.sql.optimizer.operator.physical.PhysicalDistributionOperator;
 import com.starrocks.sql.optimizer.operator.physical.PhysicalFetchOperator;
@@ -58,11 +57,8 @@ import java.util.Set;
 import java.util.stream.Collectors;
 
 // use this to collect all late materialized columns
-public class LateMaterializedColumnCollector {
-    private static final Logger LOG = LogManager.getLogger(LateMaterializedColumnCollector.class);
-
-    public static void collectLateMaterializedColumn(OptExpression root) {
-    }
+public class LateMaterializationRewriter {
+    private static final Logger LOG = LogManager.getLogger(LateMaterializationRewriter.class);
 
     public OptExpression rewrite(OptExpression root, OptimizerContext context) {
         LOG.info("before rewrite, plan : " + root.debugString());
@@ -84,10 +80,6 @@ public class LateMaterializedColumnCollector {
         PlanRewriter rewriter = new PlanRewriter(optimizerContext, collectorContext);
 
         RewriteContext rewriteContext = new RewriteContext();
-        collectorContext.unMaterializedColumns.entrySet().forEach(entry -> {
-            rewriteContext.unFetchedColumns.put(entry.getKey(), new HashSet<>());
-            rewriteContext.unFetchedColumns.get(entry.getKey()).addAll(entry.getValue());
-        });
 
         OptExpression newRoot = root.getOp().accept(rewriter, root, rewriteContext);
         if (!collectorContext.unMaterializedColumns.isEmpty()) {
@@ -174,11 +166,12 @@ public class LateMaterializedColumnCollector {
         Map<ColumnRefOperator, PhysicalOperator> materializedPosition = new HashMap<>();
         // un-materialized columns
         Map<PhysicalOlapScanOperator, Set<ColumnRefOperator>> unMaterializedColumns = new HashMap<>();
-
+        // which ScanOperator the column comes from
         Map<ColumnRefOperator, PhysicalOlapScanOperator> columnSources = new HashMap<>();
 
-        // key -> column ref list
-        // should add FetchOperator under key
+        // used to record the fetch position. for example,
+        // a row in the table (A, B, [C,D]) indicates that
+        // the Column C and D from PhysicalOlapScan B should be fetched before PhysicalOperator A
         com.google.common.collect.Table<PhysicalOperator, PhysicalOlapScanOperator, Set<ColumnRefOperator>>
                 fetchPositions = HashBasedTable.create();
 
@@ -240,7 +233,9 @@ public class LateMaterializedColumnCollector {
         }
     }
 
-    // bottom-up collector
+    // Traverse the PlanTree from bottom to top,
+    // find all the columns that can be lazy read and where they need to be materialized
+    // @TODO: support all operators
     public static class ColumnCollector extends OptExpressionVisitor<Void, CollectorContext> {
         private OptimizerContext optimizerContext;
 
@@ -333,11 +328,6 @@ public class LateMaterializedColumnCollector {
         }
 
         @Override
-        public Void visitPhysicalProject(OptExpression optExpression, CollectorContext context) {
-            return visit(optExpression, context);
-        }
-
-        @Override
         public Void visitPhysicalHashAggregate(OptExpression optExpression, CollectorContext context) {
             // for aggregate operator, we should materialize all used columns
             PhysicalHashAggregateOperator aggregateOperator = (PhysicalHashAggregateOperator) optExpression.getOp();
@@ -386,7 +376,7 @@ public class LateMaterializedColumnCollector {
         public Void visitPhysicalDistribution(OptExpression optExpression, CollectorContext context) {
             PhysicalDistributionOperator distributionOperator = (PhysicalDistributionOperator) optExpression.getOp();
             DistributionSpec distributionSpec = distributionOperator.getDistributionSpec();
-            // handle different sepc
+            // handle different spec
             switch (distributionSpec.getType()) {
                 case SHUFFLE: {
                     HashDistributionSpec hashDistributionSpec = (HashDistributionSpec) distributionSpec;
@@ -429,8 +419,6 @@ public class LateMaterializedColumnCollector {
     public static class RewriteContext {
         // row id column of each olap scan operator
         Map<PhysicalOlapScanOperator, ColumnRefOperator> rowIdColumns = new HashMap<>();
-        // un-fetched columns
-        Map<PhysicalOlapScanOperator, Set<ColumnRefOperator>> unFetchedColumns = new HashMap<>();
         // already fetched columns
         Set<ColumnRefOperator> fetchedColumns = new HashSet<>();
 
@@ -438,12 +426,11 @@ public class LateMaterializedColumnCollector {
         }
     }
 
-    // rewrite OptExpression, insert PhysicalFetchOperator
-
-    // what will do:
-    // 1. add row_id column in OlapScanOperator
-    // 2. update projection and logical property if necessary
-    // 3. update RowOutputInfo
+    // rewrite PlanTree from bottom to top, what will do:
+    // 1. add ROW_ID column in related OlapScanOperator;
+    // 2. insert FetchOperator under the related Operator to read the required columns
+    // 3. update Projection and LogicalProperty if necessary
+    // @TODO support all operators
     public static class PlanRewriter extends OptExpressionVisitor<OptExpression, RewriteContext> {
         private OptimizerContext optimizerContext;
         private CollectorContext collectorContext;
@@ -457,7 +444,6 @@ public class LateMaterializedColumnCollector {
             List<OptExpression> inputs = Lists.newArrayList();
             for (OptExpression input : optExpression.getInputs()) {
                 RewriteContext ctx = new RewriteContext();
-                ctx.unFetchedColumns = context.unFetchedColumns;
                 inputs.add(input.getOp().accept(this, input, ctx));
                 // merge ctx
                 context.rowIdColumns.putAll(ctx.rowIdColumns);
@@ -466,28 +452,27 @@ public class LateMaterializedColumnCollector {
             return inputs;
         }
 
-        // split projection into a seperate OptExpression
+
+        // if the Projection of an Operator need to lazy read some columns,
+        // we split it to Operator(without Projection) -> FetchOperator -> ProjectOperator
         private OptExpression splitProjection(OptExpression optExpression, RewriteContext context) {
             PhysicalOperator op = (PhysicalOperator) optExpression.getOp();
             Projection projection = op.getProjection();
-            PhysicalOperator originalOperator =
-                    (PhysicalOperator) OperatorBuilderFactory.build(op).withOperator(op).build();
             if (collectorContext.fetchBeforeProjections.containsRow(op)) {
-                // 1. projection may genereate new output columns, should remove them
                 Preconditions.checkState(projection != null);
                 // remove projection from the original operator and create a new one
                 PhysicalProjectOperator projectOperator = new PhysicalProjectOperator(
                         projection.getColumnRefMap(), projection.getCommonSubOperatorMap());
 
                 Map<PhysicalOlapScanOperator, Set<ColumnRefOperator>> map1 =
-                        new HashMap<>(collectorContext.fetchBeforeProjections.row(originalOperator));
+                        new HashMap<>(collectorContext.fetchBeforeProjections.row(op));
                 Map<PhysicalOlapScanOperator, Set<ColumnRefOperator>> map2 =
-                        new HashMap<>(collectorContext.fetchPositions.row(originalOperator));
+                        new HashMap<>(collectorContext.fetchPositions.row(op));
                 map1.keySet().forEach(key -> {
-                    collectorContext.fetchBeforeProjections.remove(originalOperator, key);
+                    collectorContext.fetchBeforeProjections.remove(op, key);
                 });
                 map2.keySet().forEach(key -> {
-                    collectorContext.fetchPositions.remove(originalOperator, key);
+                    collectorContext.fetchPositions.remove(op, key);
                 });
 
                 op.setProjection(null);
@@ -557,7 +542,6 @@ public class LateMaterializedColumnCollector {
             ColumnRefFactory columnRefFactory = optimizerContext.getColumnRefFactory();
             List<ColumnRefOperator> outputColumns
                     = logicalProperty.getOutputColumns().getColumnRefOperators(columnRefFactory);
-            // remove unfetched columns
             List<ColumnRefOperator> newOutputColumns = outputColumns.stream().filter(columnRefOperator -> {
                 if (!columnRefFactory.getColumnRefToColumns().containsKey(columnRefOperator)) {
                     // not original column, should keep
@@ -581,45 +565,27 @@ public class LateMaterializedColumnCollector {
         public OptExpression visit(OptExpression optExpression, RewriteContext context) {
 
             PhysicalOperator physicalOperator = (PhysicalOperator) optExpression.getOp();
-            if (collectorContext.fetchBeforeProjections.containsRow(physicalOperator) &&
-                    !collectorContext.fetchBeforeProjections.row(physicalOperator).isEmpty()) {
-                PhysicalOperator originalOperator =
-                        (PhysicalOperator) OperatorBuilderFactory.build(physicalOperator)
-                                .withOperator(physicalOperator).build();
+            if (collectorContext.fetchBeforeProjections.containsRow(physicalOperator)) {
                 OptExpression newRoot = splitProjection(optExpression, context);
-                // we should move collectcontext.fetch columns to new
-                Map<PhysicalOlapScanOperator, Set<ColumnRefOperator>> columns =
-                        new HashMap(collectorContext.fetchBeforeProjections.row(physicalOperator));
-                PhysicalOperator projectOperator = (PhysicalOperator) newRoot.getOp();
-                // put all columns into
-                columns.forEach((scanOperator, columnRefs) -> {
-                    collectorContext.fetchPositions.put(projectOperator, scanOperator, columnRefs);
-                    collectorContext.fetchBeforeProjections.remove(originalOperator, scanOperator);
-                });
                 return newRoot.getOp().accept(this, newRoot, context);
             }
 
             LogicalProperty logicalProperty = optExpression.getLogicalProperty();
-            // @TODO insert physical fetch operator
             List<OptExpression> inputs = visitChildren(optExpression, context);
-            // @TODO adjust projection?
 
             updateProjection(optExpression, context);
 
-            // @TODO insert fetch before projection of current operator
-
-            // optExpression.deriveLogicalPropertyItself();
             LOG.info("operator + " + optExpression.getOp() + ", logical properties: " + logicalProperty.getOutputColumns());
-            // insert FetchOperator
             OptExpression result = null;
             if (collectorContext.fetchPositions.containsRow(physicalOperator)) {
+                // if there are lazy-materialized columns, we should insert FetchOperator
                 Map<PhysicalOlapScanOperator, Set<ColumnRefOperator>> columns =
                         collectorContext.fetchPositions.row(physicalOperator);
 
-                // @TODO change child's projection?
                 Map<Table, Set<ColumnRefOperator>> tableColumns = new HashMap<>();
                 Map<Table, ColumnRefOperator> rowidColumns = new HashMap<>();
                 Map<ColumnRefOperator, Column> columnRefOperatorColumnMap = new HashMap<>();
+
                 columns.forEach((scanOperator, columnRefs) -> {
                     Table table = scanOperator.getTable();
                     tableColumns.put(table, columnRefs);
@@ -627,17 +593,13 @@ public class LateMaterializedColumnCollector {
                     Map<ColumnRefOperator, Column> columnRefMap = scanOperator.getColRefToColumnMetaMap();
                     for (ColumnRefOperator columnRef : columnRefs) {
                         columnRefOperatorColumnMap.put(columnRef, columnRefMap.get(columnRef));
-                        // @TODO remove late-materialized column from projection
                     }
                 });
-                // @TODO we should update logical properties of fetch
+                // update fetched Columns
                 context.fetchedColumns.addAll(columnRefOperatorColumnMap.keySet());
-                // @TODO consider projection of fetch's child
 
-                // @TODO rowid column of each table
                 PhysicalFetchOperator physicalFetchOperator =
                         new PhysicalFetchOperator(tableColumns, columnRefOperatorColumnMap, rowidColumns);
-                // @TODO create lookup
                 PhysicalLookUpOperator physicalLookUpOperator =
                         new PhysicalLookUpOperator(tableColumns, columnRefOperatorColumnMap, rowidColumns);
                 // create new OptExpression
@@ -647,6 +609,7 @@ public class LateMaterializedColumnCollector {
                 newLogicalProperty.getOutputColumns().union(columnRefOperatorColumnMap.keySet());
                 child.setLogicalProperty(new LogicalProperty(logicalProperty));
                 child.setStatistics(optExpression.getStatistics());
+
                 result = OptExpression.builder().with(optExpression).setInputs(Arrays.asList(child)).build();
             }
 
@@ -655,12 +618,6 @@ public class LateMaterializedColumnCollector {
             }
             return result;
         }
-
-        @Override
-        public OptExpression visitPhysicalProject(OptExpression optExpression, RewriteContext context) {
-            return visit(optExpression, context);
-        }
-
 
         @Override
         public OptExpression visitPhysicalOlapScan(OptExpression optExpression, RewriteContext context) {

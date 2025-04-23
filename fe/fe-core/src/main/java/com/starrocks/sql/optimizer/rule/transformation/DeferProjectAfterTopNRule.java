@@ -54,18 +54,13 @@ public class DeferProjectAfterTopNRule extends TransformationRule {
         }
         LogicalProjectOperator projectOperator = (LogicalProjectOperator) input.getInputs().get(0).getOp();
 
-        // check which column are topn need, pushdown no need column
         ColumnRefSet topNRequiredInputColumns = topNOperator.getRequiredChildInputColumns();
-        ColumnRefSet topNRequiredOutputColumns = context.getTaskContext().getRequiredColumns();
 
-        // we split project output columns into to parts, topn required and tohers
-        // if
         Map<ColumnRefOperator, ScalarOperator> preProjectionMap = new HashMap<>();
         Map<ColumnRefOperator, ScalarOperator> postProjectionMap = new HashMap<>();
 
         projectOperator.getColumnRefMap().forEach((columnRefOperator, scalarOperator) -> {
             if (!topNRequiredInputColumns.contains(columnRefOperator)) {
-                // if not topn required and is not a column ref operator, putback
                 if (!scalarOperator.isColumnRef()) {
                     postProjectionMap.put(columnRefOperator, scalarOperator);
                     scalarOperator.getUsedColumns().getColumnRefOperators(context.getColumnRefFactory()).forEach(k -> {
@@ -83,7 +78,6 @@ public class DeferProjectAfterTopNRule extends TransformationRule {
         }
         LogicalProjectOperator preProjectOperator = new LogicalProjectOperator(preProjectionMap);
         LogicalProjectOperator postProjectOperaotr = new LogicalProjectOperator(projectOperator.getColumnRefMap());
-        // create new OptExpression
 
         OptExpression result = OptExpression.create(
                 postProjectOperaotr, OptExpression.create(
