@@ -19,6 +19,7 @@
 #include "column/adaptive_nullable_column.h"
 #include "column/array_column.h"
 #include "column/chunk.h"
+#include "column/column_view/column_view_helper.h"
 #include "column/json_column.h"
 #include "column/map_column.h"
 #include "column/struct_column.h"
@@ -32,7 +33,6 @@
 #include "util/phmap/phmap.h"
 
 namespace starrocks {
-
 Filter& ColumnHelper::merge_nullable_filter(Column* column) {
     if (column->is_nullable()) {
         auto* nullable_column = down_cast<NullableColumn*>(column);
@@ -250,9 +250,9 @@ int64_t ColumnHelper::find_first_not_equal(const Column* column, int64_t target,
 // expression trees' return column should align return type when some return columns maybe diff from the required
 // return type, as well the null flag. e.g., concat_ws returns col from create_const_null_column(), it's type is
 // Nullable(int8), but required return type is nullable(string), so col need align return type to nullable(string).
-ColumnPtr ColumnHelper::align_return_type(const ColumnPtr& old_col, const TypeDescriptor& type_desc, size_t num_rows,
+ColumnPtr ColumnHelper::align_return_type(ColumnPtr&& old_col, const TypeDescriptor& type_desc, size_t num_rows,
                                           const bool is_nullable) {
-    MutableColumnPtr new_column = old_col->clone();
+    MutableColumnPtr new_column = (std::move(*old_col)).mutate();
     if (old_col->only_null()) {
         new_column = ColumnHelper::create_column(type_desc, true);
         new_column->append_nulls(num_rows);
@@ -274,6 +274,18 @@ MutableColumnPtr ColumnHelper::create_column(const TypeDescriptor& type_desc, bo
     return create_column(type_desc, nullable, false, 0);
 }
 
+MutableColumnPtr ColumnHelper::create_column(const TypeDescriptor& type_desc, bool nullable, bool use_view_if_needed,
+                                             long column_view_concat_rows_limit, long column_view_concat_bytes_limit) {
+    if (use_view_if_needed) {
+        auto opt_column = ColumnViewHelper::create_column_view(type_desc, nullable, column_view_concat_rows_limit,
+                                                               column_view_concat_bytes_limit);
+        if (opt_column.has_value()) {
+            return std::move(opt_column.value());
+        }
+    }
+    return create_column(type_desc, nullable);
+}
+
 struct ColumnBuilder {
     template <LogicalType ltype>
     MutableColumnPtr operator()(const TypeDescriptor& type_desc, size_t size) {
@@ -292,6 +304,8 @@ struct ColumnBuilder {
             return Decimal64Column::create(type_desc.precision, type_desc.scale, size);
         case TYPE_DECIMAL128:
             return Decimal128Column::create(type_desc.precision, type_desc.scale, size);
+        case TYPE_DECIMAL256:
+            return Decimal256Column::create(type_desc.precision, type_desc.scale, size);
         default:
             return RunTimeColumnType<ltype>::create(size);
         }
@@ -317,7 +331,7 @@ MutableColumnPtr ColumnHelper::create_column(const TypeDescriptor& type_desc, bo
         auto data = create_column(type_desc.children[0], true, is_const, size);
         p = ArrayColumn::create(std::move(data), std::move(offsets));
     } else if (type_desc.type == LogicalType::TYPE_MAP) {
-        MutableColumnPtr offsets = UInt32Column ::create(size);
+        MutableColumnPtr offsets = UInt32Column::create(size);
         MutableColumnPtr keys = nullptr;
         MutableColumnPtr values = nullptr;
         if (type_desc.children[0].is_unknown_type()) {
@@ -524,5 +538,4 @@ ChunkUniquePtr ChunkSliceTemplate<SegmentedChunkPtr>::cutoff(size_t required_row
 template struct ChunkSliceTemplate<ChunkPtr>;
 template struct ChunkSliceTemplate<ChunkUniquePtr>;
 template struct ChunkSliceTemplate<SegmentedChunkPtr>;
-
 } // namespace starrocks

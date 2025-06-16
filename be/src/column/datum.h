@@ -22,7 +22,7 @@
 #include "runtime/decimalv2_value.h"
 #include "storage/decimal12.h"
 #include "storage/uint24.h"
-#include "types/date_value.hpp"
+#include "types/int256.h"
 #include "types/timestamp_value.h"
 #include "util/int96.h"
 #include "util/slice.h"
@@ -45,9 +45,10 @@ class Datum;
 using DatumArray = std::vector<Datum>;
 
 using DatumKey = std::variant<std::monostate, int8_t, uint8_t, int16_t, uint16_t, uint24_t, int32_t, uint32_t, int64_t,
-                              uint64_t, int96_t, int128_t, Slice, decimal12_t, DecimalV2Value, float, double>;
+                              uint64_t, int96_t, int128_t, int256_t, Slice, decimal12_t, DecimalV2Value, float, double>;
 using DatumMap = std::map<DatumKey, Datum>;
 using DatumStruct = std::vector<Datum>;
+using DatumRowId = std::tuple<uint32_t, uint32_t, uint32_t>;
 
 class Datum {
 public:
@@ -79,6 +80,7 @@ public:
     DateValue get_date() const { return get<DateValue>(); }
     const Slice& get_slice() const { return get<Slice>(); }
     const int128_t& get_int128() const { return get<int128_t>(); }
+    const int256_t& get_int256() const { return get<int256_t>(); }
     const decimal12_t& get_decimal12() const { return get<decimal12_t>(); }
     const DecimalV2Value& get_decimal() const { return get<DecimalV2Value>(); }
     const DatumArray& get_array() const { return get<DatumArray>(); }
@@ -88,6 +90,7 @@ public:
     const BitmapValue* get_bitmap() const { return get<BitmapValue*>(); }
     const PercentileValue* get_percentile() const { return get<PercentileValue*>(); }
     const JsonValue* get_json() const { return get<JsonValue*>(); }
+    const DatumRowId& get_row_id() const { return get<DatumRowId>(); }
 
     void set_int8(int8_t v) { set<decltype(v)>(v); }
     void set_uint8(uint8_t v) { set<decltype(v)>(v); }
@@ -104,6 +107,7 @@ public:
     void set_timestamp(TimestampValue v) { set<decltype(v)>(v); }
     void set_date(DateValue v) { set<decltype(v)>(v); }
     void set_int128(const int128_t& v) { set<decltype(v)>(v); }
+    void set_int256(const int256_t& v) { set<decltype(v)>(v); }
     void set_slice(const Slice& v) { set<decltype(v)>(v); }
     void set_decimal12(const decimal12_t& v) { set<decltype(v)>(v); }
     void set_decimal(const DecimalV2Value& v) { set<decltype(v)>(v); }
@@ -112,6 +116,7 @@ public:
     void set_bitmap(BitmapValue* v) { set<decltype(v)>(v); }
     void set_percentile(PercentileValue* v) { set<decltype(v)>(v); }
     void set_json(JsonValue* v) { set<decltype(v)>(v); }
+    void set_row_id(const DatumRowId& v) { set<decltype(v)>(v); }
 
     template <typename T>
     const T& get() const {
@@ -170,6 +175,7 @@ public:
                            [](const uint64_t& arg) { return DatumKey(arg); },
                            [](const int96_t& arg) { return DatumKey(arg); },
                            [](const int128_t& arg) { return DatumKey(arg); },
+                           [](const int256_t& arg) { return DatumKey(arg); },
                            [](const Slice& arg) { return DatumKey(arg); },
                            [](const decimal12_t& arg) { return DatumKey(arg); },
                            [](const DecimalV2Value& arg) { return DatumKey(arg); },
@@ -194,8 +200,8 @@ public:
 private:
     using Variant =
             std::variant<std::monostate, int8_t, uint8_t, int16_t, uint16_t, uint24_t, int32_t, uint32_t, int64_t,
-                         uint64_t, int96_t, int128_t, Slice, decimal12_t, DecimalV2Value, float, double, DatumArray,
-                         DatumMap, HyperLogLog*, BitmapValue*, PercentileValue*, JsonValue*>;
+                         uint64_t, int96_t, int128_t, int256_t, Slice, decimal12_t, DecimalV2Value, float, double,
+                         DatumArray, DatumMap, HyperLogLog*, BitmapValue*, PercentileValue*, JsonValue*, DatumRowId>;
     Variant _value;
 };
 

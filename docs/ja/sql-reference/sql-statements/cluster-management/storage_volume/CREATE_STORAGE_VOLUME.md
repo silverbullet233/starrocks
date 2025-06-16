@@ -18,7 +18,7 @@ displayed_sidebar: docs
 
 ```SQL
 CREATE STORAGE VOLUME [IF NOT EXISTS] <storage_volume_name>
-TYPE = { S3 | HDFS | AZBLOB }
+TYPE = { S3 | HDFS | AZBLOB | ADLS2 }
 LOCATIONS = ('<remote_storage_path>')
 [ COMMENT '<comment_string>' ]
 PROPERTIES
@@ -30,8 +30,8 @@ PROPERTIES
 | **パラメータ**       | **説明**                                              |
 | ------------------- | ------------------------------------------------------------ |
 | storage_volume_name | ストレージボリュームの名前です。`builtin_storage_volume` という名前のストレージボリュームは作成できません。これは組み込みストレージボリュームの作成に使用されるためです。命名規則については、[System limits](../../../System_limit.md) を参照してください。|
-| TYPE                | リモートストレージシステムのタイプです。有効な値は `S3`、`HDFS`、`AZBLOB` です。`S3` は AWS S3 または S3 互換ストレージシステムを示します。`AZBLOB` は Azure Blob Storage を示します（v3.1.1 以降でサポート）。`HDFS` は HDFS クラスターを示します。 |
-| LOCATIONS           | ストレージの場所です。形式は次のとおりです：<ul><li>AWS S3 または S3 プロトコル互換ストレージシステムの場合：`s3://<s3_path>`。`<s3_path>` は絶対パスでなければなりません。例：`s3://testbucket/subpath`。ストレージボリュームに [Partitioned Prefix](#partitioned-prefix) 機能を有効にしたい場合、バケット名のみを指定する必要があり、サブパスの指定は許可されません。</li><li>Azure Blob Storage の場合：`azblob://<azblob_path>`。`<azblob_path>` は絶対パスでなければなりません。例：`azblob://testcontainer/subpath`。</li><li>HDFS の場合：`hdfs://<host>:<port>/<hdfs_path>`。`<hdfs_path>` は絶対パスでなければなりません。例：`hdfs://127.0.0.1:9000/user/xxx/starrocks`。</li><li>WebHDFS の場合：`webhdfs://<host>:<http_port>/<hdfs_path>`。`<http_port>` は NameNode の HTTP ポートです。`<hdfs_path>` は絶対パスでなければなりません。例：`webhdfs://127.0.0.1:50070/user/xxx/starrocks`。</li><li>ViewFS の場合：`viewfs://<ViewFS_cluster>/<viewfs_path>`。`<ViewFS_cluster>` は ViewFS クラスター名です。`<viewfs_path>` は絶対パスでなければなりません。例：`viewfs://myviewfscluster/user/xxx/starrocks`。</li></ul> |
+| TYPE                | リモートストレージシステムのタイプです。有効な値は `S3`、`HDFS`、`AZBLOB` です。`S3` は AWS S3 または S3 互換ストレージシステムを示します。`AZBLOB` は Azure Blob Storage を示します（v3.1.1 以降でサポート）。`ADLS2` は Azure Data Lake Storage Gen2 を示します（v3.4.1 以降でサポート）。`HDFS` は HDFS クラスターを示します。 |
+| LOCATIONS           | ストレージの場所です。形式は次のとおりです：<ul><li>AWS S3 または S3 プロトコル互換ストレージシステムの場合：`s3://<s3_path>`。`<s3_path>` は絶対パスでなければなりません。例：`s3://testbucket/subpath`。ストレージボリュームに [Partitioned Prefix](#partitioned-prefix) 機能を有効にしたい場合、バケット名のみを指定する必要があり、サブパスの指定は許可されません。</li><li>Azure Blob Storage の場合：`azblob://<azblob_path>`。`<azblob_path>` は絶対パスでなければなりません。例：`azblob://testcontainer/subpath`。</li><li>Azure Data Lake Storage Gen2 の場合：`adls2://<file_system_name>/<dir_name>`。例：`adls2://testfilesystem/starrocks`。</li><li>HDFS の場合：`hdfs://<host>:<port>/<hdfs_path>`。`<hdfs_path>` は絶対パスでなければなりません。例：`hdfs://127.0.0.1:9000/user/xxx/starrocks`。</li><li>WebHDFS の場合：`webhdfs://<host>:<http_port>/<hdfs_path>`。`<http_port>` は NameNode の HTTP ポートです。`<hdfs_path>` は絶対パスでなければなりません。例：`webhdfs://127.0.0.1:50070/user/xxx/starrocks`。</li><li>ViewFS の場合：`viewfs://<ViewFS_cluster>/<viewfs_path>`。`<ViewFS_cluster>` は ViewFS クラスター名です。`<viewfs_path>` は絶対パスでなければなりません。例：`viewfs://myviewfscluster/user/xxx/starrocks`。</li></ul> |
 | COMMENT             | ストレージボリュームに関するコメントです。                           |
 | PROPERTIES          | リモートストレージシステムにアクセスするためのプロパティと認証情報を指定するための `"key" = "value"` ペアのパラメータです。詳細は [PROPERTIES](#properties) を参照してください。 |
 
@@ -39,11 +39,13 @@ PROPERTIES
 
 以下の表は、ストレージボリュームのすべての利用可能なプロパティを示しています。表の後には、[認証情報](#credential-information) と [機能](#features) の観点から異なるシナリオに基づいたこれらのプロパティの使用方法が示されています。
 
+import Beta from '../../../../_assets/commonMarkdown/_beta.mdx'
+
 | **プロパティ**                        | **説明**                                              |
 | ----------------------------------- | ------------------------------------------------------------ |
 | enabled                             | このストレージボリュームを有効にするかどうか。デフォルトは `false` です。無効なストレージボリュームは参照できません。 |
 | aws.s3.region                       | S3 バケットが存在するリージョンです。例：`us-west-2`。 |
-| aws.s3.endpoint                     | S3 バケットにアクセスするためのエンドポイント URL です。例：`https://s3.us-west-2.amazonaws.com`。[プレビュー] v3.3.0 以降、Amazon S3 Express One Zone ストレージクラスがサポートされています。例：`https://s3express.us-west-2.amazonaws.com`。   |
+| aws.s3.endpoint                     | S3 バケットにアクセスするためのエンドポイント URL です。例：`https://s3.us-west-2.amazonaws.com`。[プレビュー] v3.3.0 以降、Amazon S3 Express One Zone ストレージクラスがサポートされています。例：`https://s3express.us-west-2.amazonaws.com`。 <Beta />  |
 | aws.s3.use_aws_sdk_default_behavior | AWS SDK のデフォルト認証情報を使用するかどうか。有効な値は `true` と `false`（デフォルト）です。 |
 | aws.s3.use_instance_profile         | S3 にアクセスするための認証方法としてインスタンスプロファイルとアサインドロールを使用するかどうか。有効な値は `true` と `false`（デフォルト）です。<ul><li>IAM ユーザー認証（アクセスキーとシークレットキー）を使用して S3 にアクセスする場合、この項目を `false` に設定し、`aws.s3.access_key` と `aws.s3.secret_key` を指定する必要があります。</li><li>インスタンスプロファイルを使用して S3 にアクセスする場合、この項目を `true` に設定する必要があります。</li><li>アサインドロールを使用して S3 にアクセスする場合、この項目を `true` に設定し、`aws.s3.iam_role_arn` を指定する必要があります。</li><li>外部 AWS アカウントを使用する場合、この項目を `true` に設定し、`aws.s3.iam_role_arn` と `aws.s3.external_id` を指定する必要があります。</li></ul> |
 | aws.s3.access_key                   | S3 バケットにアクセスするためのアクセスキー ID です。             |
@@ -53,6 +55,12 @@ PROPERTIES
 | azure.blob.endpoint                 | Azure Blob Storage アカウントのエンドポイントです。例：`https://test.blob.core.windows.net`。 |
 | azure.blob.shared_key               | Azure Blob Storage へのリクエストを承認するために使用される共有キーです。 |
 | azure.blob.sas_token                | Azure Blob Storage へのリクエストを承認するために使用される共有アクセス署名 (SAS) です。 |
+| azure.adls2.endpoint                 | Azure Data Lake Storage Gen2 アカウントのエンドポイントです。例：`https://test.dfs.core.windows.net`。 |
+| azure.adls2.shared_key               | Azure Data Lake Storage Gen2 へのリクエストを承認するために使用される共有キーです。 |
+| azure.adls2.sas_token                | Azure Data Lake Storage Gen2 へのリクエストを承認するために使用される共有アクセス署名 (SAS) です。 |
+| azure.adls2.oauth2_use_managed_identity | Azure Data Lake Storage Gen2 へのリクエストを認証するために Managed Identity を使用するかどうか。デフォルト: `false`。|
+| azure.adls2.oauth2_tenant_id        | Azure Data Lake Storage Gen2 へのリクエストを認証するために使用される Managed Identity の Tenant ID。 |
+| azure.adls2.oauth2_client_id        | Azure Data Lake Storage Gen2 へのリクエストを認証するために使用される Managed Identity の Client ID。 |
 | hadoop.security.authentication      | 認証方法です。有効な値は `simple`（デフォルト）と `kerberos` です。`simple` はシンプル認証、つまりユーザー名を示します。`kerberos` は Kerberos 認証を示します。 |
 | username                            | HDFS クラスターの NameNode にアクセスするためのユーザー名です。                      |
 | hadoop.security.kerberos.ticket.cache.path | kinit で生成されたチケットキャッシュを保存するパスです。                   |
@@ -178,6 +186,40 @@ Azure Blob Storage でのストレージボリュームの作成は v3.1.1 以�
 
 :::note
 Azure Blob Storage アカウントを作成する際には、階層型名前空間を無効にする必要があります。
+:::
+
+##### Azure Data Lake Storage Gen2
+
+Azure Data Lake Storage Gen2 でのストレージボリュームの作成は v3.4.1 以降でサポートされています。
+
+- Shared Key を使用して Azure Data Lake Storage Gen2 にアクセスする場合、次のプロパティを設定します：
+
+  ```SQL
+  "enabled" = "{ true | false }",
+  "azure.adls2.endpoint" = "<endpoint_url>",
+  "azure.adls2.shared_key" = "<shared_key>"
+  ```
+
+- 共有アクセス署名 (SAS) を使用して Azure Data Lake Storage Gen2 にアクセスする場合、次のプロパティを設定します：
+
+  ```SQL
+  "enabled" = "{ true | false }",
+  "azure.adls2.endpoint" = "<endpoint_url>",
+  "azure.adls2.sas_token" = "<sas_token>"
+  ```
+
+- Managed Identity を使用して Azure Data Lake Storage Gen2 にアクセスする場合、次のプロパティを設定します：
+
+  ```SQL
+  "enabled" = "{ true | false }",
+  "azure.adls2.endpoint" = "<endpoint_url>",
+  "azure.adls2.oauth2_use_managed_identity" = "true",
+  "azure.adls2.oauth2_tenant_id" = "<tenant_id>",
+  "azure.adls2.oauth2_client_id" = "<client_id>" 
+  ```
+
+:::note
+Azure Data Lake Storage Gen1 はサポートされていません。
 :::
 
 ##### HDFS
@@ -353,6 +395,18 @@ PROPERTIES(
     "fs.viewfs.mounttable.clusterX.link./data" = "hdfs://nn1-clusterx.example.com:8020/data",
     "fs.viewfs.mounttable.clusterX.link./project" = "hdfs://nn2-clusterx.example.com:8020/project"
 );
+```
+
+例 8: Azure Data Lake Storage Gen2 を使用してストレージボリューム `adls2` を作成します。
+
+```SQL
+CREATE STORAGE VOLUME adls2
+    TYPE = ADLS2
+    LOCATIONS = ("adls2://testfilesystem/starrocks")
+    PROPERTIES (
+        "azure.adls2.endpoint" = "https://test.dfs.core.windows.net",
+        "azure.adls2.sas_token" = "xxx"
+    );
 ```
 
 ## 関連する SQL ステートメント

@@ -103,7 +103,7 @@ public abstract class Type implements Cloneable {
     // DECIMAL, NULL, and INVALID_TYPE  are handled separately.
     private static final List<PrimitiveType> SKIP_COMPARE_TYPES = Arrays.asList(
             PrimitiveType.INVALID_TYPE, PrimitiveType.NULL_TYPE, PrimitiveType.DECIMALV2,
-            PrimitiveType.DECIMAL32, PrimitiveType.DECIMAL64, PrimitiveType.DECIMAL128,
+            PrimitiveType.DECIMAL32, PrimitiveType.DECIMAL64, PrimitiveType.DECIMAL128, PrimitiveType.DECIMAL256,
             PrimitiveType.TIME, PrimitiveType.JSON, PrimitiveType.FUNCTION,
             PrimitiveType.BINARY, PrimitiveType.VARBINARY);
 
@@ -129,11 +129,15 @@ public abstract class Type implements Cloneable {
             ScalarType.createDecimalV3Type(PrimitiveType.DECIMAL64, 18, 6);
     public static final ScalarType DEFAULT_DECIMAL128 =
             ScalarType.createDecimalV3Type(PrimitiveType.DECIMAL128, 38, 9);
+    public static final ScalarType DEFAULT_DECIMAL256 =
+            ScalarType.createDecimalV3Type(PrimitiveType.DECIMAL256, 76, 12);
+
     public static final ScalarType DECIMALV2 = DEFAULT_DECIMALV2;
 
     public static final ScalarType DECIMAL32 = ScalarType.createWildcardDecimalV3Type(PrimitiveType.DECIMAL32);
     public static final ScalarType DECIMAL64 = ScalarType.createWildcardDecimalV3Type(PrimitiveType.DECIMAL64);
     public static final ScalarType DECIMAL128 = ScalarType.createWildcardDecimalV3Type(PrimitiveType.DECIMAL128);
+    public static final ScalarType DECIMAL256 = ScalarType.createWildcardDecimalV3Type(PrimitiveType.DECIMAL256);
 
     // DECIMAL64_INT and DECIMAL128_INT for integer casting to decimal
     public static final ScalarType DECIMAL_ZERO =
@@ -156,6 +160,7 @@ public abstract class Type implements Cloneable {
     public static final ScalarType UNKNOWN_TYPE = ScalarType.createUnknownType();
     public static final ScalarType FUNCTION = new ScalarType(PrimitiveType.FUNCTION);
     public static final ScalarType VARBINARY = new ScalarType(PrimitiveType.VARBINARY);
+    public static final ScalarType ROW_ID = new ScalarType(PrimitiveType.ROW_ID);
 
     public static final PseudoType ANY_ELEMENT = PseudoType.ANY_ELEMENT;
     public static final PseudoType ANY_ARRAY = PseudoType.ANY_ARRAY;
@@ -192,7 +197,7 @@ public abstract class Type implements Cloneable {
 
     // NOTE: DECIMAL_TYPES not contain DECIMALV2
     public static final ImmutableList<ScalarType> DECIMAL_TYPES =
-            ImmutableList.of(DECIMAL32, DECIMAL64, DECIMAL128);
+            ImmutableList.of(DECIMAL32, DECIMAL64, DECIMAL128, DECIMAL256);
 
     public static final ImmutableList<ScalarType> DATE_TYPES =
             ImmutableList.of(Type.DATE, Type.DATETIME);
@@ -248,6 +253,7 @@ public abstract class Type implements Cloneable {
                     .putAll(SUPPORT_SCALAR_TYPE_LIST.stream()
                             .collect(Collectors.toMap(Type::getPrimitiveType, x -> (ScalarType) x)))
                     .put(INVALID.getPrimitiveType(), INVALID)
+                    .put(ROW_ID.getPrimitiveType(), ROW_ID)
                     .build();
 
     /**
@@ -1155,6 +1161,9 @@ public abstract class Type implements Cloneable {
             return false;
         } else if (from.isJsonType() && to.isStructType()) {
             return true;
+        } else if (from.isJsonType() && to.isMapType()) {
+            MapType map = (MapType) to;
+            return canCastTo(Type.VARCHAR, map.getKeyType()) && canCastTo(Type.JSON, map.getValueType());
         } else if (from.isBoolean() && to.isComplexType()) {
             // for mock nest type with NULL value, the cast must return NULL
             // like cast(map{1: NULL} as MAP<int, int>)

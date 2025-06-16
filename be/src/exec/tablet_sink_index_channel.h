@@ -24,7 +24,7 @@
 #include <vector>
 
 #include "common/status.h"
-#include "common/tracer.h"
+#include "common/tracer_fwd.h"
 #include "exec/async_data_sink.h"
 #include "exec/tablet_info.h"
 #include "gen_cpp/Types_types.h"
@@ -175,6 +175,7 @@ private:
     Status _wait_request(ReusableClosure<PTabletWriterAddBatchResult>* closure);
     Status _wait_all_prev_request();
     Status _wait_one_prev_request();
+    Status _try_send_eos_and_process_all_response();
     bool _check_prev_request_done();
     bool _check_all_prev_request_done();
     Status _serialize_chunk(const Chunk* src, ChunkPB* dst);
@@ -192,6 +193,8 @@ private:
     void _try_diagnose(const std::string& error_text);
     bool _is_diagnose_done();
     void _wait_diagnose(RuntimeState* state);
+    bool _process_diagnose_profile(RuntimeState* state, PLoadDiagnoseResult& result);
+    void _release_diagnose_closure();
 
     std::unique_ptr<MemTracker> _mem_tracker = nullptr;
 
@@ -217,6 +220,7 @@ private:
 
     // channel is closed
     bool _closed{false};
+    bool _all_response_processed{false};
 
     // data sending is finished
     bool _finished{false};
@@ -269,7 +273,7 @@ private:
     ExprContext* _where_clause = nullptr;
 
     bool _has_primary_replica = false;
-    std::unique_ptr<RefCountClosure<PLoadDiagnoseResult>> _diagnose_closure;
+    RefCountClosure<PLoadDiagnoseResult>* _diagnose_closure = nullptr;
 };
 
 class IndexChannel {

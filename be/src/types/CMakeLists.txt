@@ -24,7 +24,9 @@ add_library(Types STATIC
     logical_type.cpp
     map_type_info.cpp
     struct_type_info.cpp
+    row_id_type_info.cpp
     timestamp_value.cpp
     checker/type_checker.cpp
     type_checker_manager.cpp
+    int256.cpp
 )

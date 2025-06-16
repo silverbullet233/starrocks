@@ -151,7 +151,9 @@ template <typename T, bool sorted>
 class FixedLengthColumnSerde {
 public:
     static int64_t max_serialized_size(const FixedLengthColumnBase<T>& column, const int encode_level) {
-        uint32_t size = sizeof(T) * column.size();
+        // NOTE that `serialize` and `deserialize` will store and load the size as uint32_t.
+        // If you use `serialize` and `deserialize`, please make sure that the size of the column is less than 2^32.
+        int64_t size = sizeof(T) * column.size();
         if (EncodeContext::enable_encode_integer(encode_level) && size >= ENCODE_SIZE_LIMIT) {
             return sizeof(uint32_t) + sizeof(uint64_t) +
                    std::max((int64_t)size, (int64_t)streamvbyte_max_compressedbytes(upper_int32(size)));
@@ -363,7 +365,6 @@ public:
         uint32_t num_objects = 0;
         buff = read_little_endian_32(buff, &actual_version);
         buff = read_little_endian_32(buff, &num_objects);
-        CHECK_EQ(actual_version, kJsonMetaDefaultFormatVersion) << "Only format_version=1 is supported";
 
         column->reset_column();
         auto& pool = column->get_pool();
@@ -541,6 +542,12 @@ public:
         _size += JsonColumnSerde::max_serialized_size(column);
         return Status::OK();
     }
+    Status do_visit(const RowIdColumn& column) {
+        _size += FixedLengthColumnSerde<uint32_t, false>::max_serialized_size(*column.be_ids_column(), _encode_level);
+        _size += FixedLengthColumnSerde<uint32_t, false>::max_serialized_size(*column.seg_ids_column(), _encode_level);
+        _size += FixedLengthColumnSerde<uint32_t, false>::max_serialized_size(*column.ord_ids_column(), _encode_level);
+        return Status::OK();
+    }
 
     int64_t size() const { return _size; }
 
@@ -603,6 +610,13 @@ public:
 
     Status do_visit(const JsonColumn& column) {
         _cur = JsonColumnSerde::serialize(column, _cur);
+        return Status::OK();
+    }
+
+    Status do_visit(const RowIdColumn& column) {
+        _cur = FixedLengthColumnSerde<uint32_t, false>::serialize(*column.be_ids_column(), _cur, _encode_level);
+        _cur = FixedLengthColumnSerde<uint32_t, false>::serialize(*column.seg_ids_column(), _cur, _encode_level);
+        _cur = FixedLengthColumnSerde<uint32_t, false>::serialize(*column.ord_ids_column(), _cur, _encode_level);
         return Status::OK();
     }
 
@@ -675,6 +689,14 @@ public:
 
     Status do_visit(JsonColumn* column) {
         _cur = JsonColumnSerde::deserialize(_cur, column);
+        return Status::OK();
+    }
+    Status do_visit(RowIdColumn* column) {
+        _cur = FixedLengthColumnSerde<uint32_t, false>::deserialize(_cur, column->be_ids_column().get(), _encode_level);
+        _cur = FixedLengthColumnSerde<uint32_t, false>::deserialize(_cur, column->seg_ids_column().get(),
+                                                                    _encode_level);
+        _cur = FixedLengthColumnSerde<uint32_t, false>::deserialize(_cur, column->ord_ids_column().get(),
+                                                                    _encode_level);
         return Status::OK();
     }
 

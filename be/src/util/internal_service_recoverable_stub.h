@@ -67,6 +67,8 @@ public:
                                    const ::starrocks::PTabletWriterAddSegmentRequest* request,
                                    ::starrocks::PTabletWriterAddSegmentResult* response,
                                    ::google::protobuf::Closure* done);
+    void get_load_replica_status(google::protobuf::RpcController* controller, const PLoadReplicaStatusRequest* request,
+                                 PLoadReplicaStatusResult* response, google::protobuf::Closure* done) override;
     void load_diagnose(::google::protobuf::RpcController* controller, const ::starrocks::PLoadDiagnoseRequest* request,
                        ::starrocks::PLoadDiagnoseResult* response, ::google::protobuf::Closure* done) override;
     void transmit_runtime_filter(::google::protobuf::RpcController* controller,
@@ -84,6 +86,12 @@ public:
                                   const ::starrocks::PProcessDictionaryCacheRequest* request,
                                   ::starrocks::PProcessDictionaryCacheResult* response,
                                   ::google::protobuf::Closure* done);
+    void fetch_datacache(::google::protobuf::RpcController* controller,
+                         const ::starrocks::PFetchDataCacheRequest* request,
+                         ::starrocks::PFetchDataCacheResponse* response, ::google::protobuf::Closure* done);
+
+    void lookup(google::protobuf::RpcController* controller, const PLookUpRequest* request, PLookUpResponse* response,
+                google::protobuf::Closure* done) override;
 
 private:
     std::shared_ptr<starrocks::PInternalService_Stub> _stub;

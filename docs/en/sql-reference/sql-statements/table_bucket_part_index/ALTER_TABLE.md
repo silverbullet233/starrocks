@@ -4,9 +4,7 @@ displayed_sidebar: docs
 
 # ALTER TABLE
 
-## Description
-
-Modifies an existing table, including:
+ALTER TABLE Modifies an existing table, including:
 
 - [Rename table, partition, index, or column](#rename)
 - [Modify table comment](#alter-table-comment-from-v31)
@@ -18,6 +16,7 @@ Modifies an existing table, including:
 - [Modify table properties](#modify-table-properties)
 - [Atomic swap](#swap)
 - [Manual data version compaction](#manual-compaction-from-31)
+- [Drop Primary Key Persistent Index](#drop-primary-key-persistent-index-from-339)
 
 :::tip
 This operation requires the ALTER privilege on the destination table.
@@ -41,6 +40,7 @@ alter_clause1[, alter_clause2, ...]
 - bitmap index: modifies index (only Bitmap index can be modified).
 - swap: atomic exchange of two tables.
 - compaction: performs manual compaction to merge versions of loaded data (supported from **v3.1 onwards**).
+- drop persistent index: Drop persistent index for Primary Key table in shared-data cluster. **Supported from v3.3.9 onwards**.
 
 ## Limits and usage notes
 
@@ -207,24 +207,45 @@ ALTER TABLE [<db_name>.]<tbl_name>
 DROP PARTITION [ IF EXISTS ] <partition_name> [ FORCE ]
 ```
 
-- Drop partitions in batch (Supported from v3.3.1):
+- Drop partitions in batch (Supported from v3.4.0):
 
 ```sql
 ALTER TABLE [<db_name>.]<tbl_name>
 DROP PARTITIONS [ IF EXISTS ]  { partition_name_list | multi_range_partitions } [ FORCE ]
 
-partion_name_list ::= ( <partition_name> [, ... ] )
+partition_name_list ::= ( <partition_name> [, ... ] )
 
 multi_range_partitions ::=
     { START ("<start_date_value>") END ("<end_date_value>") EVERY ( INTERVAL <N> <time_unit> )
     | START ("<start_integer_value>") END ("<end_integer_value>") EVERY ( <granularity> ) } -- The partition column values still need to be enclosed in double quotes even if the partition column values are integers. However, the interval values in the EVERY clause do not need to be enclosed in double quotes.
 ```
 
-Notes for `multi_range_partitions`:
+  Notes for `multi_range_partitions`:
 
-- It only appiles to Range Partitioning.
-- The parameters involved is consistent with those in [ADD PARTITION(S)](#add-partitions).
-- It only supports partitions with a single Partition Key.
+  - It only applies to Range Partitioning.
+  - The parameters involved is consistent with those in [ADD PARTITION(S)](#add-partitions).
+  - It only supports partitions with a single Partition Key.
+
+- Drop partitions with Common Partition Expression (Supported from v3.5.0):
+
+```sql
+ALTER TABLE [<db_name>.]<tbl_name>
+DROP PARTITIONS WHERE <expr>
+```
+
+From v3.5.0 onwards, StarRocks supports dropping partitions using Common Partition Expression. You can specify a WHERE clause with an expression to filter the partitions to drop.
+- The expression declares the partitions to be dropped. Partitions that meet the condition in the expression will be dropped in batch. Be cautious when proceeding.
+- The expression can only contain partition columns and constants. Non-partition columns are not supported.
+- Common Partition Expression applies to List partitions and Range partitions differently:
+  - For tables with List partitions, StarRocks supports deleting partitions filtered by the Common Partition Expression.
+  - For tables with Range partitions, StarRocks can only filter and delete partitions using the partition pruning capability of FE. Partitions correspond to predicates that are not supported by partition pruning cannot be filtered and deleted.
+
+Example:
+
+```sql
+-- Drop the data earlier than the last three months. Column `dt` is the partition column of the table.
+ALTER TABLE t1 DROP PARTITIONS WHERE dt < CURRENT_DATE() - INTERVAL 3 MONTH;
+```
 
 :::note
 
@@ -565,7 +586,11 @@ Decouple the sort key from the primary key, and modify the sort key to `dt, reve
 ALTER TABLE orders ORDER BY (dt, revenue, state);
 ```
 
+import Beta from '../../../_assets/commonMarkdown/_beta.mdx'
+
 #### Modify a STRUCT column to add or drop a field
+
+<Beta />
 
 From v3.2.10 and v3.3.2 onwards, StarRocks supports modifying a STRUCT column to add or drop a field, which can be nested or within an ARRAY type.
 
@@ -623,7 +648,7 @@ For more usage instructions, see [Example - Column -14](#column).
 
 - Currently, this feature is only supported in shared-nothing clusters.
 - The table must have the `fast_schema_evolution` property enabled.
-- Adding or dropping fields in the STRUCT type within a MAP type is not supported.
+- Modifying the Value type of a MAP subfield in a STRUCT type is not supported, regardless of whether the Value type is ARRAY, STRUCT, or MAP.
 - Newly added fields cannot have default values or attributes such as Nullable specified. They default to being Nullable, with a default value of null.
 - After this feature is used, downgrading the cluster directly to a version that does not support this feature is not allowed.
 
@@ -742,7 +767,7 @@ Syntax:
 
 ```sql
 ALTER TABLE [<db_name>.]<tbl_name>
-SET ("key" = "value",...)
+SET ("key" = "value")
 ```
 
 Currently, StarRocks supports modifying the following table properties:
@@ -758,8 +783,12 @@ Currently, StarRocks supports modifying the following table properties:
 - `bucket_size` (supported since 3.2)
 - `base_compaction_forbidden_time_ranges` (supported since v3.2.13)
 
-Note:
-You can also modify the properties by merging into the above operation on column. See the [following examples](#examples).
+:::note
+
+- In most cases, you are only allowed to modify one property at a time. You can only modify multiple properties at a time only if these properties have the same prefix. Currently, only `dynamic_partition.` and `binlog.` are supported.
+- You can also modify the properties by merging into the above operation on column. See the [following examples](#examples).
+
+:::
 
 ### Swap
 
@@ -771,6 +800,11 @@ Syntax:
 ALTER TABLE [<db_name>.]<tbl_name>
 SWAP WITH <tbl_name>;
 ```
+
+:::note
+- Unique Key and Foreign Key constraints between OLAP tables will be validated during Swap to ensure that the constraints of the two tables being swapped are consistent. An error will be returned if inconsistencies are detected. If no inconsistencies are detected, Unique Key and Foreign Key constraints will be automatically swapped.
+- Materialized views that are depended on the tables being swapped will be automatically set to inactive, and their Unique Key and Foreign Key constraints will be removed and no longer available.
+:::
 
 ### Manual compaction (from 3.1)
 
@@ -815,6 +849,18 @@ ALTER TABLE <tbl_name> BASE COMPACT (<partition1_name>[,<partition2_name>,...])
 ```
 
 The `be_compactions` table in the `information_schema` database records compaction results. You can run `SELECT * FROM information_schema.be_compactions;` to query data versions after compaction.
+
+### Drop Primary Key Persistent Index (From 3.3.9)
+
+Syntax:
+
+```sql
+ALTER TABLE [<db_name>.]<tbl_name>
+DROP PERSISTENT INDEX ON TABLETS(<tablet_id>[, <tablet_id>, ...]);
+```
+> **NOTE**
+>
+> StarRocks only supports deleting persistent indexes for cloud-native Primary Key tables in shared-data clusters.
 
 ## Examples
 
@@ -1264,6 +1310,14 @@ ALTER TABLE compaction_test COMPACT (p202302,p203303);
 ALTER TABLE compaction_test CUMULATIVE COMPACT (p202302,p203303);
 
 ALTER TABLE compaction_test BASE COMPACT (p202302,p203303);
+```
+
+### Drop Primary Key Persistent Index
+
+Drop persistent index on tablets `100` and `101` for Primary Key table `db1.test_tbl` in a shared-data cluster.
+
+```sql
+ALTER TABLE db1.test_tbl DROP PERSISTENT INDEX ON TABLETS (100, 101);
 ```
 
 ## References

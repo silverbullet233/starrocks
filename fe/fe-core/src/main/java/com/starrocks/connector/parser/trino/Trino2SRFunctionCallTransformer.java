@@ -218,10 +218,6 @@ public class Trino2SRFunctionCallTransformer {
         registerFunctionTransformer("to_char", 2, "jodatime_format",
                 List.of(Expr.class, Expr.class));
 
-        // parse_datetime -> str_to_jodatime
-        registerFunctionTransformer("parse_datetime", 2, "str_to_jodatime",
-                List.of(Expr.class, Expr.class));
-
         // to_date -> to_tera_date
         registerFunctionTransformer("to_date", 2, "to_tera_date",
                 List.of(Expr.class, Expr.class));
@@ -307,6 +303,12 @@ public class Trino2SRFunctionCallTransformer {
         // regexp_like -> regexp
         registerFunctionTransformer("regexp_like", 2, "regexp",
                 List.of(Expr.class, Expr.class));
+
+        // support regexp_replace with 2 param
+        registerFunctionTransformer("regexp_replace", 2,
+                new FunctionCallExpr("regexp_replace",
+                        List.of(new PlaceholderExpr(1, Expr.class), new PlaceholderExpr(2, Expr.class),
+                                new StringLiteral(""))));
     }
 
     private static void registerURLFunctionTransformer() {

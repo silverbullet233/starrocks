@@ -183,6 +183,8 @@ Status TabletReader::_init_compaction_column_paths(const TabletReaderParams& rea
         if (readers.size() == num_readers) {
             // must all be flat json type
             JsonPathDeriver deriver;
+            auto flat_json_config = _tablet->flat_json_config();
+            deriver.init_flat_json_config(flat_json_config.get());
             deriver.derived(readers);
             auto paths = deriver.flat_paths();
             auto types = deriver.flat_types();
@@ -366,6 +368,9 @@ Status TabletReader::get_segment_iterators(const TabletReaderParams& params, std
     rs_opts.vector_search_option = params.vector_search_option;
     rs_opts.sample_options = params.sample_options;
     rs_opts.enable_join_runtime_filter_pushdown = params.enable_join_runtime_filter_pushdown;
+    rs_opts.need_generate_global_rowid = params.need_generate_global_rowid;
+    rs_opts.row_id_column_id = params.row_id_column_id;
+    rs_opts.row_id_column_slot = params.row_id_column_slot;
     if (keys_type == KeysType::PRIMARY_KEYS) {
         rs_opts.is_primary_keys = true;
         rs_opts.version = _version.second;

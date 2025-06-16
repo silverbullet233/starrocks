@@ -4,17 +4,26 @@ displayed_sidebar: docs
 
 # SHOW PROC
 
-## Description
+## 説明
 
 StarRocks クラスターの特定の指標を表示します。
 
+SHOW PROC は Linux の `/proc` ファイルシステムに相当する。`/proc` のパスと同様に、SHOW PROC のパラメータはツリーのような階層構造になっており、それぞれの階層で異なる情報が表示される。`SHOW PROC '/dbs'` を例にとってみよう：
+- `SHOW PROC '/dbs'` はクラスタ内のすべてのデータベースの情報を返す。
+- `SHOW PROC '/dbs/<db_name>'` は指定したデータベースの情報を返す。
+- `SHOW PROC '/dbs/<db_name>/tables'` は指定したデータベースの全てのテーブルの情報を返す。
+- `SHOW PROC '/dbs/<db_name>/<table_name>'` は指定したテーブルの情報を返す。
+- `SHOW PROC '/dbs/<db_name>/<table_name>/partitions'` は指定したテーブルのすべてのパーティションの情報を返す。
+
+SHOW PROC のパラメータはリーフノードまで指定できます。
+
 :::tip
 
-この操作には SYSTEM レベルの OPERATE 権限が必要です。この権限を付与するには、[GRANT](../../account-management/GRANT.md) の指示に従ってください。
+この操作には SYSTEM レベルの OPERATE 権限が必要です。この権限を付与するには、 [GRANT](../../account-management/GRANT.md) の指示に従ってください。
 
 :::
 
-## Syntax
+## 構文
 
 ```SQL
 SHOW PROC { '/backends' | '/compute_nodes' | '/dbs' | '/jobs' 
@@ -22,36 +31,37 @@ SHOW PROC { '/backends' | '/compute_nodes' | '/dbs' | '/jobs'
           | '/resources' | '/load_error_hub' | '/transactions' 
           | '/monitor' | '/current_queries' | '/current_backend_instances' 
           | '/cluster_balance' | '/routine_loads' | '/colocation_group' 
-          | '/catalog' | '/replications' }
+          | '/catalog' | '/replications'  | '/global_current_queries' }
 ```
 
-## Parameters
+## パラメータ
 
-| **Parameter**                | **Description**                                              |
+| **パラメータ**                | **説明**                                              |
 | ---------------------------- | ------------------------------------------------------------ |
-| '/backends'                  | クラスター内の BE ノードの情報を表示します。                 |
-| '/compute_nodes'             | クラスター内の CN ノードの情報を表示します。                 |
-| '/dbs'                       | クラスター内のデータベースの情報を表示します。               |
-| '/jobs'                      | クラスター内のジョブの情報を表示します。                     |
-| '/statistic'                 | クラスター内の各データベースの統計情報を表示します。         |
+| '/backends'                  | クラスター内の BE ノードの情報を表示します。            |
+| '/compute_nodes'             | クラスター内の CN ノードの情報を表示します。            |
+| '/dbs'                       | クラスター内のデータベースの情報を表示します。           |
+| '/jobs'                      | クラスター内のジョブの情報を表示します。                |
+| '/statistic'                 | クラスター内の各データベースの統計情報を表示します。        |
 | '/tasks'                     | クラスター内のすべての一般的なタスクと失敗したタスクの総数を表示します。 |
-| '/frontends'                 | クラスター内の FE ノードの情報を表示します。                 |
-| '/brokers'                   | クラスター内の Broker ノードの情報を表示します。             |
-| '/resources'                 | クラスター内のリソースの情報を表示します。                   |
-| '/load_error_hub'            | ロードジョブのエラーメッセージを管理するために使用されるクラスターの Load Error Hub の設定を表示します。 |
-| '/transactions'              | クラスター内のトランザクションの情報を表示します。           |
-| '/monitor'                   | クラスター内の監視情報を表示します。                         |
-| '/current_queries'           | 現在の FE ノードで実行中のクエリの情報を表示します。         |
+| '/frontends'                 | クラスター内の FE ノードの情報を表示します。            |
+| '/brokers'                   | クラスター内の Broker ノードの情報を表示します。        |
+| '/resources'                 | クラスター内のリソースの情報を表示します。           |
+| '/load_error_hub'            | ロードエラーハブの設定を表示します。これは、ロードジョブのエラーメッセージを管理するために使用されます。 |
+| '/transactions'              | クラスター内のトランザクションの情報を表示します。        |
+| '/monitor'                   | クラスター内の監視情報を表示します。             |
+| '/current_queries'           | 現在の FE ノードで実行中のクエリの情報を表示します。 |
 | '/current_backend_instances' | クラスター内でリクエストを処理している BE ノードを表示します。 |
-| '/cluster_balance'           | クラスター内のロードバランス情報を表示します。               |
-| '/routine_loads'             | クラスター内の Routine Load の情報を表示します。             |
-| '/colocation_group'          | クラスター内の Colocate Join グループの情報を表示します。    |
-| '/catalog'                   | クラスター内のカタログの情報を表示します。                   |
-| '/replications'              | クラスター内のデータレプリケーションタスクの情報を表示します。|
+| '/cluster_balance'           | クラスター内のロードバランス情報を表示します。           |
+| '/routine_loads'             | クラスター内の Routine Load の情報を表示します。        |
+| '/colocation_group'          | クラスター内の Colocate Join グループの情報を表示します。 |
+| '/catalog'                   | クラスター内のカタログの情報を表示します。            |
+| '/replications'              | クラスター内のデータレプリケーションタスクの情報を表示します。 |
+| '/global_current_queries'    | クラスター内のすべての FE ノードで実行中のクエリの情報を表示します。 |
 
-## Examples
+## 例
 
-Example 1: クラスター内の BE ノードの情報を表示します。
+例 1: クラスター内の BE ノードの情報を表示します。
 
 ```Plain
 mysql> SHOW PROC '/backends'\G
@@ -84,61 +94,89 @@ ClusterDecommissioned: false
            CpuUsedPct: 0.0 %
 ```
 
-| **Return**            | **Description**                                              |
+| **戻り値**            | **説明**                                              |
 | --------------------- | ------------------------------------------------------------ |
-| BackendId             | BE ノードの ID。                                             |
-| IP                    | BE ノードの IP アドレス。                                    |
-| HeartbeatPort         | BE ノードのハートビートサービスのポート。                    |
-| BePort                | BE ノードの Thrift サーバーポート。                          |
-| HttpPort              | BE ノードの HTTP サーバーポート。                            |
+| BackendId             | BE ノードの ID。                                           |
+| IP                    | BE ノードの IP アドレス。                                   |
+| HeartbeatPort         | BE ノードのハートビートサービスのポート。                       |
+| BePort                | BE ノードの Thrift サーバーのポート。                           |
+| HttpPort              | BE ノードの HTTP サーバーのポート。                             |
 | BrpcPort              | BE ノードの bRPC ポート。                                    |
-| LastStartTime         | BE ノードが最後に開始された時間。                            |
-| LastHeartbeat         | BE ノードが最後にハートビートを受信した時間。                |
-| Alive                 | BE ノードが生存しているかどうか。                            |
-| SystemDecommissioned  | BE ノードがシステムから除籍されているかどうか。              |
-| ClusterDecommissioned | BE ノードがクラスター内で除籍されているかどうか。            |
-| TabletNum             | BE ノード内のタブレットの数。                                |
-| DataUsedCapacity      | BE ノード内でデータに使用されているストレージ容量。          |
-| AvailCapacity         | BE ノード内の利用可能なストレージ容量。                      |
-| TotalCapacity         | BE ノード内の総ストレージ容量。                              |
-| UsedPct               | BE ノード内でストレージ容量が使用されている割合。            |
-| MaxDiskUsedPct        | BE ノード内でストレージ容量が使用されている最大割合。        |
-| ErrMsg                | BE ノード内のエラーメッセージ。                              |
-| Version               | BE ノードの StarRocks バージョン。                           |
-| Status                | BE ノードのステータス情報。タブレットが最後に報告された時間を含む。 |
-| DataTotalCapacity     | 使用済みおよび利用可能なデータストレージ容量の合計。`DataUsedCapacity` と `AvailCapacity` の合計。 |
-| DataUsedPct           | データストレージが総データ容量を占める割合 (DataUsedCapacity/DataTotalCapacity)。 |
-| CpuCores              | BE ノード内の CPU コア数。                                   |
-| NumRunningQueries     | クラスター内で現在実行中のクエリの数。                       |
-| MemUsedPct            | 現在のメモリ使用率。                                         |
-| CpuUsedPct            | 現在の CPU 使用率。                                          |
+| LastStartTime         | BE ノードが最後に開始された時刻。                  |
+| LastHeartbeat         | BE ノードが最後にハートビートを受信した時刻。         |
+| Alive                 | BE ノードが生存しているかどうか。                                     |
+| SystemDecommissioned  | BE ノードがシステムから除外されているかどうか。                            |
+| ClusterDecommissioned | BE ノードがクラスター内で除外されているかどうか。         |
+| TabletNum             | BE ノード内のタブレットの数。                            |
+| DataUsedCapacity      | BE ノード内でデータに使用されているストレージ容量。       |
+| AvailCapacity         | BE ノード内の利用可能なストレージ容量。                   |
+| TotalCapacity         | BE ノード内の総ストレージ容量。                       |
+| UsedPct               | BE ノード内でストレージ容量が使用されている割合。 |
+| MaxDiskUsedPct        | BE ノード内でストレージ容量が使用されている最大割合。 |
+| ErrMsg                | BE ノード内のエラーメッセージ。                               |
+| Version               | BE ノードの StarRocks バージョン。                            |
+| Status                | BE ノードのステータス情報。タブレットを最後に報告した時刻を含む。 |
+| DataTotalCapacity     | 使用済みおよび利用可能なデータストレージ容量の合計。 `DataUsedCapacity` と `AvailCapacity` の合計。 |
+| DataUsedPct           | データストレージが総データ容量に占める割合 (DataUsedCapacity/DataTotalCapacity)。 |
+| CpuCores              | BE ノード内の CPU コア数。                          |
+| NumRunningQueries     | クラスター内で現在実行中のクエリの数。      |
+| MemUsedPct            | 現在のメモリ使用率。                                 |
+| CpuUsedPct            | 現在の CPU 使用率。                                    |
 
-Example 2: クラスター内のデータベースの情報を表示します。
+例 2: クラスター内のデータベースの情報を表示します。
 
 ```Plain
-mysql> SHOW PROC '/dbs';
-+---------+------------------------+----------+----------------+--------------------------+---------------------+
-| DbId    | DbName                 | TableNum | Quota          | LastConsistencyCheckTime | ReplicaQuota        |
-+---------+------------------------+----------+----------------+--------------------------+---------------------+
-| 1       | information_schema     | 22       | 8388608.000 TB | NULL                     | 9223372036854775807 |
-| 840997  | tpcds_100g             | 25       | 1024.000 GB    | NULL                     | 1073741824          |
-| 1275196 | _statistics_           | 3        | 8388608.000 TB | 2022-09-06 23:00:58      | 9223372036854775807 |
-| 1286207 | tpcds_n                | 24       | 8388608.000 TB | NULL                     | 9223372036854775807 |
-| 1381289 | test                   | 6        | 8388608.000 TB | 2022-01-14 23:10:18      | 9223372036854775807 |
-| 6186781 | test_stddev            | 1        | 8388608.000 TB | 2022-09-06 23:00:58      | 9223372036854775807 |
-+---------+------------------------+----------+----------------+--------------------------+---------------------+
+mysql> show proc "/dbs";
++-------+--------------------+----------+----------------+--------------------------+---------------------+
+| DbId  | DbName             | TableNum | Quota          | LastConsistencyCheckTime | ReplicaQuota        |
++-------+--------------------+----------+----------------+--------------------------+---------------------+
+| 1     | information_schema | 54       | 8388608.000 TB | NULL                     | 9223372036854775807 |
+| 100   | sys                | 6        | 8388608.000 TB | NULL                     | 9223372036854775807 |
+| 10001 | _statistics_       | 12       | 8388608.000 TB | NULL                     | 9223372036854775807 |
+| 10015 | test               | 1        | 8388608.000 TB | NULL                     | 9223372036854775807 |
++-------+--------------------+----------+----------------+--------------------------+---------------------+
+4 rows in set (0.00 sec)
+mysql> show proc "/dbs/test";
++---------+------------------+----------+---------------------+--------------+--------+--------------+--------------------------+--------------+---------------+--------------------------------------------------------------------------------------------------------+
+| TableId | TableName        | IndexNum | PartitionColumnName | PartitionNum | State  | Type         | LastConsistencyCheckTime | ReplicaCount | PartitionType | StoragePath                                                                                            |
++---------+------------------+----------+---------------------+--------------+--------+--------------+--------------------------+--------------+---------------+--------------------------------------------------------------------------------------------------------+
+| 10207   | source_wiki_edit | 1        | event_time          | 4            | NORMAL | CLOUD_NATIVE | NULL                     | 8            | RANGE         | s3://test/xxx                                                                                          |
++---------+------------------+----------+---------------------+--------------+--------+--------------+--------------------------+--------------+---------------+--------------------------------------------------------------------------------------------------------+
+1 row in set (0.00 sec)
+mysql> show proc "/dbs/test/source_wiki_edit";
++-----------------+
+| Nodes           |
++-----------------+
+| partitions      |
+| temp_partitions |
+| index_schema    |
++-----------------+
+3 rows in set (0.00 sec)
 ```
 
-| **Return**               | **Description**                                   |
+| **戻り値**               | **説明**                                   |
 | ------------------------ | ------------------------------------------------- |
-| DbId                     | データベース ID。                                 |
-| DbName                   | データベース名。                                  |
-| TableNum                 | データベース内のテーブル数。                      |
-| Quota                    | データベースのストレージクォータ。                |
-| LastConsistencyCheckTime | 一貫性チェックが最後に実行された時間。            |
-| ReplicaQuota             | データベースのデータレプリカクォータ。            |
+| DbId                     | データベース ID。                                      |
+| DbName                   | データベース名。                                    |
+| TableNum                 | データベース内のテーブル数。                 |
+| Quota                    | データベースのストレージクォータ。                    |
+| LastConsistencyCheckTime | 一貫性チェックが最後に実行された時刻。 |
+| ReplicaQuota             | データベースのデータレプリカクォータ。               |
+| TableId                  | テーブル ID。                                         |
+| TableName                | テーブル名。                                       |
+| PartitionColumnName      | パーティションカラム名。                            |
+| PartitionNum             | テーブルのパーティション数。                |
+| State                    | テーブルの状態。                               |
+| Type                     | テーブルのタイプ。                               |
+| LastConsistencyCheckTime | 最後に一致性チェックが実行された時刻。 |
+| ReplicaCount             | テーブルのレプリカ数。                |
+| PartitionType            | テーブルのパーティションの種類。             |
+| StoragePath              | テーブルのストレージパス。                       |
+| partitions               | テーブルのパーティション。                         |
+| temp_partitions          | テーブルの一時パーティション。                |
+| index_schema             | テーブルの同期マテリアライズドビュー。      |
 
-Example 3: クラスター内のジョブの情報を表示します。
+例 3: クラスター内のジョブの情報を表示します。
 
 ```Plain
 mysql> SHOW PROC '/jobs';
@@ -163,18 +201,18 @@ mysql> SHOW PROC '/jobs/10005';
 4 rows in set (0.00 sec)
 ```
 
-| **Return** | **Description**                    |
+| **戻り値** | **説明**                    |
 | ---------- | ---------------------------------- |
-| DbId       | データベース ID。                   |
-| DbName     | データベース名。                    |
-| JobType    | ジョブタイプ。                      |
-| Pending    | 保留中のジョブの数。                |
-| Running    | 実行中のジョブの数。                |
-| Finished   | 完了したジョブの数。                |
-| Cancelled  | キャンセルされたジョブの数。        |
-| Total      | ジョブの総数。                      |
+| DbId       | データベース ID。                       |
+| DbName     | データベース名。                     |
+| JobType    | ジョブタイプ。                          |
+| Pending    | 保留中のジョブの数。   |
+| Running    | 実行中のジョブの数。   |
+| Finished   | 完了したジョブの数。  |
+| Cancelled  | キャンセルされたジョブの数。 |
+| Total      | ジョブの総数。              |
 
-Example 4: クラスター内の各データベースの統計情報を表示します。
+例 4: クラスター内の各データベースの統計情報を表示します。
 
 ```Plain
 mysql> SHOW PROC '/statistic';
@@ -199,22 +237,22 @@ mysql> show proc '/statistic/10002';
 +------------------+---------------------+----------------+-------------------+
 ```
 
-| **Return**            | **Description**                                              |
+| **戻り値**            | **説明**                                              |
 | --------------------- | ------------------------------------------------------------ |
-| DbId                  | データベース ID。                                            |
-| DbName                | データベース名。                                             |
-| TableNum              | データベース内のテーブル数。                                 |
-| PartitionNum          | データベース内のパーティション数。                           |
-| IndexNum              | データベース内のインデックス数。                             |
-| TabletNum             | データベース内のタブレット数。                               |
-| ReplicaNum            | データベース内のレプリカ数。                                 |
-| UnhealthyTabletNum    | データ再配布中に未完了（不健全）なタブレットの数。           |
-| InconsistentTabletNum | データベース内の不整合なタブレットの数。                     |
-| CloningTabletNum      | データベース内でクローンされているタブレットの数。           |
-| ErrorStateTabletNum   | Primary Key タイプのテーブルで、エラーステートのタブレットの数。 |
-| ErrorStateTablets     | Primary Key タイプのテーブルで、エラーステートのタブレットの ID。 |
+| DbId                  | データベース ID。                                                 |
+| DbName                | データベース名。                                               |
+| TableNum              | データベース内のテーブル数。                            |
+| PartitionNum          | データベース内のパーティション数。                        |
+| IndexNum              | データベース内のインデックス数。                           |
+| TabletNum             | データベース内のタブレット数。                           |
+| ReplicaNum            | データベース内のレプリカ数。                          |
+| UnhealthyTabletNum    | データ再配布中に未完了 (不健康) のタブレット数。 |
+| InconsistentTabletNum | データベース内の不一致タブレット数。              |
+| CloningTabletNum      | データベース内でクローン中のタブレット数。     |
+| ErrorStateTabletNum   | プライマリキー型テーブルで、エラー状態のタブレット数。 |
+| ErrorStateTablets     | プライマリキー型テーブルで、エラー状態のタブレットの ID。 |
 
-Example 5: クラスター内のすべての一般的なタスクと失敗したタスクの総数を表示します。
+例 5: クラスター内のすべての一般的なタスクと失敗したタスクの総数を表示します。
 
 ```Plain
 mysql> SHOW PROC '/tasks';
@@ -251,13 +289,13 @@ mysql> SHOW PROC '/tasks';
 +-------------------------+-----------+----------+
 ```
 
-| **Return** | **Description**         |
+| **戻り値** | **説明**         |
 | ---------- | ----------------------- |
-| TaskType   | タスクタイプ。           |
-| FailedNum  | 失敗したタスクの数。     |
-| TotalNum   | タスクの総数。           |
+| TaskType   | タスクタイプ。              |
+| FailedNum  | 失敗したタスクの数。 |
+| TotalNum   | タスクの総数。  |
 
-Example 6: クラスター内の FE ノードの情報を表示します。
+例 6: クラスター内の FE ノードの情報を表示します。
 
 ```Plain
 mysql> SHOW PROC '/frontends';
@@ -268,26 +306,26 @@ mysql> SHOW PROC '/frontends';
 +----------------------------------+---------------+-------------+----------+-----------+---------+----------+------------+-------+-------+-------------------+---------------+----------+---------------+-----------+---------+
 ```
 
-| **Return**        | **Description**                                        |
+| **戻り値**        | **説明**                                        |
 | ----------------- | ------------------------------------------------------ |
 | Name              | FE ノード名。                                          |
-| IP                | FE ノードの IP アドレス。                              |
-| EditLogPort       | FE ノード間の通信ポート。                              |
-| HttpPort          | FE ノードの HTTP サーバーポート。                      |
-| QueryPort         | FE ノードの MySQL サーバーポート。                     |
+| IP                | FE ノードの IP アドレス。                             |
+| EditLogPort       | FE ノード間の通信ポート。               |
+| HttpPort          | FE ノードの HTTP サーバーポート。                       |
+| QueryPort         | FE ノードの MySQL サーバーポート。                      |
 | RpcPort           | FE ノードの RPC ポート。                               |
-| Role              | FE ノードの役割 (Leader, Follower, または Observer)。 |
-| ClusterId         | クラスター ID。                                        |
-| Join              | FE ノードがクラスターに参加しているかどうか。          |
-| Alive             | FE ノードが生存しているかどうか。                      |
-| ReplayedJournalId | FE ノードが再生した最大のメタデータ ID。               |
-| LastHeartbeat     | FE ノードが最後にハートビートを送信した時間。          |
-| IsHelper          | FE ノードが BDBJE ヘルパーノードかどうか。             |
-| ErrMsg            | FE ノード内のエラーメッセージ。                        |
-| StartTime         | FE ノードが開始された時間。                            |
-| Version           | FE ノードの StarRocks バージョン。                     |
+| Role              | FE ノードの役割 (Leader, Follower, または Observer)。   |
+| ClusterId         | クラスター ID。                                            |
+| Join              | FE ノードがクラスターに参加しているかどうか。                   |
+| Alive             | FE ノードが生存しているかどうか。                               |
+| ReplayedJournalId | FE ノードが再生した最大のメタデータ ID。 |
+| LastHeartbeat     | FE ノードが最後にハートビートを送信した時刻。       |
+| IsHelper          | FE ノードが BDBJE ヘルパーノードであるかどうか。               |
+| ErrMsg            | FE ノード内のエラーメッセージ。                         |
+| StartTime         | FE ノードが開始された時刻。                      |
+| Version           | FE ノードの StarRocks バージョン。                      |
 
-Example 7: クラスター内の Broker ノードの情報を表示します。
+例 7: クラスター内の Broker ノードの情報を表示します。
 
 ```Plain
 mysql> SHOW PROC '/brokers';
@@ -300,17 +338,17 @@ mysql> SHOW PROC '/brokers';
 +-------------+---------------+------+-------+---------------+---------------------+--------+
 ```
 
-| **Return**     | **Description**                                              |
+| **戻り値**     | **説明**                                              |
 | -------------- | ------------------------------------------------------------ |
 | Name           | Broker ノード名。                                            |
-| IP             | Broker ノードの IP アドレス。                                |
-| Port           | Broker ノードの Thrift サーバーポート。このポートはリクエストを受信するために使用されます。 |
-| Alive          | Broker ノードが生存しているかどうか。                        |
-| LastStartTime  | Broker ノードが最後に開始された時間。                        |
-| LastUpdateTime | Broker ノードが最後に更新された時間。                        |
-| ErrMsg         | Broker ノード内のエラーメッセージ。                          |
+| IP             | Broker ノードの IP アドレス。                               |
+| Port           | Broker ノードの Thrift サーバーポート。リクエストを受信するために使用されるポート。 |
+| Alive          | Broker ノードが生存しているかどうか。                                 |
+| LastStartTime  | Broker ノードが最後に開始された時刻。              |
+| LastUpdateTime | Broker ノードが最後に更新された時刻。              |
+| ErrMsg         | Broker ノード内のエラーメッセージ。                            |
 
-Example 8: クラスター内のリソースの情報を表示します。
+例 8: クラスター内のリソースの情報を表示します。
 
 ```Plain
 mysql> SHOW PROC '/resources';
@@ -322,14 +360,14 @@ mysql> SHOW PROC '/resources';
 +-------------------------+--------------+---------------------+------------------------------+
 ```
 
-| **Return**   | **Description** |
+| **戻り値**   | **説明** |
 | ------------ | --------------- |
-| Name         | リソース名。    |
-| ResourceType | リソースタイプ。|
-| Key          | リソースキー。  |
-| Value        | リソース値。    |
+| Name         | リソース名。  |
+| ResourceType | リソースタイプ。  |
+| Key          | リソースキー。   |
+| Value        | リソース値。 |
 
-Example 9: クラスター内のトランザクションの情報を表示します。
+例 9: クラスター内のトランザクションの情報を表示します。
 
 ```Plain
 mysql> SHOW PROC '/transactions';
@@ -351,14 +389,14 @@ mysql> SHOW PROC '/transactions/10005';
 2 rows in set (0.00 sec)
 ```
 
-| **Return** | **Description**               |
+| **戻り値** | **説明**               |
 | ---------- | ----------------------------- |
-| DbId       | データベース ID。              |
-| DbName     | データベース名。               |
-| State      | トランザクションの状態。       |
-| Number     | トランザクションの数。         |
+| DbId       | データベース ID。                  |
+| DbName     | データベース名。                |
+| State      | トランザクションの状態。 |
+| Number     | トランザクションの数。       |
 
-Example 10: クラスター内の監視情報を表示します。
+例 10: クラスター内の監視情報を表示します。
 
 ```Plain
 mysql> SHOW PROC '/monitor';
@@ -369,12 +407,12 @@ mysql> SHOW PROC '/monitor';
 +------+------+
 ```
 
-| **Return** | **Description**  |
+| **戻り値** | **説明**  |
 | ---------- | ---------------- |
-| Name       | JVM 名。         |
-| Info       | JVM 情報。       |
+| Name       | JVM 名。        |
+| Info       | JVM 情報。 |
 
-Example 11: クラスター内のロードバランス情報を表示します。
+例 11: クラスター内のロードバランス情報を表示します。
 
 ```Plain
 mysql> SHOW PROC '/cluster_balance';
@@ -391,12 +429,12 @@ mysql> SHOW PROC '/cluster_balance';
 +-------------------+--------+
 ```
 
-| **Return** | **Description**                                  |
+| **戻り値** | **説明**                                  |
 | ---------- | ------------------------------------------------ |
-| Item       | `cluster_balance` のサブコマンド項目。 <ul><li>cluster_load_stat: クラスターの現在のロードステータス。</li><li>working_slots: 現在利用可能な作業スロットの数。</li><li>sched_stat: スケジューラの現在のステータス。</li><li>priority_repair: 優先されるタブレット修復タスクの数。</li><li>pending_tablets: 処理待ちのタブレットの数。</li><li>running_tablets: 現在修復中のタブレットの数。</li><li>history_tablets: 過去に修復されたタブレットの総数。</li></ul>         |
-| Number     | `cluster_balance` の各サブコマンドの数。         |
+| Item       | `cluster_balance` のサブコマンド項目。 <ul><li>cluster_load_stat: クラスターの現在の負荷状況。</li><li>working_slots: 現在利用可能な作業スロットの数。</li><li>sched_stat: スケジューラの現在の状態。</li><li>priority_repair: 優先されるタブレット修復タスクの数。</li><li>pending_tablets: 処理待ちのタブレットの数。</li><li>running_tablets: 現在修復中のタブレットの数。</li><li>history_tablets: 過去に修復されたタブレットの総数。</li></ul>         |
+| Number     | `cluster_balance` の各サブコマンドの数。 |
 
-Example 12: クラスター内の Colocate Join グループの情報を表示します。
+例 12: クラスター内の Colocate Join グループの情報を表示します。
 
 ```Plain
 mysql> SHOW PROC '/colocation_group';
@@ -415,17 +453,17 @@ mysql> SHOW PROC '/colocation_group';
 +-----------------+----------------------------+---------------------------------------------------------------------------------------------------------------------------------------------------+------------+----------------+-------------+----------+
 ```
 
-| **Return**     | **Description**                                 |
+| **戻り値**     | **説明**                                 |
 | -------------- | ----------------------------------------------- |
-| GroupId        | Colocate Join グループ ID。                     |
-| GroupName      | Colocate Join グループ名。                      |
-| TableIds       | Colocate Join グループ内のテーブル ID。         |
-| BucketsNum     | Colocate Join グループ内のバケット数。          |
-| ReplicationNum | Colocate Join グループ内のレプリケーション数。  |
-| DistCols       | Colocate Join グループの分散カラム。            |
-| IsStable       | Colocate Join グループが安定しているかどうか。  |
+| GroupId        | Colocate Join グループ ID。                         |
+| GroupName      | Colocate Join グループ名。                       |
+| TableIds       | Colocate Join グループ内のテーブル ID。       |
+| BucketsNum     | Colocate Join グループ内のバケット数。             |
+| ReplicationNum | Colocate Join グループ内のレプリケーション数。        |
+| DistCols       | Colocate Join グループの分散列。 |
+| IsStable       | Colocate Join グループが安定しているかどうか。           |
 
-Example 13: クラスター内のカタログの情報を表示します。
+例 13: クラスター内のカタログの情報を表示します。
 
 ```Plain
 mysql> SHOW PROC '/catalog';
@@ -438,13 +476,13 @@ mysql> SHOW PROC '/catalog';
 +--------------------------------------------------------------+----------+----------------------+
 ```
 
-| **Return** | **Description**           |
+| **戻り値** | **説明**           |
 | ---------- | ------------------------- |
-| Catalog    | カタログ名。               |
-| Type       | カタログタイプ。           |
+| Catalog    | カタログ名。             |
+| Type       | カタログタイプ。             |
 | Comment    | カタログに関するコメント。 |
 
-Example 14: クラスター内のレプリケーションタスクの情報を表示します。
+例 14: クラスター内のレプリケーションタスクの情報を表示します。
 
 ```Plain
 mysql> SHOW PROC '/replications';
@@ -460,15 +498,36 @@ mysql> SHOW PROC '/replications';
 +-------------------------------------------------+------------+---------+-------+---------------------+---------------------+-----------+----------+-------+
 ```
 
-| **Return**   | **Description**                 |
+| **戻り値**   | **説明**                 |
 | ------------ | ------------------------------- |
-| JobID        | ジョブ ID。                      |
-| DatabaseID   | データベース ID。               |
-| TableID      | テーブル ID。                   |
-| TxnID        | トランザクション ID。           |
-| CreatedTime  | タスクが作成された時間。        |
-| FinishedTime | タスクが終了した時間。          |
+| JobID        | ジョブ ID。                         |
+| DatabaseID   | データベース ID。                    |
+| TableID      | テーブル ID。                       |
+| TxnID        | トランザクション ID。                 |
+| CreatedTime  | タスクが作成された時刻。 |
+| FinishedTime | タスクが終了した時刻。    |
 | State        | タスクのステータス。 有効な値: INITIALIZING, SNAPSHOTING, REPLICATING, COMMITTED, ABORTED. |
-| Progress     | タスクの進捗。                  |
-| Error        | エラーメッセージ（ある場合）。  |
+| Progress     | タスクの進捗状況。           |
+| Error        | エラーメッセージ (あれば)。         |
+
+**例 15: 現在の FE ノードで実行中のクエリの情報を表示します。**
+
+```sql
+MySQL > show proc '/current_queries';
++---------------------+---------------+--------------------------------------+--------------+----------+------+------------+--------------+-------------+---------------+----------+----------+-------------------+---------------+---------------+
+| StartTime           | feIp          | QueryId                              | ConnectionId | Database | User | ScanBytes  | ScanRows     | MemoryUsage | DiskSpillSize | CPUTime  | ExecTime | Warehouse         | CustomQueryId | ResourceGroup |
++---------------------+---------------+--------------------------------------+--------------+----------+------+------------+--------------+-------------+---------------+----------+----------+-------------------+---------------+---------------+
+| 2025-03-07 02:00:19 | 172.26.92.227 | ddbd69b9-fab4-11ef-8063-461f20abc3f0 | 11           | tpcds_2  | root | 120.573 MB | 5859503 rows | 296.432 MB  | 0.000 B       | 27.888 s | 3.153 s  | default_warehouse |               | rg1           |
++---------------------+---------------+--------------------------------------+--------------+----------+------+------------+--------------+-------------+---------------+----------+----------+-------------------+---------------+---------------+
+```
+
+**例 16: クラスター内のすべての FE ノードで実行中のクエリの情報を表示します。**
+
+```sql
+MySQL > show proc '/global_current_queries';
++---------------------+---------------+--------------------------------------+--------------+----------+------+------------+--------------+-------------+---------------+---------+----------+-------------------+---------------+---------------+
+| StartTime           | feIp          | QueryId                              | ConnectionId | Database | User | ScanBytes  | ScanRows     | MemoryUsage | DiskSpillSize | CPUTime | ExecTime | Warehouse         | CustomQueryId | ResourceGroup |
++---------------------+---------------+--------------------------------------+--------------+----------+------+------------+--------------+-------------+---------------+---------+----------+-------------------+---------------+---------------+
+| 2025-03-07 02:02:47 | 172.26.92.227 | 3603d566-fab5-11ef-8063-461f20abc3f0 | 12           | tpcds_2  | root | 100.886 MB | 4899036 rows | 114.491 MB  | 0.000 B       | 5.700 s | 0.713 s  | default_warehouse |               | rg1           |
++---------------------+---------------+--------------------------------------+--------------+----------+------+------------+--------------+-------------+---------------+---------+----------+-------------------+---------------+---------------+
 ```

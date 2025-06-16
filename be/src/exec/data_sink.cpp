@@ -53,6 +53,8 @@
 #include "exec/pipeline/exchange/multi_cast_local_exchange_source_operator.h"
 #include "exec/pipeline/exchange/sink_buffer.h"
 #include "exec/pipeline/fragment_executor.h"
+#include "exec/pipeline/limit_operator.h"
+#include "exec/pipeline/noop_sink_operator.h"
 #include "exec/pipeline/olap_table_sink_operator.h"
 #include "exec/pipeline/result_sink_operator.h"
 #include "exec/pipeline/sink/blackhole_table_sink_operator.h"
@@ -68,6 +70,7 @@
 #include "formats/csv/csv_file_writer.h"
 #include "gen_cpp/InternalService_types.h"
 #include "pipeline/exchange/multi_cast_local_exchange.h"
+#include "pipeline/exchange/split_local_exchange.h"
 #include "runtime/blackhole_table_sink.h"
 #include "runtime/data_stream_sender.h"
 #include "runtime/dictionary_cache_sink.h"
@@ -77,6 +80,7 @@
 #include "runtime/memory_scratch_sink.h"
 #include "runtime/multi_cast_data_stream_sink.h"
 #include "runtime/mysql_table_sink.h"
+#include "runtime/noop_sink.h"
 #include "runtime/result_sink.h"
 #include "runtime/runtime_state.h"
 #include "runtime/schema_table_sink.h"
@@ -171,6 +175,22 @@ Status DataSink::create_data_sink(RuntimeState* state, const TDataSink& thrift_s
         *sink = std::move(mcast_data_stream_sink);
         break;
     }
+    case TDataSinkType::SPLIT_DATA_STREAM_SINK: {
+        DCHECK(thrift_sink.__isset.split_stream_sink || thrift_sink.split_stream_sink.sinks.size() == 0)
+                << "Missing split stream sink.";
+
+        auto split_data_stream_sink = std::make_unique<SplitDataStreamSink>(state);
+        const auto& thrift_split_stream_sink = thrift_sink.split_stream_sink;
+
+        for (size_t i = 0; i < thrift_split_stream_sink.sinks.size(); i++) {
+            const auto& sink = thrift_split_stream_sink.sinks[i];
+            const auto& destinations = thrift_split_stream_sink.destinations[i];
+            auto ret = create_data_stream_sink(state, sink, row_desc, params, sender_id, destinations);
+            split_data_stream_sink->add_data_stream_sink(std::move(ret));
+        }
+        *sink = std::move(split_data_stream_sink);
+        break;
+    }
     case TDataSinkType::SCHEMA_TABLE_SINK: {
         if (!thrift_sink.__isset.schema_table_sink) {
             return Status::InternalError("Missing schema table sink.");
@@ -213,7 +233,10 @@ Status DataSink::create_data_sink(RuntimeState* state, const TDataSink& thrift_s
         *sink = std::make_unique<DictionaryCacheSink>();
         break;
     }
-
+    case TDataSinkType::NOOP_SINK: {
+        *sink = std::make_unique<NoopSink>(state->obj_pool());
+        break;
+    }
     default:
         std::stringstream error_msg;
         auto i = _TDataSinkType_VALUES_TO_NAMES.find(thrift_sink.type);
@@ -222,7 +245,6 @@ Status DataSink::create_data_sink(RuntimeState* state, const TDataSink& thrift_s
         if (i != _TDataSinkType_VALUES_TO_NAMES.end()) {
             str = i->second;
         }
-
         error_msg << str << " not implemented.";
         return Status::InternalError(error_msg.str());
     }
@@ -258,6 +280,7 @@ Status DataSink::decompose_data_sink_to_pipeline(pipeline::PipelineBuilderContex
     using namespace pipeline;
     auto fragment_ctx = context->fragment_context();
     size_t dop = context->source_operator(prev_operators)->degree_of_parallelism();
+
     // TODO: port the following code to detail DataSink subclasses
     if (typeid(*this) == typeid(starrocks::ResultSink)) {
         auto* result_sink = down_cast<starrocks::ResultSink*>(this);
@@ -274,7 +297,7 @@ Status DataSink::decompose_data_sink_to_pipeline(pipeline::PipelineBuilderContex
                                                            result_sink->get_file_opts(), dop, fragment_ctx);
         } else {
             op = std::make_shared<ResultSinkOperatorFactory>(
-                    context->next_operator_id(), result_sink->get_sink_type(), result_sink->isBinaryFormat(),
+                    context->next_operator_id(), dop, result_sink->get_sink_type(), result_sink->isBinaryFormat(),
                     result_sink->get_format_type(), result_sink->get_output_exprs(), fragment_ctx,
                     result_sink->get_row_desc());
         }
@@ -290,7 +313,7 @@ Status DataSink::decompose_data_sink_to_pipeline(pipeline::PipelineBuilderContex
         auto* sender = down_cast<starrocks::DataStreamSender*>(this);
         auto& t_stream_sink = request.output_sink().stream_sink;
 
-        auto exchange_sink = _create_exchange_sink_operator(context, t_stream_sink, sender, dop);
+        auto exchange_sink = _create_exchange_sink_operator(context, t_stream_sink, sender);
 
         prev_operators.emplace_back(exchange_sink);
         context->add_pipeline(std::move(prev_operators));
@@ -298,10 +321,10 @@ Status DataSink::decompose_data_sink_to_pipeline(pipeline::PipelineBuilderContex
         // note(yan): steps are:
         // 1. create exchange[EX]
         // 2. create sink[A] at the end of current pipeline
-        // 3. create source[B]/sink[C] pipelines.
-        // A -> EX -> B0/C0
-        //       | -> B1/C1
-        //       | -> B2/C2
+        // 3. create source[B]/limit[C]/sink[D] pipelines.
+        // A -> EX -> B0/C0/D0
+        //       | -> B1/C1/D1
+        //       | -> B2/C2/D2
         // sink[A] will push chunk to exchanger
         // and source[B] will pull chunk from exchanger
         // so basically you can think exchanger is a chunk repository.
@@ -328,11 +351,11 @@ Status DataSink::decompose_data_sink_to_pipeline(pipeline::PipelineBuilderContex
         prev_operators.emplace_back(sink_op);
         context->add_pipeline(std::move(prev_operators));
 
-        // ==== create source/sink pipelines ====
+        // ==== create source/limit/sink pipelines ====
         for (size_t i = 0; i < sinks.size(); i++) {
             const auto& sender = sinks[i];
             OpFactories ops;
-            // it's okary to set arbitrary dop.
+            // it's okay to set arbitrary dop.
             const size_t dop = 1;
             auto& t_stream_sink = t_multi_case_stream_sink.sinks[i];
 
@@ -341,9 +364,53 @@ Status DataSink::decompose_data_sink_to_pipeline(pipeline::PipelineBuilderContex
                     context->next_operator_id(), upstream_plan_node_id, i, mcast_local_exchanger);
             context->inherit_upstream_source_properties(source_op.get(), upstream_source);
             source_op->set_degree_of_parallelism(dop);
+            ops.emplace_back(source_op);
+
+            // limit op
+            if (t_stream_sink.__isset.limit && t_stream_sink.limit != -1) {
+                ops.emplace_back(std::make_shared<LimitOperatorFactory>(context->next_operator_id(),
+                                                                        upstream_plan_node_id, t_stream_sink.limit,
+                                                                        false /*limit_chunk_in_place*/));
+            }
 
             // sink op
-            auto sink_op = _create_exchange_sink_operator(context, t_stream_sink, sender.get(), dop);
+            ops.emplace_back(_create_exchange_sink_operator(context, t_stream_sink, sender.get()));
+
+            context->add_pipeline(std::move(ops));
+        }
+    } else if (typeid(*this) == typeid(starrocks::SplitDataStreamSink)) {
+        auto* split_sink = down_cast<starrocks::SplitDataStreamSink*>(this);
+        const auto& sinks = split_sink->get_sinks();
+        size_t num_consumers = sinks.size();
+        auto& t_split_stream_sink = request.output_sink().split_stream_sink;
+
+        // === create exchange ===
+        auto split_local_exchanger = std::make_shared<SplitLocalExchanger>(
+                num_consumers, split_sink->get_split_expr_ctxs(), runtime_state->chunk_size());
+
+        // === create sink op ====
+        auto* upstream = prev_operators.back().get();
+        auto* upstream_source = context->source_operator(prev_operators);
+        size_t upstream_plan_node_id = upstream->plan_node_id();
+        OpFactoryPtr sink_op = std::make_shared<MultiCastLocalExchangeSinkOperatorFactory>(
+                context->next_operator_id(), upstream_plan_node_id, split_local_exchanger);
+        prev_operators.emplace_back(sink_op);
+        context->add_pipeline(std::move(prev_operators));
+
+        // ==== create source/sink pipelines ====
+        for (size_t i = 0; i < sinks.size(); i++) {
+            const auto& sender = sinks[i];
+            OpFactories ops;
+
+            auto& t_stream_sink = t_split_stream_sink.sinks[i];
+
+            // source op
+            auto source_op = std::make_shared<MultiCastLocalExchangeSourceOperatorFactory>(
+                    context->next_operator_id(), upstream_plan_node_id, i, split_local_exchanger);
+            context->inherit_upstream_source_properties(source_op.get(), upstream_source);
+
+            // sink op
+            auto sink_op = _create_exchange_sink_operator(context, t_stream_sink, sender.get());
 
             ops.emplace_back(source_op);
             ops.emplace_back(sink_op);
@@ -430,6 +497,11 @@ Status DataSink::decompose_data_sink_to_pipeline(pipeline::PipelineBuilderContex
 
         prev_operators.emplace_back(op);
         context->add_pipeline(std::move(prev_operators));
+    } else if (typeid(*this) == typeid(starrocks::NoopSink)) {
+        OpFactoryPtr op = std::make_shared<NoopSinkOperatorFactory>(context->next_operator_id(),
+                                                                    prev_operators.back()->plan_node_id());
+        prev_operators.emplace_back(op);
+        context->add_pipeline(prev_operators);
     } else {
         return Status::InternalError(fmt::format("Unknown data sink type: {}", typeid(*this).name()));
     }
@@ -439,7 +511,7 @@ DIAGNOSTIC_POP
 
 OperatorFactoryPtr DataSink::_create_exchange_sink_operator(pipeline::PipelineBuilderContext* context,
                                                             const TDataStreamSink& stream_sink,
-                                                            const DataStreamSender* sender, size_t dop) {
+                                                            const DataStreamSender* sender) {
     using namespace pipeline;
     auto fragment_ctx = context->fragment_context();
 

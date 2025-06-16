@@ -100,7 +100,10 @@ enum TPrimitiveType {
   DECIMAL128,
   JSON,
   FUNCTION,
-  VARBINARY
+  VARBINARY,
+  DECIMAL256
+  INT256,
+  ROW_ID
 }
 
 enum TTypeNodeType {
@@ -581,6 +584,7 @@ struct TIcebergDataFile {
     5: optional string partition_path;
     6: optional list<i64> split_offsets;
     7: optional TIcebergColumnStats column_stats;
+    8: optional string partition_null_fingerprint;
 }
 
 struct THiveFileInfo {
@@ -608,4 +612,9 @@ struct TSnapshotInfo {
 enum TTxnType {
     TXN_NORMAL = 0,
     TXN_REPLICATION = 1
+}
+
+enum TNodeType {
+    Backend = 0,
+    Compute = 1
 }

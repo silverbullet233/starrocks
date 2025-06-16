@@ -23,6 +23,7 @@ set(RUNTIME_FILES
     buffer_control_result_writer.cpp
     client_cache.cpp
     local_pass_through_buffer.cpp
+    lookup_stream_mgr.cpp
     data_stream_mgr.cpp
     sender_queue.cpp
     data_stream_sender.cpp
@@ -107,6 +108,8 @@ set(RUNTIME_FILES
     type_pack.cpp
     customized_result_writer.cpp
     int128_to_double.cpp
+    diagnose_daemon.cpp
+    load_fail_point.cpp
 )
 
 set(RUNTIME_FILES ${RUNTIME_FILES}

@@ -48,8 +48,12 @@ Status ArrayMapExpr::prepare(RuntimeState* state, ExprContext* context) {
 
     auto lambda_expr = down_cast<LambdaFunction*>(_children[0]);
     LambdaFunction::ExtractContext extract_ctx;
-    // assign slot ids to outer common exprs starting with max_used_slot_id + 1
     extract_ctx.next_slot_id = context->root()->max_used_slot_id() + 1;
+    std::vector<SlotId> tmp_slots;
+    lambda_expr->get_slot_ids(&tmp_slots);
+    for (const auto id : tmp_slots) {
+        _initial_required_slots.insert(id);
+    }
 
     RETURN_IF_ERROR(lambda_expr->extract_outer_common_exprs(state, context, &extract_ctx));
     _outer_common_exprs.swap(extract_ctx.outer_common_exprs);
@@ -57,6 +61,15 @@ Status ArrayMapExpr::prepare(RuntimeState* state, ExprContext* context) {
         RETURN_IF_ERROR(expr->prepare(state, context));
     }
     RETURN_IF_ERROR(lambda_expr->prepare(state, context));
+    {
+        // remove lambda arguments and common sub exprs from _initial_required_slots
+        for (auto id : extract_ctx.all_lambda_arguments) {
+            _initial_required_slots.erase(id);
+        }
+        for (auto id : extract_ctx.all_common_sub_expr_ids) {
+            _initial_required_slots.erase(id);
+        }
+    }
 
     return Status::OK();
 }
@@ -82,9 +95,10 @@ StatusOr<ColumnPtr> ArrayMapExpr::evaluate_lambda_expr(ExprContext* context, Chu
     // create a new chunk to evaluate the lambda expression
     auto cur_chunk = std::make_shared<Chunk>();
     auto tmp_chunk = std::make_shared<Chunk>();
+
     {
-        // see more details: https://github.com/StarRocks/starrocks/pull/52692
-        for (const auto& [slot_id, _] : chunk->get_slot_id_to_index_map()) {
+        // We put the slots needed for lambda function evaluation into a separate chunk to avoid conflicts between outer_common_expr and other slots.
+        for (const auto& slot_id : _initial_required_slots) {
             tmp_chunk->append_column(chunk->get_column_by_slot_id(slot_id), slot_id);
         }
     }
@@ -94,7 +108,6 @@ StatusOr<ColumnPtr> ArrayMapExpr::evaluate_lambda_expr(ExprContext* context, Chu
         ASSIGN_OR_RETURN(auto col, context->evaluate(expr, tmp_chunk.get()));
         tmp_chunk->append_column(col, slot_id);
     }
-
     auto lambda_func = dynamic_cast<LambdaFunction*>(_children[0]);
     std::vector<SlotId> capture_slot_ids;
     lambda_func->get_captured_slot_ids(&capture_slot_ids);
@@ -193,7 +206,7 @@ StatusOr<ColumnPtr> ArrayMapExpr::evaluate_lambda_expr(ExprContext* context, Chu
         }
         tmp_col->check_or_die();
         ASSIGN_OR_RETURN(column, tmp_col->replicate(aligned_offsets->get_data()));
-        column = ColumnHelper::align_return_type(column, type().children[0], column->size(), true);
+        column = ColumnHelper::align_return_type(std::move(column), type().children[0], column->size(), true);
 
         RETURN_IF_ERROR(column->capacity_limit_reached());
     } else {
@@ -204,7 +217,7 @@ StatusOr<ColumnPtr> ArrayMapExpr::evaluate_lambda_expr(ExprContext* context, Chu
             tmp_col->check_or_die();
             // if result is a const column, we should unpack it first and make it to be the elements column of array column
             column = ColumnHelper::unpack_and_duplicate_const_column(tmp_col->size(), tmp_col);
-            column = ColumnHelper::align_return_type(column, type().children[0], column->size(), true);
+            column = ColumnHelper::align_return_type(std::move(column), type().children[0], column->size(), true);
         } else {
             ChunkAccumulator accumulator(DEFAULT_CHUNK_SIZE);
             RETURN_IF_ERROR(accumulator.push(std::move(cur_chunk)));
@@ -220,7 +233,8 @@ StatusOr<ColumnPtr> ArrayMapExpr::evaluate_lambda_expr(ExprContext* context, Chu
                 }
                 ASSIGN_OR_RETURN(auto tmp_col, context->evaluate(_children[0], tmp_chunk.get()));
                 tmp_col->check_or_die();
-                tmp_col = ColumnHelper::align_return_type(tmp_col, type().children[0], tmp_chunk->num_rows(), true);
+                tmp_col = ColumnHelper::align_return_type(std::move(tmp_col), type().children[0], tmp_chunk->num_rows(),
+                                                          true);
                 if (column == nullptr) {
                     column = tmp_col;
                 } else {
@@ -277,7 +291,7 @@ StatusOr<ColumnPtr> ArrayMapExpr::evaluate_checked(ExprContext* context, Chunk* 
         ASSIGN_OR_RETURN(auto child_col, context->evaluate(_children[i], chunk));
         // the column is a null literal.
         if (child_col->only_null()) {
-            return ColumnHelper::align_return_type(child_col, type(), chunk->num_rows(), true);
+            return ColumnHelper::align_return_type(std::move(child_col), type(), chunk->num_rows(), true);
         }
 
         bool is_const = child_col->is_constant();

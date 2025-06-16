@@ -85,6 +85,8 @@ enum TPlanNodeType {
   STREAM_AGG_NODE,
   LAKE_META_SCAN_NODE,
   CAPTURE_VERSION_NODE,
+  FETCH_NODE,
+  LOOKUP_NODE,
 }
 
 // phases of an execution node
@@ -424,6 +426,8 @@ struct THdfsScanRange {
     30: optional Types.TTableId table_id;
 
     31:optional TDeletionVectorDescriptor deletion_vector_descriptor
+
+    32: optional string candidate_node
 }
 
 struct TBinlogScanRange {
@@ -749,6 +753,7 @@ struct THashJoinNode {
   55: optional bool interpolate_passthrough = false
   56: optional bool late_materialization = false
   57: optional bool enable_partition_hash_join = false
+  58: optional bool is_skew_join = false
 }
 
 struct TMergeJoinNode {
@@ -858,6 +863,8 @@ struct TAggregationNode {
 
   // enable runtime limit, pipelines share one limit
   29: optional bool enable_pipeline_share_limit = false
+
+  30: optional list<RuntimeFilter.TRuntimeFilterDescription> build_runtime_filters
 }
 
 struct TRepeatNode {
@@ -1044,6 +1051,11 @@ struct TMergeNode {
   3: required list<list<Exprs.TExpr>> const_expr_lists
 }
 
+enum TLocalExchangerType {
+  PASSTHROUGH = 0,
+  DIRECT = 1
+}
+
 struct TUnionNode {
     // A UnionNode materializes all const/result exprs into this tuple.
     1: required Types.TTupleId tuple_id
@@ -1056,6 +1068,10 @@ struct TUnionNode {
     4: required i64 first_materialized_child_idx
     // For pass through child, the slot map is union slot id -> child slot id
     20: optional list<map<Types.TSlotId, Types.TSlotId>> pass_through_slot_maps
+    // union node' local exchanger type with parent node, default is PASSTHROUGH
+    21: optional TLocalExchangerType local_exchanger_type
+
+    22: optional list<list<Exprs.TExpr>> local_partition_by_exprs
 }
 
 struct TIntersectNode {
@@ -1068,6 +1084,10 @@ struct TIntersectNode {
     3: required list<list<Exprs.TExpr>> const_expr_lists
     // Index of the first child that needs to be materialized.
     4: required i64 first_materialized_child_idx
+    
+    5: optional bool has_outer_join_child
+
+    6: optional list<list<Exprs.TExpr>> local_partition_by_exprs
 }
 
 struct TExceptNode {
@@ -1080,6 +1100,8 @@ struct TExceptNode {
     3: required list<list<Exprs.TExpr>> const_expr_lists
     // Index of the first child that needs to be materialized.
     4: required i64 first_materialized_child_idx
+
+    5: optional list<list<Exprs.TExpr>> local_partition_by_exprs
 }
 
 
@@ -1295,6 +1317,20 @@ struct TStreamAggregationNode {
   24: optional i32 agg_func_set_version = 1
 }
 
+struct TFetchColumns {
+  1: optional list<Types.TSlotId> slot_ids
+}
+
+struct TFetchNode {
+  1: optional i32 target_node_id
+  2: optional list<Types.TTupleId> tuples
+  3: optional map<Types.TTupleId, Types.TSlotId> row_id_slots;
+  4: optional Descriptors.TNodesInfo nodes_info
+}
+
+struct TLookUpNode {
+  1: optional map<Types.TTupleId, Types.TSlotId> row_id_slots;
+}
 
 // This is essentially a union of all messages corresponding to subclasses
 // of PlanNode.
@@ -1372,6 +1408,8 @@ struct TPlanNode {
   72: optional TStreamAggregationNode stream_agg_node;
 
   81: optional TSelectNode select_node; 
+  82: optional TFetchNode fetch_node;
+  83: optional TLookUpNode look_up_node;
 }
 
 // A flattened representation of a tree of PlanNodes, obtained by depth-first

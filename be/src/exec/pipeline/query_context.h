@@ -48,6 +48,7 @@ using std::chrono::steady_clock;
 using std::chrono::duration_cast;
 
 struct ConnectorScanOperatorMemShareArbitrator;
+struct GlobalLateMaterilizationCtx;
 
 // The context for all fragment of one query in one BE
 class QueryContext : public std::enable_shared_from_this<QueryContext> {
@@ -80,7 +81,7 @@ public:
     // now time point pass by deadline point.
     bool is_delivery_expired() const {
         auto now = duration_cast<milliseconds>(steady_clock::now().time_since_epoch()).count();
-        return now > _delivery_deadline || _is_cancelled;
+        return now > _delivery_deadline || _cancelled_by_fe;
     }
     bool is_query_expired() const {
         auto now = duration_cast<milliseconds>(steady_clock::now().time_since_epoch()).count();
@@ -94,7 +95,9 @@ public:
         return status == nullptr ? Status::Cancelled("Query has been cancelled") : *status;
     }
 
-    bool is_dead() const { return _num_active_fragments == 0 && (_num_fragments == _total_fragments || _is_cancelled); }
+    bool is_dead() const {
+        return _num_active_fragments == 0 && (_num_fragments == _total_fragments || _cancelled_by_fe);
+    }
     // add expired seconds to deadline
     void extend_delivery_lifetime() {
         _delivery_deadline =
@@ -151,7 +154,8 @@ public:
 
     FragmentContextManager* fragment_mgr();
 
-    void cancel(const Status& status);
+    void cancel(const Status& status, bool cancelled_by_fe);
+    void set_cancelled_by_fe() { _cancelled_by_fe = true; }
 
     void set_is_runtime_filter_coordinator(bool flag) { _is_runtime_filter_coordinator = flag; }
 
@@ -286,6 +290,7 @@ public:
     ConnectorScanOperatorMemShareArbitrator* connector_scan_operator_mem_share_arbitrator() const {
         return _connector_scan_operator_mem_share_arbitrator;
     }
+    GlobalLateMaterilizationCtx* global_late_materialization_ctx() const { return _global_late_materialization_ctx; }
 
 public:
     static constexpr int DEFAULT_EXPIRE_SECONDS = 300;
@@ -316,6 +321,7 @@ private:
     std::shared_ptr<starrocks::debug::QueryTrace> _query_trace;
     std::atomic_bool _is_prepared = false;
     std::atomic_bool _is_cancelled = false;
+    std::atomic_bool _cancelled_by_fe = false;
     std::atomic<Status*> _cancelled_status = nullptr;
     Status _s_status;
 
@@ -375,6 +381,8 @@ private:
 
     int64_t _static_query_mem_limit = 0;
     ConnectorScanOperatorMemShareArbitrator* _connector_scan_operator_mem_share_arbitrator = nullptr;
+
+    GlobalLateMaterilizationCtx* _global_late_materialization_ctx = nullptr;
 };
 
 // TODO: use brpc::TimerThread refactor QueryContext
@@ -383,7 +391,7 @@ public:
     QueryContextManager(size_t log2_num_slots);
     ~QueryContextManager();
     Status init();
-    StatusOr<QueryContext*> get_or_register(const TUniqueId& query_id);
+    StatusOr<QueryContext*> get_or_register(const TUniqueId& query_id, bool return_error_if_not_exist = false);
     QueryContextPtr get(const TUniqueId& query_id, bool need_prepared = false);
     size_t size();
     bool remove(const TUniqueId& query_id);

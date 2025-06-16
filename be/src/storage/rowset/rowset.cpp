@@ -37,7 +37,10 @@
 #include <memory>
 #include <set>
 
+#include "exec/pipeline/query_context.h"
+#include "exec/pipeline/scan/olap_scan_context.h"
 #include "fmt/format.h"
+#include "fs/fs.h"
 #include "fs/fs_util.h"
 #include "gutil/strings/substitute.h"
 #include "rowset_options.h"
@@ -53,6 +56,7 @@
 #include "storage/projection_iterator.h"
 #include "storage/rowset/metadata_cache.h"
 #include "storage/rowset/rowid_range_option.h"
+#include "storage/rowset/segment.h"
 #include "storage/rowset/short_key_range_option.h"
 #include "storage/storage_engine.h"
 #include "storage/tablet_index.h"
@@ -135,6 +139,30 @@ void Rowset::make_commit(int64_t version, uint32_t rowset_seg_id) {
         return;
     }
     make_visible_extra(v);
+}
+
+/**
+ * Checks if all files associated with this rowset exist on disk.
+ * 
+ * This method verifies the existence of: All segment files
+ * 
+ * If any file is missing, it logs a warning message with the expected path
+ * and tablet ID, then returns false.
+ * 
+ * @return true if all associated files exist, false otherwise
+ */
+bool Rowset::check_file_existence() {
+    for (int i = 0; i < num_segments(); ++i) {
+        std::string seg_path = segment_file_path(_rowset_path, rowset_id(), i);
+        if (!fs::path_exist(seg_path)) {
+            LOG(WARNING) << "Segment file does not exist. Expected path: " << seg_path
+                         << ". This might occur if the file was deleted or not generated correctly. "
+                         << "Tablet ID: " << _rowset_meta->tablet_id();
+            return false;
+        }
+    }
+    // All files were found successfully.
+    return true;
 }
 
 void Rowset::make_commit(int64_t version, uint32_t rowset_seg_id, uint32_t max_compact_input_rowset_id) {
@@ -790,6 +818,18 @@ Status Rowset::get_segment_iterators(const Schema& schema, const RowsetReadOptio
             seg_options.is_first_split_of_segment = true;
         }
 
+        seg_options.v_id = -1;
+        if (options.need_generate_global_rowid) {
+            pipeline::GlobalLateMaterilizationCtx::SegmentInfo seg_info;
+            seg_info.segment = seg_ptr;
+            ASSIGN_OR_RETURN(seg_info.fs, FileSystem::CreateSharedFromString(_rowset_path));
+
+            seg_options.v_id =
+                    options.runtime_state->query_ctx()->global_late_materialization_ctx()->register_segment(seg_info);
+            seg_options.row_id_column_id = options.row_id_column_id;
+            seg_options.row_id_column_slot = options.row_id_column_slot;
+        }
+
         auto res = seg_ptr->new_iterator(segment_schema, seg_options);
         if (res.status().is_end_of_file()) {
             continue;
@@ -840,6 +880,7 @@ StatusOr<std::vector<ChunkIteratorPtr>> Rowset::get_segment_iterators2(const Sch
     if (chunk_size > 0) {
         seg_options.chunk_size = chunk_size;
     }
+    seg_options.read_by_generated_column_adding = (dcg_meta != nullptr);
 
     std::vector<ChunkIteratorPtr> seg_iterators(num_segments());
     TabletSegmentId tsid;
@@ -1034,8 +1075,9 @@ Status Rowset::verify() {
             }
         }
     } else {
-        // non-overlapping segments will return one iterator, so segment idx is unknown
-        if (iters.size() != 1) {
+        if (iters.empty()) {
+            st = Status::OK();
+        } else if (iters.size() != 1) {
             st = Status::Corruption("non-overlapping segments should return one iterator");
         } else {
             st = is_ordered(iters[0], is_pk_ordered);

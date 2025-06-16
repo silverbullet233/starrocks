@@ -25,11 +25,6 @@ namespace starrocks {
 
 enum class ObjectCacheModuleType { LRUCACHE, STARCACHE };
 
-struct ObjectCacheOptions {
-    size_t capacity = 0;
-    ObjectCacheModuleType module = ObjectCacheModuleType::LRUCACHE;
-};
-
 struct ObjectCacheWriteOptions {
     // The priority of the cache object, only support 0 and 1 now.
     int8_t priority = 0;

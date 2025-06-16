@@ -19,7 +19,9 @@
 #include "column/vectorized_fwd.h"
 #include "exec/sorting/sort_helper.h"
 #include "gutil/casts.h"
+#include "simd/gather.h"
 #include "storage/decimal12.h"
+#include "types/int256.h"
 #include "types/large_int_value.h"
 #include "util/hash_util.hpp"
 #include "util/mysql_row_buffer.h"
@@ -42,12 +44,14 @@ void FixedLengthColumnBase<T>::append(const Column& src, size_t offset, size_t c
 template <typename T>
 void FixedLengthColumnBase<T>::append_selective(const Column& src, const uint32_t* indexes, uint32_t from,
                                                 uint32_t size) {
+    indexes += from;
     const T* src_data = reinterpret_cast<const T*>(src.raw_data());
-    size_t orig_size = _data.size();
+
+    const size_t orig_size = _data.size();
     _data.resize(orig_size + size);
-    for (size_t i = 0; i < size; ++i) {
-        _data[orig_size + i] = src_data[indexes[from + i]];
-    }
+    auto* dest_data = _data.data() + orig_size;
+
+    SIMDGather::gather(dest_data, src_data, indexes, size);
 }
 
 template <typename T>
@@ -314,6 +318,11 @@ int64_t FixedLengthColumnBase<T>::xor_checksum(uint32_t from, uint32_t to) const
             if constexpr (std::is_same_v<T, int128_t>) {
                 xor_checksum ^= static_cast<int64_t>(src[i] >> 64);
                 xor_checksum ^= static_cast<int64_t>(src[i] & ULLONG_MAX);
+            } else if constexpr (std::is_same_v<T, int256_t>) {
+                xor_checksum ^= static_cast<int64_t>(src[i].high >> 64);
+                xor_checksum ^= static_cast<int64_t>(src[i].high & ULLONG_MAX);
+                xor_checksum ^= static_cast<int64_t>(src[i].low >> 64);
+                xor_checksum ^= static_cast<int64_t>(src[i].low & ULLONG_MAX);
             } else {
                 xor_checksum ^= src[i];
             }
@@ -408,6 +417,7 @@ template class FixedLengthColumnBase<int32_t>;
 template class FixedLengthColumnBase<int64_t>;
 template class FixedLengthColumnBase<int96_t>;
 template class FixedLengthColumnBase<int128_t>;
+template class FixedLengthColumnBase<int256_t>;
 
 template class FixedLengthColumnBase<float>;
 template class FixedLengthColumnBase<double>;

@@ -21,6 +21,7 @@
 #include "exec/pipeline/fragment_context.h"
 #include "exec/pipeline/pipeline_fwd.h"
 #include "exec/pipeline/scan/connector_scan_operator.h"
+#include "exec/pipeline/scan/olap_scan_context.h"
 #include "exec/spill/query_spill_manager.h"
 #include "exec/workgroup/work_group.h"
 #include "runtime/client_cache.h"
@@ -54,10 +55,13 @@ QueryContext::~QueryContext() noexcept {
     // current RuntimeState to release Operators, OperatorFactories in the remaining RuntimeStates will trigger
     // segmentation fault.
     if (_mem_tracker != nullptr) {
-        LOG(INFO) << fmt::format(
-                "finished query_id:{} context life time:{} cpu costs:{} peak memusage:{} scan_bytes:{} spilled "
-                "bytes:{}",
-                print_id(query_id()), lifetime(), cpu_cost(), mem_cost_bytes(), get_scan_bytes(), get_spill_bytes());
+        if (lifetime() > config::big_query_sec * 1000 * 1000 * 1000) {
+            LOG(INFO) << fmt::format(
+                    "finished query_id:{} context life time:{} cpu costs:{} peak memusage:{} scan_bytes:{} spilled "
+                    "bytes:{}",
+                    print_id(query_id()), lifetime(), cpu_cost(), mem_cost_bytes(), get_scan_bytes(),
+                    get_spill_bytes());
+        }
     }
 
     {
@@ -103,8 +107,12 @@ FragmentContextManager* QueryContext::fragment_mgr() {
     return _fragment_mgr.get();
 }
 
-void QueryContext::cancel(const Status& status) {
+void QueryContext::cancel(const Status& status, bool cancelled_by_fe) {
     _is_cancelled = true;
+    if (cancelled_by_fe) {
+        // only update when confirm cancelled from fe
+        set_cancelled_by_fe();
+    }
     if (_cancelled_status.load() != nullptr) {
         return;
     }
@@ -151,6 +159,9 @@ void QueryContext::init_mem_tracker(int64_t query_mem_limit, MemTracker* parent,
         }
         _connector_scan_operator_mem_share_arbitrator = _object_pool.add(
                 new ConnectorScanOperatorMemShareArbitrator(_static_query_mem_limit, connector_scan_node_number));
+        if (runtime_state->enable_global_late_materialization()) {
+            _global_late_materialization_ctx = _object_pool.add(new GlobalLateMaterilizationCtx());
+        }
 
         {
             MemTracker* connector_scan_parent = GlobalEnv::GetInstance()->connector_scan_pool_mem_tracker();
@@ -380,7 +391,8 @@ QueryContextManager::~QueryContextManager() {
         return query_ctx->get_cancelled_status();           \
     }
 
-StatusOr<QueryContext*> QueryContextManager::get_or_register(const TUniqueId& query_id) {
+StatusOr<QueryContext*> QueryContextManager::get_or_register(const TUniqueId& query_id,
+                                                             bool return_error_if_not_exist) {
     size_t i = _slot_idx(query_id);
     auto& mutex = _mutexes[i];
     auto& context_map = _context_maps[i];
@@ -413,6 +425,10 @@ StatusOr<QueryContext*> QueryContextManager::get_or_register(const TUniqueId& qu
                 context_map.emplace(query_id, std::move(ctx));
                 return raw_ctx_ptr;
             }
+        }
+
+        if (return_error_if_not_exist) {
+            return Status::Cancelled("Query terminates prematurely");
         }
 
         // finally, find no query contexts, so create a new one

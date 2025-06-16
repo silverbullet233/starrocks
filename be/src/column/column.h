@@ -96,11 +96,19 @@ public:
 
     virtual bool is_array() const { return false; }
 
+    virtual bool is_view() const { return false; }
+    virtual bool is_nullable_view() const { return false; }
     virtual bool is_array_view() const { return false; }
+    virtual bool is_json_view() const { return false; }
+    virtual bool is_binary_view() const { return false; }
+    virtual bool is_struct_view() const { return false; }
+    virtual bool is_map_view() const { return false; }
 
     virtual bool is_map() const { return false; }
 
     virtual bool is_struct() const { return false; }
+
+    virtual bool is_global_row_id() const { return false; }
 
     virtual const uint8_t* raw_data() const = 0;
 
@@ -286,9 +294,7 @@ public:
     // we need one buffer to hold tmp serialize data,
     // So we need to know the max serialize_size for all column element
     // The bad thing is we couldn't get the string defined len from FE when query
-    virtual uint32_t max_one_element_serialize_size() const {
-        return 16; // For Non-string type, 16 is enough.
-    }
+    virtual uint32_t max_one_element_serialize_size() const = 0;
 
     // serialize one data,The memory must allocate firstly from mempool
     virtual uint32_t serialize(size_t idx, uint8_t* pos) const = 0;

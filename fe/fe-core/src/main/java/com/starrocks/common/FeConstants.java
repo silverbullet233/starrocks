@@ -91,6 +91,9 @@ public class FeConstants {
     // Set this flag false to suppress showing fragment cost, when running FE unit tests.
     public static boolean showFragmentCost = true;
 
+    // set length for varchar, only set false for ut
+    public static boolean setLengthForVarchar = true;
+
     // set to true when replay from query dump
     public static boolean isReplayFromQueryDump = false;
     // set false to resolve ut
@@ -102,6 +105,8 @@ public class FeConstants {
     public static final long AUTO_DISTRIBUTION_UNIT = 3221225472L;
 
     public static final String GENERATED_PARTITION_COLUMN_PREFIX = "__generated_partition_column_";
+
+    public static final String ICEBERG_TRANSFORM_EXPRESSION_PREFIX = "__iceberg_transform_";
 
     // Max counter num of TOP K function
     public static final int MAX_COUNTER_NUM_OF_TOP_K = 100000;

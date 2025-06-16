@@ -22,6 +22,7 @@
 #include "exprs/function_helper.h"
 #include "exprs/mock_vectorized_expr.h"
 #include "exprs/string_functions.h"
+#include "runtime/runtime_state.h"
 #include "runtime/types.h"
 #include "testutil/assert.h"
 #include "testutil/parallel_test.h"
@@ -479,6 +480,8 @@ PARALLEL_TEST(VecStringFunctionsTest, concatNullTest) {
 
 PARALLEL_TEST(VecStringFunctionsTest, lowerNormalTest) {
     std::unique_ptr<FunctionContext> ctx(FunctionContext::create_test_context());
+    std::unique_ptr<RuntimeState> runtime_state(new RuntimeState());
+    ctx->set_runtime_state(runtime_state.get());
     Columns columns;
 
     BinaryColumn::Ptr str = BinaryColumn::create();
@@ -488,7 +491,9 @@ PARALLEL_TEST(VecStringFunctionsTest, lowerNormalTest) {
 
     columns.emplace_back(str);
 
+    ASSERT_TRUE(StringFunctions::lower_prepare(ctx.get(), FunctionContext::FunctionStateScope::FRAGMENT_LOCAL).ok());
     ColumnPtr result = StringFunctions::lower(ctx.get(), columns).value();
+    ASSERT_TRUE(StringFunctions::lower_close(ctx.get(), FunctionContext::FunctionStateScope::FRAGMENT_LOCAL).ok());
 
     ASSERT_TRUE(result->is_binary());
     ASSERT_FALSE(result->is_nullable());
@@ -1424,6 +1429,9 @@ PARALLEL_TEST(VecStringFunctionsTest, utf8LengthChineseTest) {
 
 PARALLEL_TEST(VecStringFunctionsTest, upperTest) {
     std::unique_ptr<FunctionContext> ctx(FunctionContext::create_test_context());
+    std::unique_ptr<RuntimeState> runtime_state(new RuntimeState());
+    ctx->set_runtime_state(runtime_state.get());
+
     Columns columns;
     BinaryColumn::Ptr str = BinaryColumn::create();
     for (int j = 0; j < 20; ++j) {
@@ -1432,7 +1440,9 @@ PARALLEL_TEST(VecStringFunctionsTest, upperTest) {
 
     columns.emplace_back(str);
 
+    ASSERT_TRUE(StringFunctions::upper_prepare(ctx.get(), FunctionContext::FunctionStateScope::FRAGMENT_LOCAL).ok());
     ColumnPtr result = StringFunctions::upper(ctx.get(), columns).value();
+    ASSERT_TRUE(StringFunctions::upper_close(ctx.get(), FunctionContext::FunctionStateScope::FRAGMENT_LOCAL).ok());
     ASSERT_EQ(20, result->size());
 
     auto v = ColumnHelper::cast_to<TYPE_VARCHAR>(result);
@@ -1444,6 +1454,8 @@ PARALLEL_TEST(VecStringFunctionsTest, upperTest) {
 
 PARALLEL_TEST(VecStringFunctionsTest, caseToggleTest) {
     std::unique_ptr<FunctionContext> ctx(FunctionContext::create_test_context());
+    std::unique_ptr<RuntimeState> runtime_state(new RuntimeState());
+    ctx->set_runtime_state(runtime_state.get());
     Columns columns;
     BinaryColumn::Ptr src = BinaryColumn::create();
     src->append("");
@@ -1463,8 +1475,13 @@ PARALLEL_TEST(VecStringFunctionsTest, caseToggleTest) {
             "φημὶγὰρἐγὼεἶναιτὸABCD_EFG_HIGK_LMNδίκαιονοὐκἄλλοτιOPQRST_"
             "UVWἢτὸτοῦκρείττονοςσυμφέρονXYZ");
     columns.push_back(src);
+
+    ASSERT_TRUE(StringFunctions::upper_prepare(ctx.get(), FunctionContext::FunctionStateScope::FRAGMENT_LOCAL).ok());
     auto upper_dst = StringFunctions::upper(ctx.get(), columns).value();
+    ASSERT_TRUE(StringFunctions::upper_close(ctx.get(), FunctionContext::FunctionStateScope::FRAGMENT_LOCAL).ok());
+    ASSERT_TRUE(StringFunctions::lower_prepare(ctx.get(), FunctionContext::FunctionStateScope::FRAGMENT_LOCAL).ok());
     auto lower_dst = StringFunctions::lower(ctx.get(), columns).value();
+    ASSERT_TRUE(StringFunctions::lower_close(ctx.get(), FunctionContext::FunctionStateScope::FRAGMENT_LOCAL).ok());
     auto binary_upper_dst = down_cast<BinaryColumn*>(upper_dst.get());
     auto binary_lower_dst = down_cast<BinaryColumn*>(lower_dst.get());
     ASSERT_TRUE(binary_upper_dst != nullptr);
@@ -3939,4 +3956,151 @@ PARALLEL_TEST(VecStringFunctionsTest, regexpSplitTest) {
     }
 }
 
+PARALLEL_TEST(VecStringFunctionsTest, regexpCountTest) {
+    std::unique_ptr<FunctionContext> ctx(FunctionContext::create_test_context());
+    auto context = ctx.get();
+
+    {
+        BinaryColumn::Ptr str_col = BinaryColumn::create();
+        str_col->append("abc123def456");
+        str_col->append("test.com test.net test.org");
+        str_col->append("a b  c   d");
+        str_col->append("ababababab");
+        str_col->append("");
+
+        // Create nullable column for testing NULL input
+        NullColumn::Ptr null_col = NullColumn::create();
+        for (int i = 0; i < 4; ++i) {
+            null_col->append(0);
+        }
+        null_col->append(1);
+        auto nullable_str_col = NullableColumn::create(str_col, null_col);
+
+        // Test with constant regex pattern number regex
+        auto pattern_col = ColumnHelper::create_const_column<TYPE_VARCHAR>("[0-9]", 5);
+
+        Columns columns = {nullable_str_col, pattern_col};
+        context->set_constant_columns(columns);
+
+        ASSERT_TRUE(
+                StringFunctions::regexp_count_prepare(context, FunctionContext::FunctionStateScope::THREAD_LOCAL).ok());
+        auto result = StringFunctions::regexp_count(context, columns).value();
+        ASSERT_TRUE(StringFunctions::regexp_close(context, FunctionContext::FunctionStateScope::THREAD_LOCAL).ok());
+
+        ASSERT_EQ(result->size(), 5);
+        ASSERT_EQ(result->get(0).get_int64(), 6);
+        ASSERT_EQ(result->get(1).get_int64(), 0);
+        ASSERT_EQ(result->get(2).get_int64(), 0);
+        ASSERT_EQ(result->get(3).get_int64(), 0);
+        ASSERT_TRUE(result->is_null(4));
+    }
+
+    // Dynamic regex pattern test
+    {
+        BinaryColumn::Ptr str_col = BinaryColumn::create();
+        str_col->append("abc123def456");
+        str_col->append("abc");
+        str_col->append("ABC");
+
+        BinaryColumn::Ptr pattern_col = BinaryColumn::create();
+        pattern_col->append("[a-z]"); // checks lowercase
+        pattern_col->append("[A-Z]"); // checks uppercase
+        pattern_col->append("[0-9]"); // checks number
+
+        Columns columns = {str_col, pattern_col};
+
+        auto result = StringFunctions::regexp_count(context, columns).value();
+
+        ASSERT_EQ(result->size(), 3);
+        ASSERT_EQ(result->get(0).get_int64(), 6);
+        ASSERT_EQ(result->get(1).get_int64(), 0);
+        ASSERT_EQ(result->get(2).get_int64(), 0);
+    }
+
+    // Special characters test
+    {
+        BinaryColumn::Ptr str_col = BinaryColumn::create();
+        str_col->append("a,b,c,d,e");
+        str_col->append("a.b.c.d.e");
+
+        BinaryColumn::Ptr pattern_col = BinaryColumn::create();
+        pattern_col->append(",");   // checks comma
+        pattern_col->append("\\."); // checks dot
+
+        Columns columns = {str_col, pattern_col};
+
+        auto result = StringFunctions::regexp_count(context, columns).value();
+
+        ASSERT_EQ(result->size(), 2);
+        ASSERT_EQ(result->get(0).get_int64(), 4);
+        ASSERT_EQ(result->get(1).get_int64(), 4);
+    }
+
+    // Empty and invalid pattern test
+    {
+        BinaryColumn::Ptr str_col = BinaryColumn::create();
+        str_col->append("abc");
+        str_col->append("abc");
+        str_col->append("abc");
+
+        BinaryColumn::Ptr pattern_col = BinaryColumn::create();
+        pattern_col->append("");
+        pattern_col->append("(a");
+        pattern_col->append("a");
+
+        NullColumn::Ptr null_col = NullColumn::create();
+        null_col->append(0);
+        null_col->append(0);
+        null_col->append(1);
+        auto nullable_pattern = NullableColumn::create(pattern_col, null_col);
+
+        Columns columns = {str_col, nullable_pattern};
+
+        auto result = StringFunctions::regexp_count(context, columns).value();
+        ASSERT_EQ(result->size(), 3);
+        ASSERT_TRUE(result->is_null(0));
+        ASSERT_TRUE(result->is_null(1));
+        ASSERT_TRUE(result->is_null(2));
+    }
+
+    {
+        BinaryColumn::Ptr str_col = BinaryColumn::create();
+        str_col->append("ababababab");
+        str_col->append("aaaaaaaaaa");
+        str_col->append("abababa");
+
+        BinaryColumn::Ptr pattern_col = BinaryColumn::create();
+        pattern_col->append("ab");
+        pattern_col->append("a");
+        pattern_col->append("aba");
+
+        Columns columns = {str_col, pattern_col};
+
+        auto result = StringFunctions::regexp_count(context, columns).value();
+
+        ASSERT_EQ(result->size(), 3);
+        ASSERT_EQ(result->get(0).get_int64(), 5);
+        ASSERT_EQ(result->get(1).get_int64(), 10);
+        ASSERT_EQ(result->get(2).get_int64(), 2);
+    }
+
+    // Unicode characters test
+    {
+        BinaryColumn::Ptr str_col = BinaryColumn::create();
+        str_col->append("AbCdExCeF");
+        str_col->append("1a 2b 14m");
+
+        BinaryColumn::Ptr pattern_col = BinaryColumn::create();
+        pattern_col->append("C");
+        pattern_col->append("\\d+");
+
+        Columns columns = {str_col, pattern_col};
+
+        auto result = StringFunctions::regexp_count(context, columns).value();
+
+        ASSERT_EQ(result->size(), 2);
+        ASSERT_EQ(result->get(0).get_int64(), 2);
+        ASSERT_EQ(result->get(1).get_int64(), 3);
+    }
+}
 } // namespace starrocks

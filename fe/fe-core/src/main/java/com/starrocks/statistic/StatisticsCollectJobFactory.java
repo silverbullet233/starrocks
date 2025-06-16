@@ -26,6 +26,7 @@ import com.starrocks.common.Config;
 import com.starrocks.connector.ConnectorPartitionTraits;
 import com.starrocks.connector.statistics.ConnectorTableColumnStats;
 import com.starrocks.monitor.unit.ByteSizeUnit;
+import com.starrocks.qe.ConnectContext;
 import com.starrocks.server.GlobalStateMgr;
 import com.starrocks.sql.common.ErrorType;
 import com.starrocks.sql.common.StarRocksPlannerException;
@@ -47,6 +48,7 @@ import java.util.Set;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
+import static com.starrocks.catalog.ExpressionRangePartitionInfo.SHADOW_PARTITION_PREFIX;
 import static com.starrocks.statistic.StatsConstants.STATISTIC_AUTO_COLLECT_INTERVAL;
 
 public class StatisticsCollectJobFactory {
@@ -109,7 +111,9 @@ public class StatisticsCollectJobFactory {
                                                                  List<Type> columnTypes,
                                                                  StatsConstants.AnalyzeType analyzeType,
                                                                  StatsConstants.ScheduleType scheduleType,
-                                                                 Map<String, String> properties) {
+                                                                 Map<String, String> properties,
+                                                                 List<StatsConstants.StatisticsType> statisticsTypes,
+                                                                 List<List<String>> columnGroup) {
         if (CollectionUtils.isEmpty(columnNames)) {
             columnNames = StatisticUtils.getCollectibleColumns(table);
             columnTypes = columnNames.stream().map(col -> table.getColumn(col).getType()).collect(Collectors.toList());
@@ -119,13 +123,17 @@ public class StatisticsCollectJobFactory {
             columnTypes = columnNames.stream().map(col -> table.getColumn(col).getType()).collect(Collectors.toList());
         }
 
+        partitionIdList = (partitionIdList == null)
+                ? table.getPartitions().stream()
+                .filter(partition -> partition.hasData() && !partition.getName().startsWith(SHADOW_PARTITION_PREFIX))
+                .map(Partition::getId)
+                .collect(Collectors.toList())
+                : partitionIdList.stream()
+                .filter(id -> !table.getPartition(id).getName().startsWith(SHADOW_PARTITION_PREFIX))
+                .collect(Collectors.toList());
+
         LOG.debug("statistics job work on table: {}, type: {}", table.getName(), analyzeType.name());
-        if (analyzeType.equals(StatsConstants.AnalyzeType.SAMPLE)) {
-            if (partitionIdList == null) {
-                partitionIdList = table.getPartitions().stream().filter(Partition::hasData)
-                        .map(Partition::getId).collect(Collectors.toList());
-            }
-            
+        if (analyzeType.equals(StatsConstants.AnalyzeType.SAMPLE) && statisticsTypes.isEmpty()) {
             if (Config.statistic_use_meta_statistics) {
                 return new HyperStatisticsCollectJob(db, table, partitionIdList, columnNames, columnTypes,
                         StatsConstants.AnalyzeType.SAMPLE, scheduleType, properties);
@@ -135,12 +143,7 @@ public class StatisticsCollectJobFactory {
             }
         } else if (analyzeType.equals(StatsConstants.AnalyzeType.HISTOGRAM)) {
             return new HistogramStatisticsCollectJob(db, table, columnNames, columnTypes, scheduleType, properties);
-        } else {
-            if (partitionIdList == null) {
-                partitionIdList = table.getPartitions().stream().filter(Partition::hasData)
-                        .map(Partition::getId).collect(Collectors.toList());
-            }
-
+        } else if (analyzeType.equals(StatsConstants.AnalyzeType.FULL) && statisticsTypes.isEmpty()) {
             if (Config.statistic_use_meta_statistics) {
                 return new HyperStatisticsCollectJob(db, table, partitionIdList, columnNames, columnTypes,
                         StatsConstants.AnalyzeType.FULL, scheduleType, properties);
@@ -148,26 +151,31 @@ public class StatisticsCollectJobFactory {
                 return new FullStatisticsCollectJob(db, table, partitionIdList, columnNames, columnTypes,
                         StatsConstants.AnalyzeType.FULL, scheduleType, properties);
             }
+        } else {
+            return new MultiColumnHyperStatisticsCollectJob(db, table, partitionIdList, columnNames, columnTypes,
+                    analyzeType, scheduleType, properties, statisticsTypes, columnGroup);
         }
     }
 
     public static List<StatisticsCollectJob> buildExternalStatisticsCollectJob(ExternalAnalyzeJob externalAnalyzeJob) {
+        ConnectContext context = new ConnectContext();
+
         List<StatisticsCollectJob> statsJobs = Lists.newArrayList();
         if (externalAnalyzeJob.isAnalyzeAllDb()) {
             List<String> dbNames = GlobalStateMgr.getCurrentState().getMetadataMgr().
-                    listDbNames(externalAnalyzeJob.getCatalogName());
+                    listDbNames(context, externalAnalyzeJob.getCatalogName());
             for (String dbName : dbNames) {
                 Database db = GlobalStateMgr.getCurrentState().getMetadataMgr().
-                        getDb(externalAnalyzeJob.getCatalogName(), dbName);
+                        getDb(context, externalAnalyzeJob.getCatalogName(), dbName);
                 if (null == db || StatisticUtils.statisticDatabaseBlackListCheck(db.getFullName())) {
                     continue;
                 }
 
                 List<String> tableNames = GlobalStateMgr.getCurrentState().getMetadataMgr().
-                        listTableNames(externalAnalyzeJob.getCatalogName(), dbName);
+                        listTableNames(context, externalAnalyzeJob.getCatalogName(), dbName);
                 for (String tableName : tableNames) {
                     Table table = GlobalStateMgr.getCurrentState().getMetadataMgr().
-                            getTable(externalAnalyzeJob.getCatalogName(), dbName, tableName);
+                            getTable(context, externalAnalyzeJob.getCatalogName(), dbName, tableName);
                     if (null == table) {
                         continue;
                     }
@@ -177,16 +185,16 @@ public class StatisticsCollectJobFactory {
             }
         } else if (externalAnalyzeJob.isAnalyzeAllTable()) {
             Database db = GlobalStateMgr.getCurrentState().getMetadataMgr().
-                    getDb(externalAnalyzeJob.getCatalogName(), externalAnalyzeJob.getDbName());
+                    getDb(context, externalAnalyzeJob.getCatalogName(), externalAnalyzeJob.getDbName());
             if (null == db) {
                 return Collections.emptyList();
             }
 
             List<String> tableNames = GlobalStateMgr.getCurrentState().getMetadataMgr().
-                    listTableNames(externalAnalyzeJob.getCatalogName(), externalAnalyzeJob.getDbName());
+                    listTableNames(context, externalAnalyzeJob.getCatalogName(), externalAnalyzeJob.getDbName());
             for (String tableName : tableNames) {
                 Table table = GlobalStateMgr.getCurrentState().getMetadataMgr().
-                        getTable(externalAnalyzeJob.getCatalogName(), externalAnalyzeJob.getDbName(), tableName);
+                        getTable(context, externalAnalyzeJob.getCatalogName(), externalAnalyzeJob.getDbName(), tableName);
                 if (null == table) {
                     continue;
                 }
@@ -195,13 +203,13 @@ public class StatisticsCollectJobFactory {
             }
         } else {
             Database db = GlobalStateMgr.getCurrentState().getMetadataMgr().
-                    getDb(externalAnalyzeJob.getCatalogName(), externalAnalyzeJob.getDbName());
+                    getDb(context, externalAnalyzeJob.getCatalogName(), externalAnalyzeJob.getDbName());
             if (null == db) {
                 return Collections.emptyList();
             }
 
             Table table = GlobalStateMgr.getCurrentState().getMetadataMgr().
-                    getTable(externalAnalyzeJob.getCatalogName(), externalAnalyzeJob.getDbName(),
+                    getTable(context, externalAnalyzeJob.getCatalogName(), externalAnalyzeJob.getDbName(),
                             externalAnalyzeJob.getTableName());
             if (null == table) {
                 return Collections.emptyList();
@@ -413,7 +421,6 @@ public class StatisticsCollectJobFactory {
         if (table == null || !table.isNativeTableOrMaterializedView()) {
             return;
         }
-
         if (table instanceof OlapTable) {
             if (((OlapTable) table).getState() != OlapTable.OlapTableState.NORMAL) {
                 return;
@@ -440,13 +447,13 @@ public class StatisticsCollectJobFactory {
                 return;
             }
         }
-
         double healthy = 0;
         AnalyzeMgr analyzeMgr = GlobalStateMgr.getCurrentState().getAnalyzeMgr();
         BasicStatsMeta basicStatsMeta = analyzeMgr.getTableBasicStatsMeta(table.getId());
         List<HistogramStatsMeta> histogramStatsMetas = analyzeMgr.getHistogramMetaByTable(table.getId());
-        boolean useBasicStats = job.getAnalyzeType() == StatsConstants.AnalyzeType.SAMPLE ||
-                job.getAnalyzeType() == StatsConstants.AnalyzeType.FULL;
+        StatsConstants.AnalyzeType analyzeType = job.getAnalyzeType();
+        boolean useBasicStats = analyzeType == StatsConstants.AnalyzeType.SAMPLE ||
+                analyzeType == StatsConstants.AnalyzeType.FULL;
         LocalDateTime tableUpdateTime = StatisticUtils.getTableLastUpdateTime(table);
         LocalDateTime statsUpdateTime = LocalDateTime.MIN;
         boolean isInitJob = true;
@@ -470,7 +477,7 @@ public class StatisticsCollectJobFactory {
                 Config.statistic_auto_collect_predicate_columns_threshold > 0 &&
                 CollectionUtils.isEmpty(columnNames) && table.isNativeTableOrMaterializedView()) {
             List<ColumnUsage> predicateColumns = PredicateColumnsMgr.getInstance().queryPredicateColumns(tableName);
-            if (CollectionUtils.isNotEmpty(predicateColumns) && predicateColumns.size() < numColumns) {
+            if (CollectionUtils.isNotEmpty(predicateColumns) && predicateColumns.size() <= numColumns) {
                 OlapTable olap = (OlapTable) table;
                 predicateColNames = predicateColumns.stream().map(x -> x.getOlapColumnName(olap)).toList();
                 existsPredicateColumns = true;
@@ -513,7 +520,7 @@ public class StatisticsCollectJobFactory {
             }
 
             long defaultInterval =
-                    job.getAnalyzeType() == StatsConstants.AnalyzeType.HISTOGRAM ?
+                    analyzeType == StatsConstants.AnalyzeType.HISTOGRAM ?
                             Config.statistic_auto_collect_histogram_interval :
                             (sumDataSize > Config.statistic_auto_collect_small_table_size ?
                                     Config.statistic_auto_collect_large_table_interval :
@@ -529,7 +536,7 @@ public class StatisticsCollectJobFactory {
             }
 
             // 4. frequent-update big table without predicate column, choose sample strategy to collect statistics
-            if (job.getAnalyzeType() != StatsConstants.AnalyzeType.HISTOGRAM &&
+            if (analyzeType != StatsConstants.AnalyzeType.HISTOGRAM &&
                     healthy < Config.statistic_auto_collect_sample_threshold &&
                     sumDataSize > Config.statistic_auto_collect_small_table_size) {
                 if (!(Config.statistic_auto_collect_use_full_predicate_column_for_sample && existsPredicateColumns &&
@@ -546,6 +553,7 @@ public class StatisticsCollectJobFactory {
                     return;
                 } else {
                     enablePredicateColumnStrategy = true;
+                    analyzeType = StatsConstants.AnalyzeType.FULL;
                 }
             }
         }
@@ -557,17 +565,14 @@ public class StatisticsCollectJobFactory {
 
         StatisticsCollectJob.Priority priority =
                 new StatisticsCollectJob.Priority(tableUpdateTime, statsUpdateTime, healthy);
-        LOG.debug("statistics job work on un-health table: {}, healthy: {}, Type: {}", table.getName(), healthy,
-                job.getAnalyzeType());
-        if (job.getAnalyzeType().equals(StatsConstants.AnalyzeType.SAMPLE)) {
+        if (analyzeType.equals(StatsConstants.AnalyzeType.SAMPLE)) {
             createSampleStatsJob(allTableJobMap, job, db, table, columnNames, columnTypes, priority);
-        } else if (job.getAnalyzeType().equals(StatsConstants.AnalyzeType.HISTOGRAM)) {
+        } else if (analyzeType.equals(StatsConstants.AnalyzeType.HISTOGRAM)) {
             createHistogramJob(allTableJobMap, job, db, table, columnNames, columnTypes, priority);
-        } else if (job.getAnalyzeType().equals(StatsConstants.AnalyzeType.FULL)) {
+        } else if (analyzeType.equals(StatsConstants.AnalyzeType.FULL)) {
             createFullStatsJob(allTableJobMap, job, basicStatsMeta, db, table, columnNames, columnTypes, priority);
         } else {
-            throw new StarRocksPlannerException("Unknown analyze type " + job.getAnalyzeType(),
-                    ErrorType.INTERNAL_ERROR);
+            throw new StarRocksPlannerException("Unknown analyze type " + analyzeType, ErrorType.INTERNAL_ERROR);
         }
     }
 
@@ -591,7 +596,7 @@ public class StatisticsCollectJobFactory {
         }
 
         StatisticsCollectJob sample = buildStatisticsCollectJob(db, table, partitionIdList, columnNames, columnTypes,
-                StatsConstants.AnalyzeType.SAMPLE, job.getScheduleType(), job.getProperties());
+                StatsConstants.AnalyzeType.SAMPLE, job.getScheduleType(), job.getProperties(), List.of(), List.of());
         sample.setPriority(priority);
         allTableJobMap.add(sample);
     }
@@ -600,7 +605,7 @@ public class StatisticsCollectJobFactory {
                                            Database db, Table table, List<String> columnNames,
                                            List<Type> columnTypes, StatisticsCollectJob.Priority priority) {
         StatisticsCollectJob sample = buildStatisticsCollectJob(db, table, null, columnNames, columnTypes,
-                StatsConstants.AnalyzeType.HISTOGRAM, job.getScheduleType(), job.getProperties());
+                StatsConstants.AnalyzeType.HISTOGRAM, job.getScheduleType(), job.getProperties(), List.of(), List.of());
         sample.setPriority(priority);
         allTableJobMap.add(sample);
     }
@@ -626,7 +631,7 @@ public class StatisticsCollectJobFactory {
         if (!partitionList.isEmpty()) {
             StatisticsCollectJob statisticsCollectJob = buildStatisticsCollectJob(db, table,
                     partitionList.stream().map(Partition::getId).collect(Collectors.toList()), columnNames, columnTypes,
-                    analyzeType, job.getScheduleType(), Maps.newHashMap());
+                    analyzeType, job.getScheduleType(), Maps.newHashMap(), List.of(), List.of());
             statisticsCollectJob.setPriority(priority);
             allTableJobMap.add(statisticsCollectJob);
         }

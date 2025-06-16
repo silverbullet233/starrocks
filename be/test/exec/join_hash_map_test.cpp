@@ -229,7 +229,6 @@ HashTableParam JoinHashMapTest::create_table_param_int(TJoinOp::type join_type, 
 
     HashTableParam param;
     param.with_other_conjunct = false;
-    param.mor_reader_mode = false;
     param.join_type = join_type;
     param.search_ht_timer = ADD_TIMER(_runtime_profile, "SearchHashTableTime");
     param.output_build_column_timer = ADD_TIMER(_runtime_profile, "OutputBuildColumnTime");
@@ -913,28 +912,110 @@ std::shared_ptr<RuntimeState> JoinHashMapTest::create_runtime_state() {
 
 // NOLINTNEXTLINE
 TEST_F(JoinHashMapTest, JoinKeyHash) {
-    auto v1 = JoinKeyHash<int64_t>()(1);
-    auto v2 = JoinKeyHash<int32_t>()(1);
-    auto v3 = JoinKeyHash<Slice>()(Slice{"abcd", 4});
+    const uint32_t num_buckets = 1 << 16;
+    const uint32_t log_num_buckets = 16;
 
-    ASSERT_EQ(v1, 2592448939l);
-    ASSERT_EQ(v2, 98743132903886l);
-    ASSERT_EQ(v3, 2777932099l);
+    auto get_hash_statistics = [&](const std::vector<uint32_t>& count_per_bucket) {
+        uint32_t min_count = *std::ranges::min_element(count_per_bucket);
+        uint32_t max_count = *std::ranges::max_element(count_per_bucket);
+
+        return std::make_tuple(min_count, max_count);
+    };
+
+    {
+        std::vector<uint32_t> count_per_bucket(num_buckets);
+        for (int32_t i = 0; i < num_buckets * 3 * 5; i += 3) {
+            auto bucket = JoinKeyHash<int32_t>()(i, num_buckets, log_num_buckets);
+            count_per_bucket[bucket]++;
+        }
+        auto [min_count, max_count] = get_hash_statistics(count_per_bucket);
+        // crc32: 0, 11
+        ASSERT_EQ(0, min_count);
+        ASSERT_EQ(11, max_count);
+    }
+
+    {
+        std::vector<uint32_t> count_per_bucket(num_buckets);
+        for (int32_t i = 0; i < num_buckets * 7 * 5; i += 7) {
+            auto bucket = JoinKeyHash<int32_t>()(i, num_buckets, log_num_buckets);
+            count_per_bucket[bucket]++;
+        }
+        auto [min_count, max_count] = get_hash_statistics(count_per_bucket);
+        // crc32: 0, 14
+        ASSERT_EQ(0, min_count);
+        ASSERT_EQ(14, max_count);
+    }
+
+    {
+        std::vector<uint32_t> count_per_bucket(num_buckets);
+        for (int32_t i = 0; i < num_buckets * 5; i++) {
+            auto bucket = JoinKeyHash<int32_t>()(i, num_buckets, log_num_buckets);
+            count_per_bucket[bucket]++;
+        }
+        auto [min_count, max_count] = get_hash_statistics(count_per_bucket);
+        // crc32: 4, 6
+        ASSERT_EQ(4, min_count);
+        ASSERT_EQ(6, max_count);
+    }
+
+    {
+        std::vector<uint32_t> count_per_bucket(num_buckets);
+        for (int32_t i = 0; i < num_buckets * 3 * 5; i += 3) {
+            auto bucket = JoinKeyHash<int64_t>()(i, num_buckets, log_num_buckets);
+            count_per_bucket[bucket]++;
+        }
+        auto [min_count, max_count] = get_hash_statistics(count_per_bucket);
+        // crc32: 0, 12
+        ASSERT_EQ(3, min_count);
+        ASSERT_EQ(7, max_count);
+    }
+
+    {
+        std::vector<uint32_t> count_per_bucket(num_buckets);
+        for (int32_t i = 0; i < num_buckets * 7 * 5; i += 7) {
+            auto bucket = JoinKeyHash<int64_t>()(i, num_buckets, log_num_buckets);
+            count_per_bucket[bucket]++;
+        }
+        auto [min_count, max_count] = get_hash_statistics(count_per_bucket);
+        // crc32: 0, 15
+        ASSERT_EQ(4, min_count);
+        ASSERT_EQ(7, max_count);
+    }
+
+    {
+        std::vector<uint32_t> count_per_bucket(num_buckets);
+        for (int32_t i = 0; i < num_buckets * 5; i++) {
+            auto bucket = JoinKeyHash<int64_t>()(i, num_buckets, log_num_buckets);
+            count_per_bucket[bucket]++;
+        }
+        auto [min_count, max_count] = get_hash_statistics(count_per_bucket);
+        // crc32: 5, 5
+        ASSERT_EQ(4, min_count);
+        ASSERT_EQ(6, max_count);
+    }
+
+    auto v3 = JoinKeyHash<Slice>()(Slice{"abcd", 4}, num_buckets, log_num_buckets);
+    ASSERT_EQ(v3, 2777932099l % num_buckets);
 }
 
 // NOLINTNEXTLINE
 TEST_F(JoinHashMapTest, CalcBucketNum) {
-    uint32_t bucket_num = JoinHashMapHelper::calc_bucket_num(1, 4);
+    const uint32_t num_buckets = 1 << 2;
+    const uint32_t log_num_buckets = 2;
+    uint32_t bucket_num = JoinHashMapHelper::calc_bucket_num(1, num_buckets, log_num_buckets);
     ASSERT_EQ(2, bucket_num);
 }
 
 // NOLINTNEXTLINE
 TEST_F(JoinHashMapTest, CalcBucketNums) {
+    const uint32_t num_buckets = 1 << 2;
+    const uint32_t log_num_buckets = 2;
+
     Buffer<int32_t> data{1, 2, 3, 4};
     Buffer<uint32_t> buckets{0, 0, 0, 0};
-    Buffer<uint32_t> check_buckets{2, 2, 3, 1};
+    Buffer<uint32_t> check_buckets{2, 0, 3, 1};
 
-    JoinHashMapHelper::calc_bucket_nums<int32_t>(data, 4, &buckets, 0, 4);
+    JoinHashMapHelper::calc_bucket_nums<int32_t>(data, num_buckets, log_num_buckets, &buckets, 0, 4);
     for (size_t i = 0; i < buckets.size(); i++) {
         ASSERT_EQ(buckets[i], check_buckets[i]);
     }
@@ -2318,7 +2399,6 @@ TEST_F(JoinHashMapTest, EmptyHashMapTestLazyFilter) {
     JoinHashTable ht;
 
     HashTableParam param;
-    param.mor_reader_mode = false;
     param.enable_late_materialization = true;
     param.probe_row_desc = probe_row_desc.get();
     param.build_row_desc = build_row_desc.get();
@@ -2374,7 +2454,6 @@ TEST_F(JoinHashMapTest, EmptyHashMapTestLazyOutputAll) {
     JoinHashTable ht;
 
     HashTableParam param;
-    param.mor_reader_mode = false;
     param.enable_late_materialization = true;
     param.probe_row_desc = probe_row_desc.get();
     param.build_row_desc = build_row_desc.get();
@@ -2719,7 +2798,6 @@ TEST_F(JoinHashMapTest, TestOutputSlotsEmpty) {
     JoinHashTable ht;
 
     HashTableParam param;
-    param.mor_reader_mode = false;
     param.enable_late_materialization = false;
     param.probe_row_desc = probe_row_desc.get();
     param.build_row_desc = build_row_desc.get();
@@ -2747,7 +2825,6 @@ TEST_F(JoinHashMapTest, TestOutputSlotsNormal) {
     JoinHashTable ht;
 
     HashTableParam param;
-    param.mor_reader_mode = false;
     param.enable_late_materialization = false;
     param.probe_row_desc = probe_row_desc.get();
     param.build_row_desc = build_row_desc.get();
@@ -2778,7 +2855,6 @@ TEST_F(JoinHashMapTest, TestLazyOutputSlotsEmpty) {
     JoinHashTable ht;
 
     HashTableParam param;
-    param.mor_reader_mode = false;
     param.enable_late_materialization = true;
     param.probe_row_desc = probe_row_desc.get();
     param.build_row_desc = build_row_desc.get();
@@ -2806,7 +2882,6 @@ TEST_F(JoinHashMapTest, TestLazyPredicateSlotsEmpty) {
     JoinHashTable ht;
 
     HashTableParam param;
-    param.mor_reader_mode = false;
     param.enable_late_materialization = true;
     param.probe_row_desc = probe_row_desc.get();
     param.build_row_desc = build_row_desc.get();
@@ -2837,7 +2912,6 @@ TEST_F(JoinHashMapTest, TestLazyPredicateSlotsNormal) {
     JoinHashTable ht;
 
     HashTableParam param;
-    param.mor_reader_mode = false;
     param.enable_late_materialization = true;
     param.probe_row_desc = probe_row_desc.get();
     param.build_row_desc = build_row_desc.get();
@@ -2855,33 +2929,4 @@ TEST_F(JoinHashMapTest, TestLazyPredicateSlotsNormal) {
     check_lazy_build_output_slot_ids(*ht.table_items(), {4});
     check_not_output_slot_ids(*ht.table_items(), {0, 3});
 }
-
-// NOLINTNEXTLINE
-TEST_F(JoinHashMapTest, TestMorRead) {
-    TDescriptorTableBuilder row_desc_builder;
-    add_tuple_descriptor(&row_desc_builder, LogicalType::TYPE_INT, false, 3);
-    add_tuple_descriptor(&row_desc_builder, LogicalType::TYPE_INT, false, 3);
-
-    auto probe_row_desc = create_probe_desc(&row_desc_builder);
-    auto build_row_desc = create_build_desc(&row_desc_builder);
-
-    JoinHashTable ht;
-
-    HashTableParam param;
-    param.mor_reader_mode = true;
-    param.enable_late_materialization = false;
-    param.probe_row_desc = probe_row_desc.get();
-    param.build_row_desc = build_row_desc.get();
-    param.probe_output_slots = {1};
-    param.build_output_slots = {4};
-    param.predicate_slots = {2, 5};
-
-    ht.create(param);
-
-    ASSERT_EQ(ht.get_probe_column_count(), 6);
-    ASSERT_EQ(ht.get_build_column_count(), 3);
-    check_lazy_probe_output_slot_ids(*ht.table_items(), {});
-    check_lazy_build_output_slot_ids(*ht.table_items(), {});
-}
-
 } // namespace starrocks

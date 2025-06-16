@@ -13,12 +13,47 @@
 // limitations under the License.
 package com.starrocks.sql.spm;
 
+import com.google.gson.annotations.SerializedName;
+import com.starrocks.common.io.Writable;
+
 import java.time.LocalDateTime;
+import java.util.List;
+import java.util.Objects;
 
 public class BaselinePlan {
+    public static class Info implements Writable {
+        // for transform replay log
+        @SerializedName("replayIds")
+        private List<Long> replayIds;
+        @SerializedName("replayBindSqlHash")
+        private List<Long> replayBindSQLHash;
+
+        public List<Long> getReplayIds() {
+            return replayIds;
+        }
+
+        public void setReplayIds(List<Long> replayIds) {
+            this.replayIds = replayIds;
+        }
+
+        public List<Long> getReplayBindSQLHash() {
+            return replayBindSQLHash;
+        }
+
+        public void setReplayBindSQLHash(List<Long> replayBindSQLHash) {
+            this.replayBindSQLHash = replayBindSQLHash;
+        }
+    }
+
+    public static final String SOURCE_USER = "USER";
+
+    public static final String SOURCE_CAPTURE = "CAPTURE";
+
     private long id;
 
-    private final boolean isGlobal;
+    private boolean isGlobal = false;
+
+    private boolean isEnable = false;
 
     // bind sql with spm function, for extract placeholder
     private final String bindSql;
@@ -31,12 +66,25 @@ public class BaselinePlan {
 
     private final double costs;
 
-    private final LocalDateTime updateTime;
+    private String source = SOURCE_USER;
 
-    public BaselinePlan(boolean isGlobal, String bindSql, String bindSqlDigest,
-                        long bindSqlHash,
-                        String planSql, double costs) {
-        this.isGlobal = isGlobal;
+    private double queryMs = -1;
+
+    private LocalDateTime updateTime;
+
+    public BaselinePlan(long id, long bindSqlHash) {
+        this.id = id;
+        this.bindSqlHash = bindSqlHash;
+        this.isGlobal = false;
+        this.isEnable = false;
+        this.bindSql = "";
+        this.bindSqlDigest = "";
+        this.planSql = "";
+        this.costs = 0;
+        this.updateTime = null;
+    }
+
+    public BaselinePlan(String bindSql, String bindSqlDigest, long bindSqlHash, String planSql, double costs) {
         this.bindSql = bindSql;
         this.bindSqlDigest = bindSqlDigest;
         this.bindSqlHash = bindSqlHash;
@@ -55,6 +103,22 @@ public class BaselinePlan {
 
     public boolean isGlobal() {
         return isGlobal;
+    }
+
+    public void setGlobal(boolean global) {
+        isGlobal = global;
+    }
+
+    public boolean isEnable() {
+        return isEnable;
+    }
+
+    public void setEnable(boolean enable) {
+        isEnable = enable;
+    }
+
+    public String getSource() {
+        return source;
     }
 
     public String getBindSql() {
@@ -77,8 +141,38 @@ public class BaselinePlan {
         return costs;
     }
 
+    public double getQueryMs() {
+        return queryMs;
+    }
+
+    public void setSource(String source) {
+        this.source = source;
+    }
+
+    public void setQueryMs(double queryMs) {
+        this.queryMs = queryMs;
+    }
+
+    public void setUpdateTime(LocalDateTime updateTime) {
+        this.updateTime = updateTime;
+    }
+
     public LocalDateTime getUpdateTime() {
         return updateTime;
+    }
+
+    @Override
+    public boolean equals(Object o) {
+        if (o == null || getClass() != o.getClass()) {
+            return false;
+        }
+        BaselinePlan that = (BaselinePlan) o;
+        return id == that.id;
+    }
+
+    @Override
+    public int hashCode() {
+        return Objects.hash(bindSqlHash);
     }
 
     @Override

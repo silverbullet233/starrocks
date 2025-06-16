@@ -15,6 +15,7 @@
 #include "column/nullable_column.h"
 
 #include "column/column_helper.h"
+#include "column/column_view/column_view.h"
 #include "column/vectorized_fwd.h"
 #include "gutil/casts.h"
 #include "gutil/strings/fastmem.h"
@@ -68,13 +69,17 @@ void NullableColumn::append(const Column& src, size_t offset, size_t count) {
     if (src.only_null()) {
         append_nulls(count);
     } else if (src.is_nullable()) {
-        const auto& c = down_cast<const NullableColumn&>(src);
+        const auto& src_column = down_cast<const NullableColumn&>(src);
+        DCHECK_EQ(src_column._null_column->size(), src_column._data_column->size());
 
-        DCHECK_EQ(c._null_column->size(), c._data_column->size());
-
-        _null_column->append(*c._null_column, offset, count);
-        _data_column->append(*c._data_column, offset, count);
-        _has_null = _has_null || SIMD::contain_nonzero(c._null_column->get_data(), offset, count);
+        if (!src_column.has_null()) {
+            _null_column->resize(_null_column->size() + count);
+            _data_column->append(*src_column._data_column, offset, count);
+        } else {
+            _null_column->append(*src_column._null_column, offset, count);
+            _data_column->append(*src_column._data_column, offset, count);
+            _has_null = _has_null || SIMD::contain_nonzero(src_column._null_column->get_data(), offset, count);
+        }
     } else {
         _null_column->resize(_null_column->size() + count);
         _data_column->append(src, offset, count);
@@ -84,18 +89,26 @@ void NullableColumn::append(const Column& src, size_t offset, size_t count) {
 }
 
 void NullableColumn::append_selective(const Column& src, const uint32_t* indexes, uint32_t from, uint32_t size) {
+    if (src.is_view()) {
+        down_cast<const ColumnView*>(&src)->append_to(*this, indexes, from, size);
+        return;
+    }
     DCHECK_EQ(_null_column->size(), _data_column->size());
     size_t orig_size = _null_column->size();
     if (src.only_null()) {
         append_nulls(size);
     } else if (src.is_nullable()) {
         const auto& src_column = down_cast<const NullableColumn&>(src);
-
         DCHECK_EQ(src_column._null_column->size(), src_column._data_column->size());
 
-        _null_column->append_selective(*src_column._null_column, indexes, from, size);
-        _data_column->append_selective(*src_column._data_column, indexes, from, size);
-        _has_null = _has_null || SIMD::contain_nonzero(_null_column->get_data(), orig_size, size);
+        if (!src_column.has_null()) {
+            _null_column->resize(orig_size + size);
+            _data_column->append_selective(*src_column._data_column, indexes, from, size);
+        } else {
+            _null_column->append_selective(*src_column._null_column, indexes, from, size);
+            _data_column->append_selective(*src_column._data_column, indexes, from, size);
+            _has_null = _has_null || SIMD::contain_nonzero(_null_column->get_data(), orig_size, size);
+        }
     } else {
         _null_column->resize(orig_size + size);
         _data_column->append_selective(src, indexes, from, size);
