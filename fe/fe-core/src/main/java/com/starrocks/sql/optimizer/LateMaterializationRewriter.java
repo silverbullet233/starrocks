@@ -388,6 +388,9 @@ public class LateMaterializationRewriter {
 
             OlapTable scanTable = (OlapTable) scanOperator.getTable();
             if (scanTable.getKeysType() == KeysType.DUP_KEYS || scanTable.getKeysType() == KeysType.PRIMARY_KEYS) {
+                if (scanOperator.getOutputColumns().isEmpty()) {
+                    return optExpression;
+                }
                 Map<ColumnRefOperator, Column> columnRefOperatorColumnMap = scanOperator.getColRefToColumnMetaMap();
                 for (ColumnRefOperator columnRefOperator : columnRefOperatorColumnMap.keySet()) {
                     context.columnSources.put(columnRefOperator, identifyOperator);
