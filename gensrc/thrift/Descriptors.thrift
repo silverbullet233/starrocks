@@ -38,6 +38,15 @@ namespace java com.starrocks.thrift
 include "Types.thrift"
 include "Exprs.thrift"
 
+enum TRowIDType {
+    ICEBERG_V3_ROW_ID,
+}
+
+// used to describe row_id for different tables
+struct TRowIDDescriptor {
+    1: optional TRowIDType row_id_type;
+}
+
 struct TSlotDescriptor {
   1: optional Types.TSlotId id
   2: optional Types.TTupleId parent
@@ -56,6 +65,8 @@ struct TSlotDescriptor {
   // for example, the physical name of a column in a parquet file.
   // used in delta lake column mapping name mode
   14: optional string col_physical_name
+  // used to describe row_id, only used in global late materialization
+  15: optional TRowIDDescriptor row_id_desc;
 }
 
 struct TTupleDescriptor {

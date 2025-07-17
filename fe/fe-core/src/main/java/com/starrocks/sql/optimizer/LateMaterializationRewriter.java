@@ -18,6 +18,7 @@ import com.google.api.client.util.Lists;
 import com.google.common.base.Preconditions;
 import com.google.common.collect.HashBasedTable;
 import com.starrocks.catalog.Column;
+import com.starrocks.catalog.IcebergTable;
 import com.starrocks.catalog.KeysType;
 import com.starrocks.catalog.OlapTable;
 import com.starrocks.catalog.Table;
@@ -38,6 +39,7 @@ import com.starrocks.sql.optimizer.operator.physical.PhysicalFetchOperator;
 import com.starrocks.sql.optimizer.operator.physical.PhysicalFilterOperator;
 import com.starrocks.sql.optimizer.operator.physical.PhysicalHashAggregateOperator;
 import com.starrocks.sql.optimizer.operator.physical.PhysicalHashJoinOperator;
+import com.starrocks.sql.optimizer.operator.physical.PhysicalIcebergScanOperator;
 import com.starrocks.sql.optimizer.operator.physical.PhysicalJoinOperator;
 import com.starrocks.sql.optimizer.operator.physical.PhysicalLimitOperator;
 import com.starrocks.sql.optimizer.operator.physical.PhysicalLookUpOperator;
@@ -45,9 +47,11 @@ import com.starrocks.sql.optimizer.operator.physical.PhysicalNestLoopJoinOperato
 import com.starrocks.sql.optimizer.operator.physical.PhysicalOlapScanOperator;
 import com.starrocks.sql.optimizer.operator.physical.PhysicalOperator;
 import com.starrocks.sql.optimizer.operator.physical.PhysicalProjectOperator;
+import com.starrocks.sql.optimizer.operator.physical.PhysicalScanOperator;
 import com.starrocks.sql.optimizer.operator.physical.PhysicalTopNOperator;
 import com.starrocks.sql.optimizer.operator.physical.PhysicalUnionOperator;
 import com.starrocks.sql.optimizer.operator.scalar.ColumnRefOperator;
+import com.starrocks.thrift.TRowIDType;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 
@@ -100,7 +104,7 @@ public class LateMaterializationRewriter {
             Map<ColumnRefOperator, Column> columnRefOperatorColumnMap = new HashMap<>();
 
             columns.forEach((identifyOperator, columnRefs) -> {
-                PhysicalOlapScanOperator scanOperator = (PhysicalOlapScanOperator) identifyOperator.get();
+                PhysicalScanOperator scanOperator = (PhysicalScanOperator) identifyOperator.get();
                 Table table = scanOperator.getTable();
                 ColumnRefOperator rowidColumnRef = rewriteContext.rowIdColumns.get(identifyOperator);
                 rowidToTable.put(rowidColumnRef, table);
@@ -172,7 +176,7 @@ public class LateMaterializationRewriter {
                             break;
                         }
 
-                        if (op instanceof PhysicalDistributionOperator || op instanceof PhysicalOlapScanOperator) {
+                        if (op instanceof PhysicalDistributionOperator || op instanceof PhysicalScanOperator) {
                             idx = j;
                         }
                     }
@@ -265,7 +269,7 @@ public class LateMaterializationRewriter {
                 Map<IdentifyOperator, Set<ColumnRefOperator>> columns = fetchPositions.row(operator);
                 sb.append("parent operator [" + operator + "], materialized columns [");
                 for (Map.Entry<IdentifyOperator, Set<ColumnRefOperator>> tableColumns : columns.entrySet()) {
-                    PhysicalOlapScanOperator olapScanOperator = (PhysicalOlapScanOperator) tableColumns.getKey().get();
+                    PhysicalScanOperator olapScanOperator = (PhysicalScanOperator) tableColumns.getKey().get();
                     sb.append("table " + olapScanOperator.getTable().getId() + ": [");
                     for (ColumnRefOperator column : tableColumns.getValue()) {
                         sb.append(column.getId()).append(",");
@@ -277,7 +281,7 @@ public class LateMaterializationRewriter {
 
             sb.append("un-materialized columns " + unMaterializedColumns.size() + " [");
             for (Map.Entry<IdentifyOperator, Set<ColumnRefOperator>> entry : unMaterializedColumns.entrySet()) {
-                PhysicalOlapScanOperator sourceOperator = (PhysicalOlapScanOperator) entry.getKey().get();
+                PhysicalScanOperator sourceOperator = (PhysicalScanOperator) entry.getKey().get();
                 sb.append("table " + sourceOperator.getTable().getId() + ": [");
                 for (ColumnRefOperator columnRefOperator : entry.getValue()) {
                     sb.append(columnRefOperator.getId()).append(",");
@@ -379,9 +383,6 @@ public class LateMaterializationRewriter {
         @Override
         public OptExpression visitPhysicalOlapScan(OptExpression optExpression, CollectorContext context) {
             LOG.info("visitPhysicalOlapScan " + optExpression.getOp());
-            // @TODO projection
-
-            // @TODO olap scan don't split projection
 
             PhysicalOlapScanOperator scanOperator = (PhysicalOlapScanOperator) optExpression.getOp();
             IdentifyOperator identifyOperator = new IdentifyOperator(scanOperator);
@@ -419,6 +420,39 @@ public class LateMaterializationRewriter {
                     });
                 }
             }
+            return optExpression;
+        }
+
+        @Override
+        public OptExpression visitPhysicalIcebergScan(OptExpression optExpression, CollectorContext context) {
+
+            PhysicalIcebergScanOperator scanOperator = (PhysicalIcebergScanOperator) optExpression.getOp();
+            if (scanOperator.getOutputColumns().isEmpty()) {
+                return optExpression;
+            }
+            IdentifyOperator identifyOperator = new IdentifyOperator(scanOperator);
+
+            IcebergTable scanTable = (IcebergTable) scanOperator.getTable();
+            if (scanTable.getFormatVersion() >= 3) {
+                Map<ColumnRefOperator, Column> columnRefOperatorColumnMap = scanOperator.getColRefToColumnMetaMap();
+                for (ColumnRefOperator columnRefOperator : columnRefOperatorColumnMap.keySet()) {
+                    context.columnSources.put(columnRefOperator, identifyOperator);
+                    if (!context.unMaterializedColumns.containsKey(identifyOperator)) {
+                        context.unMaterializedColumns.put(identifyOperator, new HashSet<>());
+                    }
+                    context.unMaterializedColumns.get(identifyOperator).add(columnRefOperator);
+                }
+
+                List<ColumnRefOperator> predicateUsedColumns = scanOperator.getScanOperatorPredicates().getUsedColumns()
+                        .getColumnRefOperators(optimizerContext.getColumnRefFactory());
+                predicateUsedColumns.forEach(columnRefOperator -> {
+                    if (context.columnSources.containsKey(columnRefOperator)) {
+                        materializedBefore(columnRefOperator, scanOperator, context);
+                    }
+                });
+
+            }
+
             return optExpression;
         }
 
@@ -754,7 +788,7 @@ public class LateMaterializationRewriter {
                 Map<ColumnRefOperator, Column> columnRefOperatorColumnMap = new HashMap<>();
 
                 columns.forEach((op, columnRefs) -> {
-                    PhysicalOlapScanOperator scanOperator = (PhysicalOlapScanOperator) op.get();
+                    PhysicalScanOperator scanOperator = (PhysicalScanOperator) op.get();
                     Table table = scanOperator.getTable();
                     ColumnRefOperator rowIdColumnRef = context.rowIdColumns.get(op);
                     rowidToTables.put(rowIdColumnRef, table);
@@ -838,6 +872,67 @@ public class LateMaterializationRewriter {
             LOG.info("rewrite PhysicalOlapScan, newColumnRefMap: " + newColumnRefMap.size());
             // build a new optExpressions
             PhysicalOlapScanOperator.Builder builder = PhysicalOlapScanOperator.builder().withOperator(scanOperator);
+            builder.setColRefToColumnMetaMap(newColumnRefMap);
+
+            OptExpression result = OptExpression.builder().with(optExpression).setOp(builder.build()).build();
+            LogicalProperty newProperty = new LogicalProperty(optExpression.getLogicalProperty());
+            newProperty.setOutputColumns(new ColumnRefSet(newColumnRefMap.keySet()));
+            result.setLogicalProperty(newProperty);
+            LOG.info("operator + " + result.getOp() +
+                    ", logical properties: " + result.getLogicalProperty().getOutputColumns());
+            return result;
+        }
+
+        @Override
+        public OptExpression visitPhysicalIcebergScan(OptExpression optExpression, RewriteContext context) {
+            PhysicalIcebergScanOperator scanOperator = (PhysicalIcebergScanOperator) optExpression.getOp();
+            IdentifyOperator identifyOperator = new IdentifyOperator(scanOperator);
+            if (!collectorContext.needLookupSources.contains(identifyOperator)) {
+                return optExpression;
+            }
+            Set<ColumnRefOperator> columnRefOperators =
+                    collectorContext.fetchPositions.contains(identifyOperator, identifyOperator) ?
+                            collectorContext.fetchPositions.get(identifyOperator, identifyOperator) : new HashSet<>();
+
+            if (columnRefOperators.size() == scanOperator.getColRefToColumnMetaMap().size()) {
+                // all column need fetch, no need to rewrite
+                context.fetchedColumns.addAll(columnRefOperators);
+                return optExpression;
+            }
+
+            // modify output columns
+            Map<ColumnRefOperator, Column> newColumnRefMap =
+                    scanOperator.getColRefToColumnMetaMap().entrySet().stream()
+                            .filter(entry -> columnRefOperators.contains(entry.getKey()))
+                            .collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue));
+            context.fetchedColumns.addAll(newColumnRefMap.keySet());
+
+            ColumnRefOperator rowIdColumnRef = null;
+            for (Map.Entry<ColumnRefOperator, Column> entry : scanOperator.getColRefToColumnMetaMap().entrySet()) {
+                ColumnRefOperator columnRefOperator = entry.getKey();
+                Column column = entry.getValue();
+                if (column.getName().equalsIgnoreCase("_row_id")) {
+                    rowIdColumnRef = columnRefOperator;
+                    break;
+                }
+            }
+            // generate row id column
+            if (rowIdColumnRef != null) {
+                // find Column and ref
+                // @TODO set row id type
+                context.rowIdColumns.put(identifyOperator, rowIdColumnRef);
+            } else {
+                // @TODO if already has row_id column, just use it, otherwise, generate a new one
+                Column rowIdColumn = new Column("_row_id", Type.BIGINT, true);
+                ColumnRefOperator columnRefOperator = optimizerContext.getColumnRefFactory()
+                        .create("_row_id", Type.BIGINT, true, TRowIDType.ICEBERG_V3_ROW_ID);
+                newColumnRefMap.put(columnRefOperator, rowIdColumn);
+                context.rowIdColumns.put(identifyOperator, columnRefOperator);
+            }
+
+            LOG.info("rewrite PhysicalIcebergScan, newColumnRefMap: " + newColumnRefMap.size());
+            // build a new optExpressions
+            PhysicalIcebergScanOperator.Builder builder = PhysicalIcebergScanOperator.builder().withOperator(scanOperator);
             builder.setColRefToColumnMetaMap(newColumnRefMap);
 
             OptExpression result = OptExpression.builder().with(optExpression).setOp(builder.build()).build();

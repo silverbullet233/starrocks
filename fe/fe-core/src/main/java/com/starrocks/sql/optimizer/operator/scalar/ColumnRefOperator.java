@@ -18,6 +18,7 @@ import com.starrocks.catalog.Type;
 import com.starrocks.common.util.SRStringUtils;
 import com.starrocks.sql.optimizer.base.ColumnRefSet;
 import com.starrocks.sql.optimizer.operator.OperatorType;
+import com.starrocks.thrift.TRowIDType;
 
 import java.util.Collection;
 import java.util.List;
@@ -34,6 +35,7 @@ public final class ColumnRefOperator extends ScalarOperator {
     private final int id;
     private final String name;
     private boolean nullable;
+    private TRowIDType rowIDType;
 
     public ColumnRefOperator(int id, Type type, String name, boolean nullable) {
         super(OperatorType.VARIABLE, type);
@@ -48,6 +50,14 @@ public final class ColumnRefOperator extends ScalarOperator {
         this.id = id;
         this.name = requireNonNull(name, "name is null");
         this.nullable = nullable;
+    }
+
+    public ColumnRefOperator(int id, Type type, String name, boolean nullable, TRowIDType rowIDType) {
+        super(OperatorType.VARIABLE, type);
+        this.id = id;
+        this.name = requireNonNull(name, "name is null");
+        this.nullable = nullable;
+        this.rowIDType = requireNonNull(rowIDType, "rowIdType is null");
     }
 
     public int getId() {
@@ -75,6 +85,10 @@ public final class ColumnRefOperator extends ScalarOperator {
 
     public void setNullable(boolean nullable) {
         this.nullable = nullable;
+    }
+
+    public TRowIDType getRowIDType() {
+        return rowIDType;
     }
 
     @Override
