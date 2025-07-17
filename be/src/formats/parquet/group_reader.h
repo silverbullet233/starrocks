@@ -107,6 +107,7 @@ struct GroupReaderParam {
     const Columns* partition_values = nullptr;
     // not existed column
     const std::vector<SlotDescriptor*>* not_existed_slots = nullptr;
+    const std::vector<SlotDescriptor*>* reserved_field_slots = nullptr;
     // used for global low cardinality optimization
     ColumnIdToGlobalDictMap* global_dictmaps = &EMPTY_GLOBAL_DICTMAPS;
 };
@@ -115,7 +116,12 @@ class GroupReader {
 public:
     GroupReader(GroupReaderParam& param, int row_group_number, SkipRowsContextPtr skip_rows_ctx,
                 int64_t row_group_first_row);
+    GroupReader(GroupReaderParam& param, int row_group_number, SkipRowsContextPtr skip_rows_ctx,
+                int64_t row_group_first_row, int64_t row_group_first_row_id);
+
+
     ~GroupReader();
+
 
     // init used to init column reader, and devide active/lazy
     // then we can use inited column collect io range.
@@ -152,7 +158,7 @@ private:
     Status _create_column_readers();
     StatusOr<ColumnReaderPtr> _create_column_reader(const GroupReaderParam::Column& column);
     Status _prepare_column_readers() const;
-    ChunkPtr _create_read_chunk(const std::vector<int>& column_indices);
+    ChunkPtr _create_read_chunk(const std::vector<int>& column_indices, bool ignore_reserved_field = true);
     // Extract dict filter columns and conjuncts
     void _process_columns_and_conjunct_ctxs();
 
@@ -162,13 +168,15 @@ private:
     void _init_read_chunk();
 
     Status _read_range(const std::vector<int>& read_columns, const Range<uint64_t>& range, const Filter* filter,
-                       ChunkPtr* chunk);
+                       ChunkPtr* chunk, bool ignore_reserved_fields = false);
 
     StatusOr<size_t> _read_range_round_by_round(const Range<uint64_t>& range, Filter* filter, ChunkPtr* chunk);
 
     // row group meta
     const tparquet::RowGroup* _row_group_metadata = nullptr;
     int64_t _row_group_first_row = 0;
+    // for iceberg v3
+    int64_t _row_group_first_row_id = 0;
     SkipRowsContextPtr _skip_rows_ctx;
 
     // column readers for column chunk in row group

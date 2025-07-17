@@ -438,6 +438,8 @@ struct THdfsScanRange {
 
     // min/max value of slots
     35: optional map<i32, Exprs.TExprMinMaxValue> min_max_values;
+    // for iceberg v3 table
+    36: optional i64 first_row_id
 }
 
 struct TBinlogScanRange {

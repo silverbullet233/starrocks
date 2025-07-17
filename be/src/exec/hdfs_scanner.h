@@ -309,6 +309,10 @@ struct HdfsScannerContext {
     // materialized column read from parquet file
     std::vector<ColumnInfo> materialized_columns;
 
+    // reserved field columns
+    // std::vector<SlotDescriptor*> reserved_field_slots;
+    // std::vector<ColumnInfo> reserved_field_columns;
+
     // partition column
     std::vector<ColumnInfo> partition_columns;
 
@@ -409,6 +413,8 @@ struct HdfsScannerContext {
     // if we can skip this file by evaluating conjuncts of non-existed columns with default value.
     StatusOr<bool> should_skip_by_evaluating_not_existed_slots();
     std::vector<SlotDescriptor*> not_existed_slots;
+    // for iceberg reserved fields
+    std::vector<SlotDescriptor*> reserved_field_slots;
     std::vector<ExprContext*> conjunct_ctxs_of_non_existed_slots;
 
     // other helper functions.

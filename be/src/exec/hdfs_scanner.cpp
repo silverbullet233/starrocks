@@ -126,13 +126,19 @@ Status HdfsScanner::_build_scanner_context() {
     // build columns of materialized and partition.
     for (size_t i = 0; i < _scanner_params.materialize_slots.size(); i++) {
         auto* slot = _scanner_params.materialize_slots[i];
-        HdfsScannerContext::ColumnInfo column;
-        column.slot_desc = slot;
-        column.idx_in_chunk = _scanner_params.materialize_index_in_chunk[i];
-        column.decode_needed =
-                slot->is_output_column() || _scanner_params.slots_of_multi_field_conjunct.find(slot->id()) !=
-                                                    _scanner_params.slots_of_multi_field_conjunct.end();
-        ctx.materialized_columns.emplace_back(std::move(column));
+        if (slot->col_name() == "_row_id") {
+            LOG(INFO) << "add reserved field columns: " << slot->col_name();
+            ctx.reserved_field_slots.emplace_back(slot); 
+        } else {
+            HdfsScannerContext::ColumnInfo column;
+            LOG(INFO) << "materialized columns: " << slot->col_name();
+            column.slot_desc = slot;
+            column.idx_in_chunk = _scanner_params.materialize_index_in_chunk[i];
+            column.decode_needed =
+                    slot->is_output_column() || _scanner_params.slots_of_multi_field_conjunct.find(slot->id()) !=
+                                                        _scanner_params.slots_of_multi_field_conjunct.end();
+            ctx.materialized_columns.emplace_back(std::move(column));
+        }
     }
 
     for (size_t i = 0; i < _scanner_params.partition_slots.size(); i++) {
@@ -644,6 +650,7 @@ Status HdfsScannerContext::append_or_update_not_existed_columns_to_chunk(ChunkPt
         }
         ck->append_or_update_column(std::move(col), slot_desc->id());
     }
+    // @TODO fill row_id
     ck->set_num_rows(row_count);
     return Status::OK();
 }

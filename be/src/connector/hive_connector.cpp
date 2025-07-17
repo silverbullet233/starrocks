@@ -677,7 +677,7 @@ Status HiveDataSource::_init_scanner(RuntimeState* state) {
             FSOptions(hdfs_scan_node.__isset.cloud_configuration ? &hdfs_scan_node.cloud_configuration : nullptr);
 
     ASSIGN_OR_RETURN(auto fs, FileSystem::CreateUniqueFromString(native_file_path, fsOptions));
-
+    LOG(INFO) << "HiveDataSource::_init_scanner, scan_range: " << apache::thrift::ThriftDebugString(scan_range);
     HdfsScannerParams scanner_params;
     RETURN_IF_ERROR(_init_global_dicts(&scanner_params));
     scanner_params.runtime_filter_collector = _runtime_filters;

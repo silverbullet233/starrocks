@@ -53,6 +53,8 @@ FileReader::FileReader(int chunk_size, RandomAccessFile* file, size_t file_size,
 FileReader::~FileReader() = default;
 
 Status FileReader::init(HdfsScannerContext* ctx) {
+    LOG(INFO) << "FileReader::init";
+    // @TODO we don't pass first row id 
     _scanner_ctx = ctx;
     if (ctx->use_file_metacache) {
         _cache = DataCache::GetInstance()->page_cache();
@@ -62,6 +64,8 @@ Status FileReader::init(HdfsScannerContext* ctx) {
     FileMetaDataParser file_metadata_parser{_file, ctx, _cache, &_datacache_options, _file_size};
     ASSIGN_OR_RETURN(_file_metadata, file_metadata_parser.get_file_metadata());
 
+    // @TODO handle reserved_field_slots
+
     // set existed SlotDescriptor in this parquet file
     std::unordered_set<std::string> existed_column_names;
     _meta_helper = _build_meta_helper();
@@ -69,6 +73,7 @@ Status FileReader::init(HdfsScannerContext* ctx) {
     RETURN_IF_ERROR(_scanner_ctx->update_materialized_columns(existed_column_names));
     ASSIGN_OR_RETURN(_is_file_filtered, _scanner_ctx->should_skip_by_evaluating_not_existed_slots());
     if (_is_file_filtered) {
+        LOG(INFO) << "is_file_filtered";
         return Status::OK();
     }
     RETURN_IF_ERROR(_build_split_tasks());
@@ -87,11 +92,13 @@ Status FileReader::init(HdfsScannerContext* ctx) {
 
 std::shared_ptr<MetaHelper> FileReader::_build_meta_helper() {
     if (_scanner_ctx->lake_schema != nullptr && _file_metadata->schema().exist_filed_id()) {
+        LOG(INFO) << "use LakeMetaHelper";
         // If we want read this parquet file with iceberg/paimon schema,
         // we also need to make sure it contains parquet field id.
         return std::make_shared<LakeMetaHelper>(_file_metadata.get(), _scanner_ctx->case_sensitive,
                                                 _scanner_ctx->lake_schema);
     } else {
+        LOG(INFO) << "use ParquetMetaHelper";
         return std::make_shared<ParquetMetaHelper>(_file_metadata.get(), _scanner_ctx->case_sensitive);
     }
 }
@@ -167,6 +174,8 @@ Status FileReader::_build_split_tasks() {
 bool FileReader::_filter_group(const GroupReaderPtr& group_reader) {
     bool& filtered = group_reader->get_is_group_filtered();
     filtered = false;
+    LOG(INFO) << "FileReader::_filter_group, predicate_tree: " << _scanner_ctx->predicate_tree.root().debug_string();
+
     auto visitor = PredicateFilterEvaluator{_scanner_ctx->predicate_tree, group_reader.get(),
                                             _scanner_ctx->parquet_page_index_enable,
                                             _scanner_ctx->parquet_bloom_filter_enable};
@@ -213,7 +222,14 @@ StatusOr<bool> FileReader::_update_rf_and_filter_group(const GroupReaderPtr& gro
 void FileReader::_prepare_read_columns(std::unordered_set<std::string>& existed_column_names) {
     _meta_helper->prepare_read_columns(_scanner_ctx->materialized_columns, _group_reader_param.read_cols,
                                        existed_column_names);
-    _no_materialized_column_scan = (_group_reader_param.read_cols.size() == 0);
+    // if (!_scanner_ctx->reserved_field_slots.empty()) {
+    //     for (auto* slot: _scanner_ctx->reserved_field_slots) {
+    //         LOG(INFO) << "FileReader::_prepare_read_columns, add reserved field slot: " << slot->col_name();
+    //         _group_reader_param.read_cols.emplace_back(slot);
+    //     }
+    // }
+    _no_materialized_column_scan = (_group_reader_param.read_cols.size() == 0) && _scanner_ctx->reserved_field_slots.empty();
+    // @TODO row_id column should be added to read_cols
 }
 
 bool FileReader::_select_row_group(const tparquet::RowGroup& row_group) {
@@ -246,6 +262,7 @@ Status FileReader::_collect_row_group_io(std::shared_ptr<GroupReader>& group_rea
 }
 
 Status FileReader::_init_group_readers() {
+    LOG(INFO) << "FileReader::_init_group_readers";
     const HdfsScannerContext& fd_scanner_ctx = *_scanner_ctx;
 
     // _group_reader_param is used by all group readers
@@ -262,6 +279,8 @@ Status FileReader::_init_group_readers() {
     _group_reader_param.partition_columns = &fd_scanner_ctx.partition_columns;
     _group_reader_param.partition_values = &fd_scanner_ctx.partition_values;
     _group_reader_param.not_existed_slots = &fd_scanner_ctx.not_existed_slots;
+    _group_reader_param.reserved_field_slots = &fd_scanner_ctx.reserved_field_slots;
+    // @TODO need a reserved slots??
     // for pageIndex
     _group_reader_param.min_max_conjunct_ctxs = fd_scanner_ctx.min_max_conjunct_ctxs;
     _group_reader_param.predicate_tree = &fd_scanner_ctx.predicate_tree;
@@ -270,6 +289,9 @@ Status FileReader::_init_group_readers() {
     _group_reader_param.file_size = _file_size;
     _group_reader_param.datacache_options = &_datacache_options;
 
+    // @TODO compute first_row_id for each group
+    int64_t row_group_first_row_id = _scanner_ctx->scan_range->first_row_id;
+    LOG(INFO) << "FileReader::_init_group_readers, row_group_first_row_id: " << row_group_first_row_id;
     int64_t row_group_first_row = 0;
     // select and create row group readers.
     for (size_t i = 0; i < _file_metadata->t_metadata().row_groups.size(); i++) {
@@ -281,8 +303,10 @@ Status FileReader::_init_group_readers() {
             continue;
         }
 
+        // auto row_group_reader =
+        //         std::make_shared<GroupReader>(_group_reader_param, i, _skip_rows_ctx, row_group_first_row);
         auto row_group_reader =
-                std::make_shared<GroupReader>(_group_reader_param, i, _skip_rows_ctx, row_group_first_row);
+            std::make_shared<GroupReader>(_group_reader_param, i, _skip_rows_ctx, row_group_first_row, row_group_first_row_id + row_group_first_row);
         RETURN_IF_ERROR(row_group_reader->init());
 
         _group_reader_param.stats->parquet_total_row_groups += 1;
@@ -384,6 +408,11 @@ Status FileReader::get_next(ChunkPtr* chunk) {
 }
 
 Status FileReader::_exec_no_materialized_column_scan(ChunkPtr* chunk) {
+    LOG(INFO) << "FileReader::_exec_no_materialized_column_scan";
+    // @TODO handle row_id
+
+
+    // @TODO we don't know which groups are filterd, so we can't fill row_id here?
     if (_scan_row_count < _total_row_count) {
         size_t read_size = 0;
         if (_scanner_ctx->use_count_opt) {

@@ -146,6 +146,9 @@ public class ScalarOperatorToIcebergExpr {
                     type = type.asStructType().fieldType(path);
                 }
             }
+            if (qualifiedName.equals("_row_id")) {
+                type = new Types.LongType();
+            }
             return type;
         }
 
