@@ -37,6 +37,7 @@
 #include <google/protobuf/repeated_field.h>
 #include <google/protobuf/stubs/common.h>
 
+#include <optional>
 #include <ostream>
 #include <shared_mutex>
 #include <unordered_map>
@@ -63,6 +64,7 @@ class IcebergDeleteFileMeta;
 class OlapTableSchemaParam;
 class PTupleDescriptor;
 class PSlotDescriptor;
+class TRowIDDescriptor;
 
 // Location information for null indicator bit for particular slot.
 // For non-nullable slots, the byte_offset will be 0 and the bit_mask will be 0.
@@ -140,6 +142,8 @@ private:
 
     // @todo: replace _null_indicator_offset when remove _null_indicator_offset
     const bool _is_nullable;
+
+    std::optional<TRowIDDescriptor> _row_id_desc;
 
     SlotDescriptor(const PSlotDescriptor& pdesc);
 };

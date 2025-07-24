@@ -91,7 +91,8 @@ SlotDescriptor::SlotDescriptor(const TSlotDescriptor& tdesc)
           _slot_size(_type.get_slot_size()),
           _is_materialized(tdesc.isMaterialized),
           _is_output_column(tdesc.__isset.isOutputColumn ? tdesc.isOutputColumn : true),
-          _is_nullable(tdesc.__isset.isNullable ? tdesc.isNullable : true) {}
+          _is_nullable(tdesc.__isset.isNullable ? tdesc.isNullable : true),
+          _row_id_desc(tdesc.__isset.row_id_desc ? std::optional<TRowIDDescriptor>(tdesc.row_id_desc): std::nullopt) {}
 
 SlotDescriptor::SlotDescriptor(const PSlotDescriptor& pdesc)
         : _id(pdesc.id()),
