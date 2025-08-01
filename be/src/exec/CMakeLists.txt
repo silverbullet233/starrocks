@@ -205,6 +205,7 @@ set(EXEC_FILES
     pipeline/dict_decode_operator.cpp
     pipeline/result_sink_operator.cpp
     pipeline/olap_table_sink_operator.cpp
+    pipeline/scan/glm_manager.cpp
     pipeline/scan/balanced_chunk_buffer.cpp
     pipeline/scan/chunk_source.cpp
     pipeline/scan/morsel.cpp
@@ -303,9 +304,11 @@ set(EXEC_FILES
     pipeline/schedule/pipeline_timer.cpp
     pipeline/wait_operator.cpp
     pipeline/runtime_filter_types.cpp
+    pipeline/fetch_task.cpp
     pipeline/fetch_processor.cpp
     pipeline/fetch_sink_operator.cpp
     pipeline/fetch_source_operator.cpp
+    pipeline/lookup_request.cpp
     pipeline/lookup_operator.cpp
     workgroup/pipeline_executor_set.cpp
     workgroup/pipeline_executor_set_manager.cpp

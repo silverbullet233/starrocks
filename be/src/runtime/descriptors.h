@@ -64,7 +64,7 @@ class IcebergDeleteFileMeta;
 class OlapTableSchemaParam;
 class PTupleDescriptor;
 class PSlotDescriptor;
-class TRowIDDescriptor;
+class RowPositionDescriptor;
 
 // Location information for null indicator bit for particular slot.
 // For non-nullable slots, the byte_offset will be 0 and the bit_mask will be 0.
@@ -142,8 +142,6 @@ private:
 
     // @todo: replace _null_indicator_offset when remove _null_indicator_offset
     const bool _is_nullable;
-
-    std::optional<TRowIDDescriptor> _row_id_desc;
 
     SlotDescriptor(const PSlotDescriptor& pdesc);
 };
@@ -570,6 +568,41 @@ private:
 
     // map from TupleId to position of tuple w/in row
     std::vector<int> _tuple_idx_map;
+};
+
+// used to describe row position, only used in global late materialization
+class RowPositionDescriptor {
+public:
+    enum Type: uint8_t {
+        ICEBERG_V3 = 0,
+    };
+    RowPositionDescriptor(Type type, SlotId source_node_slot_id, std::vector<SlotId> ref_slot_ids):
+        _type(type), _source_node_slot_id(source_node_slot_id), _ref_slot_ids(std::move(ref_slot_ids)) {}
+    virtual ~RowPositionDescriptor() = default;
+
+    Type type() const { return _type; }
+
+    SlotId get_source_node_slot_id() const {
+        return _source_node_slot_id;
+    }
+
+    const std::vector<SlotId>& get_ref_slot_ids() const {
+        return _ref_slot_ids;
+    }
+
+    static RowPositionDescriptor* from_thrift(const TRowPositionDescriptor& t_desc, ObjectPool* pool);
+
+protected:
+    Type _type;
+    SlotId _source_node_slot_id;
+    std::vector<SlotId> _ref_slot_ids;
+};
+
+class IcebergV3RowPositionDescriptor: public RowPositionDescriptor {
+public:
+    IcebergV3RowPositionDescriptor(SlotId source_node_slot_id, std::vector<SlotId> ref_slot_ids):
+        RowPositionDescriptor(ICEBERG_V3, source_node_slot_id, std::move(ref_slot_ids)) {}
+    ~IcebergV3RowPositionDescriptor() override = default;
 };
 
 } // namespace starrocks

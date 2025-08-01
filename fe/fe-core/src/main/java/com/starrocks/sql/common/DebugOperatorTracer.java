@@ -512,12 +512,12 @@ public class DebugOperatorTracer extends OperatorVisitor<String, Void> {
 
     @Override
     public String visitPhysicalFetch(PhysicalFetchOperator node, Void context) {
-        Map<ColumnRefOperator, Set<ColumnRefOperator>> rowidToColumns = node.getRowidToColumns();
-        Map<ColumnRefOperator, Table> rowidToTable = node.getRowidToTable();
+        Map<ColumnRefOperator, Set<ColumnRefOperator>> rowIdToLazyColumns = node.getRowIdToLazyColumns();
+        Map<ColumnRefOperator, Table> rowidToTable = node.getRowIdToTable();
 
         StringBuilder sb = new StringBuilder();
         sb.append("PhysicalFetchOperator {");
-        sb.append(rowidToColumns.entrySet().stream().map(entry -> {
+        sb.append(rowIdToLazyColumns.entrySet().stream().map(entry -> {
             Table table = rowidToTable.get(entry.getKey());
             Set<ColumnRefOperator> columns = entry.getValue();
             String str = columns.stream().map(ColumnRefOperator::toString).collect(Collectors.joining(",", "{", "}"));
@@ -529,11 +529,11 @@ public class DebugOperatorTracer extends OperatorVisitor<String, Void> {
 
     @Override
     public String visitPhysicalLookUp(PhysicalLookUpOperator node, Void context) {
-        Map<ColumnRefOperator, Set<ColumnRefOperator>> rowidToColumns = node.getRowidToColumns();
-        Map<ColumnRefOperator, Table> rowidToTable = node.getRowidToTable();
+        Map<ColumnRefOperator, Set<ColumnRefOperator>> rowIdToColumns = node.getRowIdToLazyColumns();
+        Map<ColumnRefOperator, Table> rowidToTable = node.getRowIdToTable();
         StringBuilder sb = new StringBuilder();
         sb.append("PhysicalLookUpOperator {");
-        sb.append(rowidToColumns.entrySet().stream().map(entry -> {
+        sb.append(rowIdToColumns.entrySet().stream().map(entry -> {
             Table table = rowidToTable.get(entry.getKey());
             Set<ColumnRefOperator> columns = entry.getValue();
             String str = columns.stream().map(ColumnRefOperator::toString).collect(Collectors.joining(",", "{", "}"));

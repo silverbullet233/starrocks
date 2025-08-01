@@ -32,48 +32,23 @@
 #include "util/phmap/phmap.h"
 #include "util/phmap/phmap_base.h"
 #include "util/phmap/phmap_utils.h"
+#include "exec/pipeline/lookup_request.h"
 
 namespace starrocks {
-namespace pipeline {
-class FetchContext;
-using FetchContextPtr = std::shared_ptr<FetchContext>;
-} // namespace pipeline
-
-struct RemoteLookUpRequest {
-    ::google::protobuf::RpcController* cntl = nullptr;
-    const PLookUpRequest* request = nullptr;
-    PLookUpResponse* response = nullptr;
-    ::google::protobuf::Closure* done = nullptr;
-    // row_id_slot => request row ids
-    phmap::flat_hash_map<SlotId, ColumnPtr> request_columns;
-    mutable int64_t receive_ts = 0;
-};
-
-struct LocalLookUpRequest {
-    pipeline::FetchContextPtr fetch_ctx = nullptr;
-    std::function<void(const Status&)> callback;
-    mutable int64_t receive_ts = 0;
-};
-
-using LookUpRequestVariant = std::variant<RemoteLookUpRequest, LocalLookUpRequest>;
-
-struct LookUpContext {
-    std::vector<LookUpRequestVariant> requests;
-};
 
 class LookUpDispatcher {
 public:
-    LookUpDispatcher(RuntimeState* state, const TUniqueId& query_id, PlanNodeId lookup_node_id)
-            : _state(state), _query_id(query_id), _lookup_node_id(lookup_node_id) {}
+    LookUpDispatcher(RuntimeState* state, const TUniqueId& query_id, PlanNodeId lookup_node_id, const std::vector<TupleId>& request_tuple_ids);
 
     ~LookUpDispatcher() = default;
 
     TUniqueId query_id() const { return _query_id; }
     PlanNodeId lookup_node_id() const { return _lookup_node_id; }
 
-    Status add_request(const LookUpRequestVariant& ctx);
+    // Status add_request(const LookUpRequestVariant& ctx);
+    Status add_request(const pipeline::LookUpRequestContextPtr& ctx);
 
-    bool try_get(int32_t driver_sequence, size_t max_num, LookUpContext* ctx);
+    bool try_get(int32_t driver_sequence, size_t max_num, pipeline::LookUpTaskContext* ctx);
 
     // bool try_get(int32_t driver_sequence, LookUpRequestCtx* ctx);
     bool has_data(int32_t driver_sequence) const;
@@ -96,8 +71,13 @@ private:
     const TUniqueId _query_id;
     [[maybe_unused]] PlanNodeId _lookup_node_id;
 
-    typedef moodycamel::ConcurrentQueue<LookUpRequestVariant> RequestQueue;
-    RequestQueue _queue;
+    typedef moodycamel::ConcurrentQueue<pipeline::LookUpRequestContextPtr> RequestsQueue;
+    typedef std::shared_ptr<RequestsQueue> RequestsQueuePtr;
+    typedef phmap::flat_hash_map<TupleId, RequestsQueuePtr> RequestQueueMap;
+    // @TODO maintain a array is enough?
+    // source_id_slot -> request queue
+    RequestQueueMap _request_queues;
+
 
     std::weak_ptr<pipeline::QueryContext> _query_ctx;
     pipeline::Observable _observable;
@@ -110,11 +90,12 @@ public:
     LookUpDispatcherMgr() = default;
     ~LookUpDispatcherMgr() = default;
 
-    LookUpDispatcherPtr create_dispatcher(RuntimeState* state, const TUniqueId& query_id, PlanNodeId target_node_id);
+    LookUpDispatcherPtr create_dispatcher(RuntimeState* state, const TUniqueId& query_id, PlanNodeId target_node_id, const std::vector<TupleId>& request_tuple_ids);
 
     StatusOr<LookUpDispatcherPtr> get_dispatcher(const TUniqueId& query_id, PlanNodeId target_node_id);
     void remove_dispatcher(const TUniqueId& query_id, PlanNodeId target_node_id);
-    Status lookup(const RemoteLookUpRequest& ctx);
+    // Status lookup(const RemoteLookUpRequest& ctx);
+    Status lookup(const pipeline::RemoteLookUpRequestContextPtr& ctx);
 
     void close() {}
 

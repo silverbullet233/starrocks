@@ -15,6 +15,7 @@
 #include "exec/fetch_node.h"
 
 #include <protocol/TDebugProtocol.h>
+#include <stdexcept>
 
 #include "column/vectorized_fwd.h"
 #include "common/global_types.h"
@@ -24,6 +25,7 @@
 #include "exec/pipeline/fetch_source_operator.h"
 #include "exec/pipeline/pipeline_builder.h"
 #include "exec/tablet_info.h"
+#include "runtime/descriptors.h"
 #include "runtime/runtime_state.h"
 #include "types/logical_type.h"
 
@@ -34,8 +36,9 @@ FetchNode::FetchNode(ObjectPool* pool, const TPlanNode& tnode, const DescriptorT
     for (const auto& tuple : tnode.fetch_node.tuples) {
         _tuple_ids.emplace_back(tuple);
     }
-    for (const auto& [tuple_id, slot_id] : tnode.fetch_node.row_id_slots) {
-        _row_id_slots.insert({tuple_id, slot_id});
+    for (const auto& [tuple_id, row_pos_desc] : tnode.fetch_node.row_pos_descs) {
+        auto* desc = RowPositionDescriptor::from_thrift(row_pos_desc, pool);
+        _row_pos_descs.emplace(tuple_id, desc);
     }
 
     _nodes_info = std::make_shared<StarRocksNodesInfo>(tnode.fetch_node.nodes_info);
@@ -49,14 +52,23 @@ FetchNode::~FetchNode() {
 
 Status FetchNode::init(const TPlanNode& tnode, RuntimeState* state) {
     RETURN_IF_ERROR(ExecNode::init(tnode, state));
+    std::vector<SlotId> source_id_slots;
+    for (const auto& [_, row_pos_desc] : _row_pos_descs) {
+        source_id_slots.emplace_back(row_pos_desc->get_source_node_slot_id());
+    }
+
     _dispatcher =
-            state->exec_env()->lookup_dispatcher_mgr()->create_dispatcher(state, state->query_id(), _target_node_id);
+            state->exec_env()->lookup_dispatcher_mgr()->create_dispatcher(state, state->query_id(), _target_node_id, source_id_slots);
     for (const auto& tuple_id : _tuple_ids) {
         const auto& tuple_desc = state->desc_tbl().get_tuple_descriptor(tuple_id);
         for (const auto& slot : tuple_desc->slots()) {
             _slot_id_to_desc.insert({slot->id(), slot});
         }
     }
+    // for (const auto& [tuple_id, slot_id] : _row_id_slots) {
+    //     const auto& slot_desc = state->desc_tbl().get_slot_descriptor(slot_id);
+    //     LOG(INFO) << "row_id slot, id: " << slot_id << ", desc: " << slot_desc->debug_string();
+    // }
     return Status::OK();
 }
 
@@ -64,7 +76,7 @@ pipeline::OpFactories FetchNode::decompose_to_pipeline(pipeline::PipelineBuilder
     OpFactories operators = _children[0]->decompose_to_pipeline(context);
 
     auto fetch_processor_factory = std::make_shared<pipeline::FetchProcessorFactory>(
-            _target_node_id, _row_id_slots, _slot_id_to_desc, _nodes_info, _dispatcher);
+            _target_node_id, _row_pos_descs, _slot_id_to_desc, _nodes_info, _dispatcher);
 
     auto sink_op = std::make_shared<pipeline::FetchSinkOperatorFactory>(context->next_operator_id(), id(),
                                                                         fetch_processor_factory);

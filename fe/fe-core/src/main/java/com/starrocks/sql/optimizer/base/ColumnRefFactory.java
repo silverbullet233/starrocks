@@ -31,7 +31,6 @@ import com.starrocks.sql.optimizer.operator.scalar.CaseWhenOperator;
 import com.starrocks.sql.optimizer.operator.scalar.CastOperator;
 import com.starrocks.sql.optimizer.operator.scalar.ColumnRefOperator;
 import com.starrocks.sql.optimizer.operator.scalar.ScalarOperator;
-import com.starrocks.thrift.TRowIDType;
 
 import java.util.List;
 import java.util.Map;
@@ -94,18 +93,8 @@ public class ColumnRefFactory {
         return create(nextId++, name, type, nullable, isLambdaArg);
     }
 
-    public ColumnRefOperator create(String name, Type type, boolean nullable, TRowIDType rowIDType) {
-        return create(nextId++, name, type, nullable, rowIDType);
-    }
-
     private ColumnRefOperator create(int id, String name, Type type, boolean nullable, boolean isLambdaArg) {
         ColumnRefOperator columnRef = new ColumnRefOperator(id, type, name, nullable, isLambdaArg);
-        columnRefs.add(columnRef);
-        return columnRef;
-    }
-
-    private ColumnRefOperator create(int id, String name, Type type, boolean nullable, TRowIDType rowIDType) {
-        ColumnRefOperator columnRef = new ColumnRefOperator(id, type, name, nullable, rowIDType);
         columnRefs.add(columnRef);
         return columnRef;
     }

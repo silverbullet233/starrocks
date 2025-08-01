@@ -37,7 +37,9 @@ public:
 private:
     int32_t _target_node_id = 0;
     std::vector<TupleId> _tuple_ids;
-    phmap::flat_hash_map<TupleId, SlotId> _row_id_slots;
+    // phmap::flat_hash_map<TupleId, SlotId> _row_id_slots;
+    // tuple id => row position desc
+    phmap::flat_hash_map<TupleId, RowPositionDescriptor*> _row_pos_descs;
     phmap::flat_hash_map<SlotId, SlotDescriptor*> _slot_id_to_desc;
     std::shared_ptr<StarRocksNodesInfo> _nodes_info;
     std::shared_ptr<LookUpDispatcher> _dispatcher;

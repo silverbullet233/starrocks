@@ -29,6 +29,7 @@ import com.starrocks.analysis.IntLiteral;
 import com.starrocks.analysis.JoinOperator;
 import com.starrocks.analysis.LiteralExpr;
 import com.starrocks.analysis.OrderByElement;
+import com.starrocks.analysis.RowPositionDescriptor;
 import com.starrocks.analysis.SlotDescriptor;
 import com.starrocks.analysis.SlotId;
 import com.starrocks.analysis.SlotRef;
@@ -41,6 +42,7 @@ import com.starrocks.catalog.Column;
 import com.starrocks.catalog.ColumnAccessPath;
 import com.starrocks.catalog.Function;
 import com.starrocks.catalog.FunctionSet;
+import com.starrocks.catalog.IcebergTable;
 import com.starrocks.catalog.JDBCTable;
 import com.starrocks.catalog.KeysType;
 import com.starrocks.catalog.MaterializedIndex;
@@ -4302,17 +4304,19 @@ public class PlanFragmentBuilder {
                     ConnectContext.get().getCurrentComputeResource() : WarehouseManager.DEFAULT_RESOURCE;
             // ROW_ID column may become nullable after passing through outer join node,
             // so we need to change nullable property for late-materialized columns too,
+            // @TODO we may don't need this
             for (TupleDescriptor tupleDescriptor : lookupNode.getDescs()) {
-                SlotId rowIdSlotId = lookupNode.getRowidSlots().get(tupleDescriptor.getId());
-                SlotDescriptor rowIdSlotDesc = context.getDescTbl().getSlotDesc(rowIdSlotId);
-                if (rowIdSlotDesc.getIsNullable()) {
+                RowPositionDescriptor rowPositionDescriptor = lookupNode.getRowPosDescs().get(tupleDescriptor.getId());
+                // mark all related column to nullable
+                SlotDescriptor sourceNodeSlotDesc = context.getDescTbl().getSlotDesc(rowPositionDescriptor.getSourceNodeSlot());
+                if (sourceNodeSlotDesc.getIsNullable()) {
                     tupleDescriptor.getSlots().forEach(slotDescriptor -> slotDescriptor.setIsNullable(true));
                 }
             }
 
             FetchNode fetchNode = new FetchNode(context.getNextNodeId(),
                     childFragment.getPlanRoot(), lookupNode.getId(),
-                    lookupNode.getDescs(), lookupNode.getRowidSlots(), computeResource);
+                    lookupNode.getDescs(), lookupNode.getRowPosDescs(), computeResource);
             currentExecGroup.add(fetchNode);
             childFragment.setPlanRoot(fetchNode);
             childFragment.addChild(lookUpFragment);
@@ -4324,20 +4328,32 @@ public class PlanFragmentBuilder {
             return childFragment;
         }
 
+        private RowPositionDescriptor buildRowPositionDescriptor(Table table,
+                                                                 ColumnRefOperator execNodeColumn,
+                                                                 List<ColumnRefOperator> refColumns) {
+            if (table instanceof IcebergTable) {
+                return new RowPositionDescriptor(RowPositionDescriptor.Type.ICEBERG_V3, new SlotId(execNodeColumn.getId()),
+                        refColumns.stream().map(columnRefOperator -> new SlotId(columnRefOperator.getId()))
+                                .collect(Collectors.toList()));
+            }
+            return null;
+        }
+
         @Override
         public PlanFragment visitPhysicalLookUp(OptExpression optExpression, ExecPlan context) {
             PhysicalLookUpOperator lookUpOperator = (PhysicalLookUpOperator) optExpression.getOp();
 
-            Map<ColumnRefOperator, Set<ColumnRefOperator>> rowidToColumns = lookUpOperator.getRowidToColumns();
-            Map<ColumnRefOperator, Table> rowidToTable = lookUpOperator.getRowidToTable();
+            Map<ColumnRefOperator, Table> rowIdToTable = lookUpOperator.getRowIdToTable();
+            Map<ColumnRefOperator, List<ColumnRefOperator>> rowIdToRefColumns = lookUpOperator.getRowIdToRefColumns();
+            Map<ColumnRefOperator, Set<ColumnRefOperator>> rowIdToLazyColumns = lookUpOperator.getRowIdToLazyColumns();
             Map<ColumnRefOperator, Column> columnRefOperatorColumnMap = lookUpOperator.getColumnRefOperatorColumnMap();
 
             List<TupleDescriptor> tupleDescriptors = Lists.newArrayList();
             List<Table> tables = Lists.newArrayList();
-            Map<TupleId, SlotId> rowidSlots = new HashMap<>();
-            for (Map.Entry<ColumnRefOperator, Set<ColumnRefOperator>> entry : rowidToColumns.entrySet()) {
-                Preconditions.checkState(rowidToTable.containsKey(entry.getKey()));
-                Table table = rowidToTable.get(entry.getKey());
+            Map<TupleId, RowPositionDescriptor> rowPositionDescriptorMap = new HashMap<>();
+            for (Map.Entry<ColumnRefOperator, Set<ColumnRefOperator>> entry : rowIdToLazyColumns.entrySet()) {
+                Preconditions.checkState(rowIdToTable.containsKey(entry.getKey()));
+                Table table = rowIdToTable.get(entry.getKey());
                 Set<ColumnRefOperator> columns = entry.getValue();
 
                 TupleDescriptor tupleDescriptor = context.getDescTbl().createTupleDescriptor();
@@ -4352,7 +4368,10 @@ public class PlanFragmentBuilder {
                     slotDescriptor.setIsNullable(columnRefOperator.isNullable());
                     context.getColRefToExpr().put(columnRefOperator, new SlotRef(columnRefOperator.toString(), slotDescriptor));
                 }
-                rowidSlots.put(tupleDescriptor.getId(), new SlotId(entry.getKey().getId()));
+                // @TODO update RowPositionDecs
+                List<ColumnRefOperator> rowIdRefColumns = rowIdToRefColumns.get(entry.getKey());
+                RowPositionDescriptor rowPositionDescriptor = buildRowPositionDescriptor(table, entry.getKey(), rowIdRefColumns);
+                rowPositionDescriptorMap.put(tupleDescriptor.getId(), rowPositionDescriptor);
 
                 tupleDescriptor.computeMemLayout();
                 tables.add(table);
@@ -4360,7 +4379,7 @@ public class PlanFragmentBuilder {
 
             }
 
-            LookUpNode lookUpNode = new LookUpNode(context.getNextNodeId(), tupleDescriptors, rowidSlots);
+            LookUpNode lookUpNode = new LookUpNode(context.getNextNodeId(), tupleDescriptors, rowPositionDescriptorMap);
             PlanFragment fragment = new PlanFragment(context.getNextFragmentId(), lookUpNode, DataPartition.RANDOM);
             fragment.setPlanRoot(lookUpNode);
             fragment.setSink(new NoopSink());

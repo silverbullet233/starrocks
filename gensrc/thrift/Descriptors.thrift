@@ -38,13 +38,16 @@ namespace java com.starrocks.thrift
 include "Types.thrift"
 include "Exprs.thrift"
 
-enum TRowIDType {
-    ICEBERG_V3_ROW_ID,
+enum TRowPositionType {
+    ICEBERG_V3_ROW_POSITION,
 }
 
-// used to describe row_id for different tables
-struct TRowIDDescriptor {
-    1: optional TRowIDType row_id_type;
+// used to describe row position for different tables
+struct TRowPositionDescriptor {
+    1: optional TRowPositionType row_position_type;
+    // which node used to do fetch operation
+    2: optional Types.TSlotId source_node_slot;
+    3: optional list<Types.TSlotId> ref_slots;
 }
 
 struct TSlotDescriptor {
@@ -65,8 +68,6 @@ struct TSlotDescriptor {
   // for example, the physical name of a column in a parquet file.
   // used in delta lake column mapping name mode
   14: optional string col_physical_name
-  // used to describe row_id, only used in global late materialization
-  15: optional TRowIDDescriptor row_id_desc;
 }
 
 struct TTupleDescriptor {

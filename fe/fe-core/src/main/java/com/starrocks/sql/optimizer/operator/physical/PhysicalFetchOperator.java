@@ -33,26 +33,33 @@ import java.util.Set;
 public class PhysicalFetchOperator extends PhysicalOperator {
 
     // row id column ref -> Table
-    Map<ColumnRefOperator, Table> rowidToTable;
+    Map<ColumnRefOperator, Table> rowIdToTable;
+    Map<ColumnRefOperator, List<ColumnRefOperator>> rowIdToRefColumns;
     // row id column ref -> fetched columns
-    Map<ColumnRefOperator, Set<ColumnRefOperator>> rowidToColumns;
+    Map<ColumnRefOperator, Set<ColumnRefOperator>> rowIdToLazyColumns;
     Map<ColumnRefOperator, Column> columnRefOperatorColumnMap;
 
-    public PhysicalFetchOperator(Map<ColumnRefOperator, Table> rowidToTable,
-                                 Map<ColumnRefOperator, Set<ColumnRefOperator>> rowidToColumns,
+    public PhysicalFetchOperator(Map<ColumnRefOperator, Table> rowIdToTable,
+                                 Map<ColumnRefOperator, List<ColumnRefOperator>> rowIdToRefColumns,
+                                 Map<ColumnRefOperator, Set<ColumnRefOperator>> rowIdToLazyColumns,
                                  Map<ColumnRefOperator, Column> columnRefOperatorColumnMap) {
         super(OperatorType.PHYSICAL_FETCH);
-        this.rowidToTable = rowidToTable;
-        this.rowidToColumns = rowidToColumns;
+        this.rowIdToTable = rowIdToTable;
+        this.rowIdToRefColumns = rowIdToRefColumns;
+        this.rowIdToLazyColumns = rowIdToLazyColumns;
         this.columnRefOperatorColumnMap = columnRefOperatorColumnMap;
     }
 
-    public Map<ColumnRefOperator, Table> getRowidToTable() {
-        return rowidToTable;
+    public Map<ColumnRefOperator, Table> getRowIdToTable() {
+        return rowIdToTable;
     }
 
-    public Map<ColumnRefOperator, Set<ColumnRefOperator>> getRowidToColumns() {
-        return rowidToColumns;
+    public Map<ColumnRefOperator, List<ColumnRefOperator>> getRowIdToRefColumns() {
+        return rowIdToRefColumns;
+    }
+
+    public Map<ColumnRefOperator, Set<ColumnRefOperator>> getRowIdToLazyColumns() {
+        return rowIdToLazyColumns;
     }
 
     @Override
@@ -85,9 +92,10 @@ public class PhysicalFetchOperator extends PhysicalOperator {
             return false;
         }
         PhysicalFetchOperator that = (PhysicalFetchOperator) o;
-        return Objects.equals(rowidToColumns, that.rowidToColumns) &&
-                Objects.equals(rowidToTable, that.rowidToTable) &&
-                Objects.equals(columnRefOperatorColumnMap, that.columnRefOperatorColumnMap);
+        return Objects.equals(rowIdToTable, that.rowIdToTable)
+                && Objects.equals(rowIdToRefColumns, that.rowIdToRefColumns)
+                && Objects.equals(rowIdToLazyColumns, that.rowIdToLazyColumns)
+                && Objects.equals(columnRefOperatorColumnMap, that.columnRefOperatorColumnMap);
     }
 
 }

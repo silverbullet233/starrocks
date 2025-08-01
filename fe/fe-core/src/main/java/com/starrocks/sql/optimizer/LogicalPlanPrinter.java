@@ -743,7 +743,7 @@ public class LogicalPlanPrinter {
             }
 
             PhysicalFetchOperator op = (PhysicalFetchOperator) optExpression.getOp();
-            Map<ColumnRefOperator, Set<ColumnRefOperator>> rowidToColumns = op.getRowidToColumns();
+            Map<ColumnRefOperator, Set<ColumnRefOperator>> rowidToColumns = op.getRowIdToLazyColumns();
             StringBuilder sb = new StringBuilder("FETCH (columns");
             sb.append(rowidToColumns.entrySet().stream().map(entry -> {
                 Set<ColumnRefOperator> columns = entry.getValue();

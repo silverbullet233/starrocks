@@ -1332,19 +1332,20 @@ struct TStreamAggregationNode {
   24: optional i32 agg_func_set_version = 1
 }
 
-struct TFetchColumns {
-  1: optional list<Types.TSlotId> slot_ids
-}
-
 struct TFetchNode {
   1: optional i32 target_node_id
+  // @TODO do we need tuples?
   2: optional list<Types.TTupleId> tuples
-  3: optional map<Types.TTupleId, Types.TSlotId> row_id_slots;
+  // row_id_desc for each tuple
+  3: optional map<Types.TTupleId, Descriptors.TRowPositionDescriptor> row_pos_descs;
+  // @TODO slot_id -> ref_slot_ids
   4: optional Descriptors.TNodesInfo nodes_info
 }
 
 struct TLookUpNode {
-  1: optional map<Types.TTupleId, Types.TSlotId> row_id_slots;
+  // 1: optional map<Types.TTupleId, Types.TSlotId> row_id_slots;
+  // @TODO put it into tuple descriptor?
+  1: optional map<Types.TTupleId, Descriptors.TRowPositionDescriptor> row_pos_descs;
 }
 
 // This is essentially a union of all messages corresponding to subclasses

@@ -21,9 +21,11 @@
 #include "common/config.h"
 #include "common/global_types.h"
 #include "common/status.h"
+#include "common/statusor.h"
 #include "exec/olap_scan_node.h"
 #include "exec/pipeline/fetch_processor.h"
 #include "exec/pipeline/fragment_context.h"
+#include "exec/pipeline/lookup_request.h"
 #include "exec/pipeline/operator.h"
 #include "exec/pipeline/scan/olap_scan_context.h"
 #include "exec/sorting/sort_helper.h"
@@ -66,32 +68,39 @@ public:
 
     Status process(RuntimeState* state);
 
-    void set_ctx(std::shared_ptr<LookUpContext> ctx) {
-        DCHECK(ctx != nullptr && !ctx->requests.empty()) << "request should not be empty";
+    void set_ctx(LookUpTaskContextPtr ctx) {
+        DCHECK(ctx != nullptr && !ctx->request_ctxs.empty()) << "request_ctxs should not be empty";
         _ctx = std::move(ctx);
     }
 
 private:
-    typedef phmap::flat_hash_map<SlotId, RowIdColumn::Ptr> RowIdColumnMap;
-    Status _collect_request_row_id_columns(LookUpContext* ctx, RowIdColumnMap* row_id_columns);
+    // typedef phmap::flat_hash_map<SlotId, RowIdColumn::Ptr> RowIdColumnMap;
+    // Status _collect_request_row_id_columns(LookUpContext* ctx, RowIdColumnMap* row_id_columns);
 
-    Status _lookup_by_row_ids(RuntimeState* state, const RowIdColumnMap& row_id_columns);
+    // collect input columns into one chunk
+    Status _collect_input_columns(RuntimeState* state, ChunkPtr request_chunk);
+
+    // Status _lookup_by_row_ids(RuntimeState* state, const RowIdColumnMap& row_id_columns);
 
     // seg_id -> scan range
-    typedef std::map<int32_t, std::shared_ptr<SparseRange<rowid_t>>> SegmentRangeMap;
-    StatusOr<ChunkPtr> _calculate_scan_ranges(const RowIdColumn::Ptr& row_id_column, SlotId row_id_slot_id,
-                                              SegmentRangeMap* segment_ranges, Buffer<uint32_t>* replicated_offsets);
+    // typedef std::map<int32_t, std::shared_ptr<SparseRange<rowid_t>>> SegmentRangeMap;
+    // StatusOr<ChunkPtr> _calculate_scan_ranges(const RowIdColumn::Ptr& row_id_column, SlotId row_id_slot_id,
+    //                                           SegmentRangeMap* segment_ranges, Buffer<uint32_t>* replicated_offsets);
 
-    StatusOr<ChunkPtr> _get_data_from_storage(RuntimeState* state, const std::vector<SlotDescriptor*>& slots,
-                                              const SegmentRangeMap& segment_ranges);
+    // StatusOr<ChunkPtr> _get_data_from_storage(RuntimeState* state, const std::vector<SlotDescriptor*>& slots,
+    //                                           const SegmentRangeMap& segment_ranges);
 
-    Status _fill_response(const ChunkPtr& result_chunk, SlotId row_id_slot, const std::vector<SlotDescriptor*>& slots);
+    // Status _fill_response(const ChunkPtr& result_chunk, SlotId row_id_slot, const std::vector<SlotDescriptor*>& slots);
 
-    Status _deserialize_row_id_columns(RemoteLookUpRequest& request, RowIdColumnMap* row_id_columns);
+    // Status _deserialize_row_id_columns(RemoteLookUpRequest& request, RowIdColumnMap* row_id_columns);
 
-    StatusOr<ChunkPtr> _sort_chunk(RuntimeState* state, const ChunkPtr& chunk, const Columns& order_by_columns);
+    // StatusOr<ChunkPtr> _sort_chunk(RuntimeState* state, const ChunkPtr& chunk, const Columns& order_by_columns);
+    
+    // @TODO create task from ctx
+    StatusOr<LookUpTaskPtr> _create_task(const LookUpTaskContextPtr& ctx);
 
-    std::shared_ptr<LookUpContext> _ctx;
+
+    LookUpTaskContextPtr _ctx;
     std::atomic_bool _is_running = false;
 
     Permutation _permutation;
@@ -121,377 +130,400 @@ void LookUpProcessor::close() {
     COUNTER_UPDATE(_parent->_cached_pages_num_counter, _stats.cached_pages_num);
     COUNTER_UPDATE(_parent->_total_columns_data_page_count, _stats.total_columns_data_page_count);
 }
-
-Status LookUpProcessor::_collect_request_row_id_columns(LookUpContext* ctx, RowIdColumnMap* row_id_columns) {
-    SCOPED_TIMER(_parent->_collect_request_row_id_columns_timer);
-    for (auto& request : ctx->requests) {
-        RETURN_IF_ERROR(std::visit(
-                [&](auto& request) {
-                    int64_t pending_time = MonotonicNanos() - request.receive_ts;
-                    COUNTER_UPDATE(_parent->_request_pending_time, pending_time);
-                    if constexpr (std::is_same_v<std::decay_t<decltype(request)>, LocalLookUpRequest>) {
-                        VLOG_ROW << "[GLM] LocalLookUpRequest pending time: " << (pending_time * 1.0) / 1000000
-                                 << "ms, plan_node_id:" << _parent->_plan_node_id;
-
-                        for (const auto& [slot_id, columns] : *(request.fetch_ctx->request_columns)) {
-                            auto row_id_column = RowIdColumn::static_pointer_cast(columns.first);
-                            auto [iter, _] = row_id_columns->try_emplace(slot_id, RowIdColumn::create());
-                            iter->second->append(*row_id_column, 0, row_id_column->size());
-                        }
-                        return Status::OK();
-                    } else if constexpr (std::is_same_v<std::decay_t<decltype(request)>, RemoteLookUpRequest>) {
-                        VLOG_ROW << "[GLM] RemoteLookUpRequest pending time: " << (pending_time * 1.0) / 1000000
-                                 << "ms, plan_node_id:" << _parent->_plan_node_id << ", " << (void*)_parent
-                                 << ", dispatcher: " << (void*)_parent->_dispatcher.get();
-                        return _deserialize_row_id_columns(request, row_id_columns);
-                    } else {
-                        DCHECK(false) << "unknown request type";
-                        return Status::InternalError("unknown request type");
-                    }
-                },
-                request));
+// collect all input columns into one chunk
+Status LookUpProcessor::_collect_input_columns(RuntimeState* state, ChunkPtr request_chunk) {
+    DCHECK(_parent->_row_pos_descs.contains(_ctx->request_tuple_id)) << "missing request tuple id: " << _ctx->request_tuple_id;
+    auto row_pos_desc = _parent->_row_pos_descs.at(_ctx->request_tuple_id);
+    for (const auto& slot_id: row_pos_desc->get_ref_slot_ids()) {
+        // @TODO cache slot desc
+        auto slot_desc = state->desc_tbl().get_slot_descriptor(slot_id);
+        auto col = ColumnHelper::create_column(slot_desc->type(), slot_desc->is_nullable());
+        request_chunk->append_column(std::move(col), slot_desc->id());
     }
 
-    return Status::OK();
-}
-
-StatusOr<ChunkPtr> LookUpProcessor::_calculate_scan_ranges(const RowIdColumn::Ptr& row_id_column, SlotId row_id_slot_id,
-                                                           SegmentRangeMap* segment_ranges,
-                                                           Buffer<uint32_t>* replicate_offsets) {
-    SCOPED_TIMER(_parent->_calculate_scan_ranges_timer);
-    UInt32Column::Ptr position_column = UInt32Column::create();
-    position_column->resize_uninitialized(row_id_column->size());
-    auto& position_data = position_column->get_data();
-    for (size_t i = 0; i < row_id_column->size(); i++) {
-        position_data[i] = i;
-    }
-
-    auto chunk = std::make_shared<Chunk>();
-    chunk->append_column(row_id_column, row_id_slot_id);
-    chunk->append_column(position_column, Chunk::SORT_ORDINAL_COLUMN_SLOT_ID);
-    chunk->check_or_die();
-
-    // sort chunk by seg_id and ord_id
-    ASSIGN_OR_RETURN(auto sorted_chunk,
-                     _sort_chunk(_parent->runtime_state(), chunk,
-                                 {row_id_column->seg_ids_column(), row_id_column->ord_ids_column()}));
-
-    const auto& ordered_row_id_column =
-            down_cast<RowIdColumn*>(sorted_chunk->get_column_by_slot_id(row_id_slot_id).get());
-    const auto& seg_ids = UInt32Column::static_pointer_cast(ordered_row_id_column->seg_ids_column())->get_data();
-    const auto& ord_ids = UInt32Column::static_pointer_cast(ordered_row_id_column->ord_ids_column())->get_data();
-    size_t num_rows = ordered_row_id_column->size();
-
-    // build sparse range for each segment
-    uint32_t cur_seg_id = seg_ids[0];
-    uint32_t cur_ord_id = ord_ids[0];
-    Range<rowid_t> cur_range(cur_ord_id, cur_ord_id + 1);
-
-    replicate_offsets->emplace_back(0);
-    replicate_offsets->emplace_back(1);
-
-    bool has_duplicated_row = false;
-    // @TODO(silverbullet233): `try_emplace` will be called so many times in the following loop,
-    // we should use a better data structure.
-    for (size_t i = 1; i < num_rows; i++) {
-        uint32_t seg_id = seg_ids[i];
-        uint32_t ord_id = ord_ids[i];
-        if (seg_id == cur_seg_id) {
-            // same segment, check if need add a new range
-            if (ord_id == cur_range.end() - 1) {
-                // duplicated ord_ids, do nothing, we should mark which idx is duplicated
-                replicate_offsets->back()++;
-                has_duplicated_row = true;
-                continue;
-            }
-            if (ord_id == cur_range.end()) {
-                // continous range, just expand current range
-                cur_range.expand(1);
-            } else {
-                // not continous, add the old one into seg_ranges
-                auto [iter, _] = segment_ranges->try_emplace(cur_seg_id, std::make_shared<SparseRange<rowid_t>>());
-                iter->second->add(cur_range);
-                cur_range = Range<rowid_t>(ord_id, ord_id + 1);
-            }
-        } else {
-            // move to next segment, we should add the old range into seg_ranges
-            auto [iter, _] = segment_ranges->try_emplace(cur_seg_id, std::make_shared<SparseRange<rowid_t>>());
-            iter->second->add(cur_range);
-            // reset all
-            cur_seg_id = seg_id;
-            cur_range = Range<rowid_t>(ord_id, ord_id + 1);
-        }
-        replicate_offsets->emplace_back(replicate_offsets->back() + 1);
-    }
-    // handle the last one
-    auto [iter, _] = segment_ranges->try_emplace(cur_seg_id, std::make_shared<SparseRange<rowid_t>>());
-    iter->second->add(cur_range);
-
-    // if there is no duplicated row, clear replicate_offsets
-    if (!has_duplicated_row) {
-        replicate_offsets->clear();
-    }
-
-    return sorted_chunk;
-}
-
-StatusOr<ChunkPtr> LookUpProcessor::_get_data_from_storage(RuntimeState* state,
-                                                           const std::vector<SlotDescriptor*>& slots,
-                                                           const SegmentRangeMap& segment_ranges) {
-    SCOPED_TIMER(_parent->_get_data_from_storage_timer);
-    ChunkPtr result_chunk;
-
-    auto* glm_ctx = state->query_ctx()->global_late_materialization_ctx();
-    for (const auto& [seg_id, range] : segment_ranges) {
-        const auto& segment_info = glm_ctx->get_segment(seg_id);
-        auto segment = segment_info.segment;
-        DCHECK(segment_info.fs != nullptr) << "segment fs should not be null, seg_id: " << seg_id;
-        auto tablet_schema = segment->tablet_schema_share_ptr();
-        const auto& global_dict_map = state->get_query_global_dict_map();
-        std::unique_ptr<ColumnIdToGlobalDictMap> global_dict(new ColumnIdToGlobalDictMap());
-
-        // @TODO(silverbullet233): can we cache these info for each segment
-        std::vector<ColumnId> cids;
-        phmap::flat_hash_map<ColumnId, SlotId> cid_to_slot_id;
-        for (const auto& slot : slots) {
-            auto idx = tablet_schema->field_index(slot->col_name());
-            DCHECK(idx != static_cast<size_t>(-1)) << "column not found: " << slot->col_name();
-            cids.push_back(idx);
-            cid_to_slot_id[idx] = slot->id();
-            if (auto iter = global_dict_map.find(slot->id()); iter != global_dict_map.end()) {
-                auto& dict_map = iter->second.first;
-                global_dict->emplace(idx, const_cast<GlobalDictMap*>(&dict_map));
-            }
-        }
-        Schema schema = ChunkHelper::convert_schema(tablet_schema, cids);
-        SegmentReadOptions options;
-        options.fs = segment_info.fs;
-        options.tablet_schema = tablet_schema;
-        options.stats = &_stats;
-        options.global_dictmaps = global_dict.get();
-        options.rowid_range_option = range;
-        auto segment_iterator = new_segment_iterator(segment, schema, options);
-        RETURN_IF_ERROR(segment_iterator->init_encoded_schema(*global_dict));
-
-        ChunkPtr tmp;
-        do {
-            tmp.reset(ChunkHelper::new_chunk_pooled(segment_iterator->output_schema(), state->chunk_size()));
-            auto status = segment_iterator->get_next(tmp.get());
-            if (status.is_end_of_file()) {
-                break;
-            } else if (!status.ok()) {
-                LOG(WARNING) << "get next segment iterator failed: " << status.to_string();
-                return status;
-            }
-
-            if (tmp->is_empty()) {
-                break;
-            }
-
-            if (result_chunk == nullptr) {
-                result_chunk = std::make_shared<Chunk>();
-                for (const auto& [cid, idx] : tmp->get_column_id_to_index_map()) {
-                    auto column = tmp->get_column_by_index(idx);
-                    SlotId slot_id = cid_to_slot_id[cid];
-                    result_chunk->append_or_update_column(std::move(column), slot_id);
-                }
-            } else {
-                for (const auto& [cid, idx] : tmp->get_column_id_to_index_map()) {
-                    auto column = tmp->get_column_by_index(idx);
-                    SlotId slot_id = cid_to_slot_id[cid];
-                    result_chunk->get_column_by_slot_id(slot_id)->append(*column);
-                }
-            }
-
-        } while (true);
-    }
-
-    return result_chunk;
-}
-
-Status LookUpProcessor::_fill_response(const ChunkPtr& result_chunk, SlotId row_id_slot,
-                                       const std::vector<SlotDescriptor*>& slots) {
-    SCOPED_TIMER(_parent->_fill_response_timer);
-    size_t offset = 0;
-    for (auto& request : _ctx->requests) {
-        RETURN_IF_ERROR(std::visit(
-                [&](auto& request) {
-                    if constexpr (std::is_same_v<std::decay_t<decltype(request)>, LocalLookUpRequest>) {
-                        auto& fetch_ctx = request.fetch_ctx;
-                        if (!fetch_ctx->request_columns->contains(row_id_slot)) {
-                            return Status::OK();
-                        }
-
-                        auto [row_id_column, _] = fetch_ctx->request_columns->at(row_id_slot);
-                        size_t num_rows = row_id_column->size();
-                        for (const auto& slot : slots) {
-                            auto src_column = result_chunk->get_column_by_slot_id(slot->id());
-                            auto dst_column = src_column->clone_empty();
-                            dst_column->append(*src_column, offset, num_rows);
-                            fetch_ctx->response_columns[slot->id()] = std::move(dst_column);
-                        }
-                        offset += num_rows;
-                        return Status::OK();
-                    } else if constexpr (std::is_same_v<std::decay_t<decltype(request)>, RemoteLookUpRequest>) {
-                        if (!request.request_columns.contains(row_id_slot)) {
-                            return Status::OK();
-                        }
-                        size_t num_rows = request.request_columns.at(row_id_slot)->size();
-
-                        std::vector<ColumnPtr> columns;
-                        size_t max_serialize_size = 0;
-
-                        for (const auto& slot : slots) {
-                            auto src_column = result_chunk->get_column_by_slot_id(slot->id());
-                            auto dst_column = src_column->clone_empty();
-                            dst_column->append(*src_column, offset, num_rows);
-                            max_serialize_size += serde::ColumnArraySerde::max_serialized_size(*dst_column);
-                            columns.emplace_back(std::move(dst_column));
-                        }
-
-                        _serialize_buffer.resize(max_serialize_size);
-                        uint8_t* buff = reinterpret_cast<uint8_t*>(_serialize_buffer.data());
-                        uint8_t* begin = buff;
-                        for (size_t i = 0; i < slots.size(); i++) {
-                            auto column = columns[i];
-                            auto pcolumn = request.response->add_columns();
-                            pcolumn->set_slot_id(slots[i]->id());
-                            uint8_t* start = buff;
-                            buff = serde::ColumnArraySerde::serialize(*column, buff);
-                            pcolumn->set_data_size(buff - start);
-                        }
-                        size_t actual_serialize_size = buff - begin;
-                        auto* cntl = static_cast<brpc::Controller*>(request.cntl);
-                        cntl->response_attachment().append(_serialize_buffer.data(), actual_serialize_size);
-                        offset += num_rows;
-
-                        return Status::OK();
-                    } else {
-                        DCHECK(false) << "unknown request type";
-                        return Status::InternalError("unknown request type");
-                    }
-                },
-                request));
-    }
-    DCHECK_EQ(offset, result_chunk->num_rows())
-            << "offset not match, offset: " << offset << ", num_rows: " << result_chunk->num_rows();
-    return Status::OK();
-}
-
-StatusOr<ChunkPtr> LookUpProcessor::_sort_chunk(RuntimeState* state, const ChunkPtr& chunk,
-                                                const Columns& order_by_columns) {
-    // @TODO(silverbullet233): reuse sort descs
-    SortDescs sort_descs;
-    sort_descs.descs.reserve(order_by_columns.size());
-    for (size_t i = 0; i < order_by_columns.size(); i++) {
-        sort_descs.descs.emplace_back(true, true);
-    }
-    _permutation.resize(0);
-
-    RETURN_IF_ERROR(sort_and_tie_columns(state->cancelled_ref(), order_by_columns, sort_descs, &_permutation));
-    auto sorted_chunk = chunk->clone_empty_with_slot(chunk->num_rows());
-    materialize_by_permutation(sorted_chunk.get(), {chunk}, _permutation);
-
-    return sorted_chunk;
-}
-
-Status LookUpProcessor::_lookup_by_row_ids(RuntimeState* state, const RowIdColumnMap& row_id_columns) {
-    SCOPED_TIMER(_parent->_lookup_by_row_ids_timer);
-    for (const auto& [tuple_id, slot_id] : _parent->_row_id_slots) {
-        if (!row_id_columns.contains(slot_id)) {
-            continue;
-        }
-        const auto& row_id_column = row_id_columns.at(slot_id);
-        SegmentRangeMap segment_ranges;
-        Buffer<uint32_t> replicate_offsets;
-
-        // sort by row_id
-        ASSIGN_OR_RETURN(auto sorted_chunk,
-                         _calculate_scan_ranges(row_id_column, slot_id, &segment_ranges, &replicate_offsets));
-        const auto& tuple_desc = state->desc_tbl().get_tuple_descriptor(tuple_id);
-        const auto& slots = tuple_desc->slots();
-
-        ASSIGN_OR_RETURN(auto result_chunk, _get_data_from_storage(state, slots, segment_ranges));
-
-        auto unordered_position_column = sorted_chunk->get_column_by_slot_id(Chunk::SORT_ORDINAL_COLUMN_SLOT_ID);
-        if (!replicate_offsets.empty()) {
-            // if there are duplicated rows, we need to replicate the data
-            for (const auto& [slot_id, _] : result_chunk->get_slot_id_to_index_map()) {
-                auto old_column = result_chunk->get_column_by_slot_id(slot_id);
-                ASSIGN_OR_RETURN(auto new_column, old_column->replicate(replicate_offsets));
-                result_chunk->append_or_update_column(std::move(new_column), slot_id);
-            }
-            result_chunk->check_or_die();
-        }
-        DCHECK_EQ(row_id_column->size(), result_chunk->num_rows());
-
-        // add position column
-        result_chunk->append_column(unordered_position_column, Chunk::SORT_ORDINAL_COLUMN_SLOT_ID);
-        result_chunk->check_or_die();
-
-        // re-sort by position
-        ASSIGN_OR_RETURN(auto sorted_result_chunk, _sort_chunk(state, result_chunk, {unordered_position_column}));
-        // fill response
-        RETURN_IF_ERROR(_fill_response(sorted_result_chunk, slot_id, slots));
+    for (auto& request_ctx : _ctx->request_ctxs) {
+        RETURN_IF_ERROR(request_ctx->collect_input_columns(request_chunk));
     }
     return Status::OK();
+}
+
+// Status LookUpProcessor::_collect_request_row_id_columns(LookUpContext* ctx, RowIdColumnMap* row_id_columns) {
+//     SCOPED_TIMER(_parent->_collect_request_row_id_columns_timer);
+//     for (auto& request : ctx->requests) {
+//         RETURN_IF_ERROR(std::visit(
+//                 [&](auto& request) {
+//                     int64_t pending_time = MonotonicNanos() - request.receive_ts;
+//                     COUNTER_UPDATE(_parent->_request_pending_time, pending_time);
+//                     if constexpr (std::is_same_v<std::decay_t<decltype(request)>, LocalLookUpRequest>) {
+//                         VLOG_ROW << "[GLM] LocalLookUpRequest pending time: " << (pending_time * 1.0) / 1000000
+//                                  << "ms, plan_node_id:" << _parent->_plan_node_id;
+
+//                         for (const auto& [slot_id, columns] : *(request.fetch_ctx->request_columns)) {
+//                             auto row_id_column = RowIdColumn::static_pointer_cast(columns.first);
+//                             auto [iter, _] = row_id_columns->try_emplace(slot_id, RowIdColumn::create());
+//                             iter->second->append(*row_id_column, 0, row_id_column->size());
+//                         }
+//                         return Status::OK();
+//                     } else if constexpr (std::is_same_v<std::decay_t<decltype(request)>, RemoteLookUpRequest>) {
+//                         VLOG_ROW << "[GLM] RemoteLookUpRequest pending time: " << (pending_time * 1.0) / 1000000
+//                                  << "ms, plan_node_id:" << _parent->_plan_node_id << ", " << (void*)_parent
+//                                  << ", dispatcher: " << (void*)_parent->_dispatcher.get();
+//                         return _deserialize_row_id_columns(request, row_id_columns);
+//                     } else {
+//                         DCHECK(false) << "unknown request type";
+//                         return Status::InternalError("unknown request type");
+//                     }
+//                 },
+//                 request));
+//     }
+
+//     return Status::OK();
+// }
+
+// StatusOr<ChunkPtr> LookUpProcessor::_calculate_scan_ranges(const RowIdColumn::Ptr& row_id_column, SlotId row_id_slot_id,
+//                                                            SegmentRangeMap* segment_ranges,
+//                                                            Buffer<uint32_t>* replicate_offsets) {
+//     SCOPED_TIMER(_parent->_calculate_scan_ranges_timer);
+//     UInt32Column::Ptr position_column = UInt32Column::create();
+//     position_column->resize_uninitialized(row_id_column->size());
+//     auto& position_data = position_column->get_data();
+//     for (size_t i = 0; i < row_id_column->size(); i++) {
+//         position_data[i] = i;
+//     }
+
+//     auto chunk = std::make_shared<Chunk>();
+//     chunk->append_column(row_id_column, row_id_slot_id);
+//     chunk->append_column(position_column, Chunk::SORT_ORDINAL_COLUMN_SLOT_ID);
+//     chunk->check_or_die();
+
+//     // sort chunk by seg_id and ord_id
+//     ASSIGN_OR_RETURN(auto sorted_chunk,
+//                      _sort_chunk(_parent->runtime_state(), chunk,
+//                                  {row_id_column->seg_ids_column(), row_id_column->ord_ids_column()}));
+
+//     const auto& ordered_row_id_column =
+//             down_cast<RowIdColumn*>(sorted_chunk->get_column_by_slot_id(row_id_slot_id).get());
+//     const auto& seg_ids = UInt32Column::static_pointer_cast(ordered_row_id_column->seg_ids_column())->get_data();
+//     const auto& ord_ids = UInt32Column::static_pointer_cast(ordered_row_id_column->ord_ids_column())->get_data();
+//     size_t num_rows = ordered_row_id_column->size();
+
+//     // build sparse range for each segment
+//     uint32_t cur_seg_id = seg_ids[0];
+//     uint32_t cur_ord_id = ord_ids[0];
+//     Range<rowid_t> cur_range(cur_ord_id, cur_ord_id + 1);
+
+//     replicate_offsets->emplace_back(0);
+//     replicate_offsets->emplace_back(1);
+
+//     bool has_duplicated_row = false;
+//     // @TODO(silverbullet233): `try_emplace` will be called so many times in the following loop,
+//     // we should use a better data structure.
+//     for (size_t i = 1; i < num_rows; i++) {
+//         uint32_t seg_id = seg_ids[i];
+//         uint32_t ord_id = ord_ids[i];
+//         if (seg_id == cur_seg_id) {
+//             // same segment, check if need add a new range
+//             if (ord_id == cur_range.end() - 1) {
+//                 // duplicated ord_ids, do nothing, we should mark which idx is duplicated
+//                 replicate_offsets->back()++;
+//                 has_duplicated_row = true;
+//                 continue;
+//             }
+//             if (ord_id == cur_range.end()) {
+//                 // continous range, just expand current range
+//                 cur_range.expand(1);
+//             } else {
+//                 // not continous, add the old one into seg_ranges
+//                 auto [iter, _] = segment_ranges->try_emplace(cur_seg_id, std::make_shared<SparseRange<rowid_t>>());
+//                 iter->second->add(cur_range);
+//                 cur_range = Range<rowid_t>(ord_id, ord_id + 1);
+//             }
+//         } else {
+//             // move to next segment, we should add the old range into seg_ranges
+//             auto [iter, _] = segment_ranges->try_emplace(cur_seg_id, std::make_shared<SparseRange<rowid_t>>());
+//             iter->second->add(cur_range);
+//             // reset all
+//             cur_seg_id = seg_id;
+//             cur_range = Range<rowid_t>(ord_id, ord_id + 1);
+//         }
+//         replicate_offsets->emplace_back(replicate_offsets->back() + 1);
+//     }
+//     // handle the last one
+//     auto [iter, _] = segment_ranges->try_emplace(cur_seg_id, std::make_shared<SparseRange<rowid_t>>());
+//     iter->second->add(cur_range);
+
+//     // if there is no duplicated row, clear replicate_offsets
+//     if (!has_duplicated_row) {
+//         replicate_offsets->clear();
+//     }
+
+//     return sorted_chunk;
+// }
+
+// StatusOr<ChunkPtr> LookUpProcessor::_get_data_from_storage(RuntimeState* state,
+//                                                            const std::vector<SlotDescriptor*>& slots,
+//                                                            const SegmentRangeMap& segment_ranges) {
+//     SCOPED_TIMER(_parent->_get_data_from_storage_timer);
+//     ChunkPtr result_chunk;
+
+//     auto* glm_ctx = state->query_ctx()->global_late_materialization_ctx();
+//     for (const auto& [seg_id, range] : segment_ranges) {
+//         const auto& segment_info = glm_ctx->get_segment(seg_id);
+//         auto segment = segment_info.segment;
+//         DCHECK(segment_info.fs != nullptr) << "segment fs should not be null, seg_id: " << seg_id;
+//         auto tablet_schema = segment->tablet_schema_share_ptr();
+//         const auto& global_dict_map = state->get_query_global_dict_map();
+//         std::unique_ptr<ColumnIdToGlobalDictMap> global_dict(new ColumnIdToGlobalDictMap());
+
+//         // @TODO(silverbullet233): can we cache these info for each segment
+//         std::vector<ColumnId> cids;
+//         phmap::flat_hash_map<ColumnId, SlotId> cid_to_slot_id;
+//         for (const auto& slot : slots) {
+//             auto idx = tablet_schema->field_index(slot->col_name());
+//             DCHECK(idx != static_cast<size_t>(-1)) << "column not found: " << slot->col_name();
+//             cids.push_back(idx);
+//             cid_to_slot_id[idx] = slot->id();
+//             if (auto iter = global_dict_map.find(slot->id()); iter != global_dict_map.end()) {
+//                 auto& dict_map = iter->second.first;
+//                 global_dict->emplace(idx, const_cast<GlobalDictMap*>(&dict_map));
+//             }
+//         }
+//         Schema schema = ChunkHelper::convert_schema(tablet_schema, cids);
+//         SegmentReadOptions options;
+//         options.fs = segment_info.fs;
+//         options.tablet_schema = tablet_schema;
+//         options.stats = &_stats;
+//         options.global_dictmaps = global_dict.get();
+//         options.rowid_range_option = range;
+//         auto segment_iterator = new_segment_iterator(segment, schema, options);
+//         RETURN_IF_ERROR(segment_iterator->init_encoded_schema(*global_dict));
+
+//         ChunkPtr tmp;
+//         do {
+//             tmp.reset(ChunkHelper::new_chunk_pooled(segment_iterator->output_schema(), state->chunk_size()));
+//             auto status = segment_iterator->get_next(tmp.get());
+//             if (status.is_end_of_file()) {
+//                 break;
+//             } else if (!status.ok()) {
+//                 LOG(WARNING) << "get next segment iterator failed: " << status.to_string();
+//                 return status;
+//             }
+
+//             if (tmp->is_empty()) {
+//                 break;
+//             }
+
+//             if (result_chunk == nullptr) {
+//                 result_chunk = std::make_shared<Chunk>();
+//                 for (const auto& [cid, idx] : tmp->get_column_id_to_index_map()) {
+//                     auto column = tmp->get_column_by_index(idx);
+//                     SlotId slot_id = cid_to_slot_id[cid];
+//                     result_chunk->append_or_update_column(std::move(column), slot_id);
+//                 }
+//             } else {
+//                 for (const auto& [cid, idx] : tmp->get_column_id_to_index_map()) {
+//                     auto column = tmp->get_column_by_index(idx);
+//                     SlotId slot_id = cid_to_slot_id[cid];
+//                     result_chunk->get_column_by_slot_id(slot_id)->append(*column);
+//                 }
+//             }
+
+//         } while (true);
+//     }
+
+//     return result_chunk;
+// }
+
+// Status LookUpProcessor::_fill_response(const ChunkPtr& result_chunk, SlotId row_id_slot,
+//                                        const std::vector<SlotDescriptor*>& slots) {
+    // SCOPED_TIMER(_parent->_fill_response_timer);
+    // size_t offset = 0;
+    // for (auto& request : _ctx->requests) {
+    //     RETURN_IF_ERROR(std::visit(
+    //             [&](auto& request) {
+    //                 if constexpr (std::is_same_v<std::decay_t<decltype(request)>, LocalLookUpRequest>) {
+    //                     auto& fetch_ctx = request.fetch_ctx;
+    //                     if (!fetch_ctx->request_columns->contains(row_id_slot)) {
+    //                         return Status::OK();
+    //                     }
+
+    //                     auto [row_id_column, _] = fetch_ctx->request_columns->at(row_id_slot);
+    //                     size_t num_rows = row_id_column->size();
+    //                     for (const auto& slot : slots) {
+    //                         auto src_column = result_chunk->get_column_by_slot_id(slot->id());
+    //                         auto dst_column = src_column->clone_empty();
+    //                         dst_column->append(*src_column, offset, num_rows);
+    //                         fetch_ctx->response_columns[slot->id()] = std::move(dst_column);
+    //                     }
+    //                     offset += num_rows;
+    //                     return Status::OK();
+    //                 } else if constexpr (std::is_same_v<std::decay_t<decltype(request)>, RemoteLookUpRequest>) {
+    //                     if (!request.request_columns.contains(row_id_slot)) {
+    //                         return Status::OK();
+    //                     }
+    //                     size_t num_rows = request.request_columns.at(row_id_slot)->size();
+
+    //                     std::vector<ColumnPtr> columns;
+    //                     size_t max_serialize_size = 0;
+
+    //                     for (const auto& slot : slots) {
+    //                         auto src_column = result_chunk->get_column_by_slot_id(slot->id());
+    //                         auto dst_column = src_column->clone_empty();
+    //                         dst_column->append(*src_column, offset, num_rows);
+    //                         max_serialize_size += serde::ColumnArraySerde::max_serialized_size(*dst_column);
+    //                         columns.emplace_back(std::move(dst_column));
+    //                     }
+
+    //                     _serialize_buffer.resize(max_serialize_size);
+    //                     uint8_t* buff = reinterpret_cast<uint8_t*>(_serialize_buffer.data());
+    //                     uint8_t* begin = buff;
+    //                     for (size_t i = 0; i < slots.size(); i++) {
+    //                         auto column = columns[i];
+    //                         auto pcolumn = request.response->add_columns();
+    //                         pcolumn->set_slot_id(slots[i]->id());
+    //                         uint8_t* start = buff;
+    //                         buff = serde::ColumnArraySerde::serialize(*column, buff);
+    //                         pcolumn->set_data_size(buff - start);
+    //                     }
+    //                     size_t actual_serialize_size = buff - begin;
+    //                     auto* cntl = static_cast<brpc::Controller*>(request.cntl);
+    //                     cntl->response_attachment().append(_serialize_buffer.data(), actual_serialize_size);
+    //                     offset += num_rows;
+
+    //                     return Status::OK();
+    //                 } else {
+    //                     DCHECK(false) << "unknown request type";
+    //                     return Status::InternalError("unknown request type");
+    //                 }
+    //             },
+    //             request));
+    // }
+    // DCHECK_EQ(offset, result_chunk->num_rows())
+    //         << "offset not match, offset: " << offset << ", num_rows: " << result_chunk->num_rows();
+//     return Status::OK();
+// }
+
+// StatusOr<ChunkPtr> LookUpProcessor::_sort_chunk(RuntimeState* state, const ChunkPtr& chunk,
+//                                                 const Columns& order_by_columns) {
+//     // @TODO(silverbullet233): reuse sort descs
+//     SortDescs sort_descs;
+//     sort_descs.descs.reserve(order_by_columns.size());
+//     for (size_t i = 0; i < order_by_columns.size(); i++) {
+//         sort_descs.descs.emplace_back(true, true);
+//     }
+//     _permutation.resize(0);
+
+//     RETURN_IF_ERROR(sort_and_tie_columns(state->cancelled_ref(), order_by_columns, sort_descs, &_permutation));
+//     auto sorted_chunk = chunk->clone_empty_with_slot(chunk->num_rows());
+//     materialize_by_permutation(sorted_chunk.get(), {chunk}, _permutation);
+
+//     return sorted_chunk;
+// }
+
+// Status LookUpProcessor::_lookup_by_row_ids(RuntimeState* state, const RowIdColumnMap& row_id_columns) {
+//     SCOPED_TIMER(_parent->_lookup_by_row_ids_timer);
+//     for (const auto& [tuple_id, slot_id] : _parent->_row_id_slots) {
+//         if (!row_id_columns.contains(slot_id)) {
+//             continue;
+//         }
+//         const auto& row_id_column = row_id_columns.at(slot_id);
+//         SegmentRangeMap segment_ranges;
+//         Buffer<uint32_t> replicate_offsets;
+
+//         // sort by row_id
+//         ASSIGN_OR_RETURN(auto sorted_chunk,
+//                          _calculate_scan_ranges(row_id_column, slot_id, &segment_ranges, &replicate_offsets));
+//         const auto& tuple_desc = state->desc_tbl().get_tuple_descriptor(tuple_id);
+//         const auto& slots = tuple_desc->slots();
+
+//         ASSIGN_OR_RETURN(auto result_chunk, _get_data_from_storage(state, slots, segment_ranges));
+
+//         auto unordered_position_column = sorted_chunk->get_column_by_slot_id(Chunk::SORT_ORDINAL_COLUMN_SLOT_ID);
+//         if (!replicate_offsets.empty()) {
+//             // if there are duplicated rows, we need to replicate the data
+//             for (const auto& [slot_id, _] : result_chunk->get_slot_id_to_index_map()) {
+//                 auto old_column = result_chunk->get_column_by_slot_id(slot_id);
+//                 ASSIGN_OR_RETURN(auto new_column, old_column->replicate(replicate_offsets));
+//                 result_chunk->append_or_update_column(std::move(new_column), slot_id);
+//             }
+//             result_chunk->check_or_die();
+//         }
+//         DCHECK_EQ(row_id_column->size(), result_chunk->num_rows());
+
+//         // add position column
+//         result_chunk->append_column(unordered_position_column, Chunk::SORT_ORDINAL_COLUMN_SLOT_ID);
+//         result_chunk->check_or_die();
+
+//         // re-sort by position
+//         ASSIGN_OR_RETURN(auto sorted_result_chunk, _sort_chunk(state, result_chunk, {unordered_position_column}));
+//         // fill response
+//         RETURN_IF_ERROR(_fill_response(sorted_result_chunk, slot_id, slots));
+//     }
+//     return Status::OK();
+// }
+
+StatusOr<LookUpTaskPtr> LookUpProcessor::_create_task(const LookUpTaskContextPtr& ctx) {
+    auto tuple_id = ctx->request_tuple_id;
+    auto row_pos_desc = _parent->_row_pos_descs.at(tuple_id);
+    switch (row_pos_desc->type()) {
+        case RowPositionDescriptor::Type::ICEBERG_V3: {
+            return std::make_shared<IcebergV3LookUpTask>(ctx);
+        }
+        default:
+            return Status::InternalError("unknown row position descriptor type: " + std::to_string(row_pos_desc->type()));
+    }
 }
 
 Status LookUpProcessor::process(RuntimeState* state) {
     SCOPED_TIMER(_parent->_process_time);
     Status status;
     DeferOp op([&]() {
-        for (auto& request : _ctx->requests) {
-            std::visit(
-                    [&](auto& request) {
-                        if constexpr (std::is_same_v<std::decay_t<decltype(request)>, LocalLookUpRequest>) {
-                            request.callback(status);
-                        } else if constexpr (std::is_same_v<std::decay_t<decltype(request)>, RemoteLookUpRequest>) {
-                            status.to_protobuf(request.response->mutable_status());
-                            request.done->Run();
-                        } else {
-                            DCHECK(false) << "unknown request type";
-                        }
-                    },
-                    request);
+        for (auto& request_ctx : _ctx->request_ctxs) {
+            request_ctx->callback(status);
         }
     });
-    COUNTER_UPDATE(_parent->_received_request_count, _ctx->requests.size());
+    // COUNTER_UPDATE(_parent->_received_request_count, _ctx->requests.size());
     COUNTER_UPDATE(_parent->_process_counter, 1);
-
-    phmap::flat_hash_map<SlotId, RowIdColumn::Ptr> row_id_columns;
-    RETURN_IF_ERROR(status = _collect_request_row_id_columns(_ctx.get(), &row_id_columns));
-    RETURN_IF_ERROR(status = _lookup_by_row_ids(state, row_id_columns));
-
-    return Status::OK();
-}
-
-Status LookUpProcessor::_deserialize_row_id_columns(RemoteLookUpRequest& request, RowIdColumnMap* row_id_columns) {
-    request.request_columns.clear();
-    for (size_t i = 0; i < request.request->row_id_columns_size(); i++) {
-        const auto& pcolumn = request.request->row_id_columns(i);
-        int32_t slot_id = pcolumn.slot_id();
-        [[maybe_unused]] int64_t data_size = pcolumn.data_size();
-        RowIdColumn::Ptr row_id_column = RowIdColumn::create();
-        const uint8_t* buff = reinterpret_cast<const uint8_t*>(pcolumn.data().data());
-        auto ret = serde::ColumnArraySerde::deserialize(buff, row_id_column.get());
-        if (ret == nullptr) {
-            LOG(WARNING) << "deserialize row id column error, slot_id: " << slot_id;
-            return Status::InternalError("deserialize row id column error");
-        }
-        //
-        request.request_columns.emplace(slot_id, row_id_column);
-        auto [iter, _] = row_id_columns->try_emplace(slot_id, RowIdColumn::create());
-        iter->second->append(*row_id_column, 0, row_id_column->size());
+    auto request_chunk = std::make_shared<Chunk>();
+    RETURN_IF_ERROR(status = _collect_input_columns(state, request_chunk));
+    /// create task;
+    auto st = _create_task(_ctx);
+    if(!st.ok()) {
+        status = st.status();
+        return status;
     }
+    auto task = st.value();
+    RETURN_IF_ERROR(status = task->process(state));
+
     return Status::OK();
 }
+
+// Status LookUpProcessor::_deserialize_row_id_columns(RemoteLookUpRequest& request, RowIdColumnMap* row_id_columns) {
+//     request.request_columns.clear();
+//     for (size_t i = 0; i < request.request->row_id_columns_size(); i++) {
+//         const auto& pcolumn = request.request->row_id_columns(i);
+//         int32_t slot_id = pcolumn.slot_id();
+//         [[maybe_unused]] int64_t data_size = pcolumn.data_size();
+//         RowIdColumn::Ptr row_id_column = RowIdColumn::create();
+//         const uint8_t* buff = reinterpret_cast<const uint8_t*>(pcolumn.data().data());
+//         auto ret = serde::ColumnArraySerde::deserialize(buff, row_id_column.get());
+//         if (ret == nullptr) {
+//             LOG(WARNING) << "deserialize row id column error, slot_id: " << slot_id;
+//             return Status::InternalError("deserialize row id column error");
+//         }
+//         //
+//         request.request_columns.emplace(slot_id, row_id_column);
+//         auto [iter, _] = row_id_columns->try_emplace(slot_id, RowIdColumn::create());
+//         iter->second->append(*row_id_column, 0, row_id_column->size());
+//     }
+//     return Status::OK();
+// }
 
 LookUpOperator::LookUpOperator(OperatorFactory* factory, int32_t id, int32_t plan_node_id, int32_t driver_sequence,
-                               const phmap::flat_hash_map<TupleId, SlotId>& row_id_slots,
+                               const phmap::flat_hash_map<TupleId, RowPositionDescriptor*>& row_pos_descs,
                                std::shared_ptr<LookUpDispatcher> dispatcher, int32_t max_io_tasks)
         : SourceOperator(factory, id, "look_up", plan_node_id, true, driver_sequence),
-          _row_id_slots(row_id_slots),
+          _row_pos_descs(row_pos_descs),
           _dispatcher(std::move(dispatcher)),
           _max_io_tasks(max_io_tasks) {
     for (int32_t i = 0; i < _max_io_tasks; i++) {
@@ -608,10 +640,12 @@ Status LookUpOperator::_try_to_trigger_io_task(RuntimeState* state) {
     for (int32_t i = 0; i < _max_io_tasks; i++) {
         auto processor = _processors[i];
 
-        auto lookup_ctx = std::make_shared<LookUpContext>();
+        // @TODO create task
+        auto lookup_task_ctx = std::make_shared<LookUpTaskContext>();
         bool is_running = processor->is_running();
-        if (!is_running && _dispatcher->try_get(_driver_sequence, config::max_lookup_batch_request, lookup_ctx.get())) {
-            processor->set_ctx(lookup_ctx);
+        if (!is_running && _dispatcher->try_get(_driver_sequence, config::max_lookup_batch_request, lookup_task_ctx.get())) {
+            processor->set_ctx(lookup_task_ctx);
+            // @TODO create task
             COUNTER_UPDATE(_submit_io_task_counter, 1);
             workgroup::ScanTask task;
             task.workgroup = state->fragment_ctx()->workgroup();
@@ -655,35 +689,23 @@ Status LookUpOperator::_try_to_trigger_io_task(RuntimeState* state) {
 Status LookUpOperator::_clean_request_queue(RuntimeState* state) {
     DCHECK(_is_finished) << "LookUpOperator should be finished before clean request queue, " << (void*)this;
     do {
-        auto ctx = std::make_shared<LookUpContext>();
+        auto ctx = std::make_shared<LookUpTaskContext>();
         if (!_dispatcher->try_get(_driver_sequence, config::max_lookup_batch_request, ctx.get())) {
             // no more request
             break;
         }
-        for (auto& request : ctx->requests) {
-            std::visit(
-                    [&](auto& request) {
-                        if constexpr (std::is_same_v<std::decay_t<decltype(request)>, LocalLookUpRequest>) {
-                            request.callback(Status::Cancelled("LookUpOperator is finished"));
-                        } else if constexpr (std::is_same_v<std::decay_t<decltype(request)>, RemoteLookUpRequest>) {
-                            Status status = Status::Cancelled("LookUpOperator is finished");
-                            status.to_protobuf(request.response->mutable_status());
-                            request.done->Run();
-                        } else {
-                            DCHECK(false) << "unknown request type";
-                        }
-                    },
-                    request);
+        for (auto& request_ctx : ctx->request_ctxs) {
+            request_ctx->callback(Status::Cancelled("LookUpOperator is finished"));
         }
     } while (true);
     return Status::OK();
 }
 
 LookUpOperatorFactory::LookUpOperatorFactory(int32_t id, int32_t plan_node_id,
-                                             phmap::flat_hash_map<TupleId, SlotId> row_id_slots,
+                                             phmap::flat_hash_map<TupleId, RowPositionDescriptor*> row_pos_descs,
                                              std::shared_ptr<LookUpDispatcher> dispatcher, int32_t max_io_tasks)
         : SourceOperatorFactory(id, "lookup", plan_node_id),
-          _row_id_slots(std::move(row_id_slots)),
+          _row_pos_descs(std::move(row_pos_descs)),
           _dispatcher(std::move(dispatcher)),
           _max_io_tasks(max_io_tasks),
           _io_task_group(std::make_shared<workgroup::ScanTaskGroup>()) {}

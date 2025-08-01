@@ -15,6 +15,7 @@
 package com.starrocks.planner;
 
 import com.starrocks.analysis.DescriptorTable;
+import com.starrocks.analysis.RowPositionDescriptor;
 import com.starrocks.analysis.SlotDescriptor;
 import com.starrocks.analysis.SlotId;
 import com.starrocks.analysis.TupleDescriptor;
@@ -37,21 +38,23 @@ import java.util.Map;
 import java.util.stream.Collectors;
 
 public class FetchNode extends PlanNode {
-
     PlanNodeId targetNodeId;
     List<TupleDescriptor> descs;
-    // row id slot for each table
-    Map<TupleId, SlotId> rowidSlots;
+    // @TODO need to distinguish null
+    // row position desc for each table
+    Map<TupleId, RowPositionDescriptor> rowPosDescs;
+    // @TODO slot id to column ref?
     private ComputeResource computeResource = WarehouseManager.DEFAULT_RESOURCE;
+
     public FetchNode(PlanNodeId id, PlanNode inputNode,
                      PlanNodeId targetNodeId, List<TupleDescriptor> descs,
-                     Map<TupleId, SlotId> rowidSlots, ComputeResource computeResource) {
+                     Map<TupleId, RowPositionDescriptor> rowPosDescs, ComputeResource computeResource) {
         super(id, inputNode, "FETCH");
         addChild(inputNode);
         this.targetNodeId = targetNodeId;
         this.descs = descs;
         this.tupleIds.addAll(descs.stream().map(tupleDescriptor -> tupleDescriptor.getId()).collect(Collectors.toList()));
-        this.rowidSlots = rowidSlots;
+        this.rowPosDescs = rowPosDescs;
         this.computeResource = computeResource;
     }
 
@@ -61,10 +64,11 @@ public class FetchNode extends PlanNode {
         msg.fetch_node = new TFetchNode();
         msg.fetch_node.setTarget_node_id(targetNodeId.asInt());
         msg.fetch_node.tuples = descs.stream().map(desc -> desc.getId().asInt()).collect(Collectors.toList());
-        msg.fetch_node.row_id_slots = new HashMap<>();
-        rowidSlots.forEach(((tupleId, slotId) -> {
-            msg.fetch_node.row_id_slots.put(tupleId.asInt(), slotId.asInt());
-        }));
+        msg.fetch_node.row_pos_descs = new HashMap<>();
+        rowPosDescs.forEach((tupleId, rowPosDescs) -> {
+            msg.fetch_node.row_pos_descs.put(tupleId.asInt(), rowPosDescs.toThrift());
+        });
+        // @TODO refactor nodes info
         msg.fetch_node.nodes_info = GlobalStateMgr.getCurrentState().createNodesInfo(computeResource,
                 GlobalStateMgr.getCurrentState().getNodeMgr().getClusterInfo());
     }
@@ -83,8 +87,13 @@ public class FetchNode extends PlanNode {
             output.append(prefix).append("table: ").append(table.getName()).append("\n");
             if (detailLevel.equals(TExplainLevel.VERBOSE)) {
                 // output row id slot
-                SlotId rowIdSlotId = rowidSlots.get(tupleDesc.getId());
-                output.append(prefix + "  <slot " + rowIdSlotId + "> => ROW_ID\n");
+                RowPositionDescriptor rowPositionDescriptor = rowPosDescs.get(tupleDesc.getId());
+                output.append(prefix + " <slot ")
+                        .append(rowPositionDescriptor.getSourceNodeSlot().asInt()).append("> => SOURCE_NODE_ID").append("\n");
+                output.append(prefix + "  <row position slots> => " +
+                        rowPositionDescriptor.getRefSlots().stream()
+                                .map(slotId -> slotId.toString()).collect(
+                                        Collectors.joining(",", "[", "]"))).append("\n");
             }
             List<SlotDescriptor> slotDescs = tupleDesc.getSlots();
             for (SlotDescriptor slotDesc : slotDescs) {

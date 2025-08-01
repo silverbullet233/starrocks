@@ -16,6 +16,7 @@
 
 #include "common/global_types.h"
 #include "exec/exec_node.h"
+#include "runtime/descriptors.h"
 #include "runtime/lookup_stream_mgr.h"
 #include "util/phmap/phmap.h"
 
@@ -41,7 +42,7 @@ public:
             pipeline::PipelineBuilderContext* context) override;
 
 private:
-    phmap::flat_hash_map<TupleId, SlotId> _row_id_slots;
+    phmap::flat_hash_map<TupleId, RowPositionDescriptor*> _row_pos_descs;
     std::shared_ptr<LookUpDispatcher> _dispatcher;
 };
 } // namespace starrocks

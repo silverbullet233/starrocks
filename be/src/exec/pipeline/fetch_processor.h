@@ -28,50 +28,19 @@
 #include "util/bthreads/bthread_shared_mutex.h"
 #include "util/phmap/phmap.h"
 #include "util/raw_container.h"
+#include "exec/pipeline/fetch_task.h"
 
 namespace starrocks::pipeline {
 
-class FetchOperator;
-
-using RequestColumns = phmap::flat_hash_map<uint32_t, std::pair<ColumnPtr, ColumnPtr>>;
-using RequestColumnsPtr = std::shared_ptr<RequestColumns>;
-
-struct FetchContext {
-    // row_id_slot => row_id, position
-    RequestColumnsPtr request_columns;
-    // slot id => column
-    mutable phmap::flat_hash_map<SlotId, ColumnPtr> response_columns;
-    int64_t send_ts = 0;
-    uint32_t be_id;
-};
-using FetchContextPtr = std::shared_ptr<FetchContext>;
-
 class FetchProcessor {
-private:
-    struct BatchUnit {
-        std::vector<ChunkPtr> input_chunks;
-        phmap::flat_hash_map<uint32_t, FetchContextPtr> fetch_ctxs;
-        int32_t total_request_num = 0;
-        std::atomic_int32_t finished_request_num = 0;
-        size_t next_output_idx = 0;
-        bool build_output_done = false;
-        // null rows' position
-        phmap::flat_hash_map<uint32_t, ColumnPtr> missing_positions;
-        std::string debug_string() const;
-
-        bool all_fetch_done() const { return total_request_num == finished_request_num; }
-
-        bool reach_end() const { return next_output_idx >= input_chunks.size(); }
-        ChunkPtr get_next_chunk() { return input_chunks[next_output_idx++]; }
-    };
-    using BatchUnitPtr = std::shared_ptr<BatchUnit>;
-
 public:
-    FetchProcessor(int32_t target_node_id, const phmap::flat_hash_map<TupleId, SlotId>& row_id_slots,
+    friend class IcebergFetchTask;
+
+    FetchProcessor(int32_t target_node_id, const phmap::flat_hash_map<SlotId, RowPositionDescriptor*>& row_pos_descs,
                    const phmap::flat_hash_map<SlotId, SlotDescriptor*>& slot_id_to_desc,
                    std::shared_ptr<StarRocksNodesInfo> nodes_info, std::shared_ptr<LookUpDispatcher> local_dispatcher)
             : _target_node_id(target_node_id),
-              _row_id_slots(row_id_slots),
+              _row_pos_descs(row_pos_descs),
               _slot_id_to_desc(slot_id_to_desc),
               _nodes_info(std::move(nodes_info)),
               _local_dispatcher(std::move(local_dispatcher)) {
@@ -96,15 +65,15 @@ public:
 
 private:
     Status _fetch_data(RuntimeState* state, BatchUnitPtr& unit);
-    StatusOr<ChunkPtr> _build_row_id_chunk(RuntimeState* state, const BatchUnitPtr& unit);
-    Status _gen_request_chunks(RuntimeState* state, const ChunkPtr& chunk,
-                               phmap::flat_hash_map<uint32_t, RequestColumnsPtr>* request_chunks,
-                               // row_id_slot -> null rows' position
-                               phmap::flat_hash_map<uint32_t, ColumnPtr>* null_position_columns = nullptr);
-    Status _send_fetch_request(RuntimeState* state, const BatchUnitPtr& unit,
-                               const phmap::flat_hash_map<uint32_t, RequestColumnsPtr>& request_chunks);
-    Status _send_local_request(RuntimeState* state, const BatchUnitPtr& unit, const FetchContextPtr& fetch_ctx);
-    Status _send_remote_request(RuntimeState* state, const BatchUnitPtr& unit, const FetchContextPtr& fetch_ctx);
+    StatusOr<ChunkPtr> _build_request_chunk(RuntimeState* state, const BatchUnitPtr& unit);
+
+    StatusOr<FetchTaskPtr> _create_fetch_task(TupleId request_tuple_id, const RowPositionDescriptor* row_pos_desc, BatchUnitPtr unit, int32_t source_id, const ChunkPtr& request_chunk);
+
+    Status _gen_fetch_tasks(RuntimeState* state, const ChunkPtr& row_id_chunk, BatchUnitPtr& unit);
+    Status _submit_fetch_tasks(RuntimeState* state, const BatchUnitPtr& unit);
+
+    // Status _send_local_request(RuntimeState* state, const BatchUnitPtr& unit, const FetchContextPtr& fetch_ctx);
+    // Status _send_remote_request(RuntimeState* state, const BatchUnitPtr& unit, const FetchContextPtr& fetch_ctx);
 
     StatusOr<ChunkPtr> _sort_chunk(RuntimeState* state, const ChunkPtr& chunk, const Columns& order_by_columns);
     Status _build_output_chunk(RuntimeState* state, const BatchUnitPtr& unit);
@@ -123,7 +92,7 @@ private:
     }
 
     const int32_t _target_node_id;
-    const phmap::flat_hash_map<TupleId, SlotId>& _row_id_slots;
+    const phmap::flat_hash_map<TupleId, RowPositionDescriptor*>& _row_pos_descs;
     const phmap::flat_hash_map<SlotId, SlotDescriptor*>& _slot_id_to_desc;
     const std::shared_ptr<StarRocksNodesInfo> _nodes_info;
     const std::shared_ptr<LookUpDispatcher> _local_dispatcher;
@@ -159,7 +128,7 @@ using FetchProcessorPtr = std::shared_ptr<FetchProcessor>;
 
 class FetchProcessorFactory {
 public:
-    FetchProcessorFactory(int32_t target_node_id, phmap::flat_hash_map<TupleId, SlotId> row_id_slots,
+    FetchProcessorFactory(int32_t target_node_id, phmap::flat_hash_map<TupleId, RowPositionDescriptor*> row_pos_descs,
                           phmap::flat_hash_map<SlotId, SlotDescriptor*> slot_id_to_desc,
                           std::shared_ptr<StarRocksNodesInfo> nodes_info,
                           std::shared_ptr<LookUpDispatcher> local_dispatcher);
@@ -170,7 +139,8 @@ public:
 
 private:
     int32_t _target_node_id;
-    phmap::flat_hash_map<TupleId, SlotId> _row_id_slots;
+    // phmap::flat_hash_map<TupleId, SlotId> _row_id_slots;
+    phmap::flat_hash_map<TupleId, RowPositionDescriptor*> _row_pos_descs;
     phmap::flat_hash_map<SlotId, SlotDescriptor*> _slot_id_to_desc;
     std::shared_ptr<StarRocksNodesInfo> _nodes_info;
     std::shared_ptr<LookUpDispatcher> _local_dispatcher;

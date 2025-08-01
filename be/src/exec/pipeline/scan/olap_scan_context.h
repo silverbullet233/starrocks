@@ -82,6 +82,7 @@ struct GlobalLateMaterilizationCtx {
 
     std::mutex _mu;
     std::vector<std::unique_ptr<MultiRowsetReleaseGuard>> _rowset_release_guards;
+
 };
 
 class ConcurrentJitRewriter {

@@ -21,6 +21,7 @@
 #include "exec/pipeline/source_operator.h"
 #include "exec/workgroup/scan_task_queue.h"
 #include "exec/workgroup/work_group_fwd.h"
+#include "runtime/descriptors.h"
 #include "runtime/lookup_stream_mgr.h"
 #include "util/runtime_profile.h"
 #include "util/spinlock.h"
@@ -33,7 +34,7 @@ using LookUpProcessorPtr = std::shared_ptr<LookUpProcessor>;
 class LookUpOperator final : public SourceOperator {
 public:
     LookUpOperator(OperatorFactory* factory, int32_t id, int32_t plan_node_id, int32_t driver_sequence,
-                   const phmap::flat_hash_map<TupleId, SlotId>& row_id_slots,
+                   const phmap::flat_hash_map<TupleId, RowPositionDescriptor*>& row_pos_descs,
                    std::shared_ptr<LookUpDispatcher> dispatcher, int32_t max_io_tasks);
 
     Status prepare(RuntimeState* state) override;
@@ -79,7 +80,9 @@ private:
     Status _clean_request_queue(RuntimeState* state);
 
     // const std::vector<TupleId>& _tuple_ids;
-    const phmap::flat_hash_map<TupleId, SlotId>& _row_id_slots;
+    // const phmap::flat_hash_map<TupleId, SlotId>& _row_id_slots;
+    const phmap::flat_hash_map<TupleId, RowPositionDescriptor*>& _row_pos_descs;
+    // @TODO source_slot_id -> SlotDescriptor
     std::shared_ptr<LookUpDispatcher> _dispatcher;
     const int32_t _max_io_tasks;
 
@@ -126,13 +129,13 @@ private:
 
 class LookUpOperatorFactory final : public SourceOperatorFactory {
 public:
-    LookUpOperatorFactory(int32_t id, int32_t plan_node_id, phmap::flat_hash_map<TupleId, SlotId> row_id_slots,
+    LookUpOperatorFactory(int32_t id, int32_t plan_node_id, phmap::flat_hash_map<TupleId, RowPositionDescriptor*> row_pos_descs,
                           std::shared_ptr<LookUpDispatcher> dispatcher, int32_t max_io_tasks);
 
     ~LookUpOperatorFactory() override = default;
 
     OperatorPtr create(int32_t degree_of_parallelism, int32_t driver_sequence) override {
-        return std::make_shared<LookUpOperator>(this, _id, _plan_node_id, driver_sequence, _row_id_slots, _dispatcher,
+        return std::make_shared<LookUpOperator>(this, _id, _plan_node_id, driver_sequence, _row_pos_descs, _dispatcher,
                                                 _max_io_tasks);
     }
     std::shared_ptr<workgroup::ScanTaskGroup> io_task_group() const { return _io_task_group; }
@@ -140,7 +143,7 @@ public:
     bool support_event_scheduler() const override { return true; }
 
 private:
-    phmap::flat_hash_map<TupleId, SlotId> _row_id_slots;
+    phmap::flat_hash_map<TupleId, RowPositionDescriptor*> _row_pos_descs;
     std::shared_ptr<LookUpDispatcher> _dispatcher;
     int32_t _max_io_tasks = 0;
 

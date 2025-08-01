@@ -90,6 +90,7 @@ Status HiveDataSource::open(RuntimeState* state) {
 
     _runtime_state = state;
     _tuple_desc = state->desc_tbl().get_tuple_descriptor(hdfs_scan_node.tuple_id);
+    // @TODO check _source_node_id exists
     _hive_table = dynamic_cast<const HiveTableDescriptor*>(_tuple_desc->table_desc());
     if (_hive_table == nullptr) {
         return Status::RuntimeError(
@@ -823,6 +824,7 @@ Status HiveDataSource::_init_scanner(RuntimeState* state) {
         return Status::InternalError("create hdfs scanner failed");
     }
     _pool.add(scanner);
+    // @TODO copy a scanner into glm ctx?
 
     RETURN_IF_ERROR(scanner->init(state, scanner_params));
     Status st = scanner->open(state);

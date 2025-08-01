@@ -31,29 +31,41 @@ import java.util.Objects;
 import java.util.Set;
 
 public class PhysicalLookUpOperator extends PhysicalOperator {
-
+    // key is a virtual column ref, used to distinguish different table
     // row id column ref -> Table
-    Map<ColumnRefOperator, Table> rowidToTable;
-    // row id column ref -> fetched columns
-    Map<ColumnRefOperator, Set<ColumnRefOperator>> rowidToColumns;
+    Map<ColumnRefOperator, Table> rowIdToTable;
+    // row id column ref -> ref columns
+    // we can use multi columns to describe row position, value is order-sensitive
+    // @TODO: maybe we can use Expr? but I can't see any benifits
+    Map<ColumnRefOperator, List<ColumnRefOperator>> rowIdToRefColumns;
+    // row id column ref -> lazy fetched columns
+    Map<ColumnRefOperator, Set<ColumnRefOperator>> rowIdToLazyColumns;
+    // lazy fetched column -> Column
     Map<ColumnRefOperator, Column> columnRefOperatorColumnMap;
 
-    public PhysicalLookUpOperator(Map<ColumnRefOperator, Table> rowidToTable,
-                                 Map<ColumnRefOperator, Set<ColumnRefOperator>> rowidToColumns,
+    public PhysicalLookUpOperator(Map<ColumnRefOperator, Table> rowIdToTable,
+                                 Map<ColumnRefOperator, List<ColumnRefOperator>> rowIdToRefColumns,
+                                 Map<ColumnRefOperator, Set<ColumnRefOperator>> rowIdToLazyColumns,
                                  Map<ColumnRefOperator, Column> columnRefOperatorColumnMap) {
         super(OperatorType.PHYSICAL_LOOKUP);
-        this.rowidToTable = rowidToTable;
-        this.rowidToColumns = rowidToColumns;
+        this.rowIdToTable = rowIdToTable;
+        this.rowIdToRefColumns = rowIdToRefColumns;
+        this.rowIdToLazyColumns = rowIdToLazyColumns;
         this.columnRefOperatorColumnMap = columnRefOperatorColumnMap;
     }
 
-    public Map<ColumnRefOperator, Table> getRowidToTable() {
-        return rowidToTable;
+    public Map<ColumnRefOperator, Table> getRowIdToTable() {
+        return rowIdToTable;
     }
 
-    public Map<ColumnRefOperator, Set<ColumnRefOperator>> getRowidToColumns() {
-        return rowidToColumns;
+    public Map<ColumnRefOperator, List<ColumnRefOperator>> getRowIdToRefColumns() {
+        return rowIdToRefColumns;
     }
+
+    public Map<ColumnRefOperator, Set<ColumnRefOperator>> getRowIdToLazyColumns() {
+        return rowIdToLazyColumns;
+    }
+
     public Map<ColumnRefOperator, Column> getColumnRefOperatorColumnMap() {
         return columnRefOperatorColumnMap;
     }
@@ -86,8 +98,9 @@ public class PhysicalLookUpOperator extends PhysicalOperator {
             return false;
         }
         PhysicalLookUpOperator that = (PhysicalLookUpOperator) o;
-        return Objects.equals(rowidToColumns, that.rowidToColumns)
-                && Objects.equals(rowidToTable, that.rowidToTable)
+        return Objects.equals(rowIdToTable, that.rowIdToTable)
+                && Objects.equals(rowIdToRefColumns, that.rowIdToRefColumns)
+                && Objects.equals(rowIdToLazyColumns, rowIdToLazyColumns)
                 && Objects.equals(columnRefOperatorColumnMap, that.columnRefOperatorColumnMap);
     }
 
