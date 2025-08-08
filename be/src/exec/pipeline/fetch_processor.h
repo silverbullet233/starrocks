@@ -23,6 +23,7 @@
 #include "column/vectorized_fwd.h"
 #include "common/global_types.h"
 #include "exec/pipeline/fetch_sink_operator.h"
+#include "exec/pipeline/lookup_request.h"
 #include "exec/sorting/sort_permute.h"
 #include "runtime/descriptors.h"
 #include "util/bthreads/bthread_shared_mutex.h"
@@ -34,6 +35,8 @@ namespace starrocks::pipeline {
 
 class FetchProcessor {
 public:
+    friend class LocalLookUpRequestContext;
+    friend class RemoteLookUpRequestContext;
     friend class IcebergFetchTask;
 
     FetchProcessor(int32_t target_node_id, const phmap::flat_hash_map<SlotId, RowPositionDescriptor*>& row_pos_descs,

@@ -291,7 +291,8 @@ Status FileReader::_init_group_readers() {
 
     // @TODO compute first_row_id for each group
     int64_t row_group_first_row_id = _scanner_ctx->scan_range->first_row_id;
-    LOG(INFO) << "FileReader::_init_group_readers, row_group_first_row_id: " << row_group_first_row_id;
+    LOG(INFO) << "FileReader::_init_group_readers, row_group_first_row_id: " << row_group_first_row_id
+        << ", row_group_size: " << _file_metadata->t_metadata().row_groups.size();
     int64_t row_group_first_row = 0;
     // select and create row group readers.
     for (size_t i = 0; i < _file_metadata->t_metadata().row_groups.size(); i++) {
@@ -349,6 +350,7 @@ Status FileReader::get_next(ChunkPtr* chunk) {
     }
 
     if (_cur_row_group_idx < _row_group_size) {
+        LOG(INFO) << "FileReader::get_next, _cur_row_group_idx: " << _cur_row_group_idx << ", _row_group_size: " << _row_group_size;
         size_t row_count = _chunk_size;
         Status status;
         try {

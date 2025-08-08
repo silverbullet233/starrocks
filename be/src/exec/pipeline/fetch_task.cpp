@@ -42,12 +42,12 @@ Status IcebergFetchTask::submit(RuntimeState* state) {
 
     auto* closure = new DisposableClosure<PLookUpResponse, FetchTaskContextPtr>(_ctx);
     closure->addSuccessHandler([this, closure] (const FetchTaskContextPtr& ctx, const PLookUpResponse& resp) noexcept {
-        VLOG_ROW << "receive a response, finished request num: " << ctx->unit->finished_request_num
+        LOG(INFO) << "receive a response, finished request num: " << ctx->unit->finished_request_num
                  << ", total request num: " << ctx->unit->total_request_num << ", " << (void*)ctx->processor
                  << ", latency: " << (MonotonicNanos() - ctx->send_ts) * 1.0 / 1000000 << "ms";
         DeferOp defer([&]() {
             if (++ctx->unit->finished_request_num == ctx->unit->total_request_num) {
-                VLOG_ROW << "all request finished, notify fetch processor, total_request_num: "
+                LOG(INFO) << "all request finished, notify fetch processor, total_request_num: "
                          << ctx->unit->total_request_num << ", " << (void*)ctx->processor;
             }
             _is_done = true;
@@ -61,6 +61,7 @@ Status IcebergFetchTask::submit(RuntimeState* state) {
             ctx->processor->_set_io_task_status(Status::InternalError(msg));
             return;
         }
+        LOG(INFO) << "receive a response, response size: " << closure->cntl.response_attachment().size();
         if (closure->cntl.response_attachment().size() > 0) {
             SCOPED_TIMER(ctx->processor->_deserialize_timer);
             butil::IOBuf& io_buf = closure->cntl.response_attachment();
@@ -95,6 +96,7 @@ Status IcebergFetchTask::submit(RuntimeState* state) {
                 }
                 DCHECK(!ctx->response_columns.contains(slot_id))
                         << "response_columns should not contain slot_id: " << slot_id;
+                LOG(INFO) << "add response column, slot_id: " << slot_id << ", column: " << column->get_name();
                 ctx->response_columns.insert({slot_id, std::move(column)});
             }
         }
@@ -103,7 +105,7 @@ Status IcebergFetchTask::submit(RuntimeState* state) {
     closure->addFailedHandler([this] (const FetchTaskContextPtr& ctx, std::string_view rpc_error_msg) noexcept {
         DeferOp defer([&]() {
             if (++ctx->unit->finished_request_num == ctx->unit->total_request_num) {
-                VLOG_ROW << "all request finished, notify fetch processor, " << (void*)ctx->processor;
+                LOG(INFO) << "all request finished, notify fetch processor, " << (void*)ctx->processor;
             }
             _is_done = true;
         });
@@ -136,15 +138,21 @@ Status IcebergFetchTask::submit(RuntimeState* state) {
         uint8_t* buff = reinterpret_cast<uint8_t*>(_ctx->processor->_serialize_buffer.data());
         uint8_t* begin = buff;
         for (const auto& [slot_id, idx] : request_chunk->get_slot_id_to_index_map()) {
+            if (slot_id == FetchProcessor::kPositionColumnSlotId) {
+                // we don't need to send position column to remote node
+                continue;
+            }
             auto p_column = request.add_request_columns();
             p_column->set_slot_id(slot_id);
             const auto& column = request_chunk->get_column_by_index(idx);
             uint8_t* start = buff;
             buff = serde::ColumnArraySerde::serialize(*column, buff);
             p_column->set_data_size(buff - start);
+            LOG(INFO) << "serialize column, slot_id: " << slot_id << ", data_size: " << (buff - start) << ", column: " << column->get_name();
         }
         size_t actual_serialize_size = buff - begin;
         closure->cntl.request_attachment().append(_ctx->processor->_serialize_buffer.data(), actual_serialize_size);
+        LOG(INFO) << "serialize request, attachment size: " << closure->cntl.request_attachment().size();
     }
     LOG(INFO) << "[GLM] send fetch request, source_id: " << source_id << ", "
               << (void*)_ctx->processor << ", unit: " << _ctx->unit->debug_string();

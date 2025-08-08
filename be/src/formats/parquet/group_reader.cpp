@@ -20,6 +20,7 @@
 #include <memory>
 #include <utility>
 
+#include "agent/master_info.h"
 #include "column/chunk.h"
 #include "common/config.h"
 #include "common/status.h"
@@ -33,6 +34,7 @@
 #include "formats/parquet/scalar_column_reader.h"
 #include "formats/parquet/schema.h"
 #include "formats/parquet/iceberg_row_id_reader.h"
+#include "formats/parquet/row_source_reader.h"
 #include "gutil/strings/substitute.h"
 #include "runtime/types.h"
 #include "simd/simd.h"
@@ -207,9 +209,9 @@ Status GroupReader::get_next(ChunkPtr* chunk, size_t* row_count) {
                 continue;
             }
             active_chunk->filter_range(chunk_filter, 0, count);
-            for (size_t i = 0;i < active_chunk->num_rows();i++) {
-                LOG(INFO) << "res data[" << i << "]: " << active_chunk->debug_row(i);
-            }
+            // for (size_t i = 0;i < active_chunk->num_rows();i++) {
+            //     LOG(INFO) << "res data[" << i << "]: " << active_chunk->debug_row(i);
+            // }
         } else if (has_filter) {
             RETURN_IF_ERROR(_read_range(_active_column_indices, r, &chunk_filter, &active_chunk));
             active_chunk->filter_range(chunk_filter, 0, count);
@@ -399,6 +401,14 @@ Status GroupReader::_create_column_readers() {
                           << ", id: " << slot->id();
                 // @TODO need a row id reader?
                 _column_readers.emplace(slot->id(), std::make_unique<IcebergRowIdReader>(_row_group_first_row_id));
+            } else if (slot->col_name() == "_source_node_id") {
+                // @TODO get bakc end opt
+                LOG(INFO) << "create column reader for reserved field slot: " << slot->col_name() << ", id: " << slot->id();
+                if (auto opt = get_backend_id(); opt.has_value()) {
+                    _column_readers.emplace(slot->id(), std::make_unique<RowSourceReader>(opt.value()));
+                } else {
+                    return Status::InternalError("get_backend_id failed");
+                }
             }
         }
     }

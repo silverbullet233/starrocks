@@ -42,6 +42,7 @@ public:
     ~HiveDataSourceProvider() override = default;
     friend class HiveDataSource;
     HiveDataSourceProvider(ConnectorScanNode* scan_node, const TPlanNode& plan_node);
+    HiveDataSourceProvider(ConnectorScanNode* scan_node, const THdfsScanNode& hdfs_scan_node);
     DataSourcePtr create_data_source(const TScanRange& scan_range) override;
     const TupleDescriptor* tuple_descriptor(RuntimeState* state) const override;
 
@@ -62,6 +63,7 @@ public:
     ~HiveDataSource() override = default;
 
     HiveDataSource(const HiveDataSourceProvider* provider, const TScanRange& scan_range);
+    HiveDataSource(const HiveDataSourceProvider* provider, const THdfsScanRange& hdfs_scan_range);
     std::string name() const override;
     Status open(RuntimeState* state) override;
     void close(RuntimeState* state) override;

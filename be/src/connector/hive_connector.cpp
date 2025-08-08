@@ -27,6 +27,8 @@
 #include "exec/jni_scanner.h"
 #include "exprs/expr.h"
 #include "storage/chunk_helper.h"
+#include "exec/pipeline/scan/glm_manager.h"
+#include "exec/pipeline/query_context.h"
 
 namespace starrocks::connector {
 
@@ -45,6 +47,8 @@ std::unique_ptr<ConnectorChunkSinkProvider> HiveConnector::create_data_sink_prov
 
 HiveDataSourceProvider::HiveDataSourceProvider(ConnectorScanNode* scan_node, const TPlanNode& plan_node)
         : _scan_node(scan_node), _hdfs_scan_node(plan_node.hdfs_scan_node) {}
+HiveDataSourceProvider::HiveDataSourceProvider(ConnectorScanNode* scan_node, const THdfsScanNode& hdfs_scan_node)
+        : _scan_node(scan_node), _hdfs_scan_node(hdfs_scan_node) {}
 
 DataSourcePtr HiveDataSourceProvider::create_data_source(const TScanRange& scan_range) {
     return std::make_unique<HiveDataSource>(this, scan_range);
@@ -58,6 +62,9 @@ const TupleDescriptor* HiveDataSourceProvider::tuple_descriptor(RuntimeState* st
 
 HiveDataSource::HiveDataSource(const HiveDataSourceProvider* provider, const TScanRange& scan_range)
         : _provider(provider), _scan_range(scan_range.hdfs_scan_range) {}
+
+HiveDataSource::HiveDataSource(const HiveDataSourceProvider* provider, const THdfsScanRange& hdfs_scan_range)
+        : _provider(provider), _scan_range(hdfs_scan_range) {}
 
 Status HiveDataSource::_check_all_slots_nullable() {
     for (const auto* slot : _tuple_desc->slots()) {
@@ -185,6 +192,7 @@ Status HiveDataSource::open(RuntimeState* state) {
     if (state->query_options().__isset.enable_dynamic_prune_scan_range) {
         _enable_dynamic_prune_scan_range = state->query_options().enable_dynamic_prune_scan_range;
     }
+
     if (state->query_options().__isset.enable_connector_split_io_tasks) {
         _enable_split_tasks = state->query_options().enable_connector_split_io_tasks;
     }
@@ -199,6 +207,29 @@ Status HiveDataSource::open(RuntimeState* state) {
         return Status::OK();
     }
     RETURN_IF_ERROR(_init_scanner(state));
+
+    bool will_be_lazy_read = false;
+    {
+        const auto& slots = _tuple_desc->slots();
+        // @TODO
+        will_be_lazy_read = std::any_of(slots.begin(), slots.end(), [](const SlotDescriptor* slot) {
+            return slot->col_name() == "_source_node_id";
+        });
+    }
+    if (will_be_lazy_read) {
+        LOG(INFO) << "will be lazy read";
+
+        // create glm ctx
+        auto ctx = state->query_ctx()->object_pool()->add(new pipeline::IcebergGlobalLateMaterilizationContext());
+        ctx->hdfs_scan_range = _scan_range;
+        ctx->hdfs_scan_node = _provider->_hdfs_scan_node;
+        LOG(INFO) << "copied hdfs scan node: " << apache::thrift::ThriftDebugString(ctx->hdfs_scan_node);
+        // @TODO
+        state->query_ctx()->global_late_materialization_ctx_mgr()->add_ctx(0, ctx);
+
+    }
+
+    // @TODO force add to late materialization context
     return Status::OK();
 }
 
@@ -366,6 +397,7 @@ void HiveDataSource::_init_tuples_and_slots(RuntimeState* state) {
             _materialize_index_in_chunk.push_back(i);
         }
     }
+    // @TODO add row id related slots
 
     if (hdfs_scan_node.__isset.hive_column_names) {
         _hive_column_names = hdfs_scan_node.hive_column_names;
@@ -676,7 +708,8 @@ Status HiveDataSource::_init_scanner(RuntimeState* state) {
     const auto& hdfs_scan_node = _provider->_hdfs_scan_node;
     auto fsOptions =
             FSOptions(hdfs_scan_node.__isset.cloud_configuration ? &hdfs_scan_node.cloud_configuration : nullptr);
-
+    LOG(INFO) << "hdfs_scan_node: " << apache::thrift::ThriftDebugString(hdfs_scan_node);
+    LOG(INFO) << "native_file_path: " << native_file_path << " isset: " << hdfs_scan_node.__isset.cloud_configuration;
     ASSIGN_OR_RETURN(auto fs, FileSystem::CreateUniqueFromString(native_file_path, fsOptions));
     LOG(INFO) << "HiveDataSource::_init_scanner, scan_range: " << apache::thrift::ThriftDebugString(scan_range);
     HdfsScannerParams scanner_params;

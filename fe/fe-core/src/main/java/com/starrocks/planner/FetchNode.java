@@ -91,7 +91,7 @@ public class FetchNode extends PlanNode {
                 output.append(prefix + " <slot ")
                         .append(rowPositionDescriptor.getSourceNodeSlot().asInt()).append("> => SOURCE_NODE_ID").append("\n");
                 output.append(prefix + "  <row position slots> => " +
-                        rowPositionDescriptor.getRefSlots().stream()
+                        rowPositionDescriptor.getFetchRefSlots().stream()
                                 .map(slotId -> slotId.toString()).collect(
                                         Collectors.joining(",", "[", "]"))).append("\n");
             }

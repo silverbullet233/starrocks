@@ -863,15 +863,33 @@ std::string DescriptorTbl::debug_string() const {
     return out.str();
 }
 
+std::string RowPositionDescriptor::debug_string() const {
+    std::stringstream out;
+    out << "RowPositionDescriptor(type=" << _type << " source_node_slot_id=" << _source_node_slot_id << " fetch_ref_slot_ids=[";
+    for (const auto& slot_id : _fetch_ref_slot_ids) {
+        out << slot_id << ", ";
+    }
+    out << "], lookup_ref_slot_ids=[";
+    for (const auto& slot_id : _lookup_ref_slot_ids) {
+        out << slot_id << ", ";
+    }
+    out << "])";
+    return out.str();
+}
+
 RowPositionDescriptor* RowPositionDescriptor::from_thrift(const TRowPositionDescriptor& t_desc, ObjectPool* pool) {
     RowPositionDescriptor* desc = nullptr;
     switch (t_desc.row_position_type) {
         case TRowPositionType::ICEBERG_V3_ROW_POSITION: {
-            std::vector<SlotId> slot_ids;
-            for (const auto& slot_id : t_desc.ref_slots) {
-                slot_ids.emplace_back(slot_id);
+            std::vector<SlotId> fetch_ref_slot_ids;
+            for (const auto& slot_id : t_desc.fetch_ref_slots) {
+                fetch_ref_slot_ids.emplace_back(slot_id);
             }
-            desc = pool->add(new IcebergV3RowPositionDescriptor(t_desc.source_node_slot, slot_ids));
+            std::vector<SlotId> lookup_ref_slot_ids;
+            for (const auto& slot_id : t_desc.lookup_ref_slots) {
+                lookup_ref_slot_ids.emplace_back(slot_id);
+            }
+            desc = pool->add(new IcebergV3RowPositionDescriptor(t_desc.source_node_slot, fetch_ref_slot_ids, lookup_ref_slot_ids));
             break;
         }
         default: {

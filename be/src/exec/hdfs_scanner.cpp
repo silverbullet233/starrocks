@@ -126,7 +126,7 @@ Status HdfsScanner::_build_scanner_context() {
     // build columns of materialized and partition.
     for (size_t i = 0; i < _scanner_params.materialize_slots.size(); i++) {
         auto* slot = _scanner_params.materialize_slots[i];
-        if (slot->col_name() == "_row_id") {
+        if (slot->col_name() == "_row_id" || slot->col_name() == "_source_node_id") {
             LOG(INFO) << "add reserved field columns: " << slot->col_name();
             ctx.reserved_field_slots.emplace_back(slot); 
         } else {
@@ -151,6 +151,7 @@ Status HdfsScanner::_build_scanner_context() {
 
     for (size_t i = 0; i < _scanner_params.extended_col_slots.size(); i++) {
         auto* slot = _scanner_params.extended_col_slots[i];
+        LOG(INFO) << "extended columns: " << slot->debug_string();
         HdfsScannerContext::ColumnInfo column;
         column.slot_desc = slot;
         column.idx_in_chunk = _scanner_params.extended_col_index_in_chunk[i];

@@ -32,6 +32,7 @@
 #include "runtime/runtime_filter_cache.h"
 #include "util/thread.h"
 #include "util/thrift_rpc_helper.h"
+#include "exec/pipeline/scan/glm_manager.h"
 
 namespace starrocks::pipeline {
 
@@ -161,6 +162,7 @@ void QueryContext::init_mem_tracker(int64_t query_mem_limit, MemTracker* parent,
                 new ConnectorScanOperatorMemShareArbitrator(_static_query_mem_limit, connector_scan_node_number));
         if (runtime_state->enable_global_late_materialization()) {
             _global_late_materialization_ctx = _object_pool.add(new GlobalLateMaterilizationCtx());
+            _global_late_materialization_ctx_mgr = _object_pool.add(new GlobalLateMaterilizationContextMgr());
         }
 
         {

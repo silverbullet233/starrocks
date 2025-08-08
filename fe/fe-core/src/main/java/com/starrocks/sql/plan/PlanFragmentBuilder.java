@@ -4329,12 +4329,12 @@ public class PlanFragmentBuilder {
         }
 
         private RowPositionDescriptor buildRowPositionDescriptor(Table table,
-                                                                 ColumnRefOperator execNodeColumn,
-                                                                 List<ColumnRefOperator> refColumns) {
+                                                                 SlotId sourceNodeSlot,
+                                                                 List<SlotId> fetchRefSlots,
+                                                                 List<SlotId> lookupRefSlots) {
             if (table instanceof IcebergTable) {
-                return new RowPositionDescriptor(RowPositionDescriptor.Type.ICEBERG_V3, new SlotId(execNodeColumn.getId()),
-                        refColumns.stream().map(columnRefOperator -> new SlotId(columnRefOperator.getId()))
-                                .collect(Collectors.toList()));
+                return new RowPositionDescriptor(
+                        RowPositionDescriptor.Type.ICEBERG_V3, sourceNodeSlot, fetchRefSlots, lookupRefSlots);
             }
             return null;
         }
@@ -4368,9 +4368,31 @@ public class PlanFragmentBuilder {
                     slotDescriptor.setIsNullable(columnRefOperator.isNullable());
                     context.getColRefToExpr().put(columnRefOperator, new SlotRef(columnRefOperator.toString(), slotDescriptor));
                 }
+                // @TODO how to know ref slots?
+
+
+                // @TODO should generate lookup slot and add into tuple desc
                 // @TODO update RowPositionDecs
                 List<ColumnRefOperator> rowIdRefColumns = rowIdToRefColumns.get(entry.getKey());
-                RowPositionDescriptor rowPositionDescriptor = buildRowPositionDescriptor(table, entry.getKey(), rowIdRefColumns);
+                // generate lookup slot descriptor
+                List<SlotDescriptor> fetchRefSlotDescs = rowIdRefColumns.stream()
+                        .map(columnRefOperator ->
+                                context.getDescTbl().getSlotDesc(new SlotId(columnRefOperator.getId())))
+                        .collect(Collectors.toList());
+                List<SlotId> fetchRefSlotIds = fetchRefSlotDescs.stream().map(
+                        slotDescriptor -> slotDescriptor.getId()).collect(Collectors.toList());
+                List<SlotId> lookupRefSlotIds = rowIdRefColumns.stream().map(columnRefOperator -> {
+                    SlotDescriptor slotDescriptor = context.getDescTbl().getSlotDesc(new SlotId(columnRefOperator.getId()));
+                    Column column = columnRefOperatorColumnMap.get(columnRefOperator);
+                    // @TODO slot id may conflict, pending fix
+                    SlotDescriptor desc = context.getDescTbl().copySlotDescriptor(tupleDescriptor, slotDescriptor);
+                    desc.setColumn(column);
+                    desc.setIsOutputColumn(false);
+                    return desc.getId();
+                }).collect(Collectors.toList());
+
+                RowPositionDescriptor rowPositionDescriptor = buildRowPositionDescriptor(
+                        table, new SlotId(entry.getKey().getId()), fetchRefSlotIds, lookupRefSlotIds);
                 rowPositionDescriptorMap.put(tupleDescriptor.getId(), rowPositionDescriptor);
 
                 tupleDescriptor.computeMemLayout();

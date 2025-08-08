@@ -30,14 +30,17 @@ public class RowPositionDescriptor {
     }
     private Type type;
     private SlotId sourceNodeSlot;
-    private List<SlotId> refSlots;
+    private List<SlotId> fetchRefSlots;
+    private List<SlotId> lookupRefSlots;
 
-    public RowPositionDescriptor(Type type, SlotId sourceNodeSlot, List<SlotId> refSlots) {
-        Preconditions.checkState(refSlots != null && !refSlots.isEmpty(),
-                "refSlot can't be null or empty");
+    public RowPositionDescriptor(Type type, SlotId sourceNodeSlot, List<SlotId> fetchRefSlots, List<SlotId> lookupRefSlots) {
+        Preconditions.checkState(fetchRefSlots != null && !fetchRefSlots.isEmpty(), "fetchRefSlots can't be null or empty");
+        Preconditions.checkState(lookupRefSlots != null && !lookupRefSlots.isEmpty(), "lookupRefSlots can't be null or empty");
+        Preconditions.checkState(fetchRefSlots.size() == lookupRefSlots.size(), "fetchRefSlots'size shoule be same with lookupRefSlots");
         this.type = type;
         this.sourceNodeSlot = sourceNodeSlot;
-        this.refSlots = refSlots;
+        this.fetchRefSlots = fetchRefSlots;
+        this.lookupRefSlots = lookupRefSlots;
     }
 
     public Type getType() {
@@ -48,9 +51,14 @@ public class RowPositionDescriptor {
         return sourceNodeSlot;
     }
 
-    public List<SlotId> getRefSlots() {
-        return refSlots;
+    public List<SlotId> getFetchRefSlots() {
+        return fetchRefSlots;
     }
+
+    public List<SlotId> getLookupRefSlots() {
+        return lookupRefSlots;
+    }
+
 
     public TRowPositionDescriptor toThrift() {
         TRowPositionDescriptor msg = new TRowPositionDescriptor();
@@ -61,10 +69,9 @@ public class RowPositionDescriptor {
             default:
                 throw new RuntimeException("unknown type");
         }
-        // msg.setExec_node_slot(execNodeSlot.asInt());
-        refSlots.forEach(slotId -> {
-            msg.addToRef_slots(slotId.asInt());
-        });
+        msg.setSource_node_slot(sourceNodeSlot.asInt());
+        fetchRefSlots.forEach(slotId -> msg.addToFetch_ref_slots(slotId.asInt()));
+        lookupRefSlots.forEach(slotId -> msg.addToLookup_ref_slots(slotId.asInt()));
         return msg;
     }
 }

@@ -15,8 +15,10 @@
 #pragma once
 
 #include "exec/pipeline/fetch_task.h"
+#include "exec/sorting/sort_permute.h"
 #include "gen_cpp/internal_service.pb.h"
 #include "runtime/descriptors.h"
+#include "storage/range.h"
 
 namespace starrocks::pipeline {
 
@@ -77,11 +79,17 @@ public:
 };
 using RemoteLookUpRequestContextPtr = std::shared_ptr<RemoteLookUpRequestContext>;
 
-
+class LookUpProcessor;
 class LookUpTaskContext {
 public:
     TupleId request_tuple_id;
+    std::vector<SlotId> lookup_ref_slot_ids;
+    std::vector<SlotId> fetch_ref_slot_ids;
     std::vector<LookUpRequestContextPtr> request_ctxs;
+    // parent
+    LookUpProcessor* processor = nullptr;
+    Permutation permutation;
+    // @TODO set profile
 };
 using LookUpTaskContextPtr = std::shared_ptr<LookUpTaskContext>;
 
@@ -93,9 +101,10 @@ public:
     LookUpTask(LookUpTaskContextPtr ctx) : _ctx(std::move(ctx)) {}
     virtual ~LookUpTask() = default;
 
-    virtual Status process(RuntimeState* state) = 0;
+    virtual Status process(RuntimeState* state, const ChunkPtr& request_chunk) = 0;
 
 protected:
+    StatusOr<ChunkPtr> _sort_chunk(RuntimeState* state, const ChunkPtr& chunk, const Columns& order_by_columns);
     LookUpTaskContextPtr _ctx;
 };
 
@@ -104,7 +113,13 @@ public:
     IcebergV3LookUpTask(LookUpTaskContextPtr ctx) : LookUpTask(std::move(ctx)) {}
     ~IcebergV3LookUpTask() override = default;
 
-    Status process(RuntimeState* state) override;
+    Status process(RuntimeState* state, const ChunkPtr& request_chunk) override;
+private:
+    StatusOr<ChunkPtr> _calculate_row_id_range(RuntimeState* state, const ChunkPtr& request_chunk, SparseRange<int64_t>* row_id_range, Buffer<uint32_t>* replicated_offsets);
+
+    StatusOr<ChunkPtr> _get_data_from_storage(RuntimeState* state, const std::vector<SlotDescriptor*>& slots, const SparseRange<int64_t>& row_id_range);
+
+    TExpr create_row_id_filter_expr(SlotId slot_id, const SparseRange<int64_t>& row_id_range);
 };
 
 

@@ -14,15 +14,41 @@
 
 #pragma once
 
+#include <memory>
+
+#include "cache/cache_options.h"
+#include "gen_cpp/PlanNodes_types.h"
+#include "gen_cpp/CloudConfiguration_types.h"
+
 namespace starrocks::pipeline {
 
 // global late materialization context
 class GlobalLateMaterilizationContext {
+public:
+    virtual ~GlobalLateMaterilizationContext() = default;
+};
+
+class IcebergGlobalLateMaterilizationContext : public GlobalLateMaterilizationContext {
+public:
+    THdfsScanRange hdfs_scan_range;
+    THdfsScanNode hdfs_scan_node;
+    TPlanNode plan_node;
+
+    // DataCacheOptions datacache_options;
+    // int tuple_id;
+    // TCloudConfiguration cloud_configuration;
 
 };
 
 // manage all global late materialization contexts for different data sources
 class GlobalLateMaterilizationContextMgr {
+public:
+    // @TODO
+    void add_ctx(int tuple_id, GlobalLateMaterilizationContext* ctx);
+    GlobalLateMaterilizationContext* get_ctx(int tuple_id) const;
     // @TODO tuple_id -> GlobalLateMaterilizationContext*
+    // @TODO mock
+    GlobalLateMaterilizationContext* _ctx;
+    // @TODO slot id -> glm ctx?
 };
 }

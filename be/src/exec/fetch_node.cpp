@@ -52,13 +52,13 @@ FetchNode::~FetchNode() {
 
 Status FetchNode::init(const TPlanNode& tnode, RuntimeState* state) {
     RETURN_IF_ERROR(ExecNode::init(tnode, state));
-    std::vector<SlotId> source_id_slots;
-    for (const auto& [_, row_pos_desc] : _row_pos_descs) {
-        source_id_slots.emplace_back(row_pos_desc->get_source_node_slot_id());
+    std::vector<TupleId> tuple_ids;
+    for (const auto& [tuple_id, row_pos_desc] : _row_pos_descs) {
+        tuple_ids.emplace_back(tuple_id);
     }
 
     _dispatcher =
-            state->exec_env()->lookup_dispatcher_mgr()->create_dispatcher(state, state->query_id(), _target_node_id, source_id_slots);
+            state->exec_env()->lookup_dispatcher_mgr()->create_dispatcher(state, state->query_id(), _target_node_id, tuple_ids);
     for (const auto& tuple_id : _tuple_ids) {
         const auto& tuple_desc = state->desc_tbl().get_tuple_descriptor(tuple_id);
         for (const auto& slot : tuple_desc->slots()) {

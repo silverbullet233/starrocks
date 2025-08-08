@@ -16,11 +16,17 @@
 #include <brpc/controller.h>
 
 #include "column/chunk.h"
-#include "serde//column_array_serde.h"
+#include "column/vectorized_fwd.h"
+#include "serde/column_array_serde.h"
+#include "storage/range.h"
 #include "util/raw_container.h"
 #include "connector/hive_connector.h"
 #include "runtime/descriptors.h"
 #include "util/logging.h"
+#include "exec/pipeline/scan/glm_manager.h"
+#include "exec/pipeline/query_context.h"
+#include "util/runtime_profile.h"
+#include "exec/sorting/sorting.h"
 
 namespace starrocks::pipeline {
 
@@ -54,6 +60,7 @@ void LocalLookUpRequestContext::callback(const Status& status) {
 }
 
 Status RemoteLookUpRequestContext::collect_input_columns(ChunkPtr chunk) {
+    request_chunk = std::make_shared<Chunk>();
     for (size_t i = 0;i < request->request_columns_size(); i++) {
         const auto& pcolumn = request->request_columns(i);
         SlotId slot_id = pcolumn.slot_id();
@@ -61,6 +68,7 @@ Status RemoteLookUpRequestContext::collect_input_columns(ChunkPtr chunk) {
         // @TODO we should know slot desc
         auto dst_col = chunk->get_column_by_slot_id(slot_id);
         auto col = dst_col->clone_empty();
+        LOG(INFO) << "deserialize column, slot_id: " << slot_id << ", data_size: " << data_size << ", column: " << col->get_name();
         const uint8_t* buff = reinterpret_cast<const uint8_t*>(pcolumn.data().data());
         auto ret = serde::ColumnArraySerde::deserialize(buff, col.get());
         if (ret == nullptr) {
@@ -69,14 +77,17 @@ Status RemoteLookUpRequestContext::collect_input_columns(ChunkPtr chunk) {
             return Status::InternalError(msg);
         }
         dst_col->append(*col, 0, col->size());
+        request_chunk->append_column(std::move(col), slot_id);
     }
     chunk->check_or_die();
+    LOG(INFO) << "RemoteLookUpRequestContext collect input columns: " << chunk->debug_columns();
     return Status::OK();
 }
 
 StatusOr<size_t> RemoteLookUpRequestContext::fill_response(const ChunkPtr& result_chunk, SlotId source_id_slot,
                                                    const std::vector<SlotDescriptor*>& slots, size_t start_offset) {
     size_t num_rows = request_chunk->num_rows();
+    LOG(INFO) << "RemoteLookUpRequestContext fill response, num_rows: " << num_rows << ", slots: " << slots.size();
     std::vector<ColumnPtr> columns;
     size_t max_serialized_size = 0;
     for (const auto& slot : slots) {
@@ -98,6 +109,7 @@ StatusOr<size_t> RemoteLookUpRequestContext::fill_response(const ChunkPtr& resul
         uint8_t* start = buff;
         buff = serde::ColumnArraySerde::serialize(*column, buff);
         pcolumn->set_data_size(buff - start);
+        LOG(INFO) << "serialize column: " << slots[i]->id() << ", " << column->get_name() << ", data_size: " << (buff - start);
     }
     size_t actual_serialize_size = buff - begin;
     auto* brpc_cntl = static_cast<brpc::Controller*>(cntl);
@@ -107,135 +119,488 @@ StatusOr<size_t> RemoteLookUpRequestContext::fill_response(const ChunkPtr& resul
 }
 
 void RemoteLookUpRequestContext::callback(const Status& status) {
+    LOG(INFO) << "RemoteLookUpRequestContext callback: " << status.to_string();
     status.to_protobuf(response->mutable_status());
+    // @TODO fill response
     done->Run();
 }
 
-Status IcebergV3LookUpTask::process(RuntimeState* state) {
+StatusOr<ChunkPtr> LookUpTask::_sort_chunk(RuntimeState* state, const ChunkPtr& chunk,
+                                               const Columns& order_by_columns) {
+    // @TODO(silverbullet233): reuse sort descs
+    SortDescs sort_descs;
+    sort_descs.descs.reserve(order_by_columns.size());
+    for (size_t i = 0; i < order_by_columns.size(); i++) {
+        sort_descs.descs.emplace_back(true, true);
+    }
+    _ctx->permutation.resize(0);
+
+    RETURN_IF_ERROR(sort_and_tie_columns(state->cancelled_ref(), order_by_columns, sort_descs, &_ctx->permutation));
+    auto sorted_chunk = chunk->clone_empty_with_slot(chunk->num_rows());
+    materialize_by_permutation(sorted_chunk.get(), {chunk}, _ctx->permutation);
+
+    return sorted_chunk;
+}
+
+
+StatusOr<ChunkPtr> IcebergV3LookUpTask::_calculate_row_id_range(RuntimeState* state, const ChunkPtr& request_chunk,
+    SparseRange<int64_t>* row_id_range, Buffer<uint32_t>* replicated_offsets) {
+    // 1. add position column
+    UInt32Column::Ptr position_column = UInt32Column::create();
+    position_column->resize_uninitialized(request_chunk->num_rows());
+    auto& position_data = position_column->get_data();
+    for (size_t i = 0;i < request_chunk->num_rows();i++) {
+        position_data[i] = i;
+    }
+    request_chunk->append_column(std::move(position_column), Chunk::SORT_ORDINAL_COLUMN_SLOT_ID);
+    request_chunk->check_or_die();
+    // 2. sort by _row_id
+    // @TODO should use fetch ref slots
+    auto row_id_column = request_chunk->get_column_by_slot_id(_ctx->fetch_ref_slot_ids[0]);
+
+    ASSIGN_OR_RETURN(auto sorted_chunk, _sort_chunk(state, request_chunk, {row_id_column}));
+
+
+    // 3. calculate row_id range and replicated_offsets
+    const auto& nullable_column = 
+        down_cast<NullableColumn*>(sorted_chunk->get_column_by_slot_id(_ctx->fetch_ref_slot_ids[0]).get());
+    DCHECK(!nullable_column->has_null()) << "row_id column should not have null";
+    const auto& ordered_row_id_column = Int64Column::static_pointer_cast(nullable_column->data_column());
+    const auto& ordered_row_ids = ordered_row_id_column->get_data();
+    size_t num_rows = ordered_row_id_column->size();
+    int64_t cur_row_id = ordered_row_ids[0];
+    Range<int64_t> cur_range(cur_row_id, cur_row_id + 1);
+
+    replicated_offsets->emplace_back(0);
+    replicated_offsets->emplace_back(1);
+    bool has_duplicated_row = false;
+    for (size_t i = 1;i < num_rows;i++) {
+        int64_t cur_row_id = ordered_row_ids[i];
+        if (cur_row_id == cur_range.end() - 1) {
+            replicated_offsets->back()++;
+            has_duplicated_row = true;
+            continue;
+        }
+        if (cur_row_id == cur_range.end()) {
+            cur_range.expand(1);
+        } else {
+            row_id_range->add(cur_range);
+            cur_range = Range<int64_t>(cur_row_id, cur_row_id + 1);
+        }
+        replicated_offsets->emplace_back(replicated_offsets->back() + 1);
+    }
+    row_id_range->add(cur_range);
+
+    if (!has_duplicated_row) {
+        replicated_offsets->clear();
+    }
+    return sorted_chunk;
+}
+
+
+TExpr create_between_expr(int32_t slot_id, int32_t tuple_id) {
+    TExpr expr;
+    std::vector<TExprNode>& nodes = expr.nodes;
+    
+    // 1. 根节点：COMPOUND_AND
+    TExprNode and_node;
+    and_node.node_type = TExprNodeType::COMPOUND_PRED;
+    and_node.opcode = TExprOpcode::COMPOUND_AND;
+    and_node.__isset.opcode = true;
+    and_node.num_children = 2;
+    and_node.is_nullable = true;  // 因为a是nullable bigint
+    
+    // 设置返回类型为BOOLEAN
+    TTypeDesc bool_type;
+    TTypeNode bool_type_node;
+    bool_type_node.type = TTypeNodeType::SCALAR;
+    bool_type_node.__isset.scalar_type = true;
+    bool_type_node.scalar_type.type = TPrimitiveType::BOOLEAN;
+    bool_type.types.push_back(bool_type_node);
+    and_node.type = bool_type;
+    
+    nodes.push_back(and_node);
+    
+    // 2. 左子节点：a >= 1
+    TExprNode ge_node;
+    ge_node.node_type = TExprNodeType::BINARY_PRED;
+    ge_node.opcode = TExprOpcode::GE;
+    ge_node.__isset.opcode = true;
+    ge_node.num_children = 2;
+    ge_node.is_nullable = true;
+    ge_node.child_type = TPrimitiveType::BIGINT;
+    ge_node.__isset.child_type = true;
+    ge_node.type = bool_type;  // 返回BOOLEAN
+    
+    nodes.push_back(ge_node);
+    
+    // 3. SlotRef: a (slot_id=5)
+    TExprNode slot_ref_1;
+    slot_ref_1.node_type = TExprNodeType::SLOT_REF;
+    slot_ref_1.num_children = 0;
+    slot_ref_1.is_nullable = true;
+    
+    // 设置SlotRef类型为nullable bigint
+    TTypeDesc bigint_type;
+    TTypeNode bigint_type_node;
+    bigint_type_node.type = TTypeNodeType::SCALAR;
+    bigint_type_node.__isset.scalar_type = true;
+    bigint_type_node.scalar_type.type = TPrimitiveType::BIGINT;
+    bigint_type.types.push_back(bigint_type_node);
+    slot_ref_1.type = bigint_type;
+    
+    // 设置slot信息
+    TSlotRef slot_ref_info_1;
+    slot_ref_info_1.slot_id = slot_id;  // 5
+    slot_ref_info_1.tuple_id = tuple_id;
+    slot_ref_1.slot_ref = slot_ref_info_1;
+    slot_ref_1.__isset.slot_ref = true;
+    
+    nodes.push_back(slot_ref_1);
+    
+    // 4. 字面量: 1
+    TExprNode literal_1;
+    literal_1.node_type = TExprNodeType::INT_LITERAL;
+    literal_1.num_children = 0;
+    literal_1.is_nullable = false;
+    
+    // 设置字面量类型为bigint（与a的类型匹配）
+    literal_1.type = bigint_type;
+    
+    TIntLiteral int_literal_1;
+    int_literal_1.value = 14342615;
+    literal_1.int_literal = int_literal_1;
+    literal_1.__isset.int_literal = true;
+    
+    nodes.push_back(literal_1);
+    
+    // 5. 右子节点：a <= 10
+    TExprNode le_node;
+    le_node.node_type = TExprNodeType::BINARY_PRED;
+    le_node.opcode = TExprOpcode::LE;
+    le_node.__isset.opcode = true;
+    le_node.num_children = 2;
+    le_node.is_nullable = true;
+    le_node.child_type = TPrimitiveType::BIGINT;
+    le_node.__isset.child_type = true;
+    le_node.type = bool_type;
+    
+    nodes.push_back(le_node);
+    
+    // 6. SlotRef: a (再次引用同一个slot)
+    TExprNode slot_ref_2;
+    slot_ref_2.node_type = TExprNodeType::SLOT_REF;
+    slot_ref_2.num_children = 0;
+    slot_ref_2.is_nullable = true;
+    slot_ref_2.type = bigint_type;
+    
+    TSlotRef slot_ref_info_2;
+    slot_ref_info_2.slot_id = slot_id;  // 5
+    slot_ref_info_2.tuple_id = tuple_id;
+    slot_ref_2.slot_ref = slot_ref_info_2;
+    slot_ref_2.__isset.slot_ref = true;
+    
+    nodes.push_back(slot_ref_2);
+    
+    // 7. 字面量: 10
+    TExprNode literal_10;
+    literal_10.node_type = TExprNodeType::INT_LITERAL;
+    literal_10.num_children = 0;
+    literal_10.is_nullable = false;
+    literal_10.type = bigint_type;
+    
+    TIntLiteral int_literal_10;
+    int_literal_10.value = 14342615 + 4;
+    literal_10.int_literal = int_literal_10;
+    literal_10.__isset.int_literal = true;
+    
+    nodes.push_back(literal_10);
+    
+    return expr;
+}
+
+TExpr IcebergV3LookUpTask::create_row_id_filter_expr(SlotId slot_id, const SparseRange<int64_t>& row_id_range) {
+    TExpr expr;
+    std::vector<TExprNode>& nodes = expr.nodes;
+    
+    if (row_id_range.empty()) {
+        // Return a false literal if no ranges
+        TExprNode false_node;
+        false_node.node_type = TExprNodeType::BOOL_LITERAL;
+        false_node.num_children = 0;
+        false_node.is_nullable = false;
+        
+        TTypeDesc bool_type;
+        TTypeNode bool_type_node;
+        bool_type_node.type = TTypeNodeType::SCALAR;
+        bool_type_node.__isset.scalar_type = true;
+        bool_type_node.scalar_type.type = TPrimitiveType::BOOLEAN;
+        bool_type.types.push_back(bool_type_node);
+        false_node.type = bool_type;
+        
+        TBoolLiteral bool_literal;
+        bool_literal.value = false;
+        false_node.bool_literal = bool_literal;
+        false_node.__isset.bool_literal = true;
+        
+        nodes.push_back(false_node);
+        return expr;
+    }
+    
+    if (row_id_range.size() == 1) {
+        // Single range: slot_id >= begin AND slot_id < end
+        return create_between_expr(slot_id, 0); // Reuse existing function for single range
+    }
+    
+    // Multiple ranges: create OR expression
+    TExprNode or_node;
+    or_node.node_type = TExprNodeType::COMPOUND_PRED;
+    or_node.opcode = TExprOpcode::COMPOUND_OR;
+    or_node.__isset.opcode = true;
+    or_node.num_children = row_id_range.size();
+    or_node.is_nullable = true;
+    
+    TTypeDesc bool_type;
+    TTypeNode bool_type_node;
+    bool_type_node.type = TTypeNodeType::SCALAR;
+    bool_type_node.__isset.scalar_type = true;
+    bool_type_node.scalar_type.type = TPrimitiveType::BOOLEAN;
+    bool_type.types.push_back(bool_type_node);
+    or_node.type = bool_type;
+    
+    nodes.push_back(or_node);
+    
+    // Create AND expression for each range
+    for (size_t i = 0; i < row_id_range.size(); i++) {
+        const auto& range = row_id_range[i];
+        
+        // AND node for this range
+        TExprNode and_node;
+        and_node.node_type = TExprNodeType::COMPOUND_PRED;
+        and_node.opcode = TExprOpcode::COMPOUND_AND;
+        and_node.__isset.opcode = true;
+        and_node.num_children = 2;
+        and_node.is_nullable = true;
+        and_node.type = bool_type;
+        nodes.push_back(and_node);
+        
+        // GE node: slot_id >= range.begin
+        TExprNode ge_node;
+        ge_node.node_type = TExprNodeType::BINARY_PRED;
+        ge_node.opcode = TExprOpcode::GE;
+        ge_node.__isset.opcode = true;
+        ge_node.num_children = 2;
+        ge_node.is_nullable = true;
+        ge_node.child_type = TPrimitiveType::BIGINT;
+        ge_node.__isset.child_type = true;
+        ge_node.type = bool_type;
+        nodes.push_back(ge_node);
+        
+        // SlotRef for GE
+        TExprNode slot_ref_ge;
+        slot_ref_ge.node_type = TExprNodeType::SLOT_REF;
+        slot_ref_ge.num_children = 0;
+        slot_ref_ge.is_nullable = true;
+        
+        TTypeDesc bigint_type;
+        TTypeNode bigint_type_node;
+        bigint_type_node.type = TTypeNodeType::SCALAR;
+        bigint_type_node.__isset.scalar_type = true;
+        bigint_type_node.scalar_type.type = TPrimitiveType::BIGINT;
+        bigint_type.types.push_back(bigint_type_node);
+        slot_ref_ge.type = bigint_type;
+        
+        TSlotRef slot_ref_info_ge;
+        slot_ref_info_ge.slot_id = slot_id;
+        slot_ref_info_ge.tuple_id = 0;
+        slot_ref_ge.slot_ref = slot_ref_info_ge;
+        slot_ref_ge.__isset.slot_ref = true;
+        nodes.push_back(slot_ref_ge);
+        
+        // Literal for range.begin
+        TExprNode literal_begin;
+        literal_begin.node_type = TExprNodeType::INT_LITERAL;
+        literal_begin.num_children = 0;
+        literal_begin.is_nullable = false;
+        literal_begin.type = bigint_type;
+        
+        TIntLiteral int_literal_begin;
+        int_literal_begin.value = range.begin();
+        literal_begin.int_literal = int_literal_begin;
+        literal_begin.__isset.int_literal = true;
+        nodes.push_back(literal_begin);
+        
+        // LT node: slot_id < range.end
+        TExprNode lt_node;
+        lt_node.node_type = TExprNodeType::BINARY_PRED;
+        lt_node.opcode = TExprOpcode::LT;
+        lt_node.__isset.opcode = true;
+        lt_node.num_children = 2;
+        lt_node.is_nullable = true;
+        lt_node.child_type = TPrimitiveType::BIGINT;
+        lt_node.__isset.child_type = true;
+        lt_node.type = bool_type;
+        nodes.push_back(lt_node);
+        
+        // SlotRef for LT
+        TExprNode slot_ref_lt;
+        slot_ref_lt.node_type = TExprNodeType::SLOT_REF;
+        slot_ref_lt.num_children = 0;
+        slot_ref_lt.is_nullable = true;
+        slot_ref_lt.type = bigint_type;
+        
+        TSlotRef slot_ref_info_lt;
+        slot_ref_info_lt.slot_id = slot_id;
+        slot_ref_info_lt.tuple_id = 0;
+        slot_ref_lt.slot_ref = slot_ref_info_lt;
+        slot_ref_lt.__isset.slot_ref = true;
+        nodes.push_back(slot_ref_lt);
+        
+        // Literal for range.end
+        TExprNode literal_end;
+        literal_end.node_type = TExprNodeType::INT_LITERAL;
+        literal_end.num_children = 0;
+        literal_end.is_nullable = false;
+        literal_end.type = bigint_type;
+        
+        TIntLiteral int_literal_end;
+        int_literal_end.value = range.end();
+        literal_end.int_literal = int_literal_end;
+        literal_end.__isset.int_literal = true;
+        nodes.push_back(literal_end);
+    }
+    
+    return expr;
+}
+
+
+StatusOr<ChunkPtr> IcebergV3LookUpTask::_get_data_from_storage(RuntimeState* state, const std::vector<SlotDescriptor*>& slots, const SparseRange<int64_t>& row_id_range) {
+    // @TODO
+    ObjectPool obj_pool;
+    // @TODO should know _row_id slot id
+    // TExpr expr = create_between_expr(_ctx->lookup_ref_slot_ids[0], 0);
+    TExpr expr = create_row_id_filter_expr(_ctx->lookup_ref_slot_ids[0], row_id_range);
+    LOG(INFO) << "create row_id filter expr: " << apache::thrift::ThriftDebugString(expr);
+
+    ExprContext* expr_ctx = nullptr;
+    RETURN_IF_ERROR(Expr::create_expr_tree(&obj_pool, expr, &expr_ctx, state, false));
+    std::vector<ExprContext*> conjunct_ctxs{expr_ctx};
+
+    RETURN_IF_ERROR(Expr::prepare(conjunct_ctxs, state));
+    RETURN_IF_ERROR(Expr::open(conjunct_ctxs, state));
+
+
+    // create an or preidcate, _row_id >= a and _row_id <= b or xxx
+    // build hive data source
+
+    auto glm_ctx = down_cast<pipeline::IcebergGlobalLateMaterilizationContext*>(state->query_ctx()->global_late_materialization_ctx_mgr()->get_ctx(0));
+    auto hdfs_scan_node = glm_ctx->hdfs_scan_node;
+    hdfs_scan_node.tuple_id = _ctx->request_tuple_id;
+    // @TODO add a _row_id slot into request tuple...
+
+    auto provider = std::make_unique<connector::HiveDataSourceProvider>(nullptr, hdfs_scan_node);
+    auto data_source = std::make_shared<connector::HiveDataSource>(provider.get(), glm_ctx->hdfs_scan_range);
+    RuntimeProfile mock_profile("mock");
+    data_source->set_runtime_profile(&mock_profile);
+    data_source->set_predicates(conjunct_ctxs);
+    // @TODO we should set a specific predicate to filter by row_id
+    // @TODO set row_id
+    
+    RETURN_IF_ERROR(data_source->open(state));
+    
+    // 读取数据
+    // ChunkPtr result_chunk = std::make_shared<Chunk>();
+    ChunkPtr result_chunk;
+    // @TODO create a chunk that contain all columns
+    do {
+        ChunkPtr chunk = std::make_shared<Chunk>();
+        auto status = data_source->get_next(state, &chunk);
+        LOG(INFO) << "get next chunk, status: " << status.to_string();
+        if (status.is_end_of_file()) {
+            LOG(INFO) << "get end of file, break";
+            break;
+        }
+        RETURN_IF_ERROR(status);
+        if (chunk->num_rows() == 0) {
+            LOG(INFO) << "get empty chunk, break";
+            break;
+        }
+        LOG(INFO) << "get chunk: " << chunk->debug_columns();
+        // result_chunk->append(*chunk);
+        // @TODO result chunk
+        if (result_chunk == nullptr) {
+            result_chunk = std::make_shared<Chunk>();
+            for (const auto& [slot_id, idx] : chunk->get_slot_id_to_index_map()) {
+                if (slot_id == _ctx->lookup_ref_slot_ids[0]) {
+                    continue;
+                }
+                auto src_col = chunk->get_column_by_index(idx);
+                LOG(INFO) << "append column: " << slot_id << ", " << src_col->get_name();
+                result_chunk->append_column(std::move(src_col), slot_id);
+            }
+        } else {
+            for (const auto& [slot_id, idx] : chunk->get_slot_id_to_index_map()) {
+                if (slot_id == _ctx->lookup_ref_slot_ids[0]) {
+                    continue;
+                }
+                auto src_col = chunk->get_column_by_index(idx);
+                auto dst_col = result_chunk->get_column_by_slot_id(slot_id);
+                dst_col->append(*src_col, 0, chunk->num_rows());
+                LOG(INFO) << "append column: " << slot_id << ", " << dst_col->get_name();
+            }
+        }
+        // @TODO 
+    } while (true);
+    return result_chunk;
+}
+
+Status IcebergV3LookUpTask::process(RuntimeState* state, const ChunkPtr& request_chunk) {
     // 获取请求上下文中的信息
+    LOG(INFO) << "IcebergV3LookUpTask process, request_ctxs size: " << _ctx->request_ctxs.size();
     if (_ctx->request_ctxs.empty()) {
         return Status::OK();
     }
-    
-    // 获取第一个请求上下文作为参考
-    auto& request_ctx = _ctx->request_ctxs[0];
-    TupleId request_tuple_id = request_ctx->request_tuple_id();
-    
-    // 获取tuple描述符
-    const TupleDescriptor* tuple_desc = state->desc_tbl().get_tuple_descriptor(request_tuple_id);
-    if (tuple_desc == nullptr) {
-        return Status::InternalError("Failed to get tuple descriptor for tuple_id: " + std::to_string(request_tuple_id));
-    }
-    
-    // 获取表描述符
-    const TableDescriptor* table_desc = tuple_desc->table_desc();
-    if (table_desc == nullptr) {
-        return Status::InternalError("Failed to get table descriptor for tuple_id: " + std::to_string(request_tuple_id));
-    }
-    
-    // 检查是否为Iceberg表
-    const IcebergTableDescriptor* iceberg_table = dynamic_cast<const IcebergTableDescriptor*>(table_desc);
-    if (iceberg_table == nullptr) {
-        return Status::InternalError("Table is not an Iceberg table");
-    }
-    // @TODO: we should keep some options in original scan node, and reuse them here
-    
-    // 创建TPlanNode和THdfsScanNode
-    // 注意：在实际实现中，需要从RuntimeState或其他地方获取这些信息
-    TPlanNode plan_node;
-    plan_node.__set_node_type(TPlanNodeType::HDFS_SCAN_NODE);
-    plan_node.__set_node_id(0); // 需要根据实际情况设置
-    
-    // 设置THdfsScanNode
-    THdfsScanNode hdfs_scan_node;
-    hdfs_scan_node.__set_tuple_id(request_tuple_id);
-    hdfs_scan_node.__set_case_sensitive(true);
-    hdfs_scan_node.__set_can_use_any_column(false);
-    hdfs_scan_node.__set_can_use_min_max_count_opt(false);
-    hdfs_scan_node.__set_use_partition_column_value_only(false);
-    
-    // 设置输出列信息
-    std::vector<SlotDescriptor*> output_slots = tuple_desc->slots();
-    std::vector<std::string> hive_column_names;
-    for (size_t i = 0; i < output_slots.size(); i++) {
-        hive_column_names.push_back(output_slots[i]->col_name());
-    }
-    hdfs_scan_node.__set_hive_column_names(hive_column_names);
-    
-    // 设置扫描谓词（如果有的话）
-    // 注意：在实际实现中，需要根据具体的查询条件设置谓词
-    std::vector<TExpr> conjuncts;
-    // 这里可以添加具体的谓词表达式
-    // hdfs_scan_node.__set_conjuncts(conjuncts); // 注意：THdfsScanNode可能没有conjuncts字段
-    
-    plan_node.__set_hdfs_scan_node(hdfs_scan_node);
-    
-    // 创建ConnectorScanNode（模拟）
-    // 注意：在实际实现中，需要从RuntimeState或其他地方获取真实的ConnectorScanNode
-    ConnectorScanNode* scan_node = nullptr; // 需要根据实际情况获取
-    
-    // 创建HiveDataSourceProvider
-    auto provider = std::make_unique<connector::HiveDataSourceProvider>(scan_node, plan_node);
-    
-    // 处理每个请求上下文
-    for (auto& request_ctx : _ctx->request_ctxs) {
-        // 收集输入列
-        ChunkPtr request_chunk = std::make_shared<Chunk>();
-        RETURN_IF_ERROR(request_ctx->collect_input_columns(request_chunk));
-        
-        // 从请求chunk中提取row_id信息
-        // 这里假设请求chunk包含了row_id列，用于定位具体的行
-        // 实际实现中需要根据具体的row_id来构建扫描范围
-        
-        // 创建扫描范围
-        THdfsScanRange hdfs_scan_range;
-        hdfs_scan_range.__set_file_length(0); // 需要根据实际情况设置
-        hdfs_scan_range.__set_offset(0);
-        hdfs_scan_range.__set_length(0);
-        hdfs_scan_range.__set_partition_id(0);
-        hdfs_scan_range.__set_relative_path(""); // 需要根据实际情况设置
-        hdfs_scan_range.__set_file_format(THdfsFileFormat::PARQUET); // Iceberg通常使用Parquet格式
-        hdfs_scan_range.__set_full_path(""); // 需要根据实际情况设置
-        
-        // 设置Iceberg V3特有的字段
-        hdfs_scan_range.__set_first_row_id(0); // 需要根据实际情况设置
-        
-        TScanRange scan_range;
-        scan_range.__set_hdfs_scan_range(hdfs_scan_range);
-        
-        // 创建HiveDataSource
-        auto data_source = std::make_unique<connector::HiveDataSource>(provider.get(), scan_range);
-        
-        // 打开数据源
-        RETURN_IF_ERROR(data_source->open(state));
-        
-        // 读取数据
-        ChunkPtr result_chunk = std::make_shared<Chunk>();
-        size_t total_rows = 0;
-        
-        Status status = data_source->get_next(state, &result_chunk);
-        while (status.ok()) {
-            if (result_chunk->num_rows() == 0) {
-                break;
+    // @TODO calculate row_id range
+    // @TODO fetch data
+
+    // create rowid expr 
+
+    SparseRange<int64_t> row_id_range;
+    Buffer<uint32_t> replicated_offsets;
+    // @TODO request_chunk use fetch_ref_slots, we should change it to lookup_ref_slots
+    ASSIGN_OR_RETURN(auto sorted_chunk, _calculate_row_id_range(state, request_chunk, &row_id_range, &replicated_offsets));
+    LOG(INFO) << "IcebergV3LookUpTask calculate row_id_range: " << row_id_range.to_string();
+    ASSIGN_OR_RETURN(auto result_chunk, _get_data_from_storage(state, {}, row_id_range));
+    // @TODO fill response
+    LOG(INFO) << "IcebergV3LookUpTask fill response, result_chunk: " << result_chunk->debug_columns();
+
+    // insersection
+    auto tuple_desc = state->desc_tbl().get_tuple_descriptor(_ctx->request_tuple_id);
+    std::vector<SlotDescriptor*> slots;
+    // @TODO this slot may contains row_id, we don't need it
+    {
+        std::ostringstream oss;
+        oss << "IcebergV3LookUpTask fill response, slots: ";
+        for (const auto& slot : tuple_desc->slots()) {
+            if (slot->id() == _ctx->lookup_ref_slot_ids[0]) {
+                continue;
             }
-            
-            // 处理结果数据
-            // 这里需要根据实际情况填充响应
-            // 例如：request_ctx->fill_response(result_chunk, source_id_slot, slots, start_offset);
-            
-            total_rows += result_chunk->num_rows();
-            
-            // 清空结果chunk，准备下一次读取
-            result_chunk->reset();
-            
-            status = data_source->get_next(state, &result_chunk);
+            slots.emplace_back(slot);
+            oss << slot->id() << ", ";
         }
-        
-        // 关闭数据源
-        data_source->close(state);
-        
-        LOG(INFO) << "IcebergV3LookUpTask::process - Processed " << total_rows << " rows for tuple_id: " << request_tuple_id;
+        LOG(INFO) << oss.str();
     }
+    size_t start_offset = 0;
+    for (const auto& request_ctx : _ctx->request_ctxs) {
+        ASSIGN_OR_RETURN(auto num_rows, request_ctx->fill_response(result_chunk, 0, slots, start_offset));
+        start_offset += num_rows;
+    }
+
+    // for (const auto& request_ctx : _ctx->request_ctxs) {
+    //     auto status = request_ctx->fill_response(result_chunk, _ctx->source_id_slot, _ctx->slots, 0);
+    //     RETURN_IF_ERROR(status);
+    // }
+
     
     return Status::OK();
 }

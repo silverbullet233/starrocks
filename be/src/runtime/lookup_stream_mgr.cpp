@@ -28,6 +28,7 @@ LookUpDispatcher::LookUpDispatcher(RuntimeState* state, const TUniqueId& query_i
                                                 PlanNodeId lookup_node_id, const std::vector<TupleId>& request_tuple_ids)
         : _state(state), _query_id(query_id), _lookup_node_id(lookup_node_id) {
     for (const auto& tuple_id : request_tuple_ids) {
+        LOG(INFO) << "create request queue for tuple_id: " << tuple_id;
         _request_queues.emplace(tuple_id, std::make_shared<RequestsQueue>());
     }
 }
@@ -50,8 +51,9 @@ Status LookUpDispatcher::add_request(const pipeline::LookUpRequestContextPtr& ct
     auto request_tuple_id = ctx->request_tuple_id();
     DCHECK(_request_queues.contains(request_tuple_id)) << "missing tuple_id: " << request_tuple_id;
     _request_queues.at(request_tuple_id)->enqueue(std::move(ctx));
-    VLOG_ROW << "[GLM] add request to LookUpDispatcher, " 
+    LOG(INFO) << "[GLM] add request to LookUpDispatcher, " 
              << ", query id: " << print_id(_query_id) << ", target node id: " << _lookup_node_id
+             << ", tuple id: " << request_tuple_id
              << ", dispacher: " << (void*)this;
     return Status::OK();
 }
@@ -60,21 +62,23 @@ bool LookUpDispatcher::try_get(int32_t driver_sequence, size_t max_num, pipeline
     ctx->request_ctxs.resize(max_num);
     // find target_source_slot_id with the largest queue size
     size_t max_cnt = 0;
-    SlotId target_source_slot_id = 0;
-    for (const auto& [source_slot_id, queue] : _request_queues) {
+    SlotId target_tuple_id = 0;
+    for (const auto& [tuple_id, queue] : _request_queues) {
         size_t cnt = queue->size_approx();
         if (cnt > max_cnt) {
             max_cnt = cnt;
-            target_source_slot_id = source_slot_id;
+            target_tuple_id = tuple_id;
         }
     }
     if (max_cnt > 0) {
-        auto target_queue = _request_queues.at(target_source_slot_id);
+        auto target_queue = _request_queues.at(target_tuple_id);
         if (size_t num = target_queue->try_dequeue_bulk(ctx->request_ctxs.data(), max_num); num > 0) {
             ctx->request_ctxs.resize(num);
-            VLOG_ROW << "[GLM] try_get LookUpDispatcher, queue size: " << max_cnt
+            ctx->request_tuple_id = target_tuple_id;
+            LOG(INFO) << "[GLM] try_get LookUpDispatcher, queue size: " << max_cnt
                      << ", query id: " << print_id(_query_id)
                      << ", target node id: " << _lookup_node_id
+                     << ", tuple id: " << target_tuple_id
                      << ", dispacher: " << (void*)this;
             return true;
         }

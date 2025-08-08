@@ -12,15 +12,17 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include "exec/pipeline/scan/glm_manager.h"
+#include "formats/parquet/row_source_reader.h"
+#include "column/column.h"
 
-namespace starrocks::pipeline {
-
-void GlobalLateMaterilizationContextMgr::add_ctx(int tuple_id, GlobalLateMaterilizationContext* ctx) {
-    _ctx = ctx;
+namespace starrocks::parquet {
+Status RowSourceReader::read_range(const Range<uint64_t>& range, const Filter* filter, ColumnPtr& dst) {
+    size_t num_rows = range.end() - range.begin();
+    // @TODO need optimize
+    for (size_t i = 0; i < num_rows; i++) {
+        dst->append_datum(Datum(_node_id));
+    }
+    return Status::OK();
 }
 
-GlobalLateMaterilizationContext* GlobalLateMaterilizationContextMgr::get_ctx(int tuple_id) const {
-    return _ctx;
 }
-} // namespace starrocks::pipeline

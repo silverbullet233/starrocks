@@ -115,6 +115,9 @@ public class LateMaterializationRewriter {
                 for (ColumnRefOperator columnRef : columnRefs) {
                     columnRefOperatorColumnMap.put(columnRef, columnRefMap.get(columnRef));
                 }
+                for (ColumnRefOperator columnRef : rewriteContext.rowIdRefColumns.get(identifyOperator)) {
+                    columnRefOperatorColumnMap.put(columnRef, collectorContext.columnRefFactory.getColumn(columnRef));
+                }
             });
 
             PhysicalFetchOperator physicalFetchOperator = new PhysicalFetchOperator(
@@ -815,8 +818,13 @@ public class LateMaterializationRewriter {
                     rowIdToRefColumns.put(rowIdColumnRef, context.rowIdRefColumns.get(op));
                     rowIdToLazyColumns.put(rowIdColumnRef, columnRefs);
                     Map<ColumnRefOperator, Column> columnRefMap = scanOperator.getColRefToColumnMetaMap();
+                    // add all related columns into columnRefOperatorColumnMap
                     for (ColumnRefOperator columnRef : columnRefs) {
                         columnRefOperatorColumnMap.put(columnRef, columnRefMap.get(columnRef));
+                    }
+                    // @TODO _row_id not in columnRefFactory
+                    for (ColumnRefOperator columnRef : context.rowIdRefColumns.get(op)) {
+                        columnRefOperatorColumnMap.put(columnRef, collectorContext.columnRefFactory.getColumn(columnRef));
                     }
                 });
                 // update fetched Columns
@@ -824,7 +832,8 @@ public class LateMaterializationRewriter {
 
                 PhysicalFetchOperator physicalFetchOperator = new PhysicalFetchOperator(
                         rowIdToTables, rowIdToRefColumns, rowIdToLazyColumns, columnRefOperatorColumnMap);
-
+                // @TODO maintain a mapping?
+                // @TODO for ref columns, we should generate new ColumnRef for lookup?
                 PhysicalLookUpOperator physicalLookUpOperator = new PhysicalLookUpOperator(
                         rowIdToTables, rowIdToRefColumns, rowIdToLazyColumns, columnRefOperatorColumnMap);
 
@@ -943,6 +952,8 @@ public class LateMaterializationRewriter {
                 Column rowIdColumn = new Column("_row_id", Type.BIGINT, true);
                 ColumnRefOperator columnRefOperator = optimizerContext.getColumnRefFactory()
                         .create("_row_id", Type.BIGINT, true);
+                optimizerContext.getColumnRefFactory()
+                        .updateColumnRefToColumns(columnRefOperator, rowIdColumn, scanOperator.getTable());
                 newColumnRefMap.put(columnRefOperator, rowIdColumn);
                 rowIdColumnRef = columnRefOperator;
             }

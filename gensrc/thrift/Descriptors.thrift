@@ -48,6 +48,8 @@ struct TRowPositionDescriptor {
     // which node used to do fetch operation
     2: optional Types.TSlotId source_node_slot;
     3: optional list<Types.TSlotId> ref_slots;
+    4: optional list<Types.TSlotId> fetch_ref_slots;
+    5: optional list<Types.TSlotId> lookup_ref_slots;
 }
 
 struct TSlotDescriptor {

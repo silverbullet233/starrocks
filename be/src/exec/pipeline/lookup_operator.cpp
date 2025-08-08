@@ -134,12 +134,19 @@ void LookUpProcessor::close() {
 Status LookUpProcessor::_collect_input_columns(RuntimeState* state, ChunkPtr request_chunk) {
     DCHECK(_parent->_row_pos_descs.contains(_ctx->request_tuple_id)) << "missing request tuple id: " << _ctx->request_tuple_id;
     auto row_pos_desc = _parent->_row_pos_descs.at(_ctx->request_tuple_id);
-    for (const auto& slot_id: row_pos_desc->get_ref_slot_ids()) {
-        // @TODO cache slot desc
+    for (const auto& slot_id: row_pos_desc->get_fetch_ref_slot_ids()) {
+        // @TODO use lookup slot ids?
         auto slot_desc = state->desc_tbl().get_slot_descriptor(slot_id);
         auto col = ColumnHelper::create_column(slot_desc->type(), slot_desc->is_nullable());
         request_chunk->append_column(std::move(col), slot_desc->id());
     }
+    auto slot_desc = state->desc_tbl().get_slot_descriptor(row_pos_desc->get_source_node_slot_id());
+    // row source column from fethc node won't be nullable 
+    auto row_source_col = ColumnHelper::create_column(slot_desc->type(), false);
+    LOG(INFO) << "LookUpProcessor _collect_input_columns, append source node id column, slot_id: " << slot_desc->id() << ", column: " << row_source_col->get_name();
+    request_chunk->append_column(std::move(row_source_col), slot_desc->id());
+    // add source node id
+    LOG(INFO) << "LookUpProcessor _collect_input_columns, request_chunk: " << request_chunk->debug_columns();
 
     for (auto& request_ctx : _ctx->request_ctxs) {
         RETURN_IF_ERROR(request_ctx->collect_input_columns(request_chunk));
@@ -486,6 +493,7 @@ Status LookUpProcessor::process(RuntimeState* state) {
     COUNTER_UPDATE(_parent->_process_counter, 1);
     auto request_chunk = std::make_shared<Chunk>();
     RETURN_IF_ERROR(status = _collect_input_columns(state, request_chunk));
+    // @TODO
     /// create task;
     auto st = _create_task(_ctx);
     if(!st.ok()) {
@@ -493,8 +501,10 @@ Status LookUpProcessor::process(RuntimeState* state) {
         return status;
     }
     auto task = st.value();
-    RETURN_IF_ERROR(status = task->process(state));
+    // @TODO we should pass request chunk
+    RETURN_IF_ERROR(status = task->process(state, request_chunk));
 
+    // @TODO fill response
     return Status::OK();
 }
 
@@ -644,6 +654,9 @@ Status LookUpOperator::_try_to_trigger_io_task(RuntimeState* state) {
         auto lookup_task_ctx = std::make_shared<LookUpTaskContext>();
         bool is_running = processor->is_running();
         if (!is_running && _dispatcher->try_get(_driver_sequence, config::max_lookup_batch_request, lookup_task_ctx.get())) {
+            // @TODO
+            lookup_task_ctx->lookup_ref_slot_ids = _row_pos_descs.at(lookup_task_ctx->request_tuple_id)->get_lookup_ref_slot_ids();
+            lookup_task_ctx->fetch_ref_slot_ids = _row_pos_descs.at(lookup_task_ctx->request_tuple_id)->get_fetch_ref_slot_ids();
             processor->set_ctx(lookup_task_ctx);
             // @TODO create task
             COUNTER_UPDATE(_submit_io_task_counter, 1);

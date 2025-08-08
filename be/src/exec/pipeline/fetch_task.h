@@ -38,7 +38,8 @@ using FetchTaskPtr = std::shared_ptr<FetchTask>;
 // @TODO need a new name
 struct BatchUnit {
     std::vector<ChunkPtr> input_chunks;
-    std::vector<FetchTaskPtr> fetch_tasks;
+    // std::vector<FetchTaskPtr> fetch_tasks;
+    phmap::flat_hash_map<TupleId, std::shared_ptr<std::vector<FetchTaskPtr>>> fetch_tasks;
 
     int32_t total_request_num = 0;
     std::atomic_int32_t finished_request_num = 0;
@@ -49,7 +50,11 @@ struct BatchUnit {
     phmap::flat_hash_map<uint32_t, ColumnPtr> missing_positions;
     std::string debug_string() const;
 
-    bool all_fetch_done() const { return total_request_num == finished_request_num; }
+    bool all_fetch_done() const {
+        return finished_request_num == total_request_num;
+        // return finished_request_num == fetch_tasks.size();
+        // return total_request_num == finished_request_num;
+    }
 
     bool reach_end() const { return next_output_idx >= input_chunks.size(); }
     ChunkPtr get_next_chunk() { return input_chunks[next_output_idx++]; }

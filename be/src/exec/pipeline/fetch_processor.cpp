@@ -14,6 +14,7 @@
 
 #include "exec/pipeline/fetch_processor.h"
 
+#include <algorithm>
 #include <memory>
 #include <mutex>
 #include <vector>
@@ -138,8 +139,10 @@ Status FetchProcessor::_fetch_data(RuntimeState* state, BatchUnitPtr& unit) {
     DCHECK(!unit->input_chunks.empty()) << "input chunk should not be empty";
     // generate request chunk
     ASSIGN_OR_RETURN(auto request_chunk, _build_request_chunk(state, unit));
+    LOG(INFO) << "request chunk: " << request_chunk->debug_columns();
     // generate fetch tasks
     RETURN_IF_ERROR(_gen_fetch_tasks(state, request_chunk, unit));
+    LOG(INFO) << "gen fetch tasks done, task num: " << unit->fetch_tasks.size();
     RETURN_IF_ERROR(_submit_fetch_tasks(state, unit));
     return Status::OK();
 }
@@ -177,7 +180,7 @@ StatusOr<ChunkPtr> FetchProcessor::_build_request_chunk(RuntimeState* state, con
         // source id column
         concat_column_func(row_pos_desc->get_source_node_slot_id());
         // ref columns
-        for (const auto& slot_id : row_pos_desc->get_ref_slot_ids()) {
+        for (const auto& slot_id : row_pos_desc->get_fetch_ref_slot_ids()) {
             concat_column_func(slot_id);
         }
     }
@@ -205,13 +208,16 @@ StatusOr<FetchTaskPtr> FetchProcessor::_create_fetch_task(TupleId request_tuple_
 }
 
 Status FetchProcessor::_gen_fetch_tasks(RuntimeState* state, const ChunkPtr& request_chunk, BatchUnitPtr& unit) {
+    LOG(INFO) << "gen fetch tasks, request chunk: " << request_chunk->debug_columns();
     auto* fetch_tasks = &(unit->fetch_tasks);
     auto* null_position_columns = &(unit->missing_positions);
     for (const auto& [tuple_id, row_pos_desc] : _row_pos_descs) {
+        LOG(INFO) << "process tuple_id: " << tuple_id << ", row_pos_desc: " << row_pos_desc->debug_string();
         auto source_slot_id = row_pos_desc->get_source_node_slot_id();
         auto tmp_chunk = std::make_shared<Chunk>();
 
         ColumnPtr col = request_chunk->get_column_by_slot_id(source_slot_id);
+        LOG(INFO) << "source_slot_id: " << source_slot_id << ", col: " << col->debug_string();
 
         Int32Column::Ptr source_id_column;
         ColumnPtr position_column;
@@ -225,6 +231,7 @@ Status FetchProcessor::_gen_fetch_tasks(RuntimeState* state, const ChunkPtr& req
                 // all rows are null
                 null_position_columns->emplace(source_slot_id,
                                                request_chunk->get_column_by_slot_id(kPositionColumnSlotId)->clone());
+                LOG(INFO) << "all rows are null, tuple_id: " << tuple_id << ", row_pos_desc: " << row_pos_desc->debug_string();
                 continue;
             }
             std::vector<uint32_t> not_null_indices;
@@ -253,7 +260,7 @@ Status FetchProcessor::_gen_fetch_tasks(RuntimeState* state, const ChunkPtr& req
             source_id_column->append_selective(*data_column, not_null_indices.data(), 0, not_null_rows);
             const auto& pos_column = request_chunk->get_column_by_slot_id(kPositionColumnSlotId);
             position_column->append_selective(*pos_column, not_null_indices.data(), 0, not_null_rows);
-            for (const auto& slot_id : row_pos_desc->get_ref_slot_ids()) {
+            for (const auto& slot_id : row_pos_desc->get_fetch_ref_slot_ids()) {
                 auto src_col = request_chunk->get_column_by_slot_id(slot_id);
                 auto dst_col = src_col->clone_empty();
                 dst_col->append_selective(*src_col, not_null_indices.data(), 0, not_null_rows);
@@ -264,7 +271,7 @@ Status FetchProcessor::_gen_fetch_tasks(RuntimeState* state, const ChunkPtr& req
         } else {
             source_id_column = Int32Column::static_pointer_cast(ColumnHelper::get_data_column(col));
             position_column = request_chunk->get_column_by_slot_id(kPositionColumnSlotId);
-            for (const auto& slot_id : row_pos_desc->get_ref_slot_ids()) {
+            for (const auto& slot_id : row_pos_desc->get_fetch_ref_slot_ids()) {
                 auto src_col = request_chunk->get_column_by_slot_id(slot_id);
                 tmp_chunk->append_column(std::move(src_col), slot_id);
             }
@@ -273,6 +280,7 @@ Status FetchProcessor::_gen_fetch_tasks(RuntimeState* state, const ChunkPtr& req
         tmp_chunk->append_column(source_id_column, source_slot_id);
         tmp_chunk->append_column(position_column, kPositionColumnSlotId);
         tmp_chunk->check_or_die();
+        LOG(INFO) << "tuple_id: " << tuple_id << ", tmp_chunk: " << tmp_chunk->debug_columns();
 
         // 2. partition by source_id
         ASSIGN_OR_RETURN(auto sorted_chunk, _sort_chunk(state, tmp_chunk, {source_id_column}));
@@ -307,7 +315,8 @@ Status FetchProcessor::_gen_fetch_tasks(RuntimeState* state, const ChunkPtr& req
 
             // @TODO
             // copy all related column
-            for (const auto& slot_id : row_pos_desc->get_ref_slot_ids()) {
+            // @TODO should we use lookup_ref_slot_ids?
+            for (const auto& slot_id : row_pos_desc->get_fetch_ref_slot_ids()) {
                 auto src_col = sorted_chunk->get_column_by_slot_id(slot_id);
                 auto new_col = src_col->clone_empty();
                 new_col->reserve(num_rows);
@@ -318,8 +327,13 @@ Status FetchProcessor::_gen_fetch_tasks(RuntimeState* state, const ChunkPtr& req
             ASSIGN_OR_RETURN(auto fetch_task,
                 _create_fetch_task(tuple_id, row_pos_desc, unit, cur_source_id, new_request_chunk));
             // add new fetch task
-            fetch_tasks->emplace_back(std::move(fetch_task));
-
+            // fetch_tasks->emplace_back(std::move(fetch_task));
+            if (!fetch_tasks->contains(tuple_id)) {
+                fetch_tasks->emplace(tuple_id, std::make_shared<std::vector<FetchTaskPtr>>());
+            }
+            fetch_tasks->at(tuple_id)->emplace_back(std::move(fetch_task));
+            unit->total_request_num += 1;
+            LOG(INFO) << "add fetch task, task num: " << unit->total_request_num;
 
             iter = range.second;
         }
@@ -328,8 +342,10 @@ Status FetchProcessor::_gen_fetch_tasks(RuntimeState* state, const ChunkPtr& req
 }
 
 Status FetchProcessor::_submit_fetch_tasks(RuntimeState* state, const BatchUnitPtr& unit) {
-    for (const auto& fetch_task : unit->fetch_tasks) {
-        RETURN_IF_ERROR(fetch_task->submit(state));
+    for (const auto& [tuple_id, fetch_tasks] : unit->fetch_tasks) {
+        for (const auto& fetch_task : *fetch_tasks) {
+            RETURN_IF_ERROR(fetch_task->submit(state));
+        }
     }
     return Status::OK();
 }
@@ -494,7 +510,7 @@ StatusOr<ChunkPtr> FetchProcessor::_get_output_chunk(RuntimeState* state) {
     std::unique_lock l(_queue_mu);
     if (!_queue.empty()) {
         auto& unit = _queue.front();
-        DCHECK_EQ(unit->finished_request_num, unit->total_request_num) << "all request should be finished";
+        DCHECK(unit->all_fetch_done()) << "all fetch should be done";
         if (!unit->build_output_done) {
             RETURN_IF_ERROR(_build_output_chunk(state, unit));
         }
@@ -520,69 +536,83 @@ StatusOr<ChunkPtr> FetchProcessor::pull_chunk(RuntimeState* state) {
 }
 
 Status FetchProcessor::_build_output_chunk(RuntimeState* state, const BatchUnitPtr& unit) {
-    // SCOPED_TIMER(_build_output_chunk_timer);
-    // const auto& fetch_ctxs = unit->fetch_ctxs;
-    // const auto& input_chunks = unit->input_chunks;
-    // const auto& missing_positions = unit->missing_positions;
+    LOG(INFO) << "build output chunk, unit: " << unit->debug_string();
+    const auto& all_fetch_tasks = unit->fetch_tasks;
+    const auto& input_chunks = unit->input_chunks;
+    const auto& missing_positions = unit->missing_positions;
 
-    // for (const auto& [tuple_id, row_id_slot] : _row_id_slots) {
-    //     // build a tmp chunk contains all columns under this tuple and re-sort by position
-    //     auto chunk = std::make_shared<Chunk>();
-    //     const auto& tuple_desc = state->desc_tbl().get_tuple_descriptor(tuple_id);
-    //     ColumnPtr position_column = UInt32Column::create();
-    //     for (const auto& slot : tuple_desc->slots()) {
-    //         auto column = ColumnHelper::create_column(slot->type(), slot->is_nullable());
-    //         chunk->append_column(std::move(column), slot->id());
-    //     }
+    for (const auto& [tuple_id, row_pos_desc] : _row_pos_descs) {
+        LOG(INFO) << "build output chunk, tuple_id: " << tuple_id << ", row_pos_desc: " << row_pos_desc->debug_string();
+        auto chunk = std::make_shared<Chunk>();
+        const auto& tuple_desc = state->desc_tbl().get_tuple_descriptor(tuple_id);
+        LOG(INFO) << "tuple_desc: " << tuple_desc->debug_string();
+        ColumnPtr position_column = UInt32Column::create();
+        std::vector<SlotDescriptor*> slots;
+        {
+            for (const auto& slot : tuple_desc->slots()) {
+                bool ignore = std::any_of(row_pos_desc->get_lookup_ref_slot_ids().begin(), 
+                                          row_pos_desc->get_lookup_ref_slot_ids().end(),
+                                          [slot](SlotId slot_id) { return slot_id == slot->id(); });
+                if (!ignore) {
+                    slots.emplace_back(slot);
+                }
+            }
+        }
 
-    //     // @TODO if all null, we won't find row id col too, how to solve it
-    //     for (const auto& [be_id, fetch_ctx] : fetch_ctxs) {
-    //         if (auto iter = fetch_ctx->request_columns->find(row_id_slot); iter != fetch_ctx->request_columns->end()) {
-    //             const auto& [row_id_col, pos_col] = iter->second;
-    //             position_column->append(*pos_col);
-    //             for (const auto& slot : tuple_desc->slots()) {
-    //                 DCHECK(fetch_ctx->response_columns.contains(slot->id()))
-    //                         << "response columns should contains slot: " << slot->debug_string();
+        for (const auto& slot : slots) {
+            // @TODO should ignore ref slots...
+            auto column = ColumnHelper::create_column(slot->type(), slot->is_nullable());
+            chunk->append_column(std::move(column), slot->id());
+        }
+        const auto& fetch_tasks = all_fetch_tasks.at(tuple_id);
+        for (const auto& fetch_task : *fetch_tasks) {
+            auto ctx = fetch_task->get_ctx();
+            auto partial_pos_col = ctx->request_chunk->get_column_by_slot_id(kPositionColumnSlotId);
+            position_column->append(*partial_pos_col);
 
-    //                 auto partial_column = fetch_ctx->response_columns.at(slot->id());
-    //                 ;
-    //                 chunk->get_column_by_slot_id(slot->id())->append(*partial_column);
-    //             }
-    //         }
-    //     }
-    //     chunk->check_or_die();
-    //     if (missing_positions.contains(row_id_slot)) {
-    //         // for null rows in row_id_column, we should add null rows to related columns
-    //         auto& null_positions = missing_positions.at(row_id_slot);
-    //         position_column->append(*null_positions, 0, null_positions->size());
-    //         for (const auto& slot : tuple_desc->slots()) {
-    //             auto dst_column = chunk->get_column_by_slot_id(slot->id());
-    //             DCHECK(dst_column->is_nullable()) << "slot: " << slot->debug_string() << " should be nullable";
-    //             dst_column->append_nulls(null_positions->size());
-    //         }
-    //         DCHECK_EQ(chunk->num_rows(), position_column->size())
-    //                 << "chunk num rows: " << chunk->num_rows() << ", position column size: " << position_column->size();
-    //     }
 
-    //     // re-sort data by position
-    //     ASSIGN_OR_RETURN(auto sorted_chunk, _sort_chunk(state, chunk, {position_column}));
-    //     // assign columns to output chunk
-    //     for (const auto& slot : tuple_desc->slots()) {
-    //         size_t offset = 0;
-    //         auto src_column = sorted_chunk->get_column_by_slot_id(slot->id());
-    //         for (auto& input_chunk : input_chunks) {
-    //             size_t num_rows = input_chunk->num_rows();
-    //             auto dst_column = src_column->clone_empty();
-    //             dst_column->reserve(num_rows);
-    //             dst_column->append(*src_column, offset, num_rows);
-    //             input_chunk->append_column(std::move(dst_column), slot->id());
-    //             input_chunk->check_or_die();
-    //             offset += num_rows;
-    //         }
-    //     }
-    // }
-    // unit->fetch_ctxs.clear();
-    // unit->build_output_done = true;
+            for (const auto& slot : slots) {
+                // @TODO
+                DCHECK(ctx->response_columns.contains(slot->id())) << "response columns should contains slot: " << slot->debug_string();
+                auto partial_column = ctx->response_columns.at(slot->id());
+                chunk->get_column_by_slot_id(slot->id())->append(*partial_column);
+            }
+        }
+        // chunk->append_column(std::move(position_column), kPositionColumnSlotId);
+        chunk->check_or_die();
+        LOG(INFO) << "chunk: " << chunk->debug_columns();
+        if (missing_positions.contains(tuple_id)) {
+            auto& null_positions = missing_positions.at(tuple_id);
+            position_column->append(*null_positions, 0, null_positions->size());
+            for (const auto& slot : tuple_desc->slots()) {
+                auto dst_column = chunk->get_column_by_slot_id(slot->id());
+                DCHECK(dst_column->is_nullable()) << "slot: " << slot->debug_string() << " should be nullable";
+                dst_column->append_nulls(null_positions->size());
+            }
+            DCHECK_EQ(chunk->num_rows(), position_column->size())
+                    << "chunk num rows: " << chunk->num_rows() << ", position column size: " << position_column->size();
+        }
+
+        // re-sort data by position
+        ASSIGN_OR_RETURN(auto sorted_chunk, _sort_chunk(state, chunk, {position_column}));
+
+        for (const auto& slot : slots) {
+            size_t offset = 0;
+            auto src_column = sorted_chunk->get_column_by_slot_id(slot->id());
+            LOG(INFO) << "slot id: " << slot->id() << ", src column: " << src_column->debug_string();
+            for (const auto& input_chunk : input_chunks) {
+                size_t num_rows = input_chunk->num_rows();
+                auto dst_column = src_column->clone_empty();
+                dst_column->reserve(num_rows);
+                dst_column->append(*src_column, offset, num_rows);
+                input_chunk->append_column(std::move(dst_column), slot->id());
+                input_chunk->check_or_die();
+                offset += num_rows;
+            }
+        }
+    }
+    unit->build_output_done = true;
+
     return Status::OK();
 }
 
