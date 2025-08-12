@@ -13,14 +13,25 @@
 // limitations under the License.
 
 #include "exec/pipeline/scan/glm_manager.h"
+#include "common/object_pool.h"
 
 namespace starrocks::pipeline {
 
-void GlobalLateMaterilizationContextMgr::add_ctx(int tuple_id, GlobalLateMaterilizationContext* ctx) {
-    _ctx = ctx;
+void GlobalLateMaterilizationContextMgr::add_ctx(int row_source_slot_id, GlobalLateMaterilizationContext* ctx) {
+    _ctx_map.try_emplace(row_source_slot_id, ctx);
 }
 
-GlobalLateMaterilizationContext* GlobalLateMaterilizationContextMgr::get_ctx(int tuple_id) const {
-    return _ctx;
+GlobalLateMaterilizationContext* GlobalLateMaterilizationContextMgr::get_ctx(int row_source_slot_id) const {
+    DCHECK(_ctx_map.contains(row_source_slot_id));
+    return _ctx_map.at(row_source_slot_id);
+}
+
+GlobalLateMaterilizationContext* GlobalLateMaterilizationContextMgr::get_or_create_ctx(int32_t row_source_slot_id,
+        const std::function<GlobalLateMaterilizationContext*()>& ctor_func) {
+    auto iter = _ctx_map.lazy_emplace(row_source_slot_id, [&](const auto& ctor) {
+        auto ctx = ctor_func();
+        ctor(row_source_slot_id, ctx);
+    });
+    return iter->second;
 }
 } // namespace starrocks::pipeline

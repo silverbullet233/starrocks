@@ -865,7 +865,7 @@ std::string DescriptorTbl::debug_string() const {
 
 std::string RowPositionDescriptor::debug_string() const {
     std::stringstream out;
-    out << "RowPositionDescriptor(type=" << _type << " source_node_slot_id=" << _source_node_slot_id << " fetch_ref_slot_ids=[";
+    out << "RowPositionDescriptor(type=" << _type << " row_source_slot_id=" << _row_source_slot_id << " fetch_ref_slot_ids=[";
     for (const auto& slot_id : _fetch_ref_slot_ids) {
         out << slot_id << ", ";
     }
@@ -889,7 +889,7 @@ RowPositionDescriptor* RowPositionDescriptor::from_thrift(const TRowPositionDesc
             for (const auto& slot_id : t_desc.lookup_ref_slots) {
                 lookup_ref_slot_ids.emplace_back(slot_id);
             }
-            desc = pool->add(new IcebergV3RowPositionDescriptor(t_desc.source_node_slot, fetch_ref_slot_ids, lookup_ref_slot_ids));
+            desc = pool->add(new IcebergV3RowPositionDescriptor(t_desc.row_source_slot, fetch_ref_slot_ids, lookup_ref_slot_ids));
             break;
         }
         default: {

@@ -98,6 +98,7 @@ private:
     void _init_tuples_and_slots(RuntimeState* state);
     void _init_counter(RuntimeState* state);
     void _init_rf_counters();
+    void _init_global_late_materialization_context(RuntimeState* state);
 
     Status _init_partition_values();
     Status _init_extended_values();
@@ -174,6 +175,8 @@ private:
 
     bool _has_scan_range_indicate_const_column = false;
     bool _use_partition_column_value_only = false;
+    // only used in global late materialization
+    int32_t _scan_range_id = -1;
 
     // ======================================
     // The following are profile metrics

@@ -178,7 +178,7 @@ StatusOr<ChunkPtr> FetchProcessor::_build_request_chunk(RuntimeState* state, con
     // concat each related column into one
     for (const auto& [_, row_pos_desc] : _row_pos_descs) {
         // source id column
-        concat_column_func(row_pos_desc->get_source_node_slot_id());
+        concat_column_func(row_pos_desc->get_row_source_slot_id());
         // ref columns
         for (const auto& slot_id : row_pos_desc->get_fetch_ref_slot_ids()) {
             concat_column_func(slot_id);
@@ -213,7 +213,7 @@ Status FetchProcessor::_gen_fetch_tasks(RuntimeState* state, const ChunkPtr& req
     auto* null_position_columns = &(unit->missing_positions);
     for (const auto& [tuple_id, row_pos_desc] : _row_pos_descs) {
         LOG(INFO) << "process tuple_id: " << tuple_id << ", row_pos_desc: " << row_pos_desc->debug_string();
-        auto source_slot_id = row_pos_desc->get_source_node_slot_id();
+        auto source_slot_id = row_pos_desc->get_row_source_slot_id();
         auto tmp_chunk = std::make_shared<Chunk>();
 
         ColumnPtr col = request_chunk->get_column_by_slot_id(source_slot_id);

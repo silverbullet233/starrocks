@@ -144,7 +144,8 @@ StatusOr<ChunkPtr> LookUpTask::_sort_chunk(RuntimeState* state, const ChunkPtr& 
 
 
 StatusOr<ChunkPtr> IcebergV3LookUpTask::_calculate_row_id_range(RuntimeState* state, const ChunkPtr& request_chunk,
-    SparseRange<int64_t>* row_id_range, Buffer<uint32_t>* replicated_offsets) {
+    phmap::flat_hash_map<int32_t, std::shared_ptr<SparseRange<int64_t>>>* row_id_ranges,
+    Buffer<uint32_t>* replicated_offsets) {
     // 1. add position column
     UInt32Column::Ptr position_column = UInt32Column::create();
     position_column->resize_uninitialized(request_chunk->num_rows());
@@ -156,40 +157,72 @@ StatusOr<ChunkPtr> IcebergV3LookUpTask::_calculate_row_id_range(RuntimeState* st
     request_chunk->check_or_die();
     // 2. sort by _row_id
     // @TODO should use fetch ref slots
-    auto row_id_column = request_chunk->get_column_by_slot_id(_ctx->fetch_ref_slot_ids[0]);
+    auto scan_range_id_column = request_chunk->get_column_by_slot_id(_ctx->fetch_ref_slot_ids[0]);
+    auto row_id_column = request_chunk->get_column_by_slot_id(_ctx->fetch_ref_slot_ids[1]);
 
-    ASSIGN_OR_RETURN(auto sorted_chunk, _sort_chunk(state, request_chunk, {row_id_column}));
+
+    ASSIGN_OR_RETURN(auto sorted_chunk, _sort_chunk(state, request_chunk, {scan_range_id_column, row_id_column}));
 
 
     // 3. calculate row_id range and replicated_offsets
-    const auto& nullable_column = 
+    const auto& nullable_scan_range_id_column = 
         down_cast<NullableColumn*>(sorted_chunk->get_column_by_slot_id(_ctx->fetch_ref_slot_ids[0]).get());
-    DCHECK(!nullable_column->has_null()) << "row_id column should not have null";
-    const auto& ordered_row_id_column = Int64Column::static_pointer_cast(nullable_column->data_column());
+    DCHECK(!nullable_scan_range_id_column->has_null()) << "scan_range_id column should not have null";
+    const auto& ordered_scan_range_id_column = Int32Column::static_pointer_cast(nullable_scan_range_id_column->data_column());
+    const auto& ordered_scan_range_ids = ordered_scan_range_id_column->get_data();
+
+    const auto& nullable_row_id_column = 
+        down_cast<NullableColumn*>(sorted_chunk->get_column_by_slot_id(_ctx->fetch_ref_slot_ids[1]).get());
+    DCHECK(!nullable_row_id_column->has_null()) << "row_id column should not have null";
+    const auto& ordered_row_id_column = Int64Column::static_pointer_cast(nullable_row_id_column->data_column());
     const auto& ordered_row_ids = ordered_row_id_column->get_data();
-    size_t num_rows = ordered_row_id_column->size();
+
+    size_t num_rows = ordered_scan_range_id_column->size();
+
+    int32_t cur_scan_range_id = ordered_scan_range_ids[0];
     int64_t cur_row_id = ordered_row_ids[0];
     Range<int64_t> cur_range(cur_row_id, cur_row_id + 1);
 
     replicated_offsets->emplace_back(0);
     replicated_offsets->emplace_back(1);
+
     bool has_duplicated_row = false;
     for (size_t i = 1;i < num_rows;i++) {
-        int64_t cur_row_id = ordered_row_ids[i];
-        if (cur_row_id == cur_range.end() - 1) {
-            replicated_offsets->back()++;
-            has_duplicated_row = true;
-            continue;
-        }
-        if (cur_row_id == cur_range.end()) {
-            cur_range.expand(1);
+        int32_t scan_range_id = ordered_scan_range_ids[i];
+        int64_t row_id = ordered_row_ids[i];
+        if (scan_range_id == cur_scan_range_id) {
+            // same scan range, check if need add a new range
+            if (row_id == cur_range.end() - 1) {
+                // duplicated row_ids, do nothing, we should mark which idx is duplicated
+                replicated_offsets->back()++;
+                has_duplicated_row = true;
+                continue;
+            }
+            if (row_id == cur_range.end()) {
+                // continous range, just expand current range
+                cur_range.expand(1);
+            } else {
+                // not continous, add the old one into seg_ranges
+                auto [iter, _] = row_id_ranges->try_emplace(cur_scan_range_id, std::make_shared<SparseRange<int64_t>>());
+                iter->second->add(cur_range);
+                cur_range = Range<int64_t>(row_id, row_id + 1);
+            }
         } else {
-            row_id_range->add(cur_range);
-            cur_range = Range<int64_t>(cur_row_id, cur_row_id + 1);
+            // move to next scan range, we should add the old range into seg_ranges
+            auto [iter, _] = row_id_ranges->try_emplace(cur_scan_range_id, std::make_shared<SparseRange<int64_t>>());
+            iter->second->add(cur_range);
+            // reset all
+            cur_scan_range_id = scan_range_id;
+            cur_range = Range<int64_t>(row_id, row_id + 1);
         }
         replicated_offsets->emplace_back(replicated_offsets->back() + 1);
     }
-    row_id_range->add(cur_range);
+    // handle the last one
+    auto [iter, _] = row_id_ranges->try_emplace(cur_scan_range_id, std::make_shared<SparseRange<int64_t>>());
+    iter->second->add(cur_range);
+    for (const auto& [scan_range_id, range] : *row_id_ranges) {
+        LOG(INFO) << "scan_range_id: " << scan_range_id << ", range: " << range->to_string();
+    }
 
     if (!has_duplicated_row) {
         replicated_offsets->clear();
@@ -198,7 +231,7 @@ StatusOr<ChunkPtr> IcebergV3LookUpTask::_calculate_row_id_range(RuntimeState* st
 }
 
 
-TExpr create_between_expr(int32_t slot_id, int32_t tuple_id) {
+TExpr create_between_expr(int32_t slot_id, int64_t start, int64_t end) {
     TExpr expr;
     std::vector<TExprNode>& nodes = expr.nodes;
     
@@ -252,7 +285,7 @@ TExpr create_between_expr(int32_t slot_id, int32_t tuple_id) {
     // 设置slot信息
     TSlotRef slot_ref_info_1;
     slot_ref_info_1.slot_id = slot_id;  // 5
-    slot_ref_info_1.tuple_id = tuple_id;
+    slot_ref_info_1.tuple_id = 0;
     slot_ref_1.slot_ref = slot_ref_info_1;
     slot_ref_1.__isset.slot_ref = true;
     
@@ -268,7 +301,7 @@ TExpr create_between_expr(int32_t slot_id, int32_t tuple_id) {
     literal_1.type = bigint_type;
     
     TIntLiteral int_literal_1;
-    int_literal_1.value = 14342615;
+    int_literal_1.value = start;
     literal_1.int_literal = int_literal_1;
     literal_1.__isset.int_literal = true;
     
@@ -277,7 +310,7 @@ TExpr create_between_expr(int32_t slot_id, int32_t tuple_id) {
     // 5. 右子节点：a <= 10
     TExprNode le_node;
     le_node.node_type = TExprNodeType::BINARY_PRED;
-    le_node.opcode = TExprOpcode::LE;
+    le_node.opcode = TExprOpcode::LT;
     le_node.__isset.opcode = true;
     le_node.num_children = 2;
     le_node.is_nullable = true;
@@ -296,7 +329,7 @@ TExpr create_between_expr(int32_t slot_id, int32_t tuple_id) {
     
     TSlotRef slot_ref_info_2;
     slot_ref_info_2.slot_id = slot_id;  // 5
-    slot_ref_info_2.tuple_id = tuple_id;
+    slot_ref_info_2.tuple_id = 0;
     slot_ref_2.slot_ref = slot_ref_info_2;
     slot_ref_2.__isset.slot_ref = true;
     
@@ -310,7 +343,7 @@ TExpr create_between_expr(int32_t slot_id, int32_t tuple_id) {
     literal_10.type = bigint_type;
     
     TIntLiteral int_literal_10;
-    int_literal_10.value = 14342615 + 4;
+    int_literal_10.value = end;
     literal_10.int_literal = int_literal_10;
     literal_10.__isset.int_literal = true;
     
@@ -349,7 +382,7 @@ TExpr IcebergV3LookUpTask::create_row_id_filter_expr(SlotId slot_id, const Spars
     
     if (row_id_range.size() == 1) {
         // Single range: slot_id >= begin AND slot_id < end
-        return create_between_expr(slot_id, 0); // Reuse existing function for single range
+        return create_between_expr(slot_id, row_id_range[0].begin(), row_id_range[0].end()); // Reuse existing function for single range
     }
     
     // Multiple ranges: create OR expression
@@ -474,83 +507,99 @@ TExpr IcebergV3LookUpTask::create_row_id_filter_expr(SlotId slot_id, const Spars
 }
 
 
-StatusOr<ChunkPtr> IcebergV3LookUpTask::_get_data_from_storage(RuntimeState* state, const std::vector<SlotDescriptor*>& slots, const SparseRange<int64_t>& row_id_range) {
+StatusOr<ChunkPtr> IcebergV3LookUpTask::_get_data_from_storage(RuntimeState* state, const std::vector<SlotDescriptor*>& slots,
+    const phmap::flat_hash_map<int32_t, std::shared_ptr<SparseRange<int64_t>>>& row_id_ranges) {
     // @TODO
-    ObjectPool obj_pool;
-    // @TODO should know _row_id slot id
-    // TExpr expr = create_between_expr(_ctx->lookup_ref_slot_ids[0], 0);
-    TExpr expr = create_row_id_filter_expr(_ctx->lookup_ref_slot_ids[0], row_id_range);
-    LOG(INFO) << "create row_id filter expr: " << apache::thrift::ThriftDebugString(expr);
 
-    ExprContext* expr_ctx = nullptr;
-    RETURN_IF_ERROR(Expr::create_expr_tree(&obj_pool, expr, &expr_ctx, state, false));
-    std::vector<ExprContext*> conjunct_ctxs{expr_ctx};
-
-    RETURN_IF_ERROR(Expr::prepare(conjunct_ctxs, state));
-    RETURN_IF_ERROR(Expr::open(conjunct_ctxs, state));
-
-
-    // create an or preidcate, _row_id >= a and _row_id <= b or xxx
-    // build hive data source
-
-    auto glm_ctx = down_cast<pipeline::IcebergGlobalLateMaterilizationContext*>(state->query_ctx()->global_late_materialization_ctx_mgr()->get_ctx(0));
-    auto hdfs_scan_node = glm_ctx->hdfs_scan_node;
-    hdfs_scan_node.tuple_id = _ctx->request_tuple_id;
-    // @TODO add a _row_id slot into request tuple...
-
-    auto provider = std::make_unique<connector::HiveDataSourceProvider>(nullptr, hdfs_scan_node);
-    auto data_source = std::make_shared<connector::HiveDataSource>(provider.get(), glm_ctx->hdfs_scan_range);
-    RuntimeProfile mock_profile("mock");
-    data_source->set_runtime_profile(&mock_profile);
-    data_source->set_predicates(conjunct_ctxs);
-    // @TODO we should set a specific predicate to filter by row_id
-    // @TODO set row_id
-    
-    RETURN_IF_ERROR(data_source->open(state));
-    
-    // 读取数据
-    // ChunkPtr result_chunk = std::make_shared<Chunk>();
     ChunkPtr result_chunk;
-    // @TODO create a chunk that contain all columns
-    do {
-        ChunkPtr chunk = std::make_shared<Chunk>();
-        auto status = data_source->get_next(state, &chunk);
-        LOG(INFO) << "get next chunk, status: " << status.to_string();
-        if (status.is_end_of_file()) {
-            LOG(INFO) << "get end of file, break";
-            break;
-        }
-        RETURN_IF_ERROR(status);
-        if (chunk->num_rows() == 0) {
-            LOG(INFO) << "get empty chunk, break";
-            break;
-        }
-        LOG(INFO) << "get chunk: " << chunk->debug_columns();
-        // result_chunk->append(*chunk);
-        // @TODO result chunk
-        if (result_chunk == nullptr) {
-            result_chunk = std::make_shared<Chunk>();
-            for (const auto& [slot_id, idx] : chunk->get_slot_id_to_index_map()) {
-                if (slot_id == _ctx->lookup_ref_slot_ids[0]) {
-                    continue;
-                }
-                auto src_col = chunk->get_column_by_index(idx);
-                LOG(INFO) << "append column: " << slot_id << ", " << src_col->get_name();
-                result_chunk->append_column(std::move(src_col), slot_id);
+    for (const auto& [scan_range_id, row_id_range] : row_id_ranges) {
+
+        ObjectPool obj_pool;
+        // @TODO should know _row_id slot id
+        // TExpr expr = create_between_expr(_ctx->lookup_ref_slot_ids[0], 0);
+        TExpr expr = create_row_id_filter_expr(_ctx->lookup_ref_slot_ids[1], *row_id_range);
+        LOG(INFO) << "create row_id filter expr: " << apache::thrift::ThriftDebugString(expr);
+
+        ExprContext* expr_ctx = nullptr;
+        RETURN_IF_ERROR(Expr::create_expr_tree(&obj_pool, expr, &expr_ctx, state, false));
+        std::vector<ExprContext*> conjunct_ctxs{expr_ctx};
+
+        RETURN_IF_ERROR(Expr::prepare(conjunct_ctxs, state));
+        RETURN_IF_ERROR(Expr::open(conjunct_ctxs, state));
+
+        // create an or preidcate, _row_id >= a and _row_id <= b or xxx
+        // build hive data source
+
+        // @TODO should know row_source_slot_id
+        auto glm_ctx = down_cast<pipeline::IcebergGlobalLateMaterilizationContext*>(
+            state->query_ctx()->global_late_materialization_ctx_mgr()->get_ctx(_ctx->row_source_slot_id));
+        auto hdfs_scan_node = glm_ctx->hdfs_scan_node;
+        hdfs_scan_node.tuple_id = _ctx->request_tuple_id;
+        {
+            std::ostringstream oss;
+            oss << "request tuple id: "<< _ctx->request_tuple_id << ", slots: [";
+            for (const auto& slot : state->desc_tbl().get_tuple_descriptor(_ctx->request_tuple_id)->slots()) {
+                oss << slot->id() << ", ";
             }
-        } else {
-            for (const auto& [slot_id, idx] : chunk->get_slot_id_to_index_map()) {
-                if (slot_id == _ctx->lookup_ref_slot_ids[0]) {
-                    continue;
-                }
-                auto src_col = chunk->get_column_by_index(idx);
-                auto dst_col = result_chunk->get_column_by_slot_id(slot_id);
-                dst_col->append(*src_col, 0, chunk->num_rows());
-                LOG(INFO) << "append column: " << slot_id << ", " << dst_col->get_name();
-            }
+            oss << "]";
+            LOG(INFO) << oss.str();
         }
-        // @TODO 
-    } while (true);
+        // @TODO add a _row_id slot into request tuple...
+
+        auto provider = std::make_unique<connector::HiveDataSourceProvider>(nullptr, hdfs_scan_node);
+        const auto& scan_range = glm_ctx->get_hdfs_scan_range(scan_range_id);
+        auto data_source = std::make_shared<connector::HiveDataSource>(provider.get(), scan_range);
+        RuntimeProfile mock_profile("mock");
+        data_source->set_runtime_profile(&mock_profile);
+        data_source->set_predicates(conjunct_ctxs);
+        // @TODO we should set a specific predicate to filter by row_id
+        // @TODO set row_id
+        
+        RETURN_IF_ERROR(data_source->open(state));
+        
+        // 读取数据
+        // ChunkPtr result_chunk = std::make_shared<Chunk>();
+        // @TODO create a chunk that contain all columns
+        do {
+            ChunkPtr chunk = std::make_shared<Chunk>();
+            auto status = data_source->get_next(state, &chunk);
+            LOG(INFO) << "get next chunk, status: " << status.to_string();
+            if (status.is_end_of_file()) {
+                LOG(INFO) << "get end of file, break";
+                break;
+            }
+            RETURN_IF_ERROR(status);
+            if (chunk->num_rows() == 0) {
+                LOG(INFO) << "get empty chunk, break";
+                break;
+            }
+            LOG(INFO) << "get chunk: " << chunk->debug_columns();
+            // result_chunk->append(*chunk);
+            // @TODO result chunk
+            if (result_chunk == nullptr) {
+                result_chunk = std::make_shared<Chunk>();
+                for (const auto& [slot_id, idx] : chunk->get_slot_id_to_index_map()) {
+                    if (slot_id == _ctx->lookup_ref_slot_ids[0] || slot_id == _ctx->lookup_ref_slot_ids[1]) {
+                        continue;
+                    }
+                    auto src_col = chunk->get_column_by_index(idx);
+                    LOG(INFO) << "append column: " << slot_id << ", " << src_col->get_name();
+                    result_chunk->append_column(std::move(src_col), slot_id);
+                }
+            } else {
+                for (const auto& [slot_id, idx] : chunk->get_slot_id_to_index_map()) {
+                    if (slot_id == _ctx->lookup_ref_slot_ids[0] || slot_id == _ctx->lookup_ref_slot_ids[1]) {
+                        continue;
+                    }
+                    auto src_col = chunk->get_column_by_index(idx);
+                    auto dst_col = result_chunk->get_column_by_slot_id(slot_id);
+                    dst_col->append(*src_col, 0, chunk->num_rows());
+                    LOG(INFO) << "append column: " << slot_id << ", " << dst_col->get_name();
+                }
+            }
+            // @TODO 
+        } while (true);
+    }
     return result_chunk;
 }
 
@@ -565,12 +614,29 @@ Status IcebergV3LookUpTask::process(RuntimeState* state, const ChunkPtr& request
 
     // create rowid expr 
 
-    SparseRange<int64_t> row_id_range;
+    phmap::flat_hash_map<int32_t, std::shared_ptr<SparseRange<int64_t>>> row_id_ranges;
     Buffer<uint32_t> replicated_offsets;
     // @TODO request_chunk use fetch_ref_slots, we should change it to lookup_ref_slots
-    ASSIGN_OR_RETURN(auto sorted_chunk, _calculate_row_id_range(state, request_chunk, &row_id_range, &replicated_offsets));
-    LOG(INFO) << "IcebergV3LookUpTask calculate row_id_range: " << row_id_range.to_string();
-    ASSIGN_OR_RETURN(auto result_chunk, _get_data_from_storage(state, {}, row_id_range));
+    ASSIGN_OR_RETURN(auto sorted_chunk, _calculate_row_id_range(state, request_chunk, &row_id_ranges, &replicated_offsets));
+    // LOG(INFO) << "IcebergV3LookUpTask calculate row_id_range: " << row_id_ranges.to_string();
+    ASSIGN_OR_RETURN(auto result_chunk, _get_data_from_storage(state, {}, row_id_ranges));
+    {
+        auto unordered_position_column = sorted_chunk->get_column_by_slot_id(Chunk::SORT_ORDINAL_COLUMN_SLOT_ID);
+        if (!replicated_offsets.empty()) {
+            // if there are duplicated rows, we need to replicate the data
+            for (const auto& [slot_id, _] : result_chunk->get_slot_id_to_index_map()) {
+                auto old_column = result_chunk->get_column_by_slot_id(slot_id);
+                ASSIGN_OR_RETURN(auto new_column, old_column->replicate(replicated_offsets));
+                result_chunk->append_or_update_column(std::move(new_column), slot_id);
+            }
+            result_chunk->check_or_die();
+        }
+        result_chunk->append_column(unordered_position_column, Chunk::SORT_ORDINAL_COLUMN_SLOT_ID);
+        result_chunk->check_or_die();
+        ASSIGN_OR_RETURN(auto sorted_result_chunk, _sort_chunk(state, result_chunk, {unordered_position_column}));
+        result_chunk = sorted_result_chunk;
+    }
+    // @TODO resort and replicate
     // @TODO fill response
     LOG(INFO) << "IcebergV3LookUpTask fill response, result_chunk: " << result_chunk->debug_columns();
 
@@ -582,7 +648,7 @@ Status IcebergV3LookUpTask::process(RuntimeState* state, const ChunkPtr& request
         std::ostringstream oss;
         oss << "IcebergV3LookUpTask fill response, slots: ";
         for (const auto& slot : tuple_desc->slots()) {
-            if (slot->id() == _ctx->lookup_ref_slot_ids[0]) {
+            if (slot->id() == _ctx->lookup_ref_slot_ids[0] || slot->id() == _ctx->lookup_ref_slot_ids[1]) {
                 continue;
             }
             slots.emplace_back(slot);

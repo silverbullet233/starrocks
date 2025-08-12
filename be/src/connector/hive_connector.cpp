@@ -206,31 +206,38 @@ Status HiveDataSource::open(RuntimeState* state) {
         _no_data = true;
         return Status::OK();
     }
+    _init_global_late_materialization_context(state);
     RETURN_IF_ERROR(_init_scanner(state));
-
-    bool will_be_lazy_read = false;
-    {
-        const auto& slots = _tuple_desc->slots();
-        // @TODO
-        will_be_lazy_read = std::any_of(slots.begin(), slots.end(), [](const SlotDescriptor* slot) {
-            return slot->col_name() == "_source_node_id";
-        });
-    }
-    if (will_be_lazy_read) {
-        LOG(INFO) << "will be lazy read";
-
-        // create glm ctx
-        auto ctx = state->query_ctx()->object_pool()->add(new pipeline::IcebergGlobalLateMaterilizationContext());
-        ctx->hdfs_scan_range = _scan_range;
-        ctx->hdfs_scan_node = _provider->_hdfs_scan_node;
-        LOG(INFO) << "copied hdfs scan node: " << apache::thrift::ThriftDebugString(ctx->hdfs_scan_node);
-        // @TODO
-        state->query_ctx()->global_late_materialization_ctx_mgr()->add_ctx(0, ctx);
-
-    }
-
-    // @TODO force add to late materialization context
     return Status::OK();
+}
+
+void HiveDataSource::_init_global_late_materialization_context(RuntimeState* state) {
+    const auto& slots = _tuple_desc->slots();
+    int32_t row_source_slot_id = -1;
+    bool will_be_lazy_read = std::any_of(slots.begin(), slots.end(), [&](const SlotDescriptor* slot) {
+        if (slot->col_name() == "_row_source_id") {
+            row_source_slot_id = slot->id();
+            return true;
+        }
+        return false;
+    });
+    if (will_be_lazy_read) {
+        LOG(INFO) << "will be lazy read, scan_range: " << apache::thrift::ThriftDebugString(_scan_range);
+        // @TODO 
+        auto glm_ctx_mgr = state->query_ctx()->global_late_materialization_ctx_mgr();
+
+        pipeline::IcebergGlobalLateMaterilizationContext* glm_ctx = static_cast<pipeline::IcebergGlobalLateMaterilizationContext*>(
+            glm_ctx_mgr->get_or_create_ctx(row_source_slot_id, [&]() {
+                auto ctx = state->query_ctx()->object_pool()->add(new pipeline::IcebergGlobalLateMaterilizationContext());
+                ctx->hdfs_scan_node = _provider->_hdfs_scan_node;
+                LOG(INFO) << "create glm ctx for row_source_slot_id: " << row_source_slot_id;
+                return ctx;
+            }));
+        _scan_range_id = glm_ctx->assign_scan_range_id(_scan_range);
+        LOG(INFO) << "assigned scan_range_id: " << _scan_range_id 
+            << ", gml_ctx: " << (void*)glm_ctx
+            << " for scan_range: " << apache::thrift::ThriftDebugString(_scan_range);
+    }
 }
 
 void HiveDataSource::_update_has_any_predicate() {
@@ -716,6 +723,7 @@ Status HiveDataSource::_init_scanner(RuntimeState* state) {
     RETURN_IF_ERROR(_init_global_dicts(&scanner_params));
     scanner_params.runtime_filter_collector = _runtime_filters;
     scanner_params.scan_range = &scan_range;
+    scanner_params.scan_range_id = _scan_range_id;
     scanner_params.fs = _pool.add(fs.release());
     scanner_params.path = native_file_path;
     scanner_params.file_size = _scan_range.file_length;

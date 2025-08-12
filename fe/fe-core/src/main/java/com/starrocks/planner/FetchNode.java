@@ -89,7 +89,7 @@ public class FetchNode extends PlanNode {
                 // output row id slot
                 RowPositionDescriptor rowPositionDescriptor = rowPosDescs.get(tupleDesc.getId());
                 output.append(prefix + " <slot ")
-                        .append(rowPositionDescriptor.getSourceNodeSlot().asInt()).append("> => SOURCE_NODE_ID").append("\n");
+                        .append(rowPositionDescriptor.getRowSourceSlot().asInt()).append("> => ROW_SOURCE_ID").append("\n");
                 output.append(prefix + "  <row position slots> => " +
                         rowPositionDescriptor.getFetchRefSlots().stream()
                                 .map(slotId -> slotId.toString()).collect(

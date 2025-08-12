@@ -576,15 +576,15 @@ public:
     enum Type: uint8_t {
         ICEBERG_V3 = 0,
     };
-    RowPositionDescriptor(Type type, SlotId source_node_slot_id, std::vector<SlotId> fetch_ref_slot_ids, std::vector<SlotId> lookup_ref_slot_ids):
-        _type(type), _source_node_slot_id(source_node_slot_id), _fetch_ref_slot_ids(std::move(fetch_ref_slot_ids)), _lookup_ref_slot_ids(std::move(lookup_ref_slot_ids)) {}
+    RowPositionDescriptor(Type type, SlotId row_source_slot_id, std::vector<SlotId> fetch_ref_slot_ids, std::vector<SlotId> lookup_ref_slot_ids):
+        _type(type), _row_source_slot_id(row_source_slot_id), _fetch_ref_slot_ids(std::move(fetch_ref_slot_ids)), _lookup_ref_slot_ids(std::move(lookup_ref_slot_ids)) {}
 
     virtual ~RowPositionDescriptor() = default;
 
     Type type() const { return _type; }
 
-    SlotId get_source_node_slot_id() const {
-        return _source_node_slot_id;
+    SlotId get_row_source_slot_id() const {
+        return _row_source_slot_id;
     }
 
     const std::vector<SlotId>& get_fetch_ref_slot_ids() const {
@@ -599,15 +599,15 @@ public:
 
 protected:
     Type _type;
-    SlotId _source_node_slot_id;
+    SlotId _row_source_slot_id;
     std::vector<SlotId> _fetch_ref_slot_ids;
     std::vector<SlotId> _lookup_ref_slot_ids;
 };
 
 class IcebergV3RowPositionDescriptor: public RowPositionDescriptor {
 public:
-    IcebergV3RowPositionDescriptor(SlotId source_node_slot_id, std::vector<SlotId> fetch_ref_slot_ids, std::vector<SlotId> lookup_ref_slot_ids):
-        RowPositionDescriptor(ICEBERG_V3, source_node_slot_id, std::move(fetch_ref_slot_ids), std::move(lookup_ref_slot_ids)) {}
+    IcebergV3RowPositionDescriptor(SlotId row_source_slot_id, std::vector<SlotId> fetch_ref_slot_ids, std::vector<SlotId> lookup_ref_slot_ids):
+        RowPositionDescriptor(ICEBERG_V3, row_source_slot_id, std::move(fetch_ref_slot_ids), std::move(lookup_ref_slot_ids)) {}
     ~IcebergV3RowPositionDescriptor() override = default;
 };
 

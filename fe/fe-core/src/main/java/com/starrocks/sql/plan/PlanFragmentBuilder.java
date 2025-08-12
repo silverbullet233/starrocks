@@ -4308,8 +4308,8 @@ public class PlanFragmentBuilder {
             for (TupleDescriptor tupleDescriptor : lookupNode.getDescs()) {
                 RowPositionDescriptor rowPositionDescriptor = lookupNode.getRowPosDescs().get(tupleDescriptor.getId());
                 // mark all related column to nullable
-                SlotDescriptor sourceNodeSlotDesc = context.getDescTbl().getSlotDesc(rowPositionDescriptor.getSourceNodeSlot());
-                if (sourceNodeSlotDesc.getIsNullable()) {
+                SlotDescriptor rowSourceSlotDesc = context.getDescTbl().getSlotDesc(rowPositionDescriptor.getRowSourceSlot());
+                if (rowSourceSlotDesc.getIsNullable()) {
                     tupleDescriptor.getSlots().forEach(slotDescriptor -> slotDescriptor.setIsNullable(true));
                 }
             }
@@ -4344,7 +4344,10 @@ public class PlanFragmentBuilder {
             PhysicalLookUpOperator lookUpOperator = (PhysicalLookUpOperator) optExpression.getOp();
 
             Map<ColumnRefOperator, Table> rowIdToTable = lookUpOperator.getRowIdToTable();
-            Map<ColumnRefOperator, List<ColumnRefOperator>> rowIdToRefColumns = lookUpOperator.getRowIdToRefColumns();
+            Map<ColumnRefOperator, List<ColumnRefOperator>> rowIdToFetchRefColumns =
+                    lookUpOperator.getRowIdToFetchRefColumns();
+            Map<ColumnRefOperator, List<ColumnRefOperator>> rowIdToLookUpRefColumns =
+                    lookUpOperator.getRowIdToLookUpRefColumns();
             Map<ColumnRefOperator, Set<ColumnRefOperator>> rowIdToLazyColumns = lookUpOperator.getRowIdToLazyColumns();
             Map<ColumnRefOperator, Column> columnRefOperatorColumnMap = lookUpOperator.getColumnRefOperatorColumnMap();
 
@@ -4354,13 +4357,13 @@ public class PlanFragmentBuilder {
             for (Map.Entry<ColumnRefOperator, Set<ColumnRefOperator>> entry : rowIdToLazyColumns.entrySet()) {
                 Preconditions.checkState(rowIdToTable.containsKey(entry.getKey()));
                 Table table = rowIdToTable.get(entry.getKey());
-                Set<ColumnRefOperator> columns = entry.getValue();
+                Set<ColumnRefOperator> lazyColumns = entry.getValue();
 
                 TupleDescriptor tupleDescriptor = context.getDescTbl().createTupleDescriptor();
                 tupleDescriptor.setTable(table);
                 tupleDescriptor.setIsMaterialized(true);
 
-                for (ColumnRefOperator columnRefOperator : columns) {
+                for (ColumnRefOperator columnRefOperator : lazyColumns) {
                     SlotDescriptor slotDescriptor =
                             context.getDescTbl().addSlotDescriptor(tupleDescriptor, new SlotId(columnRefOperator.getId()));
                     slotDescriptor.setColumn(columnRefOperatorColumnMap.get(columnRefOperator));
@@ -4368,28 +4371,21 @@ public class PlanFragmentBuilder {
                     slotDescriptor.setIsNullable(columnRefOperator.isNullable());
                     context.getColRefToExpr().put(columnRefOperator, new SlotRef(columnRefOperator.toString(), slotDescriptor));
                 }
-                // @TODO how to know ref slots?
 
-
-                // @TODO should generate lookup slot and add into tuple desc
-                // @TODO update RowPositionDecs
-                List<ColumnRefOperator> rowIdRefColumns = rowIdToRefColumns.get(entry.getKey());
-                // generate lookup slot descriptor
-                List<SlotDescriptor> fetchRefSlotDescs = rowIdRefColumns.stream()
-                        .map(columnRefOperator ->
-                                context.getDescTbl().getSlotDesc(new SlotId(columnRefOperator.getId())))
-                        .collect(Collectors.toList());
-                List<SlotId> fetchRefSlotIds = fetchRefSlotDescs.stream().map(
-                        slotDescriptor -> slotDescriptor.getId()).collect(Collectors.toList());
-                List<SlotId> lookupRefSlotIds = rowIdRefColumns.stream().map(columnRefOperator -> {
-                    SlotDescriptor slotDescriptor = context.getDescTbl().getSlotDesc(new SlotId(columnRefOperator.getId()));
-                    Column column = columnRefOperatorColumnMap.get(columnRefOperator);
-                    // @TODO slot id may conflict, pending fix
-                    SlotDescriptor desc = context.getDescTbl().copySlotDescriptor(tupleDescriptor, slotDescriptor);
-                    desc.setColumn(column);
-                    desc.setIsOutputColumn(false);
-                    return desc.getId();
-                }).collect(Collectors.toList());
+                List<ColumnRefOperator> lookupRefColumns = rowIdToLookUpRefColumns.get(entry.getKey());
+                for (ColumnRefOperator columnRefOperator : lookupRefColumns) {
+                    SlotDescriptor slotDescriptor =
+                            context.getDescTbl().addSlotDescriptor(tupleDescriptor, new SlotId(columnRefOperator.getId()));
+                    slotDescriptor.setColumn(columnRefOperatorColumnMap.get(columnRefOperator));
+                    slotDescriptor.setIsMaterialized(true);
+                    slotDescriptor.setIsNullable(columnRefOperator.isNullable());
+                    context.getColRefToExpr().put(columnRefOperator, new SlotRef(columnRefOperator.toString(), slotDescriptor));
+                }
+                List<ColumnRefOperator> fetchRefColumns = rowIdToFetchRefColumns.get(entry.getKey());
+                List<SlotId> fetchRefSlotIds = fetchRefColumns.stream()
+                        .map(columnRefOperator -> new SlotId(columnRefOperator.getId())).collect(Collectors.toList());
+                List<SlotId> lookupRefSlotIds = lookupRefColumns.stream()
+                        .map(columnRefOperator -> new SlotId(columnRefOperator.getId())).collect(Collectors.toList());
 
                 RowPositionDescriptor rowPositionDescriptor = buildRowPositionDescriptor(
                         table, new SlotId(entry.getKey().getId()), fetchRefSlotIds, lookupRefSlotIds);

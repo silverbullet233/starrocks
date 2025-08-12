@@ -199,6 +199,8 @@ struct HdfsScanProfile {
 struct HdfsScannerParams {
     // one file split (parition_id, file_path, file_length, offset, length, file_format)
     const THdfsScanRange* scan_range = nullptr;
+    // only used in global late materialization
+    int32_t scan_range_id = -1;
 
     bool enable_split_tasks = false;
     const HdfsSplitContext* split_context = nullptr;
@@ -326,6 +328,7 @@ struct HdfsScannerContext {
 
     // scan range
     const THdfsScanRange* scan_range = nullptr;
+    int32_t scan_range_id = -1;
     bool enable_split_tasks = false;
     const HdfsSplitContext* split_context = nullptr;
     std::vector<HdfsSplitContextPtr> split_tasks;

@@ -37,19 +37,22 @@ public class PhysicalLookUpOperator extends PhysicalOperator {
     // row id column ref -> ref columns
     // we can use multi columns to describe row position, value is order-sensitive
     // @TODO: maybe we can use Expr? but I can't see any benifits
-    Map<ColumnRefOperator, List<ColumnRefOperator>> rowIdToRefColumns;
+    Map<ColumnRefOperator, List<ColumnRefOperator>> rowIdToFetchRefColumns;
+    Map<ColumnRefOperator, List<ColumnRefOperator>> rowIdToLookUpRefColumns;
     // row id column ref -> lazy fetched columns
     Map<ColumnRefOperator, Set<ColumnRefOperator>> rowIdToLazyColumns;
     // lazy fetched column -> Column
     Map<ColumnRefOperator, Column> columnRefOperatorColumnMap;
 
     public PhysicalLookUpOperator(Map<ColumnRefOperator, Table> rowIdToTable,
-                                 Map<ColumnRefOperator, List<ColumnRefOperator>> rowIdToRefColumns,
+                                 Map<ColumnRefOperator, List<ColumnRefOperator>> rowIdToFetchRefColumns,
+                                 Map<ColumnRefOperator, List<ColumnRefOperator>> rowIdToLookUpRefColumns,
                                  Map<ColumnRefOperator, Set<ColumnRefOperator>> rowIdToLazyColumns,
                                  Map<ColumnRefOperator, Column> columnRefOperatorColumnMap) {
         super(OperatorType.PHYSICAL_LOOKUP);
         this.rowIdToTable = rowIdToTable;
-        this.rowIdToRefColumns = rowIdToRefColumns;
+        this.rowIdToFetchRefColumns = rowIdToFetchRefColumns;
+        this.rowIdToLookUpRefColumns = rowIdToLookUpRefColumns;
         this.rowIdToLazyColumns = rowIdToLazyColumns;
         this.columnRefOperatorColumnMap = columnRefOperatorColumnMap;
     }
@@ -58,8 +61,12 @@ public class PhysicalLookUpOperator extends PhysicalOperator {
         return rowIdToTable;
     }
 
-    public Map<ColumnRefOperator, List<ColumnRefOperator>> getRowIdToRefColumns() {
-        return rowIdToRefColumns;
+    public Map<ColumnRefOperator, List<ColumnRefOperator>> getRowIdToFetchRefColumns() {
+        return rowIdToFetchRefColumns;
+    }
+
+    public Map<ColumnRefOperator, List<ColumnRefOperator>> getRowIdToLookUpRefColumns() {
+        return rowIdToLookUpRefColumns;
     }
 
     public Map<ColumnRefOperator, Set<ColumnRefOperator>> getRowIdToLazyColumns() {
@@ -99,7 +106,8 @@ public class PhysicalLookUpOperator extends PhysicalOperator {
         }
         PhysicalLookUpOperator that = (PhysicalLookUpOperator) o;
         return Objects.equals(rowIdToTable, that.rowIdToTable)
-                && Objects.equals(rowIdToRefColumns, that.rowIdToRefColumns)
+                && Objects.equals(rowIdToFetchRefColumns, that.rowIdToFetchRefColumns)
+                && Objects.equals(rowIdToLookUpRefColumns, that.rowIdToLookUpRefColumns)
                 && Objects.equals(rowIdToLazyColumns, rowIdToLazyColumns)
                 && Objects.equals(columnRefOperatorColumnMap, that.columnRefOperatorColumnMap);
     }

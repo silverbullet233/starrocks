@@ -126,7 +126,10 @@ Status HdfsScanner::_build_scanner_context() {
     // build columns of materialized and partition.
     for (size_t i = 0; i < _scanner_params.materialize_slots.size(); i++) {
         auto* slot = _scanner_params.materialize_slots[i];
-        if (slot->col_name() == "_row_id" || slot->col_name() == "_source_node_id") {
+        if (slot->col_name() == "_row_id"
+            || slot->col_name() == "_row_source_id"
+            || slot->col_name() == "_scan_range_id"
+        ) {
             LOG(INFO) << "add reserved field columns: " << slot->col_name();
             ctx.reserved_field_slots.emplace_back(slot); 
         } else {
@@ -160,6 +163,7 @@ Status HdfsScanner::_build_scanner_context() {
 
     ctx.slot_descs = _scanner_params.tuple_desc->slots();
     ctx.scan_range = _scanner_params.scan_range;
+    ctx.scan_range_id = _scanner_params.scan_range_id;
     ctx.runtime_filter_collector = _scanner_params.runtime_filter_collector;
     ctx.min_max_conjunct_ctxs = _scanner_params.min_max_conjunct_ctxs;
     ctx.min_max_tuple_desc = _scanner_params.min_max_tuple_desc;

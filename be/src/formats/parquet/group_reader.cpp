@@ -401,7 +401,7 @@ Status GroupReader::_create_column_readers() {
                           << ", id: " << slot->id();
                 // @TODO need a row id reader?
                 _column_readers.emplace(slot->id(), std::make_unique<IcebergRowIdReader>(_row_group_first_row_id));
-            } else if (slot->col_name() == "_source_node_id") {
+            } else if (slot->col_name() == "_row_source_id") {
                 // @TODO get bakc end opt
                 LOG(INFO) << "create column reader for reserved field slot: " << slot->col_name() << ", id: " << slot->id();
                 if (auto opt = get_backend_id(); opt.has_value()) {
@@ -409,6 +409,11 @@ Status GroupReader::_create_column_readers() {
                 } else {
                     return Status::InternalError("get_backend_id failed");
                 }
+            } else if (slot->col_name() == "_scan_range_id") {
+                LOG(INFO) << "create column reader for reserved field slot: " << slot->col_name()
+                          << ", id: " << slot->id() << ", scan_range_id: " << _param.scan_range_id;
+                // DCHECK(_param.scan_range_id != -1) << "scan_range_id is not set";
+                _column_readers.emplace(slot->id(), std::make_unique<FixedValueColumnReader>(_param.scan_range_id));
             }
         }
     }

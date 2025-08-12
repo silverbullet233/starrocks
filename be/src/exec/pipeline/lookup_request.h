@@ -19,6 +19,7 @@
 #include "gen_cpp/internal_service.pb.h"
 #include "runtime/descriptors.h"
 #include "storage/range.h"
+#include "util/phmap/phmap.h"
 
 namespace starrocks::pipeline {
 
@@ -83,6 +84,7 @@ class LookUpProcessor;
 class LookUpTaskContext {
 public:
     TupleId request_tuple_id;
+    SlotId row_source_slot_id;
     std::vector<SlotId> lookup_ref_slot_ids;
     std::vector<SlotId> fetch_ref_slot_ids;
     std::vector<LookUpRequestContextPtr> request_ctxs;
@@ -115,9 +117,12 @@ public:
 
     Status process(RuntimeState* state, const ChunkPtr& request_chunk) override;
 private:
-    StatusOr<ChunkPtr> _calculate_row_id_range(RuntimeState* state, const ChunkPtr& request_chunk, SparseRange<int64_t>* row_id_range, Buffer<uint32_t>* replicated_offsets);
+    StatusOr<ChunkPtr> _calculate_row_id_range(RuntimeState* state, const ChunkPtr& request_chunk,
+        phmap::flat_hash_map<int32_t, std::shared_ptr<SparseRange<int64_t>>>* row_id_ranges,
+        Buffer<uint32_t>* replicated_offsets);
 
-    StatusOr<ChunkPtr> _get_data_from_storage(RuntimeState* state, const std::vector<SlotDescriptor*>& slots, const SparseRange<int64_t>& row_id_range);
+    StatusOr<ChunkPtr> _get_data_from_storage(RuntimeState* state, const std::vector<SlotDescriptor*>& slots,
+        const phmap::flat_hash_map<int32_t, std::shared_ptr<SparseRange<int64_t>>>& row_id_ranges);
 
     TExpr create_row_id_filter_expr(SlotId slot_id, const SparseRange<int64_t>& row_id_range);
 };

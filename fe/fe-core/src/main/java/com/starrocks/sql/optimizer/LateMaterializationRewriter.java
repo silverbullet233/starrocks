@@ -68,6 +68,10 @@ import java.util.stream.Collectors;
 public class LateMaterializationRewriter {
     private static final Logger LOG = LogManager.getLogger(LateMaterializationRewriter.class);
 
+    private static final String ROW_SOURCE_ID = "_row_source_id";
+    private static final String SCAN_RANGE_ID = "_scan_range_id";
+    private static final String ROW_ID = "_row_id";
+
     public OptExpression rewrite(OptExpression root, OptimizerContext context) {
         LOG.info("before rewrite, plan : " + root.debugString());
         CollectorContext collectorContext = new CollectorContext();
@@ -99,7 +103,8 @@ public class LateMaterializationRewriter {
             Map<IdentifyOperator, Set<ColumnRefOperator>> columns = collectorContext.unMaterializedColumns;
 
             Map<ColumnRefOperator, Table> rowIdToTable = new HashMap<>();
-            Map<ColumnRefOperator, List<ColumnRefOperator>> rowIdToRefColumns = new HashMap<>();
+            Map<ColumnRefOperator, List<ColumnRefOperator>> rowIdToFetchRefColumns = new HashMap<>();
+            Map<ColumnRefOperator, List<ColumnRefOperator>> rowIdToLookUpRefColumns = new HashMap<>();
             Map<ColumnRefOperator, Set<ColumnRefOperator>> rowIdToLazyColumns = new HashMap<>();
             Map<ColumnRefOperator, Column> columnRefOperatorColumnMap = new HashMap<>();
 
@@ -108,23 +113,35 @@ public class LateMaterializationRewriter {
                 Table table = scanOperator.getTable();
                 ColumnRefOperator rowidColumnRef = rewriteContext.rowIdColumns.get(identifyOperator);
                 rowIdToTable.put(rowidColumnRef, table);
-                rowIdToRefColumns.put(rowidColumnRef, rewriteContext.rowIdRefColumns.get(identifyOperator));
+
+                List<ColumnRefOperator> fetchRefColumns = rewriteContext.rowIdRefColumns.get(identifyOperator);
+                rowIdToFetchRefColumns.put(rowidColumnRef, fetchRefColumns);
+                // create specific column ref operators for lookup side
+                List<ColumnRefOperator> lookupRefColumns = fetchRefColumns.stream().map(columnRefOperator -> {
+                    Column column = collectorContext.columnRefFactory.getColumn(columnRefOperator);
+                    ColumnRefOperator result = optimizerContext.getColumnRefFactory()
+                            .create(columnRefOperator, columnRefOperator.getType(), columnRefOperator.isNullable());
+                    columnRefOperatorColumnMap.put(result, column);
+                    return result;
+
+                }).collect(Collectors.toList());
+                rowIdToLookUpRefColumns.put(rowidColumnRef, lookupRefColumns);
+
                 rowIdToLazyColumns.put(rowidColumnRef, columnRefs);
 
                 Map<ColumnRefOperator, Column> columnRefMap = scanOperator.getColRefToColumnMetaMap();
                 for (ColumnRefOperator columnRef : columnRefs) {
                     columnRefOperatorColumnMap.put(columnRef, columnRefMap.get(columnRef));
                 }
-                for (ColumnRefOperator columnRef : rewriteContext.rowIdRefColumns.get(identifyOperator)) {
-                    columnRefOperatorColumnMap.put(columnRef, collectorContext.columnRefFactory.getColumn(columnRef));
-                }
             });
+            // @TODO should generate new ColumnRefOperator for LookUpOperator
 
             PhysicalFetchOperator physicalFetchOperator = new PhysicalFetchOperator(
-                    rowIdToTable, rowIdToRefColumns, rowIdToLazyColumns, columnRefOperatorColumnMap);
+                    rowIdToTable, rowIdToFetchRefColumns, rowIdToLazyColumns, columnRefOperatorColumnMap);
 
             PhysicalLookUpOperator physicalLookUpOperator = new PhysicalLookUpOperator(
-                    rowIdToTable, rowIdToRefColumns, rowIdToLazyColumns, columnRefOperatorColumnMap);
+                    rowIdToTable, rowIdToFetchRefColumns, rowIdToLookUpRefColumns,
+                    rowIdToLazyColumns, columnRefOperatorColumnMap);
             OptExpression lookupOpt = OptExpression.create(physicalLookUpOperator);
             lookupOpt.setLogicalProperty(new LogicalProperty());
 
@@ -804,7 +821,8 @@ public class LateMaterializationRewriter {
                 // @TODO join is special, we should know fetch in
                 // row id -> table
                 Map<ColumnRefOperator, Table> rowIdToTables = new HashMap<>();
-                Map<ColumnRefOperator, List<ColumnRefOperator>> rowIdToRefColumns = new HashMap<>();
+                Map<ColumnRefOperator, List<ColumnRefOperator>> rowIdToFetchRefColumns = new HashMap<>();
+                Map<ColumnRefOperator, List<ColumnRefOperator>> rowIdToLookUpRefColumns = new HashMap<>();
                 // row id -> fetched Columns
                 Map<ColumnRefOperator, Set<ColumnRefOperator>> rowIdToLazyColumns = new HashMap<>();
                 Map<ColumnRefOperator, Column> columnRefOperatorColumnMap = new HashMap<>();
@@ -815,27 +833,33 @@ public class LateMaterializationRewriter {
                     // @TODO need a better name
                     ColumnRefOperator rowIdColumnRef = context.rowIdColumns.get(op);
                     rowIdToTables.put(rowIdColumnRef, table);
-                    rowIdToRefColumns.put(rowIdColumnRef, context.rowIdRefColumns.get(op));
+                    List<ColumnRefOperator> fetchRefColumns = context.rowIdRefColumns.get(op);
+                    rowIdToFetchRefColumns.put(rowIdColumnRef, fetchRefColumns);
+                    List<ColumnRefOperator> lookupRefColumns = fetchRefColumns.stream().map(columnRefOperator -> {
+                        Column column = collectorContext.columnRefFactory.getColumn(columnRefOperator);
+                        ColumnRefOperator newColumnRef =  collectorContext.columnRefFactory
+                                .create(columnRefOperator, columnRefOperator.getType(), columnRefOperator.isNullable());
+                        columnRefOperatorColumnMap.put(newColumnRef, column);
+                        return newColumnRef;
+                    }).collect(Collectors.toList());
+                    rowIdToLookUpRefColumns.put(rowIdColumnRef, lookupRefColumns);
+
                     rowIdToLazyColumns.put(rowIdColumnRef, columnRefs);
                     Map<ColumnRefOperator, Column> columnRefMap = scanOperator.getColRefToColumnMetaMap();
                     // add all related columns into columnRefOperatorColumnMap
                     for (ColumnRefOperator columnRef : columnRefs) {
                         columnRefOperatorColumnMap.put(columnRef, columnRefMap.get(columnRef));
                     }
-                    // @TODO _row_id not in columnRefFactory
-                    for (ColumnRefOperator columnRef : context.rowIdRefColumns.get(op)) {
-                        columnRefOperatorColumnMap.put(columnRef, collectorContext.columnRefFactory.getColumn(columnRef));
-                    }
+
                 });
                 // update fetched Columns
                 context.fetchedColumns.addAll(columnRefOperatorColumnMap.keySet());
 
                 PhysicalFetchOperator physicalFetchOperator = new PhysicalFetchOperator(
-                        rowIdToTables, rowIdToRefColumns, rowIdToLazyColumns, columnRefOperatorColumnMap);
-                // @TODO maintain a mapping?
-                // @TODO for ref columns, we should generate new ColumnRef for lookup?
+                        rowIdToTables, rowIdToFetchRefColumns, rowIdToLazyColumns, columnRefOperatorColumnMap);
                 PhysicalLookUpOperator physicalLookUpOperator = new PhysicalLookUpOperator(
-                        rowIdToTables, rowIdToRefColumns, rowIdToLazyColumns, columnRefOperatorColumnMap);
+                        rowIdToTables, rowIdToFetchRefColumns, rowIdToLookUpRefColumns,
+                        rowIdToLazyColumns, columnRefOperatorColumnMap);
 
                 OptExpression lookupOpt = OptExpression.create(physicalLookUpOperator);
                 // we just set an empty property, it will be updated at the end
@@ -941,7 +965,7 @@ public class LateMaterializationRewriter {
             for (Map.Entry<ColumnRefOperator, Column> entry : scanOperator.getColRefToColumnMetaMap().entrySet()) {
                 ColumnRefOperator columnRefOperator = entry.getKey();
                 Column column = entry.getValue();
-                if (column.getName().equalsIgnoreCase("_row_id")) {
+                if (column.getName().equalsIgnoreCase(ROW_ID)) {
                     rowIdColumnRef = columnRefOperator;
                     break;
                 }
@@ -949,23 +973,32 @@ public class LateMaterializationRewriter {
 
             if (rowIdColumnRef == null) {
                 // _row_id column is not existed, we should add it
-                Column rowIdColumn = new Column("_row_id", Type.BIGINT, true);
+                Column rowIdColumn = new Column(ROW_ID, Type.BIGINT, true);
                 ColumnRefOperator columnRefOperator = optimizerContext.getColumnRefFactory()
-                        .create("_row_id", Type.BIGINT, true);
+                        .create(ROW_ID, Type.BIGINT, true);
                 optimizerContext.getColumnRefFactory()
                         .updateColumnRefToColumns(columnRefOperator, rowIdColumn, scanOperator.getTable());
                 newColumnRefMap.put(columnRefOperator, rowIdColumn);
                 rowIdColumnRef = columnRefOperator;
             }
 
-            // generate node id column ref to distinguish scan operator
-            // @TODO source?
-            Column sourceNodeIdColumn = new Column("_source_node_id", Type.INT, true);
-            ColumnRefOperator sourceNodeIdColumnRef =
-                    optimizerContext.getColumnRefFactory().create("_source_node_id", Type.INT, true);
-            newColumnRefMap.put(sourceNodeIdColumnRef, sourceNodeIdColumn);
-            context.rowIdColumns.put(identifyOperator, sourceNodeIdColumnRef);
-            context.rowIdRefColumns.put(identifyOperator, Arrays.asList(rowIdColumnRef));
+            // generate row source id to distinguish scan operator
+            Column rowSourceIdColumn = new Column(ROW_SOURCE_ID, Type.INT, true);
+            ColumnRefOperator rowSourceIdColumnRef =
+                    optimizerContext.getColumnRefFactory().create(ROW_SOURCE_ID, Type.INT, true);
+            optimizerContext.getColumnRefFactory()
+                    .updateColumnRefToColumns(rowSourceIdColumnRef, rowSourceIdColumn, scanOperator.getTable());
+            newColumnRefMap.put(rowSourceIdColumnRef, rowSourceIdColumn);
+
+            Column scanRangeIdColumn = new Column(SCAN_RANGE_ID, Type.INT, true);
+            ColumnRefOperator scanRangeIdColumnRef =
+                    optimizerContext.getColumnRefFactory().create(SCAN_RANGE_ID, Type.INT, true);
+            optimizerContext.getColumnRefFactory()
+                    .updateColumnRefToColumns(scanRangeIdColumnRef, scanRangeIdColumn, scanOperator.getTable());
+            newColumnRefMap.put(scanRangeIdColumnRef, scanRangeIdColumn);
+
+            context.rowIdColumns.put(identifyOperator, rowSourceIdColumnRef);
+            context.rowIdRefColumns.put(identifyOperator, Arrays.asList(scanRangeIdColumnRef, rowIdColumnRef));
 
             LOG.info("rewrite PhysicalIcebergScan, newColumnRefMap: " + newColumnRefMap.size());
             // build a new optExpressions

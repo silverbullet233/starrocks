@@ -140,7 +140,7 @@ Status LookUpProcessor::_collect_input_columns(RuntimeState* state, ChunkPtr req
         auto col = ColumnHelper::create_column(slot_desc->type(), slot_desc->is_nullable());
         request_chunk->append_column(std::move(col), slot_desc->id());
     }
-    auto slot_desc = state->desc_tbl().get_slot_descriptor(row_pos_desc->get_source_node_slot_id());
+    auto slot_desc = state->desc_tbl().get_slot_descriptor(row_pos_desc->get_row_source_slot_id());
     // row source column from fethc node won't be nullable 
     auto row_source_col = ColumnHelper::create_column(slot_desc->type(), false);
     LOG(INFO) << "LookUpProcessor _collect_input_columns, append source node id column, slot_id: " << slot_desc->id() << ", column: " << row_source_col->get_name();
@@ -655,6 +655,7 @@ Status LookUpOperator::_try_to_trigger_io_task(RuntimeState* state) {
         bool is_running = processor->is_running();
         if (!is_running && _dispatcher->try_get(_driver_sequence, config::max_lookup_batch_request, lookup_task_ctx.get())) {
             // @TODO
+            lookup_task_ctx->row_source_slot_id = _row_pos_descs.at(lookup_task_ctx->request_tuple_id)->get_row_source_slot_id();
             lookup_task_ctx->lookup_ref_slot_ids = _row_pos_descs.at(lookup_task_ctx->request_tuple_id)->get_lookup_ref_slot_ids();
             lookup_task_ctx->fetch_ref_slot_ids = _row_pos_descs.at(lookup_task_ctx->request_tuple_id)->get_fetch_ref_slot_ids();
             processor->set_ctx(lookup_task_ctx);

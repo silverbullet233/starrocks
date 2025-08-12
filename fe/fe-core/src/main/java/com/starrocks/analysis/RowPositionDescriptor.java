@@ -29,16 +29,16 @@ public class RowPositionDescriptor {
         ICEBERG_V3
     }
     private Type type;
-    private SlotId sourceNodeSlot;
+    private SlotId rowSourceSlot;
     private List<SlotId> fetchRefSlots;
     private List<SlotId> lookupRefSlots;
 
-    public RowPositionDescriptor(Type type, SlotId sourceNodeSlot, List<SlotId> fetchRefSlots, List<SlotId> lookupRefSlots) {
+    public RowPositionDescriptor(Type type, SlotId rowSourceSlot, List<SlotId> fetchRefSlots, List<SlotId> lookupRefSlots) {
         Preconditions.checkState(fetchRefSlots != null && !fetchRefSlots.isEmpty(), "fetchRefSlots can't be null or empty");
         Preconditions.checkState(lookupRefSlots != null && !lookupRefSlots.isEmpty(), "lookupRefSlots can't be null or empty");
         Preconditions.checkState(fetchRefSlots.size() == lookupRefSlots.size(), "fetchRefSlots'size shoule be same with lookupRefSlots");
         this.type = type;
-        this.sourceNodeSlot = sourceNodeSlot;
+        this.rowSourceSlot = rowSourceSlot;
         this.fetchRefSlots = fetchRefSlots;
         this.lookupRefSlots = lookupRefSlots;
     }
@@ -47,8 +47,8 @@ public class RowPositionDescriptor {
         return type;
     }
 
-    public SlotId getSourceNodeSlot() {
-        return sourceNodeSlot;
+    public SlotId getRowSourceSlot() {
+        return rowSourceSlot;
     }
 
     public List<SlotId> getFetchRefSlots() {
@@ -69,7 +69,7 @@ public class RowPositionDescriptor {
             default:
                 throw new RuntimeException("unknown type");
         }
-        msg.setSource_node_slot(sourceNodeSlot.asInt());
+        msg.setRow_source_slot(rowSourceSlot.asInt());
         fetchRefSlots.forEach(slotId -> msg.addToFetch_ref_slots(slotId.asInt()));
         lookupRefSlots.forEach(slotId -> msg.addToLookup_ref_slots(slotId.asInt()));
         return msg;
