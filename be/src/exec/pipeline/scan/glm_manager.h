@@ -35,8 +35,6 @@ public:
     int32_t assign_scan_range_id(const THdfsScanRange& scan_range) {
         std::unique_lock lock(_mutex);
         hdfs_scan_ranges.push_back(scan_range);
-        LOG(INFO) <<"add new scan_range, cur size: " << hdfs_scan_ranges.size() << ", " << (void*)this
-            << ", ret: " << (hdfs_scan_ranges.size() - 1);
         return hdfs_scan_ranges.size() - 1;
     }
 

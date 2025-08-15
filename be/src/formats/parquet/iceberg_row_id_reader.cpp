@@ -15,12 +15,13 @@
 #include "formats/parquet/iceberg_row_id_reader.h"
 #include "formats/parquet/predicate_filter_evaluator.h"
 #include "column/datum.h"
+#include "storage/range.h"
 
 namespace starrocks::parquet {
 
 Status IcebergRowIdReader::read_range(const Range<uint64_t>& range, const Filter* filter, ColumnPtr& dst) {
-    LOG(INFO) << "IcebergRowIdReader::read_range, range: " << range.to_string()
-              << ", dst: " << dst->get_name() << ", " << (void*)this;
+    // LOG(INFO) << "IcebergRowIdReader::read_range, range: " << range.to_string()
+    //           << ", dst: " << dst->get_name() << ", " << (void*)this;
     
     for (uint64_t i = range.begin(); i < range.end(); ++i) {
         // Generate row id based on the first row id and the current row index.
@@ -52,17 +53,17 @@ void IcebergRowIdReader::select_offset_index(const SparseRange<uint64_t>& range,
 StatusOr<bool> IcebergRowIdReader::row_group_zone_map_filter(const std::vector<const ColumnPredicate*>& predicates,
                                               CompoundNodeType pred_relation,
                                               const uint64_t rg_first_row, const uint64_t rg_num_rows) const {
-    LOG(INFO) << "IcebergRowIdReader::row_group_zone_map_filter, predicates size: " << predicates.size()
+    DLOG(INFO) << "IcebergRowIdReader::row_group_zone_map_filter, predicates size: " << predicates.size()
                                                 << ", rg_first_row: " << rg_first_row << ", rg_num_rows: " << rg_num_rows
                                                 << ", rg_first_row_id: " << _first_row_id;
 
     ZoneMapDetail zone_map{Datum(_first_row_id + rg_first_row), Datum(_first_row_id + rg_first_row + rg_num_rows - 1), false};
     bool ret = !PredicateFilterEvaluatorUtils::zonemap_satisfy(predicates, zone_map, pred_relation);
     if (ret == false) {
-        LOG(INFO) << "IcebergRowIdReader: row group zone map filter passed, no filtering applied."
+        DLOG(INFO) << "IcebergRowIdReader: row group zone map filter passed, no filtering applied."
             << " row_id range(" << (_first_row_id + rg_first_row) << ", " << (_first_row_id + rg_first_row + rg_num_rows - 1) << ")";
     } else {
-        LOG(INFO) << "IcebergRowIdReader: row group zone map filter applied, "
+        DLOG(INFO) << "IcebergRowIdReader: row group zone map filter applied, "
             << "filtering happened, row_id range(" << (_first_row_id + rg_first_row) << ", " << (_first_row_id + rg_first_row + rg_num_rows - 1) << ")";
     }
     return ret;
@@ -73,9 +74,40 @@ StatusOr<bool> IcebergRowIdReader::row_group_zone_map_filter(const std::vector<c
 StatusOr<bool> IcebergRowIdReader::page_index_zone_map_filter(const std::vector<const ColumnPredicate*>& predicates,
                                             SparseRange<uint64_t>* row_ranges, CompoundNodeType pred_relation,
                                             const uint64_t rg_first_row, const uint64_t rg_num_rows) {
-    LOG(INFO) << "IcebergRowIdReader::page_index_zone_map_filter, rg_first_row: " << rg_first_row << ", rg_num_rows: " << rg_num_rows;
-    // @TODO
-    return Status::NotSupported("IcebergRowIdReader does not support page index zone map filter");
+    [[maybe_unused]] std::ostringstream oss;
+    oss << "IcebergRowIdReader::page_index_zone_map_filter, rg_first_row: " << rg_first_row << ", rg_num_rows: " << rg_num_rows << ", predicates size: "
+                                                << predicates.size();
+    oss << " filters: [";
+    for(const auto& pred : predicates) {
+        oss << pred->debug_string() << ", ";
+    }
+    oss << "]";
+    // @TODO we need arange
+    DLOG(INFO) << oss.str();
+
+    SparseRange<int64_t> row_id_range(_first_row_id + rg_first_row, _first_row_id + rg_first_row + rg_num_rows);
+    DLOG(INFO) << "original range: " << row_id_range.to_string();
+    for (const auto& pred : predicates) {
+        if (pred->type() == PredicateType::kGE) {
+            row_id_range &= SparseRange<int64_t>(pred->value().get_int64(), std::numeric_limits<int64_t>::max());
+        } else if (pred->type() == PredicateType::kLT) {
+            row_id_range &= SparseRange<int64_t>(0, pred->value().get_int64());
+        }
+        DLOG(INFO) << "after apply " << pred->debug_string() << ", ret: " << row_id_range.to_string();
+    }
+    if (row_id_range.span_size() == rg_num_rows) {
+        DLOG(INFO) << "no filtering applied";
+        return false;
+    }
+    // we should convert row_idrange to row ranges
+    for (size_t i = 0; i < row_id_range.size(); i++) {
+        Range<int64_t> range = row_id_range[i];
+        DLOG(INFO) << "add range: " << range.to_string();
+        row_ranges->add(Range<uint64_t>(range.begin() - _first_row_id, range.end() - _first_row_id));
+    }
+
+
+    return true;
 }
 
 }

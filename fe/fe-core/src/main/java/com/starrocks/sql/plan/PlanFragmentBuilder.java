@@ -4321,6 +4321,7 @@ public class PlanFragmentBuilder {
             childFragment.setPlanRoot(fetchNode);
             childFragment.addChild(lookUpFragment);
             lookUpFragment.setQueryGlobalDicts(childFragment.getQueryGlobalDicts());
+            lookUpFragment.setQueryGlobalDictExprs(childFragment.getQueryGlobalDictExprs());
             context.getFragments().remove(childFragment);
             context.getFragments().remove(lookUpFragment);
             context.getFragments().add(lookUpFragment);

@@ -22,7 +22,7 @@ class IcebergRowIdReader final : public ColumnReader {
 public:
     explicit IcebergRowIdReader(int64_t first_row_id) : ColumnReader(nullptr), _first_row_id(first_row_id) {
         _cur_row_id = _first_row_id;
-        LOG(INFO) << "create IcebergRowIdReader with first_row_id: " << _first_row_id;
+        // LOG(INFO) << "create IcebergRowIdReader with first_row_id: " << _first_row_id;
     }
     ~IcebergRowIdReader() override = default;
 

@@ -75,9 +75,6 @@ private:
     Status _gen_fetch_tasks(RuntimeState* state, const ChunkPtr& row_id_chunk, BatchUnitPtr& unit);
     Status _submit_fetch_tasks(RuntimeState* state, const BatchUnitPtr& unit);
 
-    // Status _send_local_request(RuntimeState* state, const BatchUnitPtr& unit, const FetchContextPtr& fetch_ctx);
-    // Status _send_remote_request(RuntimeState* state, const BatchUnitPtr& unit, const FetchContextPtr& fetch_ctx);
-
     StatusOr<ChunkPtr> _sort_chunk(RuntimeState* state, const ChunkPtr& chunk, const Columns& order_by_columns);
     Status _build_output_chunk(RuntimeState* state, const BatchUnitPtr& unit);
 
@@ -115,7 +112,7 @@ private:
     std::atomic_bool _is_sink_complete = false;
 
     RuntimeProfile::Counter* _build_row_id_chunk_timer = nullptr;
-    RuntimeProfile::Counter* _gen_request_chunk_timer = nullptr;
+    RuntimeProfile::Counter* _gen_fetch_tasks_timer = nullptr;
     RuntimeProfile::Counter* _serialize_timer = nullptr;
     RuntimeProfile::Counter* _deserialize_timer = nullptr;
     RuntimeProfile::Counter* _build_output_chunk_timer = nullptr;

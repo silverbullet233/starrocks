@@ -94,37 +94,44 @@ private:
     mutable std::vector<LookUpProcessorPtr> _processors;
     std::weak_ptr<QueryContext> _query_ctx;
 
-    RuntimeProfile::Counter* _bytes_read_counter = nullptr;
-    RuntimeProfile::Counter* _rows_read_counter = nullptr;
-    RuntimeProfile::Counter* _io_task_exec_timer = nullptr;
-    RuntimeProfile::Counter* _io_timer = nullptr;
-    RuntimeProfile::Counter* _read_compressed_counter = nullptr;
-    RuntimeProfile::Counter* _decompress_timer = nullptr;
-    RuntimeProfile::Counter* _read_uncompressed_counter = nullptr;
-    RuntimeProfile::Counter* _raw_rows_counter = nullptr;
-    RuntimeProfile::Counter* _block_seek_timer = nullptr;
-    RuntimeProfile::Counter* _block_seek_counter = nullptr;
-    RuntimeProfile::Counter* _block_load_timer = nullptr;
-    RuntimeProfile::Counter* _block_load_counter = nullptr;
-    RuntimeProfile::Counter* _block_fetch_timer = nullptr;
-    RuntimeProfile::Counter* _read_pages_num_counter = nullptr;
-    RuntimeProfile::Counter* _cached_pages_num_counter = nullptr;
-    RuntimeProfile::Counter* _total_columns_data_page_count = nullptr;
+    // RuntimeProfile::Counter* _bytes_read_counter = nullptr;
+    // RuntimeProfile::Counter* _rows_read_counter = nullptr;
+    // RuntimeProfile::Counter* _io_task_exec_timer = nullptr;
+    // RuntimeProfile::Counter* _io_timer = nullptr;
+    // RuntimeProfile::Counter* _read_compressed_counter = nullptr;
+    // RuntimeProfile::Counter* _decompress_timer = nullptr;
+    // RuntimeProfile::Counter* _read_uncompressed_counter = nullptr;
+    // RuntimeProfile::Counter* _raw_rows_counter = nullptr;
+    // RuntimeProfile::Counter* _block_seek_timer = nullptr;
+    // RuntimeProfile::Counter* _block_seek_counter = nullptr;
+    // RuntimeProfile::Counter* _block_load_timer = nullptr;
+    // RuntimeProfile::Counter* _block_load_counter = nullptr;
+    // RuntimeProfile::Counter* _block_fetch_timer = nullptr;
+    // RuntimeProfile::Counter* _read_pages_num_counter = nullptr;
+    // RuntimeProfile::Counter* _cached_pages_num_counter = nullptr;
+    // RuntimeProfile::Counter* _total_columns_data_page_count = nullptr;
 
-    RuntimeProfile::Counter* _collect_request_row_id_columns_timer = nullptr;
-    RuntimeProfile::Counter* _lookup_by_row_ids_timer = nullptr;
-    RuntimeProfile::Counter* _calculate_scan_ranges_timer = nullptr;
-    RuntimeProfile::Counter* _get_data_from_storage_timer = nullptr;
-    RuntimeProfile::Counter* _fill_response_timer = nullptr;
-    RuntimeProfile::Counter* _process_counter = nullptr;
-    RuntimeProfile::Counter* _process_time = nullptr;
-    RuntimeProfile::Counter* _received_request_count = nullptr;
-    RuntimeProfile::Counter* _request_pending_time = nullptr;
+    // RuntimeProfile::Counter* _collect_request_row_id_columns_timer = nullptr;
+    // RuntimeProfile::Counter* _lookup_by_row_ids_timer = nullptr;
+    // RuntimeProfile::Counter* _calculate_scan_ranges_timer = nullptr;
+    // RuntimeProfile::Counter* _get_data_from_storage_timer = nullptr;
+    // RuntimeProfile::Counter* _fill_response_timer = nullptr;
+    // RuntimeProfile::Counter* _process_counter = nullptr;
+    // RuntimeProfile::Counter* _process_time = nullptr;
+    // RuntimeProfile::Counter* _received_request_count = nullptr;
+    // RuntimeProfile::Counter* _request_pending_time = nullptr;
 
-    // io task
+    // // io task
     RuntimeProfile::Counter* _submit_io_task_counter = nullptr;
     RuntimeProfile::HighWaterMarkCounter* _peak_scan_task_queue_size_counter = nullptr;
     RuntimeProfile::Counter* _io_task_wait_timer = nullptr;
+
+    // new
+public:
+    RuntimeProfile::Counter* _calculate_row_id_range_timer = nullptr;
+    RuntimeProfile::Counter* _get_data_from_storage_timer = nullptr;
+    RuntimeProfile::Counter* _fill_response_timer = nullptr;
+    RuntimeProfile::Counter* _build_row_id_filter_timer = nullptr;
 };
 
 class LookUpOperatorFactory final : public SourceOperatorFactory {

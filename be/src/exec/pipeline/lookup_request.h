@@ -81,6 +81,7 @@ public:
 using RemoteLookUpRequestContextPtr = std::shared_ptr<RemoteLookUpRequestContext>;
 
 class LookUpProcessor;
+class LookUpOperator;
 class LookUpTaskContext {
 public:
     TupleId request_tuple_id;
@@ -89,8 +90,11 @@ public:
     std::vector<SlotId> fetch_ref_slot_ids;
     std::vector<LookUpRequestContextPtr> request_ctxs;
     // parent
-    LookUpProcessor* processor = nullptr;
+    // LookUpProcessor* processor = nullptr;
+    RuntimeProfile* profile = nullptr;
     Permutation permutation;
+    // @TODO
+    LookUpOperator* parent = nullptr;
     // @TODO set profile
 };
 using LookUpTaskContextPtr = std::shared_ptr<LookUpTaskContext>;

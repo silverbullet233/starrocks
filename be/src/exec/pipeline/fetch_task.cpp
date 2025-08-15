@@ -36,18 +36,19 @@ std::string BatchUnit::debug_string() const {
 }
 
 Status IcebergFetchTask::submit(RuntimeState* state) {
+    // @TODO support submit local task
     // build submit request
     const auto source_id = _ctx->source_node_id;
     const auto& request_chunk = _ctx->request_chunk;
 
     auto* closure = new DisposableClosure<PLookUpResponse, FetchTaskContextPtr>(_ctx);
     closure->addSuccessHandler([this, closure] (const FetchTaskContextPtr& ctx, const PLookUpResponse& resp) noexcept {
-        LOG(INFO) << "receive a response, finished request num: " << ctx->unit->finished_request_num
+        DLOG(INFO) << "[GLM] receive a response, finished request num: " << ctx->unit->finished_request_num
                  << ", total request num: " << ctx->unit->total_request_num << ", " << (void*)ctx->processor
                  << ", latency: " << (MonotonicNanos() - ctx->send_ts) * 1.0 / 1000000 << "ms";
         DeferOp defer([&]() {
             if (++ctx->unit->finished_request_num == ctx->unit->total_request_num) {
-                LOG(INFO) << "all request finished, notify fetch processor, total_request_num: "
+                VLOG_ROW << "[GLM] all request finished, notify fetch processor, total_request_num: "
                          << ctx->unit->total_request_num << ", " << (void*)ctx->processor;
             }
             _is_done = true;
@@ -61,7 +62,7 @@ Status IcebergFetchTask::submit(RuntimeState* state) {
             ctx->processor->_set_io_task_status(Status::InternalError(msg));
             return;
         }
-        LOG(INFO) << "receive a response, response size: " << closure->cntl.response_attachment().size();
+        DLOG(INFO) << "[GLM] receive a response, response size: " << closure->cntl.response_attachment().size();
         if (closure->cntl.response_attachment().size() > 0) {
             SCOPED_TIMER(ctx->processor->_deserialize_timer);
             butil::IOBuf& io_buf = closure->cntl.response_attachment();
@@ -96,7 +97,7 @@ Status IcebergFetchTask::submit(RuntimeState* state) {
                 }
                 DCHECK(!ctx->response_columns.contains(slot_id))
                         << "response_columns should not contain slot_id: " << slot_id;
-                LOG(INFO) << "add response column, slot_id: " << slot_id << ", column: " << column->get_name();
+                DLOG(INFO) << "[GLM] add response column, slot_id: " << slot_id << ", column: " << column->get_name();
                 ctx->response_columns.insert({slot_id, std::move(column)});
             }
         }
@@ -105,7 +106,7 @@ Status IcebergFetchTask::submit(RuntimeState* state) {
     closure->addFailedHandler([this] (const FetchTaskContextPtr& ctx, std::string_view rpc_error_msg) noexcept {
         DeferOp defer([&]() {
             if (++ctx->unit->finished_request_num == ctx->unit->total_request_num) {
-                LOG(INFO) << "all request finished, notify fetch processor, " << (void*)ctx->processor;
+                DLOG(INFO) << "all request finished, notify fetch processor, " << (void*)ctx->processor;
             }
             _is_done = true;
         });
@@ -148,14 +149,13 @@ Status IcebergFetchTask::submit(RuntimeState* state) {
             uint8_t* start = buff;
             buff = serde::ColumnArraySerde::serialize(*column, buff);
             p_column->set_data_size(buff - start);
-            LOG(INFO) << "serialize column, slot_id: " << slot_id << ", data_size: " << (buff - start) << ", column: " << column->get_name();
         }
         size_t actual_serialize_size = buff - begin;
         closure->cntl.request_attachment().append(_ctx->processor->_serialize_buffer.data(), actual_serialize_size);
-        LOG(INFO) << "serialize request, attachment size: " << closure->cntl.request_attachment().size();
     }
-    LOG(INFO) << "[GLM] send fetch request, source_id: " << source_id << ", "
+    DLOG(INFO) << "[GLM] send fetch request, source_id: " << source_id << ", "
               << (void*)_ctx->processor << ", unit: " << _ctx->unit->debug_string();
+    _ctx->send_ts = MonotonicNanos();
     const auto* node_info = _ctx->processor->_nodes_info->find_node(source_id);
     auto stub = state->exec_env()->brpc_stub_cache()->get_stub(node_info->host, node_info->brpc_port);
     stub->lookup(&closure->cntl, &request, &closure->result, closure);

@@ -130,11 +130,9 @@ Status HdfsScanner::_build_scanner_context() {
             || slot->col_name() == "_row_source_id"
             || slot->col_name() == "_scan_range_id"
         ) {
-            LOG(INFO) << "add reserved field columns: " << slot->col_name();
             ctx.reserved_field_slots.emplace_back(slot); 
         } else {
             HdfsScannerContext::ColumnInfo column;
-            LOG(INFO) << "materialized columns: " << slot->col_name();
             column.slot_desc = slot;
             column.idx_in_chunk = _scanner_params.materialize_index_in_chunk[i];
             column.decode_needed =

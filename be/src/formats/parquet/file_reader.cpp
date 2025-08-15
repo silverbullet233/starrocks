@@ -53,7 +53,6 @@ FileReader::FileReader(int chunk_size, RandomAccessFile* file, size_t file_size,
 FileReader::~FileReader() = default;
 
 Status FileReader::init(HdfsScannerContext* ctx) {
-    LOG(INFO) << "FileReader::init";
     // @TODO we don't pass first row id 
     _scanner_ctx = ctx;
     if (ctx->use_file_metacache) {
@@ -92,13 +91,11 @@ Status FileReader::init(HdfsScannerContext* ctx) {
 
 std::shared_ptr<MetaHelper> FileReader::_build_meta_helper() {
     if (_scanner_ctx->lake_schema != nullptr && _file_metadata->schema().exist_filed_id()) {
-        LOG(INFO) << "use LakeMetaHelper";
         // If we want read this parquet file with iceberg/paimon schema,
         // we also need to make sure it contains parquet field id.
         return std::make_shared<LakeMetaHelper>(_file_metadata.get(), _scanner_ctx->case_sensitive,
                                                 _scanner_ctx->lake_schema);
     } else {
-        LOG(INFO) << "use ParquetMetaHelper";
         return std::make_shared<ParquetMetaHelper>(_file_metadata.get(), _scanner_ctx->case_sensitive);
     }
 }
@@ -174,7 +171,7 @@ Status FileReader::_build_split_tasks() {
 bool FileReader::_filter_group(const GroupReaderPtr& group_reader) {
     bool& filtered = group_reader->get_is_group_filtered();
     filtered = false;
-    LOG(INFO) << "FileReader::_filter_group, predicate_tree: " << _scanner_ctx->predicate_tree.root().debug_string();
+    // LOG(INFO) << "FileReader::_filter_group, predicate_tree: " << _scanner_ctx->predicate_tree.root().debug_string();
 
     auto visitor = PredicateFilterEvaluator{_scanner_ctx->predicate_tree, group_reader.get(),
                                             _scanner_ctx->parquet_page_index_enable,
@@ -262,7 +259,7 @@ Status FileReader::_collect_row_group_io(std::shared_ptr<GroupReader>& group_rea
 }
 
 Status FileReader::_init_group_readers() {
-    LOG(INFO) << "FileReader::_init_group_readers";
+    // LOG(INFO) << "FileReader::_init_group_readers";
     const HdfsScannerContext& fd_scanner_ctx = *_scanner_ctx;
 
     // _group_reader_param is used by all group readers
@@ -293,8 +290,6 @@ Status FileReader::_init_group_readers() {
 
     // @TODO compute first_row_id for each group
     int64_t row_group_first_row_id = _scanner_ctx->scan_range->first_row_id;
-    LOG(INFO) << "FileReader::_init_group_readers, row_group_first_row_id: " << row_group_first_row_id
-        << ", row_group_size: " << _file_metadata->t_metadata().row_groups.size();
     int64_t row_group_first_row = 0;
     // select and create row group readers.
     for (size_t i = 0; i < _file_metadata->t_metadata().row_groups.size(); i++) {
@@ -352,7 +347,6 @@ Status FileReader::get_next(ChunkPtr* chunk) {
     }
 
     if (_cur_row_group_idx < _row_group_size) {
-        LOG(INFO) << "FileReader::get_next, _cur_row_group_idx: " << _cur_row_group_idx << ", _row_group_size: " << _row_group_size;
         size_t row_count = _chunk_size;
         Status status;
         try {
@@ -412,7 +406,7 @@ Status FileReader::get_next(ChunkPtr* chunk) {
 }
 
 Status FileReader::_exec_no_materialized_column_scan(ChunkPtr* chunk) {
-    LOG(INFO) << "FileReader::_exec_no_materialized_column_scan";
+    // LOG(INFO) << "FileReader::_exec_no_materialized_column_scan";
     // @TODO handle row_id
 
 

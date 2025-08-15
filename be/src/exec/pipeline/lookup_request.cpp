@@ -27,6 +27,7 @@
 #include "exec/pipeline/query_context.h"
 #include "util/runtime_profile.h"
 #include "exec/sorting/sorting.h"
+#include "exec/pipeline/lookup_operator.h"
 
 namespace starrocks::pipeline {
 
@@ -68,7 +69,7 @@ Status RemoteLookUpRequestContext::collect_input_columns(ChunkPtr chunk) {
         // @TODO we should know slot desc
         auto dst_col = chunk->get_column_by_slot_id(slot_id);
         auto col = dst_col->clone_empty();
-        LOG(INFO) << "deserialize column, slot_id: " << slot_id << ", data_size: " << data_size << ", column: " << col->get_name();
+        DLOG(INFO) << "deserialize column, slot_id: " << slot_id << ", data_size: " << data_size << ", column: " << col->get_name();
         const uint8_t* buff = reinterpret_cast<const uint8_t*>(pcolumn.data().data());
         auto ret = serde::ColumnArraySerde::deserialize(buff, col.get());
         if (ret == nullptr) {
@@ -80,14 +81,14 @@ Status RemoteLookUpRequestContext::collect_input_columns(ChunkPtr chunk) {
         request_chunk->append_column(std::move(col), slot_id);
     }
     chunk->check_or_die();
-    LOG(INFO) << "RemoteLookUpRequestContext collect input columns: " << chunk->debug_columns();
+    DLOG(INFO) << "RemoteLookUpRequestContext collect input columns: " << chunk->debug_columns();
     return Status::OK();
 }
 
 StatusOr<size_t> RemoteLookUpRequestContext::fill_response(const ChunkPtr& result_chunk, SlotId source_id_slot,
                                                    const std::vector<SlotDescriptor*>& slots, size_t start_offset) {
     size_t num_rows = request_chunk->num_rows();
-    LOG(INFO) << "RemoteLookUpRequestContext fill response, num_rows: " << num_rows << ", slots: " << slots.size();
+    DLOG(INFO) << "RemoteLookUpRequestContext fill response, num_rows: " << num_rows << ", slots: " << slots.size();
     std::vector<ColumnPtr> columns;
     size_t max_serialized_size = 0;
     for (const auto& slot : slots) {
@@ -109,7 +110,7 @@ StatusOr<size_t> RemoteLookUpRequestContext::fill_response(const ChunkPtr& resul
         uint8_t* start = buff;
         buff = serde::ColumnArraySerde::serialize(*column, buff);
         pcolumn->set_data_size(buff - start);
-        LOG(INFO) << "serialize column: " << slots[i]->id() << ", " << column->get_name() << ", data_size: " << (buff - start);
+        DLOG(INFO) << "serialize column: " << slots[i]->id() << ", " << column->get_name() << ", data_size: " << (buff - start);
     }
     size_t actual_serialize_size = buff - begin;
     auto* brpc_cntl = static_cast<brpc::Controller*>(cntl);
@@ -119,7 +120,7 @@ StatusOr<size_t> RemoteLookUpRequestContext::fill_response(const ChunkPtr& resul
 }
 
 void RemoteLookUpRequestContext::callback(const Status& status) {
-    LOG(INFO) << "RemoteLookUpRequestContext callback: " << status.to_string();
+    DLOG(INFO) << "RemoteLookUpRequestContext callback: " << status.to_string();
     status.to_protobuf(response->mutable_status());
     // @TODO fill response
     done->Run();
@@ -146,6 +147,7 @@ StatusOr<ChunkPtr> LookUpTask::_sort_chunk(RuntimeState* state, const ChunkPtr& 
 StatusOr<ChunkPtr> IcebergV3LookUpTask::_calculate_row_id_range(RuntimeState* state, const ChunkPtr& request_chunk,
     phmap::flat_hash_map<int32_t, std::shared_ptr<SparseRange<int64_t>>>* row_id_ranges,
     Buffer<uint32_t>* replicated_offsets) {
+    SCOPED_TIMER(_ctx->parent->_calculate_row_id_range_timer);
     // 1. add position column
     UInt32Column::Ptr position_column = UInt32Column::create();
     position_column->resize_uninitialized(request_chunk->num_rows());
@@ -221,7 +223,7 @@ StatusOr<ChunkPtr> IcebergV3LookUpTask::_calculate_row_id_range(RuntimeState* st
     auto [iter, _] = row_id_ranges->try_emplace(cur_scan_range_id, std::make_shared<SparseRange<int64_t>>());
     iter->second->add(cur_range);
     for (const auto& [scan_range_id, range] : *row_id_ranges) {
-        LOG(INFO) << "scan_range_id: " << scan_range_id << ", range: " << range->to_string();
+        DLOG(INFO) << "scan_range_id: " << scan_range_id << ", range: " << range->to_string();
     }
 
     if (!has_duplicated_row) {
@@ -353,6 +355,7 @@ TExpr create_between_expr(int32_t slot_id, int64_t start, int64_t end) {
 }
 
 TExpr IcebergV3LookUpTask::create_row_id_filter_expr(SlotId slot_id, const SparseRange<int64_t>& row_id_range) {
+    SCOPED_TIMER(_ctx->parent->_build_row_id_filter_timer);
     TExpr expr;
     std::vector<TExprNode>& nodes = expr.nodes;
     
@@ -510,7 +513,7 @@ TExpr IcebergV3LookUpTask::create_row_id_filter_expr(SlotId slot_id, const Spars
 StatusOr<ChunkPtr> IcebergV3LookUpTask::_get_data_from_storage(RuntimeState* state, const std::vector<SlotDescriptor*>& slots,
     const phmap::flat_hash_map<int32_t, std::shared_ptr<SparseRange<int64_t>>>& row_id_ranges) {
     // @TODO
-
+    SCOPED_TIMER(_ctx->parent->_get_data_from_storage_timer);
     ChunkPtr result_chunk;
     for (const auto& [scan_range_id, row_id_range] : row_id_ranges) {
 
@@ -518,7 +521,7 @@ StatusOr<ChunkPtr> IcebergV3LookUpTask::_get_data_from_storage(RuntimeState* sta
         // @TODO should know _row_id slot id
         // TExpr expr = create_between_expr(_ctx->lookup_ref_slot_ids[0], 0);
         TExpr expr = create_row_id_filter_expr(_ctx->lookup_ref_slot_ids[1], *row_id_range);
-        LOG(INFO) << "create row_id filter expr: " << apache::thrift::ThriftDebugString(expr);
+        DLOG(INFO) << "create row_id filter expr: " << apache::thrift::ThriftDebugString(expr);
 
         ExprContext* expr_ctx = nullptr;
         RETURN_IF_ERROR(Expr::create_expr_tree(&obj_pool, expr, &expr_ctx, state, false));
@@ -536,21 +539,22 @@ StatusOr<ChunkPtr> IcebergV3LookUpTask::_get_data_from_storage(RuntimeState* sta
         auto hdfs_scan_node = glm_ctx->hdfs_scan_node;
         hdfs_scan_node.tuple_id = _ctx->request_tuple_id;
         {
-            std::ostringstream oss;
+            [[maybe_unused]] std::ostringstream oss;
             oss << "request tuple id: "<< _ctx->request_tuple_id << ", slots: [";
             for (const auto& slot : state->desc_tbl().get_tuple_descriptor(_ctx->request_tuple_id)->slots()) {
                 oss << slot->id() << ", ";
             }
             oss << "]";
-            LOG(INFO) << oss.str();
+            DLOG(INFO) << oss.str();
         }
         // @TODO add a _row_id slot into request tuple...
 
         auto provider = std::make_unique<connector::HiveDataSourceProvider>(nullptr, hdfs_scan_node);
         const auto& scan_range = glm_ctx->get_hdfs_scan_range(scan_range_id);
         auto data_source = std::make_shared<connector::HiveDataSource>(provider.get(), scan_range);
-        RuntimeProfile mock_profile("mock");
-        data_source->set_runtime_profile(&mock_profile);
+        // RuntimeProfile mock_profile("mock");
+        // data_source->set_runtime_profile(&mock_profile);
+        data_source->set_runtime_profile(_ctx->profile);
         data_source->set_predicates(conjunct_ctxs);
         // @TODO we should set a specific predicate to filter by row_id
         // @TODO set row_id
@@ -563,17 +567,17 @@ StatusOr<ChunkPtr> IcebergV3LookUpTask::_get_data_from_storage(RuntimeState* sta
         do {
             ChunkPtr chunk = std::make_shared<Chunk>();
             auto status = data_source->get_next(state, &chunk);
-            LOG(INFO) << "get next chunk, status: " << status.to_string();
+            DLOG(INFO) << "get next chunk, status: " << status.to_string();
             if (status.is_end_of_file()) {
-                LOG(INFO) << "get end of file, break";
+                DLOG(INFO) << "get end of file, break";
                 break;
             }
             RETURN_IF_ERROR(status);
             if (chunk->num_rows() == 0) {
-                LOG(INFO) << "get empty chunk, break";
+                DLOG(INFO) << "get empty chunk, break";
                 break;
             }
-            LOG(INFO) << "get chunk: " << chunk->debug_columns();
+            DLOG(INFO) << "get chunk: " << chunk->debug_columns();
             // result_chunk->append(*chunk);
             // @TODO result chunk
             if (result_chunk == nullptr) {
@@ -583,7 +587,7 @@ StatusOr<ChunkPtr> IcebergV3LookUpTask::_get_data_from_storage(RuntimeState* sta
                         continue;
                     }
                     auto src_col = chunk->get_column_by_index(idx);
-                    LOG(INFO) << "append column: " << slot_id << ", " << src_col->get_name();
+                    DLOG(INFO) << "append column: " << slot_id << ", " << src_col->get_name();
                     result_chunk->append_column(std::move(src_col), slot_id);
                 }
             } else {
@@ -594,18 +598,19 @@ StatusOr<ChunkPtr> IcebergV3LookUpTask::_get_data_from_storage(RuntimeState* sta
                     auto src_col = chunk->get_column_by_index(idx);
                     auto dst_col = result_chunk->get_column_by_slot_id(slot_id);
                     dst_col->append(*src_col, 0, chunk->num_rows());
-                    LOG(INFO) << "append column: " << slot_id << ", " << dst_col->get_name();
+                    DLOG(INFO) << "append column: " << slot_id << ", " << dst_col->get_name();
                 }
             }
             // @TODO 
         } while (true);
+        data_source->close(state);
     }
     return result_chunk;
 }
 
 Status IcebergV3LookUpTask::process(RuntimeState* state, const ChunkPtr& request_chunk) {
     // 获取请求上下文中的信息
-    LOG(INFO) << "IcebergV3LookUpTask process, request_ctxs size: " << _ctx->request_ctxs.size();
+    DLOG(INFO) << "IcebergV3LookUpTask process, request_ctxs size: " << _ctx->request_ctxs.size();
     if (_ctx->request_ctxs.empty()) {
         return Status::OK();
     }
@@ -638,14 +643,14 @@ Status IcebergV3LookUpTask::process(RuntimeState* state, const ChunkPtr& request
     }
     // @TODO resort and replicate
     // @TODO fill response
-    LOG(INFO) << "IcebergV3LookUpTask fill response, result_chunk: " << result_chunk->debug_columns();
+    DLOG(INFO) << "IcebergV3LookUpTask fill response, result_chunk: " << result_chunk->debug_columns();
 
     // insersection
     auto tuple_desc = state->desc_tbl().get_tuple_descriptor(_ctx->request_tuple_id);
     std::vector<SlotDescriptor*> slots;
     // @TODO this slot may contains row_id, we don't need it
     {
-        std::ostringstream oss;
+        [[maybe_unused]] std::ostringstream oss;
         oss << "IcebergV3LookUpTask fill response, slots: ";
         for (const auto& slot : tuple_desc->slots()) {
             if (slot->id() == _ctx->lookup_ref_slot_ids[0] || slot->id() == _ctx->lookup_ref_slot_ids[1]) {
@@ -654,12 +659,15 @@ Status IcebergV3LookUpTask::process(RuntimeState* state, const ChunkPtr& request
             slots.emplace_back(slot);
             oss << slot->id() << ", ";
         }
-        LOG(INFO) << oss.str();
+        DLOG(INFO) << oss.str();
     }
-    size_t start_offset = 0;
-    for (const auto& request_ctx : _ctx->request_ctxs) {
-        ASSIGN_OR_RETURN(auto num_rows, request_ctx->fill_response(result_chunk, 0, slots, start_offset));
-        start_offset += num_rows;
+    {
+        SCOPED_TIMER(_ctx->parent->_fill_response_timer);
+        size_t start_offset = 0;
+        for (const auto& request_ctx : _ctx->request_ctxs) {
+            ASSIGN_OR_RETURN(auto num_rows, request_ctx->fill_response(result_chunk, 0, slots, start_offset));
+            start_offset += num_rows;
+        }
     }
 
     // for (const auto& request_ctx : _ctx->request_ctxs) {

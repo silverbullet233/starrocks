@@ -959,7 +959,6 @@ public class LateMaterializationRewriter {
                     scanOperator.getColRefToColumnMetaMap().entrySet().stream()
                             .filter(entry -> columnRefOperators.contains(entry.getKey()))
                             .collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue));
-            context.fetchedColumns.addAll(newColumnRefMap.keySet());
 
             ColumnRefOperator rowIdColumnRef = null;
             for (Map.Entry<ColumnRefOperator, Column> entry : scanOperator.getColRefToColumnMetaMap().entrySet()) {
@@ -980,6 +979,8 @@ public class LateMaterializationRewriter {
                         .updateColumnRefToColumns(columnRefOperator, rowIdColumn, scanOperator.getTable());
                 newColumnRefMap.put(columnRefOperator, rowIdColumn);
                 rowIdColumnRef = columnRefOperator;
+            } else {
+                newColumnRefMap.put(rowIdColumnRef, scanOperator.getColRefToColumnMetaMap().get(rowIdColumnRef));
             }
 
             // generate row source id to distinguish scan operator
@@ -1001,9 +1002,13 @@ public class LateMaterializationRewriter {
             context.rowIdRefColumns.put(identifyOperator, Arrays.asList(scanRangeIdColumnRef, rowIdColumnRef));
 
             LOG.info("rewrite PhysicalIcebergScan, newColumnRefMap: " + newColumnRefMap.size());
+
+            context.fetchedColumns.addAll(newColumnRefMap.keySet());
             // build a new optExpressions
             PhysicalIcebergScanOperator.Builder builder = PhysicalIcebergScanOperator.builder().withOperator(scanOperator);
             builder.setColRefToColumnMetaMap(newColumnRefMap);
+            builder.setGlobalDicts(scanOperator.getGlobalDicts());
+            builder.setGlobalDictsExpr(scanOperator.getGlobalDictsExpr());
 
             OptExpression result = OptExpression.builder().with(optExpression).setOp(builder.build()).build();
             LogicalProperty newProperty = new LogicalProperty(optExpression.getLogicalProperty());

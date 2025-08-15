@@ -296,6 +296,7 @@ StatusOr<ChunkPtr> ScanOperator::pull_chunk(RuntimeState* state) {
         eval_runtime_bloom_filters(res.get());
         res->owner_info().set_owner_id(owner_id, is_eos);
     }
+    // LOG(INFO) << "pull_chunk, res: " << (res == nullptr ? "nullptr" : res->debug_columns());
 
     return res;
 }
