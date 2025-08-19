@@ -15,10 +15,12 @@
 #pragma once
 #include "column/vectorized_fwd.h"
 #include "common/status.h"
-#include "exprs/runtime_filter_bank.h"
+#include "storage/olap_common.h"
+// Removed: #include "exprs/runtime_filter_bank.h"
 
 namespace starrocks {
 class RuntimeFilterProbeDescriptor;
+class RuntimeFilter;
 class Chunk;
 class ObjectPool;
 

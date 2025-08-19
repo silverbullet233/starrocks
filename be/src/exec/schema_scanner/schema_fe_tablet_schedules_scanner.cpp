@@ -15,6 +15,7 @@
 #include "exec/schema_scanner/schema_fe_tablet_schedules_scanner.h"
 
 #include "exec/schema_scanner/schema_helper.h"
+#include "runtime/runtime_state.h"
 #include "gutil/strings/substitute.h"
 #include "storage/tablet.h"
 #include "types/logical_type.h"

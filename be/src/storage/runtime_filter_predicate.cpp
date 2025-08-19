@@ -16,6 +16,9 @@
 
 #include <cstring>
 
+#include "exprs/runtime_filter_bank.h"
+#include "exprs/runtime_filter.h"
+
 #include "column/binary_column.h"
 #include "column/chunk.h"
 #include "column/nullable_column.h"
