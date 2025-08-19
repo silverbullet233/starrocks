@@ -15,6 +15,7 @@
 #include "exec/spill/operator_mem_resource_manager.h"
 
 #include "exec/pipeline/operator.h"
+#include "runtime/runtime_state.h"
 
 namespace starrocks::spill {
 void OperatorMemoryResourceManager::prepare(OP* op, QuerySpillManager* query_spill_manager) {

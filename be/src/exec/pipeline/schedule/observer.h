@@ -20,9 +20,13 @@
 #include "exec/pipeline/pipeline_fwd.h"
 #include "exec/pipeline/schedule/common.h"
 #include "exec/pipeline/schedule/utils.h"
-#include "runtime/runtime_state.h"
+
 #include "util/defer_op.h"
 #include "util/race_detect.h"
+
+namespace starrocks {
+class RuntimeState;
+}
 
 namespace starrocks::pipeline {
 class SourceOperator;
@@ -103,12 +107,7 @@ public:
     Observable& operator=(const Observable&) = delete;
 
     // Non-thread-safe, we only allow the need to do this in the fragment->prepare phase.
-    void add_observer(RuntimeState* state, PipelineObserver* observer) {
-        if (state->enable_event_scheduler()) {
-            DCHECK(observer != nullptr);
-            _observers.push_back(observer);
-        }
-    }
+    void add_observer(RuntimeState* state, PipelineObserver* observer);
 
     void detach_observers() { _observers.clear(); }
 

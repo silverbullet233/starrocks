@@ -17,6 +17,7 @@
 #include "column/column_helper.h"
 #include "common/logging.h"
 #include "runtime/global_dict/decoder.h"
+#include "runtime/runtime_state.h"
 
 namespace starrocks::pipeline {
 

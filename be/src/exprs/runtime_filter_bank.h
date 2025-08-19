@@ -32,7 +32,7 @@
 #include "gen_cpp/RuntimeFilter_types.h"
 #include "gen_cpp/Types_types.h"
 #include "gen_cpp/internal_service.pb.h"
-#include "runtime/runtime_state.h"
+#include "util/runtime_profile.h"
 #include "types/logical_type.h"
 #include "util/blocking_queue.hpp"
 
@@ -41,11 +41,11 @@ struct RuntimeMembershipFilterBuildParam;
 }
 
 namespace starrocks {
+class RuntimeState;
 struct SkewBroadcastRfMaterial;
 class RowDescriptor;
 class MemTracker;
 class ExecEnv;
-class RuntimeProfile;
 
 class HashJoinNode;
 class RuntimeFilterProbeCollector;

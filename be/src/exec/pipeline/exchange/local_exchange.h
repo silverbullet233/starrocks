@@ -22,11 +22,11 @@
 #include "exec/pipeline/exchange/local_exchange_source_operator.h"
 #include "exec/pipeline/exchange/shuffler.h"
 #include "exprs/expr_context.h"
+#include "runtime/runtime_state.h"
 #include "util/runtime_profile.h"
 
 namespace starrocks {
 class ExprContext;
-class RuntimeState;
 
 namespace pipeline {
 

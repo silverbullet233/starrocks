@@ -19,6 +19,8 @@
 #include <limits>
 #include <utility>
 
+#include "runtime/runtime_state.h"
+
 #include "column/binary_column.h"
 #include "column/column_helper.h"
 #include "column/datum.h"
