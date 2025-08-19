@@ -75,6 +75,8 @@ class LocalPkIndexManager;
 
 namespace starrocks {
 
+class TAllocateAutoIncrementIdParam;
+class TAllocateAutoIncrementIdResult;
 class DataDir;
 class EngineTask;
 class MemTableFlushExecutor;

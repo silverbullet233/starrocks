@@ -22,6 +22,8 @@
 
 #include "exec/spill/log_block_manager.h"
 #include "fs/fs.h"
+#include "gen_cpp/FrontendService_types.h"
+#include "gen_cpp/InternalService_types.h"
 #include "gen_cpp/Types_types.h"
 
 namespace starrocks::spill {

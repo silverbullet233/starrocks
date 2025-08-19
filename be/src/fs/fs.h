@@ -18,6 +18,7 @@
 #include "common/statusor.h"
 #include "fs/credential/cloud_configuration_factory.h"
 #include "fs/encryption.h"
+#include "gen_cpp/DataSinks_types.h"
 #include "gen_cpp/PlanNodes_types.h"
 #include "io/input_stream.h"
 #include "io/seekable_input_stream.h"
