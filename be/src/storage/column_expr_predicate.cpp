@@ -1,4 +1,5 @@
 #include "storage/column_expr_predicate.h"
+#include "column/chunk.h"
 
 #include <utility>
 

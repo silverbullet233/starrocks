@@ -17,7 +17,6 @@
 #include <numeric>
 #include <sstream>
 
-#include "column/chunk.h"
 #include "column/column_hash.h"
 #include "column/column_helper.h"
 #include "column/const_column.h"

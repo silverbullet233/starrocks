@@ -19,6 +19,7 @@
 #include "column/adaptive_nullable_column.h"
 #include "column/array_column.h"
 #include "column/chunk.h"
+
 #include "column/column_view/column_view_helper.h"
 #include "column/json_column.h"
 #include "column/map_column.h"

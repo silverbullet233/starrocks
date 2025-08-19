@@ -13,6 +13,7 @@
 // limitations under the License.
 
 #include "exec/except_hash_set.h"
+#include "column/chunk.h"
 
 #include "exec/aggregate/agg_hash_set.h"
 #include "exec/exec_node.h"

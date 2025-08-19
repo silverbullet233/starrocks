@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#include <numeric>
 #include "storage/rowset/segment_group.h"
 
 namespace starrocks {

@@ -17,7 +17,7 @@
 #include <memory>
 #include <vector>
 
-#include "column/chunk.h"
+#include "column/vectorized_fwd.h"
 #include "common/status.h"
 #include "common/statusor.h"
 #include "exec/pipeline/operator.h"

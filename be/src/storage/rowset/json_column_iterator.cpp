@@ -13,6 +13,7 @@
 // limitations under the License.
 
 #include "storage/rowset/json_column_iterator.h"
+#include "column/chunk.h"
 
 #include <memory>
 #include <utility>

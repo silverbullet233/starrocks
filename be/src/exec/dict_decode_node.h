@@ -17,7 +17,7 @@
 #include <unordered_map>
 #include <vector>
 
-#include "column/chunk.h"
+#include "column/vectorized_fwd.h"
 #include "common/global_types.h"
 #include "exec/exec_node.h"
 #include "exec/olap_common.h"

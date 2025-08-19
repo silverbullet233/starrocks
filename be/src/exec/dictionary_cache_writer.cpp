@@ -13,6 +13,7 @@
 // limitations under the License.
 
 #include "exec/dictionary_cache_writer.h"
+#include "column/chunk.h"
 
 #include "exec/tablet_info.h"
 #include "serde/protobuf_serde.h"

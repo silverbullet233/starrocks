@@ -20,7 +20,7 @@
 #include <thread>
 #include <vector>
 
-#include "column/chunk.h"
+#include "column/vectorized_fwd.h"
 #include "common/status.h"
 #include "exec/file_scanner.h"
 #include "exec/scan_node.h"

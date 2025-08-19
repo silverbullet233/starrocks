@@ -18,6 +18,7 @@
 #include "column/column_viewer.h"
 #include "column/json_column.h"
 #include "exprs/cast_expr.h"
+#include "column/chunk.h"
 #include "exprs/expr_context.h"
 #include "gutil/casts.h"
 #include "gutil/strings/split.h"

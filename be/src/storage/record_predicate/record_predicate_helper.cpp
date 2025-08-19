@@ -13,6 +13,9 @@
 // limitations under the License.
 
 #include "storage/record_predicate/record_predicate_helper.h"
+#include "column/chunk.h"
+#include "column/schema.h"
+#include <numeric>
 
 #include <fmt/format.h>
 

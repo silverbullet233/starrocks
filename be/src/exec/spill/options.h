@@ -17,6 +17,7 @@
 #include <memory>
 
 #include "column/vectorized_fwd.h"
+#include "column/chunk.h"
 #include "exec/sort_exec_exprs.h"
 #include "exec/sorting/sorting.h"
 #include "exec/spill/block_manager.h"

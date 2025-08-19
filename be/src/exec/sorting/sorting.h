@@ -16,7 +16,7 @@
 
 #include <span>
 
-#include "column/chunk.h"
+#include "column/vectorized_fwd.h"
 #include "column/datum.h"
 #include "column/nullable_column.h"
 #include "common/status.h"

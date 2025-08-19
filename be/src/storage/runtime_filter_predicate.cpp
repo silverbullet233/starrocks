@@ -16,7 +16,12 @@
 
 #include <cstring>
 
+#include "column/binary_column.h"
+#include "column/chunk.h"
+#include "column/nullable_column.h"
+#include "column/type_traits.h"
 #include "common/config.h"
+#include "common/object_pool.h"
 #include "gutil/strings/fastmem.h"
 #include "runtime/mem_tracker.h"
 #include "simd/simd.h"

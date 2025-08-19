@@ -16,6 +16,7 @@
 
 #include <functional>
 
+#include "column/chunk.h"
 #include "column/vectorized_fwd.h"
 #include "common/statusor.h"
 #include "exec/pipeline/runtime_filter_types.h"

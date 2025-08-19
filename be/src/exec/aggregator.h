@@ -22,7 +22,6 @@
 #include <new>
 #include <utility>
 
-#include "column/chunk.h"
 #include "column/column_helper.h"
 #include "column/vectorized_fwd.h"
 #include "common/object_pool.h"

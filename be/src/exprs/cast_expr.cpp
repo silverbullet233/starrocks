@@ -35,6 +35,7 @@
 #include "column/nullable_column.h"
 #include "column/type_traits.h"
 #include "column/vectorized_fwd.h"
+#include "column/chunk.h"
 #include "common/object_pool.h"
 #include "common/status.h"
 #include "common/statusor.h"
@@ -98,8 +99,8 @@ struct CastFn {
     template <bool AllowThrowException>                                                                                \
     struct CastFn<FROM_TYPE, TO_TYPE, AllowThrowException> {                                                           \
         static ColumnPtr cast_fn(ColumnPtr&& column) {                                                                  \
-            if constexpr (std::numeric_limits<RunTimeCppType<TO_TYPE>>::max() <                                        \
-                          std::numeric_limits<RunTimeCppType<FROM_TYPE>>::max()) {                                     \
+            if constexpr (static_cast<RunTimeCppType<TO_TYPE>>(std::numeric_limits<RunTimeCppType<TO_TYPE>>::max()) <                                        \
+                          static_cast<RunTimeCppType<FROM_TYPE>>(std::numeric_limits<RunTimeCppType<FROM_TYPE>>::max())) {                                     \
                 if constexpr (!AllowThrowException) {                                                                  \
                     return VectorizedInputCheckUnaryFunction<UNARY_IMPL, NumberCheck>::template evaluate<FROM_TYPE,    \
                                                                                                          TO_TYPE>(     \
@@ -1156,8 +1157,8 @@ public:
                 if constexpr ((std::is_floating_point_v<ToCppType> || std::is_floating_point_v<FromCppType>)
                                       ? (static_cast<long double>(std::numeric_limits<ToCppType>::max()) <
                                          static_cast<long double>(std::numeric_limits<FromCppType>::max()))
-                                      : (std::numeric_limits<ToCppType>::max() <
-                                         std::numeric_limits<FromCppType>::max())) {
+                                      : (static_cast<ToCppType>(std::numeric_limits<ToCppType>::max()) <
+                                         static_cast<FromCppType>(std::numeric_limits<FromCppType>::max()))) {
                     // Check overflow.
 
                     llvm::Value* max_overflow = nullptr;
@@ -1167,9 +1168,9 @@ public:
                                   Status::JitCompileError("Check overflow failed, data type is not integer"));
 
                         // TODO(Yueyang): fix __int128
-                        auto* max = llvm::ConstantInt::get(l->getType(), std::numeric_limits<ToCppType>::max(), true);
+                        auto* max = llvm::ConstantInt::get(l->getType(), static_cast<uint64_t>(std::numeric_limits<ToCppType>::max()), true);
                         auto* min =
-                                llvm::ConstantInt::get(l->getType(), std::numeric_limits<ToCppType>::lowest(), true);
+                                llvm::ConstantInt::get(l->getType(), static_cast<uint64_t>(std::numeric_limits<ToCppType>::lowest()), true);
                         max_overflow = b.CreateICmpSGT(l, max);
                         min_overflow = b.CreateICmpSLT(l, min);
                     } else if constexpr (lt_is_float<FromType>) {

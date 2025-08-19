@@ -14,6 +14,7 @@
 
 #include "exec/pipeline/set/except_context.h"
 
+#include "column/chunk.h"
 #include "runtime/current_thread.h"
 
 namespace starrocks::pipeline {

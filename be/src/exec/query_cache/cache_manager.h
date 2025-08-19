@@ -18,7 +18,7 @@
 #include <string>
 #include <vector>
 
-#include "column/chunk.h"
+#include "column/vectorized_fwd.h"
 #include "common/status.h"
 #include "gutil/strings/substitute.h"
 #include "util/lru_cache.h"
@@ -49,15 +49,7 @@ struct CacheValue {
 
     ~CacheValue() { result.clear(); }
 
-    size_t size() {
-        // zero-charge cache entry can not be purged in LRU cache, so size of CacheValue must be at least
-        // greater than zero, so add sizeof(CacheValue) to size.
-        size_t value_size = sizeof(CacheValue);
-        for (auto& chk : result) {
-            value_size += chk->memory_usage();
-        }
-        return value_size;
-    }
+    size_t size();
 };
 
 class CacheManager {

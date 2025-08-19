@@ -14,6 +14,8 @@
 
 #include "storage/chunk_iterator.h"
 
+#include "column/chunk.h"
+
 namespace starrocks {
 
 class TimedChunkIterator final : public ChunkIterator {

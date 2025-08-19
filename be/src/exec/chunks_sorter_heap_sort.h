@@ -19,7 +19,6 @@
 #include <functional>
 #include <memory>
 
-#include "column/chunk.h"
 #include "column/vectorized_fwd.h"
 #include "common/object_pool.h"
 #include "exec/chunks_sorter.h"

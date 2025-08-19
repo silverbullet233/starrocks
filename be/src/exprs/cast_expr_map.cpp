@@ -16,6 +16,7 @@
 #include "column/column_viewer.h"
 #include "column/map_column.h"
 #include "exprs/cast_expr.h"
+#include "column/chunk.h"
 
 namespace starrocks {
 

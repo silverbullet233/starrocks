@@ -14,7 +14,7 @@
 
 #pragma once
 
-#include "column/chunk.h"
+#include "column/vectorized_fwd.h"
 #include "exec/pipeline/fragment_context.h"
 #include "gen_cpp/InternalService_types.h"
 #include "gen_cpp/internal_service.pb.h"

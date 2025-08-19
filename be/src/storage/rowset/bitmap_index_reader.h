@@ -42,6 +42,7 @@
 #include "storage/range.h"
 #include "storage/rowset/common.h"
 #include "storage/rowset/indexed_column_reader.h"
+#include "storage/types.h"
 #include "util/once.h"
 
 namespace starrocks {

@@ -20,7 +20,7 @@
 #include <optional>
 #include <vector>
 
-#include "column/chunk.h"
+#include "column/vectorized_fwd.h"
 #include "column/column_access_path.h"
 #include "exec/olap_common.h"
 #include "exec/olap_scan_prepare.h"

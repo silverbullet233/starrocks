@@ -14,7 +14,7 @@
 
 #pragma once
 
-#include "column/chunk.h"
+#include "column/vectorized_fwd.h"
 #include "exec/pipeline/pipeline_builder.h"
 #include "exec/stream/aggregate/stream_aggregate_operator.h"
 

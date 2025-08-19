@@ -27,6 +27,7 @@
 #include "column/object_column.h"
 #include "column/struct_column.h"
 #include "column/vectorized_fwd.h"
+#include "column/chunk.h"
 #include "common/status.h"
 #include "exec/sorting/sorting.h"
 #include "gutil/casts.h"

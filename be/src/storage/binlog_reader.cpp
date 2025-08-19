@@ -16,7 +16,9 @@
 
 #include <utility>
 
+#include "column/chunk.h"
 #include "column/datum.h"
+#include "storage/chunk_iterator.h"
 #include "storage/chunk_helper.h"
 #include "storage/rowset/rowid_range_option.h"
 #include "storage/rowset/segment_options.h"

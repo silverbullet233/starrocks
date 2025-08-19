@@ -14,6 +14,7 @@
 
 #include "exec/query_cache/cache_manager.h"
 
+#include "column/chunk.h"
 #include "util/defer_op.h"
 namespace starrocks::query_cache {
 
@@ -61,6 +62,20 @@ void CacheManager::invalidate_all() {
     // set capacity of cache to zero, the cache shall prune all cache entries.
     _cache.set_capacity(0);
     _cache.set_capacity(old_capacity);
+}
+
+// ------------------------------------------------------------------------------------
+// CacheValue
+// ------------------------------------------------------------------------------------
+
+size_t CacheValue::size() {
+    // zero-charge cache entry can not be purged in LRU cache, so size of CacheValue must be at least
+    // greater than zero, so add sizeof(CacheValue) to size.
+    size_t value_size = sizeof(CacheValue);
+    for (auto& chk : result) {
+        value_size += chk->memory_usage();
+    }
+    return value_size;
 }
 
 } // namespace starrocks::query_cache

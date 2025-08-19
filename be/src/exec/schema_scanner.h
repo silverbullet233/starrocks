@@ -16,6 +16,7 @@
 
 #include <string>
 
+#include "column/vectorized_fwd.h"
 #include "column/chunk.h"
 #include "common/object_pool.h"
 #include "common/status.h"

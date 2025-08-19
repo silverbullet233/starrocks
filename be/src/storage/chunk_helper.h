@@ -18,6 +18,7 @@
 #include <mutex>
 #include <queue>
 
+#include "common/global_types.h"
 #include "column/column_visitor.h"
 #include "column/column_visitor_adapter.h"
 #include "column/datum.h"
@@ -191,13 +192,13 @@ public:
 
     static SegmentedChunkPtr create(size_t segment_size);
 
-    void append_column(ColumnPtr column, SlotId slot_id);
-    void append_chunk(const ChunkPtr& chunk, const std::vector<SlotId>& slots);
+    void append_column(ColumnPtr column, starrocks::SlotId slot_id);
+    void append_chunk(const ChunkPtr& chunk, const std::vector<starrocks::SlotId>& slots);
     void append_chunk(const ChunkPtr& chunk);
     void append(const SegmentedChunkPtr& chunk, size_t offset);
     void build_columns();
 
-    SegmentedColumnPtr get_column_by_slot_id(SlotId slot_id);
+    SegmentedColumnPtr get_column_by_slot_id(starrocks::SlotId slot_id);
     const SegmentedColumns& columns() const;
     SegmentedColumns& columns();
     size_t num_segments() const;

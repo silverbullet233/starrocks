@@ -37,6 +37,7 @@
 #include <cstddef>
 
 #include "io/seekable_input_stream.h"
+#include "storage/olap_common.h"
 #include "storage/rowset/page_handle.h"
 namespace starrocks {
 

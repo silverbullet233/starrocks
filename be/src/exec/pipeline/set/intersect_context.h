@@ -14,7 +14,7 @@
 
 #pragma once
 
-#include "column/chunk.h"
+#include "column/vectorized_fwd.h"
 #include "column/column_hash.h"
 #include "column/column_helper.h"
 #include "column/type_traits.h"

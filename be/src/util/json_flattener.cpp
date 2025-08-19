@@ -16,6 +16,7 @@
 // under the License.
 
 #include "util/json_flattener.h"
+#include "column/chunk.h"
 
 #include <storage/flat_json_config.h>
 #include <sys/types.h>

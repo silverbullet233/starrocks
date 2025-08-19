@@ -13,6 +13,7 @@
 // limitations under the License.
 
 #include "storage/push_utils.h"
+#include "column/chunk.h"
 
 namespace starrocks {
 

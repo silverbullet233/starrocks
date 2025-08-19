@@ -18,7 +18,7 @@
 #include <utility>
 #include <vector>
 
-#include "column/chunk.h"
+
 #include "column/column.h" // Column
 #include "column/datum.h"
 #include "column/type_traits.h"

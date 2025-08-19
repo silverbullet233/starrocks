@@ -13,13 +13,14 @@
 // limitations under the License.
 
 #pragma once
-#include "column/chunk.h"
 #include "column/vectorized_fwd.h"
 #include "common/status.h"
 #include "exprs/runtime_filter_bank.h"
 
 namespace starrocks {
 class RuntimeFilterProbeDescriptor;
+class Chunk;
+class ObjectPool;
 
 class RuntimeFilterPredicate {
 public:

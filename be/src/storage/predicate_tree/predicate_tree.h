@@ -21,6 +21,7 @@
 #include "common/overloaded.h"
 #include "storage/column_predicate.h"
 #include "storage/predicate_tree/predicate_tree_fwd.h"
+#include "column/vectorized_fwd.h"
 
 namespace starrocks {
 
@@ -59,15 +60,9 @@ protected:
 template <typename Derived>
 class PredicateNodeFactory : public PredicateBaseNode {
 public:
-    Status evaluate(CompoundNodeContexts& contexts, const Chunk* chunk, uint8_t* selection) const {
-        return derived()->evaluate(contexts, chunk, selection, 0, chunk->num_rows());
-    }
-    Status evaluate_and(CompoundNodeContexts& contexts, const Chunk* chunk, uint8_t* selection) const {
-        return derived()->evaluate_and(contexts, chunk, selection, 0, chunk->num_rows());
-    }
-    Status evaluate_or(CompoundNodeContexts& contexts, const Chunk* chunk, uint8_t* selection) const {
-        return derived()->evaluate_or(contexts, chunk, selection, 0, chunk->num_rows());
-    }
+    Status evaluate(CompoundNodeContexts& contexts, const Chunk* chunk, uint8_t* selection) const;
+    Status evaluate_and(CompoundNodeContexts& contexts, const Chunk* chunk, uint8_t* selection) const;
+    Status evaluate_or(CompoundNodeContexts& contexts, const Chunk* chunk, uint8_t* selection) const;
 
     template <typename Vistor, typename... Args>
     auto visit(Vistor&& visitor, Args&&... args) const {

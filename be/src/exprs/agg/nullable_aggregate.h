@@ -24,7 +24,7 @@
 
 #include <utility>
 
-#include "column/chunk.h"
+
 #include "column/column_helper.h"
 #include "column/nullable_column.h"
 #include "exprs/agg/approx_top_k.h"

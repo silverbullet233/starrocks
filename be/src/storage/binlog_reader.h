@@ -14,13 +14,11 @@
 
 #pragma once
 
-#include "column/chunk.h"
 #include "column/vectorized_fwd.h"
 #include "fs/fs.h"
 #include "gen_cpp/PlanNodes_constants.h"
 #include "gen_cpp/binlog.pb.h"
 #include "storage/binlog_file_reader.h"
-#include "storage/chunk_iterator.h"
 #include "storage/rowset/rowset.h"
 
 namespace starrocks {
@@ -41,6 +39,7 @@ constexpr const char* BINLOG_TIMESTAMP = "_binlog_timestamp";
 class Tablet;
 class BinlogManager;
 class BinlogFileReadHolder;
+class ChunkIterator;
 
 // Read binlog in a tablet. Binlog can be treated as a table with schema. The schema includes the
 // data columns of base table and meta columns of binlog. The name and SQL data type of meta columns

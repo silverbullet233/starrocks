@@ -14,6 +14,7 @@
 
 #include "storage/predicate_tree/predicate_tree.hpp"
 
+#include "column/chunk.h"
 #include "gutil/strings/substitute.h"
 #include "simd/simd.h"
 
@@ -558,5 +559,24 @@ InstantiateCompoundNode(CompoundNodeType::AND);
 InstantiateCompoundNode(CompoundNodeType::OR);
 
 #undef InstantiateCompoundNode
+
+// ------------------------------------------------------------------------------------
+// PredicateNodeFactory
+// ------------------------------------------------------------------------------------
+
+template <typename Derived>
+Status PredicateNodeFactory<Derived>::evaluate(CompoundNodeContexts& contexts, const Chunk* chunk, uint8_t* selection) const {
+    return derived()->evaluate(contexts, chunk, selection, 0, chunk->num_rows());
+}
+
+template <typename Derived>
+Status PredicateNodeFactory<Derived>::evaluate_and(CompoundNodeContexts& contexts, const Chunk* chunk, uint8_t* selection) const {
+    return derived()->evaluate_and(contexts, chunk, selection, 0, chunk->num_rows());
+}
+
+template <typename Derived>
+Status PredicateNodeFactory<Derived>::evaluate_or(CompoundNodeContexts& contexts, const Chunk* chunk, uint8_t* selection) const {
+    return derived()->evaluate_or(contexts, chunk, selection, 0, chunk->num_rows());
+}
 
 } // namespace starrocks
