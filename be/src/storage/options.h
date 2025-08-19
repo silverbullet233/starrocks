@@ -38,13 +38,13 @@
 #include <utility>
 #include <vector>
 
-#include "fs/fs.h"
 #include "storage/lake/location_provider.h"
 #include "storage/olap_define.h"
 #include "util/uid_util.h"
 
 namespace starrocks {
 
+class FileSystem;
 class MemTracker;
 
 struct StorePath {
