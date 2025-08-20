@@ -15,6 +15,7 @@
 #include "exec/pipeline/pipeline.h"
 
 #include "exec/pipeline/adaptive/event.h"
+#include "exec/pipeline/source_operator.h"
 #include "exec/pipeline/group_execution/execution_group.h"
 #include "exec/pipeline/operator.h"
 #include "exec/pipeline/pipeline_driver.h"
@@ -36,6 +37,16 @@ Pipeline::Pipeline(uint32_t id, OpFactories op_factories, ExecutionGroupRawPtr e
 size_t Pipeline::degree_of_parallelism() const {
     // DOP (degree of parallelism) of Pipeline's SourceOperator determines the Pipeline's DOP.
     return source_operator_factory()->degree_of_parallelism();
+}
+
+SourceOperatorFactory* Pipeline::source_operator_factory() {
+    DCHECK(!_op_factories.empty());
+    return down_cast<SourceOperatorFactory*>(_op_factories[0].get());
+}
+
+const SourceOperatorFactory* Pipeline::source_operator_factory() const {
+    DCHECK(!_op_factories.empty());
+    return down_cast<SourceOperatorFactory*>(_op_factories[0].get());
 }
 
 void Pipeline::count_down_driver(RuntimeState* state) {

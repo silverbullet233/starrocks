@@ -17,11 +17,13 @@
 #include <ctime>
 #include <utility>
 
+#include "common/status.h"
 #include "exec/pipeline/adaptive/adaptive_fwd.h"
 #include "exec/pipeline/group_execution/execution_group_fwd.h"
+#include "exec/pipeline/operator.h"
 #include "exec/pipeline/pipeline_fwd.h"
-#include "exec/pipeline/source_operator.h"
 #include "gutil/strings/substitute.h"
+#include "util/runtime_profile.h"
 
 namespace starrocks {
 
@@ -49,14 +51,8 @@ public:
     void count_down_driver(RuntimeState* state);
     void clear_drivers();
 
-    SourceOperatorFactory* source_operator_factory() {
-        DCHECK(!_op_factories.empty());
-        return down_cast<SourceOperatorFactory*>(_op_factories[0].get());
-    }
-    const SourceOperatorFactory* source_operator_factory() const {
-        DCHECK(!_op_factories.empty());
-        return down_cast<SourceOperatorFactory*>(_op_factories[0].get());
-    }
+    SourceOperatorFactory* source_operator_factory();
+    const SourceOperatorFactory* source_operator_factory() const;
     OperatorFactory* sink_operator_factory() {
         DCHECK(!_op_factories.empty());
         return _op_factories[_op_factories.size() - 1].get();
