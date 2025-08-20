@@ -17,7 +17,6 @@
 #include <memory>
 #include <unordered_map>
 
-#include "exec/exec_node.h"
 #include "exec/pipeline/adaptive/adaptive_dop_param.h"
 #include "exec/pipeline/driver_limiter.h"
 #include "exec/pipeline/group_execution/execution_group_fwd.h"
@@ -45,6 +44,7 @@
 namespace starrocks {
 
 class StreamLoadContext;
+class ExecNode; // Forward declaration
 
 namespace pipeline {
 

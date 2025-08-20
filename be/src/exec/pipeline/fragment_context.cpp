@@ -17,6 +17,7 @@
 #include <memory>
 
 #include "exec/data_sink.h"
+#include "exec/exec_node.h"
 #include "exec/pipeline/group_execution/execution_group.h"
 #include "exec/pipeline/pipeline_driver_executor.h"
 #include "exec/pipeline/schedule/pipeline_timer.h"
