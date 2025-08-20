@@ -20,6 +20,7 @@
 #include "exec/pipeline/pipeline_driver.h"
 #include "exec/pipeline/pipeline_driver_executor.h"
 #include "exec/pipeline/source_operator.h"
+#include "exec/pipeline/fragment_context.h"
 #include "util/failpoint/fail_point.h"
 
 namespace starrocks::pipeline {

@@ -19,7 +19,6 @@
 #include "exec/pipeline/exchange/local_exchange.h"
 #include "exec/pipeline/exchange/local_exchange_sink_operator.h"
 #include "exec/pipeline/exchange/local_exchange_source_operator.h"
-#include "exec/pipeline/fragment_context.h"
 #include "exec/pipeline/group_execution/execution_group.h"
 #include "exec/pipeline/group_execution/execution_group_builder.h"
 #include "exec/pipeline/group_execution/execution_group_fwd.h"
@@ -34,17 +33,7 @@ namespace pipeline {
 class PipelineBuilderContext {
 public:
     PipelineBuilderContext(FragmentContext* fragment_context, size_t degree_of_parallelism, size_t sink_dop,
-                           bool is_stream_pipeline)
-            : _fragment_context(fragment_context),
-              _degree_of_parallelism(degree_of_parallelism),
-              _data_sink_dop(sink_dop),
-              _is_stream_pipeline(is_stream_pipeline),
-              _enable_group_execution(fragment_context->enable_group_execution()) {
-        // init the default execution group
-        _execution_groups.emplace_back(ExecutionGroupBuilder::create_normal_exec_group());
-        _normal_exec_group = _execution_groups.back().get();
-        _current_execution_group = _execution_groups.back().get();
-    }
+                           bool is_stream_pipeline);
 
     void init_colocate_groups(std::unordered_map<int32_t, ExecutionGroupPtr>&& colocate_groups);
     ExecutionGroupRawPtr find_exec_group_by_plan_node_id(int32_t plan_node_id);
@@ -147,7 +136,7 @@ public:
         return _pipelines[_pipelines.size() - 1].get();
     }
 
-    RuntimeState* runtime_state() { return _fragment_context->runtime_state(); }
+    RuntimeState* runtime_state();
     FragmentContext* fragment_context() { return _fragment_context; }
     bool enable_group_execution() const { return _enable_group_execution; }
 

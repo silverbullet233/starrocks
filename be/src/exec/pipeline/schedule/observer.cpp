@@ -15,6 +15,7 @@
 #include "exec/pipeline/schedule/observer.h"
 
 #include "exec/pipeline/pipeline_driver.h"
+#include "exec/pipeline/fragment_context.h"
 #include "exec/pipeline/schedule/common.h"
 #include "runtime/runtime_state.h"
 

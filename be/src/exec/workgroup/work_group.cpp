@@ -16,6 +16,8 @@
 
 #include <utility>
 
+#include "exec/pipeline/query_context.h"
+
 #include "common/config.h"
 #include "exec/pipeline/pipeline_driver_executor.h"
 #include "exec/workgroup/pipeline_executor_set.h"

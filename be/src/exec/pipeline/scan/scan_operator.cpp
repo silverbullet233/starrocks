@@ -16,6 +16,8 @@
 
 #include <util/time.h>
 
+#include "exec/pipeline/query_context.h"
+
 #include "column/chunk.h"
 #include "common/status.h"
 #include "common/statusor.h"

@@ -16,6 +16,8 @@
 
 #include <arrow/type.h>
 
+#include "exec/pipeline/query_context.h"
+
 #include "exprs/expr.h"
 #include "runtime/arrow_result_writer.h"
 #include "runtime/buffer_control_block.h"

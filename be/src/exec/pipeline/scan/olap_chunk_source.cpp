@@ -15,6 +15,9 @@
 #include "exec/pipeline/scan/olap_chunk_source.h"
 
 #include <cstdint>
+
+#include "exec/pipeline/query_context.h"
+#include "exec/pipeline/fragment_context.h"
 #include <string_view>
 #include <unordered_map>
 

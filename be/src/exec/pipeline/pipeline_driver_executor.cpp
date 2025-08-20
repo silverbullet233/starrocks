@@ -16,6 +16,9 @@
 
 #include <memory>
 
+#include "exec/pipeline/query_context.h"
+#include "exec/pipeline/fragment_context.h"
+
 #include "agent/master_info.h"
 #include "exec/pipeline/pipeline_metrics.h"
 #include "exec/pipeline/stream_pipeline_driver.h"

@@ -16,7 +16,6 @@
 
 #include <memory>
 
-#include "exec/pipeline/fragment_context.h"
 #include "exec/pipeline/pipeline_fwd.h"
 #include "gen_cpp/FrontendService.h"
 #include "gen_cpp/InternalService_types.h"

@@ -15,6 +15,7 @@
 #include "exec/pipeline/schedule/timeout_tasks.h"
 
 #include "exec/pipeline/fragment_context.h"
+#include "exec/pipeline/query_context.h"
 #include "exec/pipeline/pipeline_fwd.h"
 #include "exec/pipeline/schedule/common.h"
 #include "util/stack_util.h"

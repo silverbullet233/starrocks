@@ -16,6 +16,8 @@
 
 #include <chrono>
 
+#include "exec/pipeline/query_context.h"
+
 #include "exec/pipeline/pipeline_fwd.h"
 #include "exec/pipeline/pipeline_metrics.h"
 #include "runtime/exec_env.h"

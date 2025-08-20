@@ -16,6 +16,8 @@
 
 #include <memory>
 
+#include "exec/pipeline/fragment_context.h"
+
 #include "adaptive/event.h"
 #include "common/config.h"
 #include "exec/exec_node.h"
@@ -40,6 +42,23 @@
 #include "exec/query_cache/multilane_operator.h"
 
 namespace starrocks::pipeline {
+
+PipelineBuilderContext::PipelineBuilderContext(FragmentContext* fragment_context, size_t degree_of_parallelism, size_t sink_dop,
+                                               bool is_stream_pipeline)
+        : _fragment_context(fragment_context),
+          _degree_of_parallelism(degree_of_parallelism),
+          _data_sink_dop(sink_dop),
+          _is_stream_pipeline(is_stream_pipeline),
+          _enable_group_execution(fragment_context->enable_group_execution()) {
+    // init the default execution group
+    _execution_groups.emplace_back(ExecutionGroupBuilder::create_normal_exec_group());
+    _normal_exec_group = _execution_groups.back().get();
+    _current_execution_group = _execution_groups.back().get();
+}
+
+RuntimeState* PipelineBuilderContext::runtime_state() {
+    return _fragment_context->runtime_state();
+}
 
 void PipelineBuilderContext::init_colocate_groups(std::unordered_map<int32_t, ExecutionGroupPtr>&& colocate_groups) {
     _group_id_to_colocate_groups = std::move(colocate_groups);

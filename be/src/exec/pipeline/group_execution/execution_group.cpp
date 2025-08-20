@@ -15,6 +15,7 @@
 #include "exec/pipeline/group_execution/execution_group.h"
 
 #include "common/logging.h"
+#include "exec/pipeline/fragment_context.h"
 #include "exec/pipeline/pipeline_driver_executor.h"
 #include "exec/pipeline/pipeline_fwd.h"
 
@@ -29,6 +30,18 @@ concept DriverPtrCallable = std::invocable<T, const DriverPtr&> &&
 void ExecutionGroup::clear_all_drivers(Pipelines& pipelines) {
     for (auto& pipeline : pipelines) {
         pipeline->clear_drivers();
+    }
+}
+
+void ExecutionGroup::count_down_pipeline(RuntimeState* state) {
+    if (++_num_finished_pipelines == _num_pipelines) {
+        state->fragment_ctx()->count_down_execution_group();
+    }
+}
+
+void ExecutionGroup::count_down_epoch_pipeline(RuntimeState* state) {
+    if (++_num_epoch_finished_pipelines == _num_pipelines) {
+        state->fragment_ctx()->count_down_epoch_pipeline(state);
     }
 }
 

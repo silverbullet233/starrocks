@@ -15,6 +15,8 @@
 #include "exec/pipeline/exec_state_reporter.h"
 
 #include <thrift/Thrift.h>
+
+#include "exec/pipeline/query_context.h"
 #include <thrift/protocol/TDebugProtocol.h>
 
 #include <memory>

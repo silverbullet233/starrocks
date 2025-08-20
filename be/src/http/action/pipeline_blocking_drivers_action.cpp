@@ -15,6 +15,9 @@
 #include "http/action/pipeline_blocking_drivers_action.h"
 
 #include <rapidjson/document.h>
+
+#include "exec/pipeline/query_context.h"
+#include "exec/pipeline/fragment_context.h"
 #include <rapidjson/prettywriter.h>
 #include <rapidjson/stringbuffer.h>
 

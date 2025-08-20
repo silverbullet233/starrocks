@@ -21,7 +21,6 @@
 #include <unordered_map>
 
 #include "exec/pipeline/pipeline_driver_queue.h"
-#include "exec/pipeline/query_context.h"
 #include "exec/workgroup/work_group_fwd.h"
 #include "pipeline_executor_set_manager.h"
 #include "runtime/mem_tracker.h"
@@ -182,7 +181,7 @@ public:
     int128_t unique_id() const { return create_unique_id(_id, _version); }
     static int128_t create_unique_id(int64_t id, int64_t version) { return (((int128_t)version) << 64) | id; }
 
-    Status check_big_query(const QueryContext& query_context);
+    Status check_big_query(const pipeline::QueryContext& query_context);
     StatusOr<RunningQueryTokenPtr> acquire_running_query_token(bool enable_group_level_query_queue);
     void decr_num_queries();
     int64_t num_running_queries() const { return _num_running_queries; }
