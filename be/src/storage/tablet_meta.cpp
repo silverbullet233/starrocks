@@ -41,6 +41,7 @@
 #include "storage/metadata_util.h"
 #include "storage/olap_common.h"
 #include "storage/protobuf_file.h"
+#include "storage/rowset/rowset.h"
 #include "storage/rowset/rowset_meta_manager.h"
 #include "storage/tablet_meta_manager.h"
 #include "storage/tablet_schema_map.h"

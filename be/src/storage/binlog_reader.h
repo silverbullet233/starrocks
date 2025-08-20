@@ -14,14 +14,21 @@
 
 #pragma once
 
+#include "column/schema.h"
 #include "column/vectorized_fwd.h"
 #include "fs/fs.h"
 #include "gen_cpp/PlanNodes_constants.h"
 #include "gen_cpp/binlog.pb.h"
 #include "storage/binlog_file_reader.h"
-#include "storage/rowset/rowset.h"
+#include "storage/olap_common.h"
 
 namespace starrocks {
+
+class Rowset;
+using RowsetSharedPtr = std::shared_ptr<Rowset>;
+
+class ChunkIterator;
+using ChunkIteratorPtr = std::shared_ptr<ChunkIterator>;
 
 struct BinlogReaderParams {
     // Chunk size to read from a segment at a time

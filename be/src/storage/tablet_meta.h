@@ -48,7 +48,7 @@
 #include "storage/flat_json_config.h"
 #include "storage/olap_common.h"
 #include "storage/olap_define.h"
-#include "storage/rowset/rowset.h"
+
 #include "storage/rowset/rowset_meta.h"
 #include "storage/tablet_schema.h"
 #include "util/uid_util.h"
@@ -84,6 +84,7 @@ enum TabletState {
 
 class RowsetMeta;
 class Rowset;
+using RowsetSharedPtr = std::shared_ptr<Rowset>;
 class DataDir;
 class TabletMeta;
 using TabletMetaSharedPtr = std::shared_ptr<TabletMeta>;

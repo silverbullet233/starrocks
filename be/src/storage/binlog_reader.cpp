@@ -13,6 +13,7 @@
 // limitations under the License.
 
 #include "storage/binlog_reader.h"
+#include "storage/rowset/rowset.h"
 
 #include <utility>
 

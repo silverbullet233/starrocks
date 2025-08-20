@@ -60,6 +60,7 @@
 #include "storage/cluster_id_mgr.h"
 #include "storage/kv_store.h"
 #include "storage/olap_common.h"
+#include "storage/delta_column_group.h"
 #include "storage/olap_define.h"
 #include "storage/options.h"
 #include "storage/rowset/rowset_id_generator.h"

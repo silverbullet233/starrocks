@@ -51,7 +51,7 @@
 #include "storage/base_tablet.h"
 #include "storage/data_dir.h"
 #include "storage/olap_define.h"
-#include "storage/rowset/rowset.h"
+
 #include "storage/tablet_meta.h"
 #include "storage/tuple.h"
 #include "storage/utils.h"
@@ -74,6 +74,9 @@ struct TabletBasicInfo;
 
 using TabletSharedPtr = std::shared_ptr<Tablet>;
 using BaseRowsetSharedPtr = std::shared_ptr<BaseRowset>;
+
+class Rowset;
+using RowsetSharedPtr = std::shared_ptr<Rowset>;
 
 class ChunkIterator;
 

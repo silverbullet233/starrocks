@@ -37,6 +37,7 @@
 #include "storage/memtable_flush_executor.h"
 #include "storage/storage_engine.h"
 #include "testutil/sync_point.h"
+#include "util/defer_op.h"
 #include "util/misc.h"
 #include "util/threadpool.h"
 #include "util/thrift_rpc_helper.h"

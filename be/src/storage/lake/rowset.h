@@ -21,6 +21,7 @@
 #include "storage/olap_common.h"
 #include "storage/options.h"
 #include "storage/rowset/base_rowset.h"
+#include "storage/rowset/segment_options.h"
 
 namespace starrocks::lake {
 
@@ -48,7 +49,7 @@ public:
     explicit Rowset(TabletManager* tablet_mgr, TabletMetadataPtr tablet_metadata, int rowset_index,
                     size_t compaction_segment_limit);
 
-    virtual ~Rowset();
+    ~Rowset() override;
 
     DISALLOW_COPY_AND_MOVE(Rowset);
 
@@ -117,7 +118,7 @@ public:
     // `fill_cache` controls `fill_data_cache` and `fill_meta_cache`
     Status load_segments(std::vector<SegmentPtr>* segments, bool fill_cache, int64_t buffer_size = -1);
 
-    [[nodiscard]] Status load_segments(std::vector<SegmentPtr>* segments, SegmentReadOptions& seg_options,
+    [[nodiscard]] Status load_segments(std::vector<SegmentPtr>* segments, starrocks::SegmentReadOptions& seg_options,
                                        std::pair<std::vector<SegmentPtr>, std::vector<SegmentPtr>>* not_used_segments);
 
     int64_t tablet_id() const { return _tablet_id; }

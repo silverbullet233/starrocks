@@ -13,6 +13,7 @@
 // limitations under the License.
 
 #include <runtime/lake_snapshot_loader.h>
+#include "runtime/exec_env.h"
 
 #include "fs/fs_broker.h"
 #include "fs/fs_util.h"

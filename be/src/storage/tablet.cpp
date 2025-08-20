@@ -55,6 +55,7 @@
 #include "storage/default_compaction_policy.h"
 #include "storage/olap_common.h"
 #include "storage/olap_define.h"
+#include "storage/rowset/rowset.h"
 #include "storage/rowset/rowset_factory.h"
 #include "storage/rowset/rowset_meta_manager.h"
 #include "storage/size_tiered_compaction_policy.h"

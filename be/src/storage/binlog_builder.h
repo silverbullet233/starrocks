@@ -18,6 +18,9 @@
 
 namespace starrocks {
 
+class Rowset;
+using RowsetSharedPtr = std::shared_ptr<Rowset>;
+
 // Parameters to create a binlog builder
 struct BinlogBuilderParams {
     // storage directory for binlog file

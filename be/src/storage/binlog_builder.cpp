@@ -16,6 +16,7 @@
 
 #include <utility>
 
+#include "storage/rowset/rowset.h"
 #include "util/filesystem_util.h"
 
 namespace starrocks {

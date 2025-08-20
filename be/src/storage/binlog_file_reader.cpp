@@ -14,6 +14,7 @@
 
 #include "storage/binlog_file_reader.h"
 
+#include "column/column.h"
 #include "fs/fs.h"
 #include "storage/binlog_file_writer.h"
 #include "storage/binlog_util.h"
