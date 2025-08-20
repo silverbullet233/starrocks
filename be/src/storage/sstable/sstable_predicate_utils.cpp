@@ -14,6 +14,8 @@
 
 #include "storage/sstable/sstable_predicate_utils.h"
 
+#include "column/binary_column.h"
+#include "column/vectorized_fwd.h"
 #include "storage/chunk_helper.h"
 #include "storage/primary_key_encoder.h"
 #include "storage/sstable/sstable_predicate.h"

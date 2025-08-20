@@ -20,7 +20,7 @@
 
 #include "butil/containers/flat_map.h"
 #include "column/column.h"
-#include "column/column_hash.h"
+#include "util/hash.h"
 #include "column/schema.h"
 #include "common/global_types.h"
 #include "exec/query_cache/owner_info.h"

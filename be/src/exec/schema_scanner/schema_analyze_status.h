@@ -16,6 +16,7 @@
 
 #include "exec/schema_scanner.h"
 #include "gen_cpp/FrontendService_types.h"
+#include "column/datum.h"
 
 namespace starrocks {
 
