@@ -21,7 +21,6 @@
 #include "exec/pipeline/driver_limiter.h"
 #include "exec/pipeline/group_execution/execution_group_fwd.h"
 #include "exec/pipeline/pipeline.h"
-#include "exec/pipeline/pipeline_driver.h"
 #include "exec/pipeline/pipeline_fwd.h"
 #include "exec/pipeline/runtime_filter_types.h"
 #include "exec/pipeline/scan/morsel.h"
@@ -44,7 +43,8 @@
 namespace starrocks {
 
 class StreamLoadContext;
-class ExecNode; // Forward declaration
+class ExecNode;
+class DataSink; 
 
 namespace pipeline {
 

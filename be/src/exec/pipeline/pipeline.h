@@ -20,7 +20,6 @@
 #include "common/status.h"
 #include "exec/pipeline/adaptive/adaptive_fwd.h"
 #include "exec/pipeline/group_execution/execution_group_fwd.h"
-#include "exec/pipeline/operator.h"
 #include "exec/pipeline/pipeline_fwd.h"
 #include "gutil/strings/substitute.h"
 #include "util/runtime_profile.h"
@@ -38,13 +37,7 @@ public:
 
     uint32_t get_id() const { return _id; }
 
-    Operators create_operators(int32_t degree_of_parallelism, int32_t i) {
-        Operators operators;
-        for (const auto& factory : _op_factories) {
-            operators.emplace_back(factory->create(degree_of_parallelism, i));
-        }
-        return operators;
-    }
+    Operators create_operators(int32_t degree_of_parallelism, int32_t i);
     void instantiate_drivers(RuntimeState* state);
     Drivers& drivers();
     const Drivers& drivers() const;
@@ -63,37 +56,11 @@ public:
     void setup_pipeline_profile(RuntimeState* runtime_state);
     void setup_drivers_profile(const DriverPtr& driver);
 
-    Status prepare(RuntimeState* state) {
-        for (auto& op : _op_factories) {
-            RETURN_IF_ERROR(op->prepare(state));
-        }
-        return Status::OK();
-    }
-    void close(RuntimeState* state) {
-        for (auto& op : _op_factories) {
-            op->close(state);
-        }
-    }
+    Status prepare(RuntimeState* state);
+    void close(RuntimeState* state);
+    void acquire_runtime_filter(RuntimeState* state);
 
-    void acquire_runtime_filter(RuntimeState* state) {
-        for (auto& op : _op_factories) {
-            op->acquire_runtime_filter(state);
-        }
-    }
-
-    std::string to_readable_string() const {
-        std::stringstream ss;
-        ss << "operator-chain: [";
-        for (size_t i = 0; i < _op_factories.size(); ++i) {
-            if (i == 0) {
-                ss << _op_factories[i]->get_name();
-            } else {
-                ss << " -> " << _op_factories[i]->get_name();
-            }
-        }
-        ss << "]";
-        return ss.str();
-    }
+    std::string to_readable_string() const;
 
     // STREAM MV
     Status reset_epoch(RuntimeState* state);

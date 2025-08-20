@@ -49,6 +49,47 @@ const SourceOperatorFactory* Pipeline::source_operator_factory() const {
     return down_cast<SourceOperatorFactory*>(_op_factories[0].get());
 }
 
+Operators Pipeline::create_operators(int32_t degree_of_parallelism, int32_t i) {
+    Operators operators;
+    for (const auto& factory : _op_factories) {
+        operators.emplace_back(factory->create(degree_of_parallelism, i));
+    }
+    return operators;
+}
+
+Status Pipeline::prepare(RuntimeState* state) {
+    for (auto& op : _op_factories) {
+        RETURN_IF_ERROR(op->prepare(state));
+    }
+    return Status::OK();
+}
+
+void Pipeline::close(RuntimeState* state) {
+    for (auto& op : _op_factories) {
+        op->close(state);
+    }
+}
+
+void Pipeline::acquire_runtime_filter(RuntimeState* state) {
+    for (auto& op : _op_factories) {
+        op->acquire_runtime_filter(state);
+    }
+}
+
+std::string Pipeline::to_readable_string() const {
+    std::stringstream ss;
+    ss << "operator-chain: [";
+    for (size_t i = 0; i < _op_factories.size(); ++i) {
+        if (i == 0) {
+            ss << _op_factories[i]->get_name();
+        } else {
+            ss << " -> " << _op_factories[i]->get_name();
+        }
+    }
+    ss << "]";
+    return ss.str();
+}
+
 void Pipeline::count_down_driver(RuntimeState* state) {
     size_t num_drivers = _drivers.size();
     bool all_drivers_finished = ++_num_finished_drivers >= num_drivers;
