@@ -16,6 +16,7 @@
 
 #include "column/column_visitor_adapter.h"
 #include "gen_cpp/FrontendService_types.h"
+#include "gen_cpp/FrontendService.h"
 #include "runtime/client_cache.h"
 
 #ifdef __SSE4_2__

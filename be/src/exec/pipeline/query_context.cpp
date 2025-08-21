@@ -33,6 +33,7 @@
 #include "util/defer_op.h"
 #include "util/thread.h"
 #include "util/thrift_rpc_helper.h"
+#include "gen_cpp/FrontendService.h"
 
 namespace starrocks::pipeline {
 

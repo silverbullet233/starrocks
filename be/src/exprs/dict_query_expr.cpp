@@ -13,6 +13,7 @@
 // limitations under the License.
 
 #include "exprs/dict_query_expr.h"
+#include "gen_cpp/FrontendService.h"
 
 #include "agent/master_info.h"
 #include "column/chunk.h"

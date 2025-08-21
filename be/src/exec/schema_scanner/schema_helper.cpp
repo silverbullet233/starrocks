@@ -13,6 +13,7 @@
 // limitations under the License.
 
 #include "exec/schema_scanner/schema_helper.h"
+#include "gen_cpp/FrontendService.h"
 
 #include <sstream>
 #include <utility>

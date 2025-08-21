@@ -28,7 +28,6 @@
 #include "exec/pipeline/schedule/observer.h"
 #include "exec/pipeline/schedule/pipeline_timer.h"
 #include "exec/query_cache/cache_param.h"
-#include "gen_cpp/FrontendService.h"
 #include "gen_cpp/HeartbeatService.h"
 #include "gen_cpp/InternalService_types.h"
 #include "gen_cpp/PlanNodes_types.h"

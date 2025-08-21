@@ -50,7 +50,7 @@
 #include "common/global_types.h"
 #include "common/object_pool.h"
 #include "exec/pipeline/pipeline_fwd.h"
-#include "gen_cpp/FrontendService.h"
+#include "gen_cpp/FrontendService_types.h"
 #include "gen_cpp/InternalService_types.h" // for TQueryOptions
 #include "gen_cpp/Types_types.h"           // for TUniqueId
 #include "runtime/global_dict/parser.h"

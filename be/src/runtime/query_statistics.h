@@ -36,11 +36,13 @@
 
 #include <mutex>
 
-#include "gen_cpp/FrontendService.h"
 #include "gen_cpp/data.pb.h"
 #include "util/spinlock.h"
 
 namespace starrocks {
+
+// Forward declaration
+class TAuditStatistics;
 
 class QueryStatisticsRecvr;
 

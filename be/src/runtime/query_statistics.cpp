@@ -34,6 +34,8 @@
 
 #include "runtime/query_statistics.h"
 
+#include "gen_cpp/FrontendService_types.h"
+
 namespace starrocks {
 
 void QueryStatistics::to_pb(PQueryStatistics* statistics) {
