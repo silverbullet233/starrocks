@@ -15,7 +15,10 @@
 #pragma once
 
 #include "column/column.h"
+#include "column/json_column.h"
 #include "column/type_traits.h"
+#include "column/nullable_column.h"
+#include "column/binary_column.h"
 #include "common/status.h"
 #include "exec/schema_scanner.h"
 #include "gen_cpp/FrontendService_types.h"

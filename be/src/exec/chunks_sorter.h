@@ -17,6 +17,7 @@
 #include <memory>
 
 #include "column/column_helper.h"
+#include "column/json_column.h"
 #include "column/vectorized_fwd.h"
 #include "common/object_pool.h"
 #include "exec/pipeline/spill_process_channel.h"

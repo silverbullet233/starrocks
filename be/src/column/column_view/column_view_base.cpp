@@ -16,6 +16,7 @@
 #include <column/column_helper.h>
 #include <column/column_view/column_view_base.h>
 #include <simd/gather.h>
+#include <numeric>
 
 namespace starrocks {
 size_t ColumnViewBase::container_memory_usage() const {

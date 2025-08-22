@@ -188,7 +188,7 @@ public:
 
     template <typename T>
     Status do_visit(BinaryColumnBase<T>* dst) {
-        using Container = typename BinaryColumnBase<T>::BinaryDataProxyContainer;
+        using Container = typename BinaryColumnBase<T>::ProxyContainer;
         std::vector<const Container*> srcs;
         for (auto& column : _columns) {
             srcs.push_back(&(down_cast<const BinaryColumnBase<T>*>(column.get())->get_proxy_data()));

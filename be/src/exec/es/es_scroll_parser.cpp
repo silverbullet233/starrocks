@@ -18,6 +18,7 @@
 
 #include "column/array_column.h"
 #include "column/column_helper.h"
+#include "column/json_column.h"
 #include "column/nullable_column.h"
 #include "common/config.h"
 #include "runtime/runtime_state.h"

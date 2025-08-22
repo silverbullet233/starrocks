@@ -17,6 +17,7 @@
 #include <cctz/time_zone.h>
 #include <glog/logging.h>
 
+#include "column/decimalv3_column.h"
 #include <chrono>
 #include <cstdint>
 #include <cstring>

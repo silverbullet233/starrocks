@@ -1,3 +1,4 @@
+#include "column/decimalv3_column.h"
 // Copyright 2021-present StarRocks, Inc. All rights reserved.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -13,6 +14,7 @@
 // limitations under the License.
 
 #include "column/column_helper.h"
+#include "column/decimalv3_column.h"
 
 #include <runtime/types.h>
 

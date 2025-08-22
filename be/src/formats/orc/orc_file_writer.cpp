@@ -17,6 +17,8 @@
 #include <fmt/format.h>
 
 #include <utility>
+#include "column/decimalv3_column.h"
+#include "runtime/decimalv3.h"
 
 #include "column/array_column.h"
 #include "column/column_helper.h"

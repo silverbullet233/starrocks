@@ -16,6 +16,11 @@
 
 #include "column/type_traits.h"
 #include "column/vectorized_fwd.h"
+#include "column/column.h"
+#include "column/nullable_column.h"
+#include "column/decimalv3_column.h"
+#include "column/json_column.h"
+#include "column/object_column.h"
 
 namespace starrocks {
 

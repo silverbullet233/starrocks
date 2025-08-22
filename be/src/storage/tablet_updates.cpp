@@ -21,6 +21,7 @@
 #include <filesystem>
 #include <memory>
 
+#include "column/binary_column.h"
 #include "common/status.h"
 #include "common/tracer.h"
 #include "exec/schema_scanner/schema_be_tablets_scanner.h"
@@ -4712,7 +4713,7 @@ void TabletUpdates::_remove_unused_rowsets(bool drop_tablet) {
         }
 
         st = TabletMetaManager::rowset_delete(_tablet.data_dir(), _tablet.tablet_id(),
-                                              rowset->rowset_meta()->get_rowset_seg_id(), rowset->num_segments());
+                                             rowset->rowset_meta()->get_rowset_seg_id(), rowset->num_segments());
         if (!st.ok()) {
             LOG(WARNING) << "Fail to delete rowset " << rowset->rowset_id() << ": " << st
                          << " tablet:" << _tablet.tablet_id();

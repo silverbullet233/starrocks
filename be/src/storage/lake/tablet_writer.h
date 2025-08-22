@@ -24,6 +24,8 @@
 #include "runtime/global_dict/types_fwd_decl.h"
 #include "storage/lake/location_provider.h"
 #include "storage/tablet_schema.h"
+#include "util/hash.h"
+#include "util/phmap/phmap.h"
 
 namespace starrocks {
 class Chunk;

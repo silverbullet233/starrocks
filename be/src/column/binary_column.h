@@ -21,6 +21,7 @@
 #include "common/statusor.h"
 #include "gutil/strings/fastmem.h"
 #include "util/slice.h"
+#include "column/type_traits.h"
 
 namespace starrocks {
 
@@ -36,19 +37,11 @@ public:
     using Byte = uint8_t;
     using Bytes = starrocks::raw::RawVectorPad16<uint8_t, ColumnAllocator<uint8_t>>;
 
-    struct BinaryDataProxyContainer {
-        BinaryDataProxyContainer(const BinaryColumnBase& column) : _column(column) {}
-
-        Slice operator[](size_t index) const { return _column.get_slice(index); }
-
-        size_t size() const { return _column.size(); }
-
-    private:
-        const BinaryColumnBase& _column;
-    };
-
-    using Container = Buffer<Slice>;
-    using ProxyContainer = BinaryDataProxyContainer;
+    using Container = typename ContainerTraits<ValueType>::Container;
+    using ProxyContainer = BinaryDataProxyContainer<T>;
+    // using Container = std::conditional_t<std::is_same_v<T, uint32_t>, 
+    //                                    typename ContainerTraits<BinaryColumnBase<uint32_t>>::Container,
+    //                                    typename ContainerTraits<BinaryColumnBase<uint64_t>>::Container>;
 
     // TODO(kks): when we create our own vector, we could let vector[-1] = 0,
     // and then we don't need explicitly emplace_back zero value
@@ -303,7 +296,7 @@ public:
         return _slices;
     }
 
-    const BinaryDataProxyContainer& get_proxy_data() const { return _immuable_container; }
+    const BinaryDataProxyContainer<T>& get_proxy_data() const { return _immuable_container; }
 
     Bytes& get_bytes() { return _bytes; }
 
@@ -371,7 +364,7 @@ private:
 
     mutable Container _slices;
     mutable bool _slices_cache = false;
-    BinaryDataProxyContainer _immuable_container = BinaryDataProxyContainer(*this);
+    BinaryDataProxyContainer<T> _immuable_container = BinaryDataProxyContainer<T>(*this);
 };
 
 using Offsets = BinaryColumnBase<uint32_t>::Offsets;

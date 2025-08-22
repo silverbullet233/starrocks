@@ -38,6 +38,7 @@
 #include <memory>
 #include <string>
 
+#include "column/column.h"
 #include "gen_cpp/segment.pb.h"
 #include "gutil/hash/string_hash.h"
 #include "runtime/mem_pool.h"

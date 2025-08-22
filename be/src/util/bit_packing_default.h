@@ -38,6 +38,7 @@
 
 #include <boost/preprocessor/repetition/repeat_from_to.hpp>
 #include <cstdint>
+#include <type_traits>
 #include <utility>
 
 #include "util/bit_util.h"
@@ -119,7 +120,14 @@ inline uint64_t ALWAYS_INLINE UnpackValue(const uint8_t* __restrict__ in_buf) {
     constexpr int WORDS_TO_READ = LAST_WORD_IDX - FIRST_WORD_IDX;
 
     constexpr int FIRST_BIT_OFFSET = FIRST_BIT_IDX - FIRST_WORD_IDX * 32;
-    constexpr uint64_t mask = BIT_WIDTH == 64 ? ~0L : (1UL << BIT_WIDTH) - 1;
+#ifdef __GNUC__
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wshift-count-overflow"
+#endif
+    constexpr uint64_t mask = BIT_WIDTH == 64 ? ~0ULL : (1ULL << BIT_WIDTH) - 1;
+#ifdef __GNUC__
+#pragma GCC diagnostic pop
+#endif
     const auto* const in = reinterpret_cast<const uint32_t*>(in_buf);
 
     // Avoid reading past the end of the buffer. We can safely read 64 bits if we know that

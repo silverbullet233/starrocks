@@ -16,8 +16,11 @@
 
 #include <any>
 
+#include "column/binary_column.h"
 #include "column/column_hash.h"
+#include "column/decimalv3_column.h"
 #include "column/hash_set.h"
+#include "column/nullable_column.h"
 #include "column/type_traits.h"
 #include "column/vectorized_fwd.h"
 #include "exec/aggregate/agg_profile.h"

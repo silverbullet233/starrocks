@@ -28,7 +28,7 @@ class MapColumn final : public CowFactory<ColumnFactory<Column, MapColumn>, MapC
     using Base = CowFactory<ColumnFactory<Column, MapColumn>, MapColumn>;
 
 public:
-    using ValueType = void;
+    using ValueType = DatumMap;
 
     MapColumn(MutableColumnPtr&& keys, MutableColumnPtr&& values, MutableColumnPtr&& offsets);
 

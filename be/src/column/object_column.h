@@ -25,6 +25,7 @@
 #include "types/hll.h"
 #include "util/json.h"
 #include "util/percentile_value.h"
+#include "column/type_traits.h"
 
 namespace starrocks {
 
@@ -34,7 +35,7 @@ class ObjectColumn : public CowFactory<ColumnFactory<Column, ObjectColumn<T>>, O
 
 public:
     using ValueType = T;
-    using Container = Buffer<ValueType*>;
+    using Container = typename ContainerTraits<ValueType>::Container;
 
     ObjectColumn() = default;
 

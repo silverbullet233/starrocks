@@ -87,6 +87,7 @@ using Decimal128Column = DecimalV3Column<int128_t>;
 using Decimal256Column = DecimalV3Column<int256_t>;
 using BinaryColumn = BinaryColumnBase<uint32_t>;
 using LargeBinaryColumn = BinaryColumnBase<uint64_t>;
+using NullColumn = FixedLengthColumn<uint8_t>;
 
 template <typename T>
 constexpr bool is_decimal_column = false;

@@ -16,8 +16,10 @@
 #include <functional>
 #include <vector>
 
+#include "column/binary_column.h"
 #include "column/column.h" // Column
 #include "column/datum.h"
+#include "column/nullable_column.h"
 #include "common/object_pool.h"
 #include "olap_type_infra.h"
 #include "storage/column_predicate.h"

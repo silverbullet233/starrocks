@@ -15,6 +15,7 @@
 #pragma once
 
 #include "column/fixed_length_column_base.h"
+#include "column/type_traits.h"
 namespace starrocks {
 template <typename T>
 class FixedLengthColumn final : public CowFactory<ColumnFactory<FixedLengthColumnBase<T>, FixedLengthColumn<T>>,
@@ -24,7 +25,7 @@ class FixedLengthColumn final : public CowFactory<ColumnFactory<FixedLengthColum
 
 public:
     using ValueType = T;
-    using Container = Buffer<ValueType>;
+    using Container = typename ContainerTraits<ValueType>::Container;
     using SuperClass =
             CowFactory<ColumnFactory<FixedLengthColumnBase<T>, FixedLengthColumn<T>>, FixedLengthColumn<T>, Column>;
     FixedLengthColumn() = default;

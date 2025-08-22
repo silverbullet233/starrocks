@@ -71,6 +71,7 @@
 #include "storage/tablet_meta.h"
 #include "storage/tablet_meta_manager.h"
 #include "storage/tablet_schema_map.h"
+#include "runtime/memory/mem_chunk_allocator.h"
 #include "util/coding.h"
 #include "util/crc32c.h"
 #include "util/path_util.h"

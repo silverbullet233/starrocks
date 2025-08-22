@@ -17,7 +17,9 @@
 #include <iostream>
 
 #include "column/array_column.h"
+#include "column/json_column.h"
 #include "column/map_column.h"
+#include "column/object_column.h"
 #include "column/struct_column.h"
 #include "column/type_traits.h"
 #include "exprs/agg/java_udaf_function.h"

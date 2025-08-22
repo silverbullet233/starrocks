@@ -16,19 +16,20 @@
 
 #include <limits>
 
-#include "column/binary_column.h"
-#include "column/decimalv3_column.h"
-#include "column/json_column.h"
-#include "column/nullable_column.h"
-#include "column/object_column.h"
-#include "column/struct_column.h"
 #include "column/vectorized_fwd.h"
+#include "column/datum.h"          // For DatumStruct, DatumArray, DatumMap
 #include "types/constexpr.h"
 #include "types/int256.h"
 #include "types/logical_type.h"
 #include "util/json.h"
+#include "util/decimal_types.h"
 
 namespace starrocks {
+
+
+
+// Note: ContainerTraits is now based on ValueType, not ColumnType
+// All Column-specific ContainerTraits have been replaced with ValueType-based ones above
 
 template <bool B, typename T>
 struct cond {
@@ -52,6 +53,17 @@ template <>
 inline constexpr bool IsSlice<Slice> = true;
 
 template <typename T>
+constexpr bool IsObject = false;
+template <>
+inline constexpr bool IsObject<HyperLogLog> = true;
+template <>
+inline constexpr bool IsObject<BitmapValue> = true;
+template <>
+inline constexpr bool IsObject<PercentileValue> = true;
+template <>
+inline constexpr bool IsObject<JsonValue> = true;
+
+template <typename T>
 constexpr bool IsDateTime = false;
 template <>
 inline constexpr bool IsDateTime<TimestampValue> = true;
@@ -59,8 +71,70 @@ template <>
 inline constexpr bool IsDateTime<DateValue> = true;
 
 template <typename T>
+constexpr bool IsDate = false;
+template <>
+inline constexpr bool IsDate<DateValue> = true;
+
+template <typename T>
+constexpr bool IsTimestamp = false;
+template <>
+inline constexpr bool IsTimestamp<TimestampValue> = true;
+
+template <typename T>
+constexpr bool IsDecimal = false;
+template <>
+inline constexpr bool IsDecimal<DecimalV2Value> = true;
+
+template <typename T>
 using is_starrocks_arithmetic =
         std::integral_constant<bool, std::is_arithmetic_v<T> || IsDecimal<T> || std::is_same_v<T, int256_t>>;
+
+// ===== ContainerTraits System: Define container traits for each ValueType =====
+// This breaks the dependency of type_traits.h on concrete column implementations
+template <typename T>
+struct BinaryDataProxyContainer {
+    BinaryDataProxyContainer(const BinaryColumnBase<T>& column) : _column(column) {}
+
+    Slice operator[](size_t index) const;
+
+    size_t size() const;
+
+private:
+    const BinaryColumnBase<T>& _column;
+};
+
+// Default ContainerTraits: Container = Buffer<ValueType>, ProxyContainer = Container
+template<typename ValueType, typename = void> 
+struct ContainerTraits {
+    using Container = Buffer<ValueType>;
+    using ProxyContainer = Container;
+};
+
+// Special cases that need different containers
+
+// Object types use Buffer<T*> for both T and T*
+template<typename T>
+struct ContainerTraits<T, std::enable_if_t<IsObject<std::remove_pointer_t<T>>>> {
+    using Container = Buffer<std::remove_pointer_t<T>*>;
+    using ProxyContainer = Container;
+};
+
+// Binary types need special proxy container
+template<> struct ContainerTraits<Slice> {
+    using Container = Buffer<Slice>;
+    using ProxyContainer = BinaryDataProxyContainer<uint32_t>;
+};
+
+// Complex types that don't use simple Buffer
+template<> struct ContainerTraits<DatumStruct> {
+    using Container = Buffer<std::string>;
+    using ProxyContainer = Container;
+};
+
+template<> struct ContainerTraits<DatumMap> {
+    using Container = void;
+    using ProxyContainer = void;
+};
 
 // If isArithmeticLT is true, means this type support +,-,*,/
 template <LogicalType logical_type>
@@ -104,217 +178,217 @@ template <>
 struct RunTimeTypeTraits<TYPE_BOOLEAN> {
     using CppType = uint8_t;
     using ColumnType = BooleanColumn;
-    using ProxyContainerType = ColumnType::Container;
+    using ProxyContainerType = typename ContainerTraits<CppType>::Container;
 };
 
 template <>
 struct RunTimeTypeTraits<TYPE_TINYINT> {
     using CppType = int8_t;
     using ColumnType = Int8Column;
-    using ProxyContainerType = ColumnType::Container;
+    using ProxyContainerType = typename ContainerTraits<CppType>::Container;
 };
 
 template <>
 struct RunTimeTypeTraits<TYPE_UNSIGNED_TINYINT> {
     using CppType = uint8_t;
     using ColumnType = UInt8Column;
-    using ProxyContainerType = ColumnType::Container;
+    using ProxyContainerType = typename ContainerTraits<CppType>::Container;
 };
 
 template <>
 struct RunTimeTypeTraits<TYPE_SMALLINT> {
     using CppType = int16_t;
     using ColumnType = Int16Column;
-    using ProxyContainerType = ColumnType::Container;
+    using ProxyContainerType = typename ContainerTraits<CppType>::Container;
 };
 
 template <>
 struct RunTimeTypeTraits<TYPE_UNSIGNED_SMALLINT> {
     using CppType = uint16_t;
     using ColumnType = UInt16Column;
-    using ProxyContainerType = ColumnType::Container;
+    using ProxyContainerType = typename ContainerTraits<CppType>::Container;
 };
 
 template <>
 struct RunTimeTypeTraits<TYPE_INT> {
     using CppType = int32_t;
     using ColumnType = Int32Column;
-    using ProxyContainerType = ColumnType::Container;
+    using ProxyContainerType = typename ContainerTraits<CppType>::Container;
 };
 
 template <>
 struct RunTimeTypeTraits<TYPE_UNSIGNED_INT> {
     using CppType = uint32_t;
     using ColumnType = UInt32Column;
-    using ProxyContainerType = ColumnType::Container;
+    using ProxyContainerType = typename ContainerTraits<CppType>::Container;
 };
 
 template <>
 struct RunTimeTypeTraits<TYPE_BIGINT> {
     using CppType = int64_t;
     using ColumnType = Int64Column;
-    using ProxyContainerType = ColumnType::Container;
+    using ProxyContainerType = typename ContainerTraits<CppType>::Container;
 };
 
 template <>
 struct RunTimeTypeTraits<TYPE_UNSIGNED_BIGINT> {
     using CppType = uint64_t;
     using ColumnType = UInt64Column;
-    using ProxyContainerType = ColumnType::Container;
+    using ProxyContainerType = typename ContainerTraits<CppType>::Container;
 };
 
 template <>
 struct RunTimeTypeTraits<TYPE_LARGEINT> {
     using CppType = int128_t;
     using ColumnType = Int128Column;
-    using ProxyContainerType = ColumnType::Container;
+    using ProxyContainerType = typename ContainerTraits<CppType>::Container;
 };
 
 template <>
 struct RunTimeTypeTraits<TYPE_FLOAT> {
     using CppType = float;
     using ColumnType = FloatColumn;
-    using ProxyContainerType = ColumnType::Container;
+    using ProxyContainerType = typename ContainerTraits<CppType>::Container;
 };
 
 template <>
 struct RunTimeTypeTraits<TYPE_DOUBLE> {
     using CppType = double;
     using ColumnType = DoubleColumn;
-    using ProxyContainerType = ColumnType::Container;
+    using ProxyContainerType = typename ContainerTraits<CppType>::Container;
 };
 
 template <>
 struct RunTimeTypeTraits<TYPE_DECIMALV2> {
     using CppType = DecimalV2Value;
     using ColumnType = DecimalColumn;
-    using ProxyContainerType = ColumnType::Container;
+    using ProxyContainerType = typename ContainerTraits<CppType>::Container;
 };
 
 template <>
 struct RunTimeTypeTraits<TYPE_DECIMAL32> {
     using CppType = int32_t;
     using ColumnType = Decimal32Column;
-    using ProxyContainerType = ColumnType::Container;
+    using ProxyContainerType = typename ContainerTraits<CppType>::Container;
 };
 
 template <>
 struct RunTimeTypeTraits<TYPE_DECIMAL64> {
     using CppType = int64_t;
     using ColumnType = Decimal64Column;
-    using ProxyContainerType = ColumnType::Container;
+    using ProxyContainerType = typename ContainerTraits<CppType>::Container;
 };
 
 template <>
 struct RunTimeTypeTraits<TYPE_DECIMAL128> {
     using CppType = int128_t;
     using ColumnType = Decimal128Column;
-    using ProxyContainerType = ColumnType::Container;
+    using ProxyContainerType = typename ContainerTraits<CppType>::Container;
 };
 
 template <>
 struct RunTimeTypeTraits<TYPE_DECIMAL256> {
     using CppType = int256_t;
     using ColumnType = Decimal256Column;
-    using ProxyContainerType = ColumnType::Container;
+    using ProxyContainerType = typename ContainerTraits<CppType>::Container;
 };
 
 template <>
 struct RunTimeTypeTraits<TYPE_INT256> {
     using CppType = int256_t;
     using ColumnType = Int256Column;
-    using ProxyContainerType = ColumnType::Container;
+    using ProxyContainerType = typename ContainerTraits<CppType>::Container;
 };
 
 template <>
 struct RunTimeTypeTraits<TYPE_NULL> {
     using CppType = uint8_t;
     using ColumnType = NullColumn;
-    using ProxyContainerType = ColumnType::Container;
+    using ProxyContainerType = typename ContainerTraits<CppType>::Container;
 };
 
 template <>
 struct RunTimeTypeTraits<TYPE_CHAR> {
     using CppType = Slice;
     using ColumnType = BinaryColumn;
-    using ProxyContainerType = ColumnType::BinaryDataProxyContainer;
+    using ProxyContainerType = typename ContainerTraits<CppType>::ProxyContainer;
 };
 
 template <>
 struct RunTimeTypeTraits<TYPE_VARCHAR> {
     using CppType = Slice;
     using ColumnType = BinaryColumn;
-    using ProxyContainerType = ColumnType::BinaryDataProxyContainer;
+    using ProxyContainerType = typename ContainerTraits<CppType>::ProxyContainer;
 };
 
 template <>
 struct RunTimeTypeTraits<TYPE_DATE> {
     using CppType = DateValue;
     using ColumnType = DateColumn;
-    using ProxyContainerType = ColumnType::Container;
+    using ProxyContainerType = typename ContainerTraits<CppType>::Container;
 };
 
 template <>
 struct RunTimeTypeTraits<TYPE_DATETIME> {
     using CppType = TimestampValue;
     using ColumnType = TimestampColumn;
-    using ProxyContainerType = ColumnType::Container;
+    using ProxyContainerType = typename ContainerTraits<CppType>::Container;
 };
 
 template <>
 struct RunTimeTypeTraits<TYPE_TIME> {
     using CppType = double;
     using ColumnType = DoubleColumn;
-    using ProxyContainerType = ColumnType::Container;
+    using ProxyContainerType = typename ContainerTraits<CppType>::Container;
 };
 
 template <>
 struct RunTimeTypeTraits<TYPE_HLL> {
     using CppType = HyperLogLog*;
     using ColumnType = HyperLogLogColumn;
-    using ProxyContainerType = ColumnType::Container;
+    using ProxyContainerType = typename ContainerTraits<CppType>::Container;
 };
 
 template <>
 struct RunTimeTypeTraits<TYPE_OBJECT> {
     using CppType = BitmapValue*;
     using ColumnType = BitmapColumn;
-    using ProxyContainerType = ColumnType::Container;
+    using ProxyContainerType = typename ContainerTraits<CppType>::Container;
 };
 
 template <>
 struct RunTimeTypeTraits<TYPE_PERCENTILE> {
     using CppType = PercentileValue*;
     using ColumnType = PercentileColumn;
-    using ProxyContainerType = ColumnType::Container;
+    using ProxyContainerType = typename ContainerTraits<CppType>::Container;
 };
 
 template <>
 struct RunTimeTypeTraits<TYPE_JSON> {
     using CppType = JsonValue*;
     using ColumnType = JsonColumn;
-    using ProxyContainerType = ColumnType::Container;
+    using ProxyContainerType = typename ContainerTraits<CppType>::Container;
 };
 
 template <>
 struct RunTimeTypeTraits<TYPE_BINARY> {
     using CppType = Slice;
     using ColumnType = BinaryColumn;
-    using ProxyContainerType = ColumnType::BinaryDataProxyContainer;
+    using ProxyContainerType = typename ContainerTraits<CppType>::ProxyContainer;
 };
 
 template <>
 struct RunTimeTypeTraits<TYPE_VARBINARY> {
     using CppType = Slice;
     using ColumnType = BinaryColumn;
-    using ProxyContainerType = ColumnType::BinaryDataProxyContainer;
+    using ProxyContainerType = typename ContainerTraits<CppType>::ProxyContainer;
 };
 
 template <>
 struct RunTimeTypeTraits<TYPE_STRUCT> {
     using CppType = DatumStruct;
     using ColumnType = StructColumn;
-    using ProxyContainerType = ColumnType::Container;
+    using ProxyContainerType = typename ContainerTraits<CppType>::Container;
 };
 
 template <>
@@ -498,8 +572,8 @@ template <LogicalType ltype>
 struct RunTimeTypeLimits<ltype, DecimalLTGuard<ltype>> {
     using value_type = RunTimeCppType<ltype>;
 
-    static constexpr value_type min_value() { return get_min_decimal<value_type>(); }
-    static constexpr value_type max_value() { return get_max_decimal<value_type>(); }
+    static constexpr value_type min_value() { return starrocks::get_min_decimal<value_type>(); }
+    static constexpr value_type max_value() { return starrocks::get_max_decimal<value_type>(); }
 };
 
 template <>

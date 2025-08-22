@@ -14,6 +14,7 @@
 
 #include <utility>
 
+#include "column/binary_column.h"
 #include "column/column.h"
 #include "column/nullable_column.h"
 #include "gutil/casts.h"

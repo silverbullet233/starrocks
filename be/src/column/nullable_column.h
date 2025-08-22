@@ -20,8 +20,8 @@
 
 namespace starrocks {
 
-using NullData = FixedLengthColumn<uint8_t>::Container;
-using NullColumn = FixedLengthColumn<uint8_t>;
+using NullData = typename ContainerTraits<uint8_t>::Container;
+// NullColumn is now defined in vectorized_fwd.h
 using NullColumnPtr = NullColumn::Ptr;
 using NullColumns = std::vector<NullColumnPtr>;
 

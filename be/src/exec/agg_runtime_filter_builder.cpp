@@ -19,6 +19,7 @@
 #include <variant>
 
 #include "column/column_helper.h"
+#include "column/json_column.h"
 #include "column/type_traits.h"
 #include "column/vectorized_fwd.h"
 #include "common/object_pool.h"

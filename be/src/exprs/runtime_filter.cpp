@@ -14,6 +14,7 @@
 
 #include "exprs/runtime_filter.h"
 
+#include "column/json_column.h"
 #include "types/logical_type_infra.h"
 #include "util/compression/stream_compression.h"
 

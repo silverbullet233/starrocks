@@ -38,7 +38,7 @@ class ArrayColumn final : public CowFactory<ColumnFactory<Column, ArrayColumn>, 
     using Base = CowFactory<ColumnFactory<Column, ArrayColumn>, ArrayColumn>;
 
 public:
-    using ValueType = void;
+    using ValueType = DatumArray;
     using OffsetColumn = UInt32Column;
     using OffsetColumnPtr = UInt32Column::Ptr;
 

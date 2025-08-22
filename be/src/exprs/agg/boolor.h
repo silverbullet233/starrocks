@@ -18,6 +18,7 @@
 #include <type_traits>
 
 #include "column/fixed_length_column.h"
+#include "column/nullable_column.h"
 #include "column/type_traits.h"
 #include "exprs/agg/aggregate.h"
 #include "exprs/agg/aggregate_traits.h"

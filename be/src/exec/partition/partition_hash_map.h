@@ -20,6 +20,7 @@
 #include "column/hash_set.h"
 #include "column/type_traits.h"
 #include "column/vectorized_fwd.h"
+#include "common/object_pool.h"
 #include "gutil/strings/fastmem.h"
 #include "runtime/mem_pool.h"
 #include "util/phmap/phmap.h"

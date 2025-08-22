@@ -22,6 +22,7 @@
 #include "column/chunk.h"
 #include "column/column_helper.h"
 #include "column/nullable_column.h"
+#include "column/struct_column.h"
 #include "common/compiler_util.h"
 #include "exec/exec_node.h"
 #include "exec/hdfs_scanner.h"

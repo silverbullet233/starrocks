@@ -17,6 +17,8 @@
 #include <utility>
 
 #include "column/nullable_column.h"
+#include "column/binary_column.h"
+#include "column/decimalv3_column.h"
 #ifdef __x86_64__
 #include <immintrin.h>
 #endif

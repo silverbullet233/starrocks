@@ -18,6 +18,7 @@
 #include <memory>
 #include <utility>
 
+#include "column/nullable_column.h"
 #include "column/vectorized_fwd.h"
 #include "runtime/global_dict/types.h"
 

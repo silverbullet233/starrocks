@@ -284,7 +284,7 @@ public:
 
         if (_need_inline_value()) {
             using ItemType = CompactChunkItem<Slice>;
-            using Container = typename BinaryColumnBase<T>::BinaryDataProxyContainer;
+            using Container = typename BinaryColumnBase<T>::ProxyContainer;
 
             auto cmp = [&](const ItemType& lhs, const ItemType& rhs) -> int {
                 return lhs.inline_value.compare(rhs.inline_value);

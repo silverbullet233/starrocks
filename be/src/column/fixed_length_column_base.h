@@ -20,6 +20,7 @@
 #include "column/column.h"
 #include "column/datum.h"
 #include "column/vectorized_fwd.h"
+#include "column/type_traits.h"
 #include "common/statusor.h"
 #include "gutil/strings/substitute.h"
 #include "runtime/decimalv2_value.h"
@@ -30,20 +31,11 @@
 
 namespace starrocks {
 
-template <typename T>
-constexpr bool IsDecimal = false;
-template <>
-inline constexpr bool IsDecimal<DecimalV2Value> = true;
+// IsDecimal is now defined in type_traits.h
 
-template <typename T>
-constexpr bool IsDate = false;
-template <>
-inline constexpr bool IsDate<DateValue> = true;
+// IsDate is now defined in type_traits.h
 
-template <typename T>
-constexpr bool IsTimestamp = false;
-template <>
-inline constexpr bool IsTimestamp<TimestampValue> = true;
+// IsTimestamp is now defined in type_traits.h
 
 template <typename T>
 constexpr bool IsTemporal() {

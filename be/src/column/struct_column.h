@@ -24,8 +24,8 @@ class StructColumn final : public CowFactory<ColumnFactory<Column, StructColumn>
     using Base = CowFactory<ColumnFactory<Column, StructColumn>, StructColumn>;
 
 public:
-    using ValueType = void;
-    using Container = Buffer<std::string>;
+    using ValueType = DatumStruct;
+    using Container = typename ContainerTraits<ValueType>::Container;
 
     // Used to construct an unnamed struct
     StructColumn(MutableColumns&& fields);

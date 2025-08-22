@@ -15,6 +15,7 @@
 #include "exprs/table_function/json_each.h"
 
 #include "column/column_helper.h"
+#include "column/json_column.h"
 #include "column/vectorized_fwd.h"
 #include "exprs/table_function/table_function.h"
 #include "velocypack/vpack.h"
