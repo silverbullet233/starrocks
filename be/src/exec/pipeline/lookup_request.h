@@ -42,6 +42,8 @@ public:
     virtual Status collect_input_columns(ChunkPtr chunk) = 0;
     virtual StatusOr<size_t> fill_response(const ChunkPtr& result_chunk, SlotId source_id_slot, const std::vector<SlotDescriptor*>& slots, size_t start_offset) = 0;
     virtual void callback(const Status& status) = 0;
+
+    int64_t receive_ts = 0;
 };
 using LookUpRequestContextPtr = std::shared_ptr<LookUpRequestContext>;
 

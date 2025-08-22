@@ -25,7 +25,7 @@ FetchSinkOperator::FetchSinkOperator(OperatorFactory* factory, int32_t id, int32
         : Operator(factory, id, "fetch_sink", plan_node_id, false, driver_sequence), _processor(std::move(processor)) {}
 
 Status FetchSinkOperator::prepare(RuntimeState* state) {
-    VLOG_ROW << "[GLM] FetchSinkOperator::prepare, processor: " << (void*)_processor.get() << ", " << (void*)this;
+    DLOG(INFO) << "[GLM] FetchSinkOperator::prepare, processor: " << (void*)_processor.get() << ", " << (void*)this;
     RETURN_IF_ERROR(Operator::prepare(state));
     RETURN_IF_ERROR(_processor->prepare(state, _unique_metrics.get()));
     return Status::OK();
@@ -33,7 +33,7 @@ Status FetchSinkOperator::prepare(RuntimeState* state) {
 
 void FetchSinkOperator::close(RuntimeState* state) {
     Operator::close(state);
-    VLOG_ROW << "[GLM] FetchSinkOperator::close, processor: " << (void*)_processor.get() << ", " << (void*)this;
+    DLOG(INFO) << "[GLM] FetchSinkOperator::close, processor: " << (void*)_processor.get() << ", " << (void*)this;
 }
 
 bool FetchSinkOperator::need_input() const {
@@ -45,7 +45,7 @@ bool FetchSinkOperator::is_finished() const {
 }
 
 Status FetchSinkOperator::set_finishing(RuntimeState* state) {
-    VLOG_ROW << "[GLM] FetchSinkOperator::set_finishing, processor: " << (void*)_processor.get() << ", " << (void*)this;
+    DLOG(INFO) << "[GLM] FetchSinkOperator::set_finishing, processor: " << (void*)_processor.get() << ", " << (void*)this;
     return _processor->set_sink_finishing(state);
 }
 

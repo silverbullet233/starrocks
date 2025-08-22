@@ -14,6 +14,7 @@
 
 #include "runtime/lookup_stream_mgr.h"
 
+#include <algorithm>
 #include <sstream>
 #include <vector>
 
@@ -41,13 +42,7 @@ void LookUpDispatcher::attach_query_ctx(pipeline::QueryContext* query_ctx) {
 
 Status LookUpDispatcher::add_request(const pipeline::LookUpRequestContextPtr& ctx) {
     auto notify = this->defer_notify();
-    // @TODO set receive ts
-    // std::visit(
-    //         [&](auto& req) {
-    //             req.receive_ts = MonotonicNanos();
-    //             ;
-    //         },
-    //         request);
+    ctx->receive_ts = MonotonicNanos();
     auto request_tuple_id = ctx->request_tuple_id();
     DCHECK(_request_queues.contains(request_tuple_id)) << "missing tuple_id: " << request_tuple_id;
     _request_queues.at(request_tuple_id)->enqueue(std::move(ctx));
@@ -100,10 +95,8 @@ std::shared_ptr<LookUpDispatcher> LookUpDispatcherMgr::create_dispatcher(Runtime
     DispatcherKey key{query_id, target_node_id};
     auto [_, created] =
             _dispatcher_map.try_emplace(key, std::make_shared<LookUpDispatcher>(state, query_id, target_node_id, source_id_slots));
-    if (created) {
-        DLOG(INFO) << "[GLM] create LookUpDispatcher for query_id=" << print_id(query_id)
-                 << ", target_node_id=" << target_node_id;
-    }
+    DLOG_IF(INFO, created) << "[GLM] create LookUpDispatcher for query_id=" << print_id(query_id)
+                << ", target_node_id=" << target_node_id;
     return _dispatcher_map.at(key);
 }
 

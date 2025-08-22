@@ -4304,7 +4304,6 @@ public class PlanFragmentBuilder {
                     ConnectContext.get().getCurrentComputeResource() : WarehouseManager.DEFAULT_RESOURCE;
             // ROW_ID column may become nullable after passing through outer join node,
             // so we need to change nullable property for late-materialized columns too,
-            // @TODO we may don't need this
             for (TupleDescriptor tupleDescriptor : lookupNode.getDescs()) {
                 RowPositionDescriptor rowPositionDescriptor = lookupNode.getRowPosDescs().get(tupleDescriptor.getId());
                 // mark all related column to nullable

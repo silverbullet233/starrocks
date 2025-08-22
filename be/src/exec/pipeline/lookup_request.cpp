@@ -58,6 +58,7 @@ StatusOr<size_t> LocalLookUpRequestContext::fill_response(const ChunkPtr& result
 
 void LocalLookUpRequestContext::callback(const Status& status) {
     // @TODO call back function
+    fetch_ctx->unit->finished_request_num++;
 }
 
 Status RemoteLookUpRequestContext::collect_input_columns(ChunkPtr chunk) {

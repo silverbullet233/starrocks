@@ -26,19 +26,13 @@ class RuntimeState;
 }
 namespace starrocks::pipeline {
 
-// slot_id => (row_id_column, position_column)
-// slot_id => ([ref_columns], position_column)
-using RequestColumns = phmap::flat_hash_map<uint32_t, std::pair<ColumnPtr, ColumnPtr>>;
-using RequestColumnsPtr = std::shared_ptr<RequestColumns>;
-
 class FetchProcessor;
 class FetchTask;
 using FetchTaskPtr = std::shared_ptr<FetchTask>;
 
-// @TODO need a new name
+// @TODO need a new name?
 struct BatchUnit {
     std::vector<ChunkPtr> input_chunks;
-    // std::vector<FetchTaskPtr> fetch_tasks;
     phmap::flat_hash_map<TupleId, std::shared_ptr<std::vector<FetchTaskPtr>>> fetch_tasks;
 
     int32_t total_request_num = 0;
@@ -52,8 +46,6 @@ struct BatchUnit {
 
     bool all_fetch_done() const {
         return finished_request_num == total_request_num;
-        // return finished_request_num == fetch_tasks.size();
-        // return total_request_num == finished_request_num;
     }
 
     bool reach_end() const { return next_output_idx >= input_chunks.size(); }
@@ -75,6 +67,7 @@ public:
     ChunkPtr request_chunk;
     mutable phmap::flat_hash_map<SlotId, ColumnPtr> response_columns;
     int64_t send_ts = 0; // used to calculate latency
+    std::function<void(const Status&)> callback;
 };
 using FetchTaskContextPtr = std::shared_ptr<FetchTaskContext>;
 
@@ -84,14 +77,21 @@ public:
     virtual ~FetchTask() = default;
 
     // Submit the task, return OK if success
-    virtual Status submit(RuntimeState* state) = 0;
+    virtual Status submit(RuntimeState* state);
+    virtual bool is_local() const {
+        return false;
+    }
     // Check if the task is done
-    virtual bool is_done() const = 0;
+    virtual bool is_done() const {
+        return _is_done;
+    }
     FetchTaskContextPtr get_ctx() const {
         return _ctx;
     }
 
 protected:
+    virtual Status _submit_local_task(RuntimeState* state);
+    virtual Status _submit_remote_task(RuntimeState* state);
     FetchTaskContextPtr _ctx;
     std::atomic_bool _is_done = false;
 };
@@ -101,9 +101,6 @@ protected:
 class IcebergFetchTask : public FetchTask {
 public:
     IcebergFetchTask(FetchTaskContextPtr ctx) : FetchTask(std::move(ctx)) {}
-
-    Status submit(RuntimeState* state) override;
-    bool is_done() const override;
 };
 using IcebergFetchTaskPtr = std::shared_ptr<IcebergFetchTask>;
 

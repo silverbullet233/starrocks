@@ -279,7 +279,6 @@ public class IcebergApiConverter {
             column.setComment(field.doc());
             fullSchema.add(column);
         }
-        // @TODO set _row_id column
         Column rowIdColumn = new Column("_row_id", Type.BIGINT, true);
         fullSchema.add(rowIdColumn);
         return fullSchema;

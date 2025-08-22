@@ -45,7 +45,6 @@ public:
 
 private:
     std::shared_ptr<FetchProcessor> _processor;
-    std::atomic_bool _is_finishing = false;
 };
 
 class FetchSourceOperatorFactory final : public SourceOperatorFactory {

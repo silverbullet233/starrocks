@@ -76,9 +76,9 @@ public:
 private:
     // collect input columns into one chunk
     Status _collect_input_columns(RuntimeState* state, const ChunkPtr& request_chunk);
-   
+    
+    // @TODO bind profile to task?
     StatusOr<LookUpTaskPtr> _create_task(const LookUpTaskContextPtr& ctx);
-
 
     LookUpTaskContextPtr _ctx;
     std::atomic_bool _is_running = false;
@@ -87,28 +87,10 @@ private:
     raw::RawString _serialize_buffer;
 
     LookUpOperator* _parent = nullptr;
-
-    OlapReaderStatistics _stats;
 };
 
 void LookUpProcessor::close() {
     // update parent counter
-    // COUNTER_UPDATE(_parent->_bytes_read_counter, _stats.bytes_read);
-    // COUNTER_UPDATE(_parent->_io_timer, _stats.io_ns);
-    // COUNTER_UPDATE(_parent->_read_compressed_counter, _stats.compressed_bytes_read);
-    // COUNTER_UPDATE(_parent->_decompress_timer, _stats.decompress_ns);
-    // COUNTER_UPDATE(_parent->_read_uncompressed_counter, _stats.uncompressed_bytes_read);
-
-    // COUNTER_UPDATE(_parent->_block_load_timer, _stats.block_load_ns);
-    // COUNTER_UPDATE(_parent->_block_load_counter, _stats.blocks_load);
-    // COUNTER_UPDATE(_parent->_block_fetch_timer, _stats.block_fetch_ns);
-    // COUNTER_UPDATE(_parent->_block_seek_timer, _stats.block_seek_ns);
-    // COUNTER_UPDATE(_parent->_block_seek_counter, _stats.block_seek_num);
-    // COUNTER_UPDATE(_parent->_raw_rows_counter, _stats.raw_rows_read);
-
-    // COUNTER_UPDATE(_parent->_read_pages_num_counter, _stats.total_pages_num);
-    // COUNTER_UPDATE(_parent->_cached_pages_num_counter, _stats.cached_pages_num);
-    // COUNTER_UPDATE(_parent->_total_columns_data_page_count, _stats.total_columns_data_page_count);
 }
 // collect all input columns into one chunk
 Status LookUpProcessor::_collect_input_columns(RuntimeState* state, const ChunkPtr& request_chunk) {
@@ -121,7 +103,7 @@ Status LookUpProcessor::_collect_input_columns(RuntimeState* state, const ChunkP
         request_chunk->append_column(std::move(col), slot_desc->id());
     }
     auto slot_desc = state->desc_tbl().get_slot_descriptor(row_pos_desc->get_row_source_slot_id());
-    // row source column from fethc node won't be nullable 
+    // row source column from fetch node won't be nullable 
     auto row_source_col = ColumnHelper::create_column(slot_desc->type(), false);
     DLOG(INFO) << "LookUpProcessor _collect_input_columns, append source node id column, slot_id: " << slot_desc->id() << ", column: " << row_source_col->get_name();
     request_chunk->append_column(std::move(row_source_col), slot_desc->id());
@@ -154,22 +136,15 @@ Status LookUpProcessor::process(RuntimeState* state) {
             request_ctx->callback(status);
         }
     });
-    // COUNTER_UPDATE(_parent->_received_request_count, _ctx->requests.size());
-    // COUNTER_UPDATE(_parent->_process_counter, 1);
     auto request_chunk = std::make_shared<Chunk>();
     RETURN_IF_ERROR(status = _collect_input_columns(state, request_chunk));
-    // @TODO
-    /// create task;
     auto st = _create_task(_ctx);
     if(!st.ok()) {
         status = st.status();
         return status;
     }
     auto task = st.value();
-    // @TODO we should pass request chunk
     RETURN_IF_ERROR(status = task->process(state, request_chunk));
-
-    // @TODO fill response
     return Status::OK();
 }
 
@@ -183,6 +158,7 @@ LookUpOperator::LookUpOperator(OperatorFactory* factory, int32_t id, int32_t pla
     for (int32_t i = 0; i < _max_io_tasks; i++) {
         _processors.emplace_back(std::make_shared<LookUpProcessor>(this));
     }
+    // @TODO create multiple runtime_profile
 }
 
 Status LookUpOperator::prepare(RuntimeState* state) {
@@ -197,43 +173,6 @@ Status LookUpOperator::prepare(RuntimeState* state) {
 }
 
 void LookUpOperator::_init_counter(RuntimeState* state) {
-    // _bytes_read_counter = ADD_COUNTER(_unique_metrics, "BytesRead", TUnit::BYTES);
-    // _rows_read_counter = ADD_COUNTER(_unique_metrics, "RowsRead", TUnit::UNIT);
-
-    // _read_compressed_counter = ADD_COUNTER(_unique_metrics, "CompressedBytesRead", TUnit::BYTES);
-    // _read_uncompressed_counter = ADD_COUNTER(_unique_metrics, "UncompressedBytesRead", TUnit::BYTES);
-
-    // _raw_rows_counter = ADD_COUNTER(_unique_metrics, "RawRowsRead", TUnit::UNIT);
-    // _read_pages_num_counter = ADD_COUNTER(_unique_metrics, "ReadPagesNum", TUnit::UNIT);
-    // _cached_pages_num_counter = ADD_COUNTER(_unique_metrics, "CachedPagesNum", TUnit::UNIT);
-
-    // _io_task_exec_timer = ADD_TIMER(_unique_metrics, "IOTaskExecTime");
-    // // SegmentInit
-
-    // // SegmentRead
-    // const std::string segment_read_name = "SegmentRead";
-    // _block_load_timer = ADD_CHILD_TIMER(_unique_metrics, segment_read_name, IO_TASK_EXEC_TIMER_NAME);
-    // _block_fetch_timer = ADD_CHILD_TIMER(_unique_metrics, "BlockFetch", segment_read_name);
-    // _block_load_counter = ADD_CHILD_COUNTER(_unique_metrics, "BlockFetchCount", TUnit::UNIT, segment_read_name);
-    // _block_seek_timer = ADD_CHILD_TIMER(_unique_metrics, "BlockSeek", segment_read_name);
-    // _block_seek_counter = ADD_CHILD_COUNTER(_unique_metrics, "BlockSeekCount", TUnit::UNIT, segment_read_name);
-    // _decompress_timer = ADD_CHILD_TIMER(_unique_metrics, "DecompressT", segment_read_name);
-    // _total_columns_data_page_count =
-    //         ADD_CHILD_COUNTER(_unique_metrics, "TotalColumnsDataPageCount", TUnit::UNIT, segment_read_name);
-
-    // // IOTime
-    // _io_timer = ADD_CHILD_TIMER(_unique_metrics, "IOTime", IO_TASK_EXEC_TIMER_NAME);
-
-    // _collect_request_row_id_columns_timer = ADD_TIMER(_unique_metrics, "CollectRequestRowIdColumnsTime");
-    // _lookup_by_row_ids_timer = ADD_TIMER(_unique_metrics, "LookupByRowIdsTime");
-    // _calculate_scan_ranges_timer = ADD_TIMER(_unique_metrics, "CalculateScanRangesTime");
-    // _get_data_from_storage_timer = ADD_TIMER(_unique_metrics, "GetDataFromStorageTime");
-    // _fill_response_timer = ADD_TIMER(_unique_metrics, "FillResponseTime");
-    // _process_counter = ADD_COUNTER(_unique_metrics, "ProcessCount", TUnit::UNIT);
-    // _process_time = ADD_TIMER(_unique_metrics, "ProcessTime");
-    // _received_request_count = ADD_COUNTER(_unique_metrics, "ReceivedRequestCount", TUnit::UNIT);
-    // _request_pending_time = ADD_TIMER(_unique_metrics, "RequestPendingTime");
-
     _submit_io_task_counter = ADD_COUNTER(_unique_metrics, "SubmitIOTaskCount", TUnit::UNIT);
     _peak_scan_task_queue_size_counter = _unique_metrics->AddHighWaterMarkCounter(
             "PeakScanTaskQueueSize", TUnit::UNIT, RuntimeProfile::Counter::create_strategy(TUnit::UNIT));

@@ -40,10 +40,8 @@ import java.util.stream.Collectors;
 public class FetchNode extends PlanNode {
     PlanNodeId targetNodeId;
     List<TupleDescriptor> descs;
-    // @TODO need to distinguish null
     // row position desc for each table
     Map<TupleId, RowPositionDescriptor> rowPosDescs;
-    // @TODO slot id to column ref?
     private ComputeResource computeResource = WarehouseManager.DEFAULT_RESOURCE;
 
     public FetchNode(PlanNodeId id, PlanNode inputNode,
@@ -63,7 +61,6 @@ public class FetchNode extends PlanNode {
         msg.node_type = TPlanNodeType.FETCH_NODE;
         msg.fetch_node = new TFetchNode();
         msg.fetch_node.setTarget_node_id(targetNodeId.asInt());
-        msg.fetch_node.tuples = descs.stream().map(desc -> desc.getId().asInt()).collect(Collectors.toList());
         msg.fetch_node.row_pos_descs = new HashMap<>();
         rowPosDescs.forEach((tupleId, rowPosDescs) -> {
             msg.fetch_node.row_pos_descs.put(tupleId.asInt(), rowPosDescs.toThrift());

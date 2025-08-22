@@ -33,9 +33,6 @@ namespace starrocks {
 FetchNode::FetchNode(ObjectPool* pool, const TPlanNode& tnode, const DescriptorTbl& descs)
         : ExecNode(pool, tnode, descs) {
     _target_node_id = tnode.fetch_node.target_node_id;
-    for (const auto& tuple : tnode.fetch_node.tuples) {
-        _tuple_ids.emplace_back(tuple);
-    }
     for (const auto& [tuple_id, row_pos_desc] : tnode.fetch_node.row_pos_descs) {
         auto* desc = RowPositionDescriptor::from_thrift(row_pos_desc, pool);
         _row_pos_descs.emplace(tuple_id, desc);
@@ -59,16 +56,13 @@ Status FetchNode::init(const TPlanNode& tnode, RuntimeState* state) {
 
     _dispatcher =
             state->exec_env()->lookup_dispatcher_mgr()->create_dispatcher(state, state->query_id(), _target_node_id, tuple_ids);
-    for (const auto& tuple_id : _tuple_ids) {
+    for (const auto& tuple_id : tuple_ids) {
         const auto& tuple_desc = state->desc_tbl().get_tuple_descriptor(tuple_id);
         for (const auto& slot : tuple_desc->slots()) {
             _slot_id_to_desc.insert({slot->id(), slot});
         }
     }
-    // for (const auto& [tuple_id, slot_id] : _row_id_slots) {
-    //     const auto& slot_desc = state->desc_tbl().get_slot_descriptor(slot_id);
-    //     LOG(INFO) << "row_id slot, id: " << slot_id << ", desc: " << slot_desc->debug_string();
-    // }
+
     return Status::OK();
 }
 

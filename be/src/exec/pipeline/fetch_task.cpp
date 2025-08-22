@@ -15,6 +15,7 @@
 #include "exec/pipeline/fetch_task.h"
 #include <butil/iobuf.h>
 #include <memory>
+#include "exec/pipeline/lookup_request.h"
 #include "runtime/descriptors.h"
 #include "util/disposable_closure.h"
 
@@ -35,7 +36,30 @@ std::string BatchUnit::debug_string() const {
             build_output_done);
 }
 
-Status IcebergFetchTask::submit(RuntimeState* state) {
+Status FetchTask::submit(RuntimeState* state) {
+    if (is_local()) {
+        return _submit_local_task(state);
+    } else {
+        return _submit_remote_task(state);
+    }
+}
+
+Status FetchTask::_submit_local_task(RuntimeState* state) {
+    _ctx->callback = [ctx = _ctx](const Status& status) {
+        DeferOp defer([&]() {
+            ctx->unit->finished_request_num++;
+        });
+        if (!status.ok()) {
+            LOG(WARNING) << "local fetch request failed, error: " << status.to_string();
+            ctx->processor->_set_io_task_status(status);
+            return;
+        }
+    };
+    LookUpRequestContextPtr request = std::make_shared<LocalLookUpRequestContext>(_ctx);
+    return _ctx->processor->_local_dispatcher->add_request(std::move(request));
+}
+
+Status FetchTask::_submit_remote_task(RuntimeState* state) {
     // @TODO support submit local task
     // build submit request
     const auto source_id = _ctx->source_node_id;
@@ -163,7 +187,4 @@ Status IcebergFetchTask::submit(RuntimeState* state) {
     return Status::OK();
 }
 
-bool IcebergFetchTask::is_done() const {
-    return _is_done;
-}
 }

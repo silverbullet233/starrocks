@@ -37,6 +37,7 @@ class FetchProcessor {
 public:
     friend class LocalLookUpRequestContext;
     friend class RemoteLookUpRequestContext;
+    friend class FetchTask;
     friend class IcebergFetchTask;
 
     FetchProcessor(int32_t target_node_id, const phmap::flat_hash_map<SlotId, RowPositionDescriptor*>& row_pos_descs,

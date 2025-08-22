@@ -29,7 +29,6 @@
 namespace starrocks {
 LookUpNode::LookUpNode(ObjectPool* pool, const TPlanNode& tnode, const DescriptorTbl& descs)
         : ExecNode(pool, tnode, descs) {
-    DLOG(INFO) << "LookUpNode::LookUpNode, tnode: " << apache::thrift::ThriftDebugString(tnode);
     for (const auto& [tuple_id, row_pos_desc] : tnode.look_up_node.row_pos_descs) {
         auto* desc = RowPositionDescriptor::from_thrift(row_pos_desc, pool);
         _row_pos_descs.emplace(tuple_id, desc);

@@ -34,11 +34,10 @@ import java.util.Map;
 import java.util.stream.Collectors;
 
 public class LookUpNode extends PlanNode {
-    // @TODO do we need descs
     private List<TupleDescriptor> descs;
     // row position desc for each table
     private Map<TupleId, RowPositionDescriptor> rowPosDescs;
-    // @TODO only ref columns?
+
 
     public LookUpNode(PlanNodeId id, List<TupleDescriptor> descs, Map<TupleId, RowPositionDescriptor> rowPosDecs) {
         super(id, new ArrayList<>(rowPosDecs.keySet().stream().collect(Collectors.toList())), "LookUp");

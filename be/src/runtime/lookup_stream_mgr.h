@@ -45,12 +45,10 @@ public:
     TUniqueId query_id() const { return _query_id; }
     PlanNodeId lookup_node_id() const { return _lookup_node_id; }
 
-    // Status add_request(const LookUpRequestVariant& ctx);
     Status add_request(const pipeline::LookUpRequestContextPtr& ctx);
 
     bool try_get(int32_t driver_sequence, size_t max_num, pipeline::LookUpTaskContext* ctx);
 
-    // bool try_get(int32_t driver_sequence, LookUpRequestCtx* ctx);
     bool has_data(int32_t driver_sequence) const;
 
     void attach_query_ctx(pipeline::QueryContext* query_ctx);
@@ -74,8 +72,6 @@ private:
     typedef moodycamel::ConcurrentQueue<pipeline::LookUpRequestContextPtr> RequestsQueue;
     typedef std::shared_ptr<RequestsQueue> RequestsQueuePtr;
     typedef phmap::flat_hash_map<TupleId, RequestsQueuePtr> RequestQueueMap;
-    // @TODO maintain a array is enough?
-    // source_id_slot -> request queue
     RequestQueueMap _request_queues;
 
 
@@ -94,7 +90,6 @@ public:
 
     StatusOr<LookUpDispatcherPtr> get_dispatcher(const TUniqueId& query_id, PlanNodeId target_node_id);
     void remove_dispatcher(const TUniqueId& query_id, PlanNodeId target_node_id);
-    // Status lookup(const RemoteLookUpRequest& ctx);
     Status lookup(const pipeline::RemoteLookUpRequestContextPtr& ctx);
 
     void close() {}

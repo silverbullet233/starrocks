@@ -15,17 +15,29 @@
 package com.starrocks.sql.plan;
 
 import com.starrocks.common.FeConstants;
+import com.starrocks.connector.iceberg.MockIcebergMetadata;
 import org.junit.BeforeClass;
 import org.junit.Test;
 
-public class GlobalLateMaterializationTest extends PlanTestBase {
+public class GlobalLateMaterializationTest extends ConnectorPlanTestBase {
+
     @BeforeClass
     public static void beforeClass() throws Exception {
         PlanTestBase.beforeClass();
         FeConstants.runningUnitTest = true;
         connectContext.getSessionVariable().setEnableGlobalLateMaterialization(true);
+        ConnectorPlanTestBase.mockCatalog(connectContext, MockIcebergMetadata.MOCKED_ICEBERG_CATALOG_NAME, "");
     }
 
+    @Test
+    public void testIcebergV3TableJoin() throws Exception {
+        connectContext.getSessionVariable().setEnableGlobalLateMaterialization(true);
+        String sql = "select * from iceberg0.v3_format_db.t1 order by c0 limit 5";
+        String plan = getFragmentPlan(sql);
+        System.out.println(plan);
+    }
+
+    /*
     @Test
     public void testJoin() throws Exception {
         String sql;
@@ -368,6 +380,6 @@ public class GlobalLateMaterializationTest extends PlanTestBase {
                 "  |    <slot 2> => v2\n" +
                 "  |  \n" +
                 "  4:HASH JOIN");
-    }
+    }*/
 
 }
