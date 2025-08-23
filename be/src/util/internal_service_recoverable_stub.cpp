@@ -14,7 +14,6 @@
 
 #include "util/internal_service_recoverable_stub.h"
 
-#include <functional>
 
 #include "common/config.h"
 

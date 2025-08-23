@@ -35,7 +35,6 @@
 #include "storage/tablet.h"
 
 #include <fmt/format.h>
-#include <pthread.h>
 #include <rapidjson/prettywriter.h>
 #include <rapidjson/stringbuffer.h>
 

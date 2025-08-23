@@ -17,7 +17,6 @@
 
 #include <strings.h>
 
-#include <algorithm>
 #include <cerrno>
 #include <cstring>
 #include <fstream>

@@ -14,9 +14,7 @@
 
 #include "exec/agg_runtime_filter_builder.h"
 
-#include <functional>
 #include <type_traits>
-#include <variant>
 
 #include "column/column_helper.h"
 #include "column/json_column.h"

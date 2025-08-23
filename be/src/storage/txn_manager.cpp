@@ -36,7 +36,6 @@
 
 #include <fmt/format.h>
 
-#include <algorithm>
 #include <new>
 #include <queue>
 #include <set>

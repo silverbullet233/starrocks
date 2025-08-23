@@ -14,7 +14,6 @@
 
 #include "storage/table_reader.h"
 
-#include <algorithm>
 #include <queue>
 
 #include "exec/tablet_info.h"

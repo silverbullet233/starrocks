@@ -16,7 +16,6 @@
 
 #include <iterator>
 #include <memory>
-#include <sstream>
 #include <string>
 
 #include "column/binary_column.h"

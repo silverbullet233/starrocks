@@ -17,7 +17,6 @@
 #include <re2/re2.h>
 #include <re2/stringpiece.h>
 
-#include <algorithm>
 #include <boost/tokenizer.hpp>
 #include <memory>
 

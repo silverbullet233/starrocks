@@ -14,7 +14,6 @@
 
 #include "exec/pipeline/scan/chunk_source.h"
 
-#include <random>
 
 #include "common/statusor.h"
 #include "exec/pipeline/scan/balanced_chunk_buffer.h"

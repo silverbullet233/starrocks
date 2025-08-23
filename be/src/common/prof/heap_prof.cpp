@@ -17,7 +17,6 @@
 #include <unistd.h>
 
 #include <cstdlib>
-#include <fstream>
 #include <mutex>
 
 #include "common/config.h"

@@ -14,7 +14,6 @@
 
 #include "util/debug_action.h"
 
-#include <optional>
 
 #include "gen_cpp/InternalService_types.h"
 

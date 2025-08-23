@@ -37,7 +37,6 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
-#include <map>
 
 #include "column/column.h"
 #include "common/logging.h"

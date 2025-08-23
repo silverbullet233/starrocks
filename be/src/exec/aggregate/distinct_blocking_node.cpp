@@ -14,7 +14,6 @@
 
 #include "exec/aggregate/distinct_blocking_node.h"
 
-#include <variant>
 
 #include "exec/aggregator.h"
 #include "exec/pipeline/aggregate/aggregate_distinct_blocking_sink_operator.h"

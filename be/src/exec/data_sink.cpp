@@ -34,7 +34,6 @@
 
 #include "exec/data_sink.h"
 
-#include <algorithm>
 #include <map>
 #include <memory>
 

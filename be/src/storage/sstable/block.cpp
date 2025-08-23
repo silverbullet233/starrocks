@@ -4,9 +4,7 @@
 
 #include "storage/sstable/block.h"
 
-#include <algorithm>
 #include <cstdint>
-#include <vector>
 
 #include "storage/sstable/coding.h"
 #include "storage/sstable/comparator.h"

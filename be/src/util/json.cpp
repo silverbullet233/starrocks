@@ -17,7 +17,6 @@
 #include <algorithm>
 #include <cctype>
 #include <string>
-#include <vector>
 
 #include "common/status.h"
 #include "common/statusor.h"

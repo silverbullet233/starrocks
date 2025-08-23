@@ -16,7 +16,6 @@
 
 #include <cstring>
 #include <memory>
-#include <set>
 #include <vector>
 
 #include "column/binary_column.h"

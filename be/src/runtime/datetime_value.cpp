@@ -42,7 +42,6 @@
 #include <cstring>
 #include <ctime>
 #include <limits>
-#include <sstream>
 #include <string_view>
 
 #include "gutil/strings/fastmem.h"

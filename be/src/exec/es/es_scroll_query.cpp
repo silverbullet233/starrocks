@@ -17,7 +17,6 @@
 
 #include "exec/es/es_scroll_query.h"
 
-#include <sstream>
 
 #include "common/logging.h"
 #include "exec/es/es_query_builder.h"

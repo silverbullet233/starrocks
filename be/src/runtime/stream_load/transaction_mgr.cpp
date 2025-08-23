@@ -16,7 +16,6 @@
 
 #include <deque>
 #include <future>
-#include <sstream>
 
 // use string iequal
 #include <event2/buffer.h>

@@ -21,7 +21,6 @@
 
 #include <exception>
 #include <memory>
-#include <sstream>
 
 namespace starrocks {
 static void encode_base64_internal(const std::string& in, std::string* out, const unsigned char* basis, bool padding) {

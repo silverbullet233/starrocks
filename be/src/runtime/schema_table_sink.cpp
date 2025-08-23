@@ -15,7 +15,6 @@
 #include "runtime/schema_table_sink.h"
 
 #include <memory>
-#include <sstream>
 
 #include "agent/master_info.h"
 #include "column/chunk.h"

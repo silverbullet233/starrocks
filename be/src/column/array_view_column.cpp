@@ -15,7 +15,6 @@
 #include "column/array_view_column.h"
 
 #include <cstdint>
-#include <memory>
 #include <stdexcept>
 
 #include "column/array_column.h"

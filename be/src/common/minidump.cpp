@@ -25,7 +25,6 @@
 #include <fstream>
 #include <map>
 #include <memory>
-#include <sstream>
 #include <system_error>
 
 #include "common/config.h"

@@ -15,9 +15,7 @@
 #include "formats/parquet/schema.h"
 
 #include <boost/algorithm/string/case_conv.hpp>
-#include <memory>
 #include <sstream>
-#include <utility>
 
 #include "gutil/strings/substitute.h"
 #include "types/logical_type.h"

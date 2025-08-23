@@ -14,7 +14,6 @@
 
 #include "exprs/array_functions.h"
 
-#include <memory>
 
 #include "column/array_column.h"
 #include "column/column_hash.h"

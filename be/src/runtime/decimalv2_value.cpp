@@ -38,7 +38,6 @@
 
 #include <algorithm>
 #include <iostream>
-#include <utility>
 
 #include "runtime/int128_arithmetics_x86_64.h"
 #include "util/raw_container.h"

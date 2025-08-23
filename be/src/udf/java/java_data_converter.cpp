@@ -15,7 +15,6 @@
 #include "udf/java/java_data_converter.h"
 
 #include <memory>
-#include <type_traits>
 #include <utility>
 
 #include "column/array_column.h"

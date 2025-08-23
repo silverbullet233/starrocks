@@ -17,8 +17,6 @@
 #include <cstdint>
 #include <memory>
 #include <mutex>
-#include <thread>
-#include <unordered_set>
 
 #include "fmt/format.h"
 #include "util/stack_util.h"

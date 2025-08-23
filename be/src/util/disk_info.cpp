@@ -20,7 +20,6 @@
 #include <sys/stat.h>
 #include <sys/sysmacros.h>
 #include <sys/types.h>
-#include <unistd.h>
 
 #include <boost/algorithm/string.hpp>
 #include <fstream>

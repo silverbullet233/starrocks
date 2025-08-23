@@ -34,7 +34,6 @@
 
 #include "util/path_util.h"
 
-#include <memory>
 // Use the POSIX version of basename(3). See `man 3 basename`
 #include <libgen.h>
 

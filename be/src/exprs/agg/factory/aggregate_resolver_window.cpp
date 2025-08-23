@@ -12,7 +12,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include <vector> // for allocator, vector
 
 #include "exprs/agg/factory/aggregate_factory.hpp"  // for AggregateFactory
 #include "exprs/agg/factory/aggregate_resolver.hpp" // for AggregateFuncRes...

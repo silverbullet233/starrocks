@@ -16,7 +16,6 @@
 
 #include <algorithm>
 #include <memory>
-#include <numeric>
 
 #include "exec/cross_join_node.h"
 #include "exec/pipeline/runtime_filter_types.h"

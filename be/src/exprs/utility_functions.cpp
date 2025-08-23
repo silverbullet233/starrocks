@@ -22,7 +22,6 @@
 #ifdef __SSE4_2__
 #include <emmintrin.h>
 #endif
-#include <unistd.h>
 
 #include <algorithm>
 #include <atomic>

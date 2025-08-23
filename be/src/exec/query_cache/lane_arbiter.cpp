@@ -16,7 +16,6 @@
 
 #include <glog/logging.h>
 
-#include <algorithm>
 #include <limits>
 
 namespace starrocks::query_cache {

@@ -25,7 +25,6 @@
 #include <fmt/format.h>
 
 #include <istream>
-#include <utility>
 
 #include "common/logging.h"
 #include "fs/s3/poco_common.h"

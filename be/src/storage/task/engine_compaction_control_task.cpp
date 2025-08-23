@@ -14,7 +14,6 @@
 
 #include "storage/task/engine_compaction_control_task.h"
 
-#include <memory>
 
 #include "runtime/exec_env.h"
 #include "storage/compaction_manager.h"

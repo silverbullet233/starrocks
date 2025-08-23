@@ -36,7 +36,6 @@
 
 #include <functional>
 #include <memory>
-#include <thread>
 
 #include "common/status.h"
 #include "runtime/routine_load/data_consumer_group.h"

@@ -55,7 +55,6 @@
 #include <llvm/Transforms/Vectorize/SLPVectorizer.h>
 
 #include <memory>
-#include <mutex>
 #include <utility>
 
 #include "common/compiler_util.h"

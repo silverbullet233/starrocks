@@ -35,7 +35,6 @@
 #include "exec/tablet_sink.h"
 
 #include <memory>
-#include <numeric>
 #include <sstream>
 #include <utility>
 

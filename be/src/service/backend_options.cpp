@@ -17,7 +17,6 @@
 
 #include "service/backend_options.h"
 
-#include <algorithm>
 #include <ostream>
 
 #include "common/config.h"

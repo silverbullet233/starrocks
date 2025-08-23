@@ -36,7 +36,6 @@
 
 #include <cctype>
 #include <memory>
-#include <thread>
 
 #include "agent/agent_server.h"
 #include "agent/master_info.h"

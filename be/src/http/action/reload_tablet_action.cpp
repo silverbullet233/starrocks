@@ -34,7 +34,6 @@
 
 #include "http/action/reload_tablet_action.h"
 
-#include <sstream>
 #include <string>
 
 #include "boost/lexical_cast.hpp"

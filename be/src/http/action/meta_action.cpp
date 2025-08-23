@@ -34,7 +34,6 @@
 
 #include "http/action/meta_action.h"
 
-#include <sstream>
 #include <string>
 
 #include "common/logging.h"

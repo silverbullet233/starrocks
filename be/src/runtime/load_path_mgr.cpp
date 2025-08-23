@@ -36,7 +36,6 @@
 
 #include <sys/stat.h>
 #include <sys/types.h>
-#include <unistd.h>
 
 #include <boost/algorithm/string/join.hpp>
 #include <string>

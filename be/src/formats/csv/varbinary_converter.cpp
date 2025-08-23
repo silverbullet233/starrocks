@@ -14,7 +14,6 @@
 
 #include "formats/csv/varbinary_converter.h"
 
-#include <iostream>
 
 #include "column/binary_column.h"
 #include "common/config.h"

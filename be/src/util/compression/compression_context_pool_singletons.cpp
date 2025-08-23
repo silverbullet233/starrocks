@@ -31,7 +31,6 @@
 #include "util/compression/compression_context_pool_singletons.h"
 
 #include <cstdlib>
-#include <memory>
 
 namespace starrocks::compression {
 

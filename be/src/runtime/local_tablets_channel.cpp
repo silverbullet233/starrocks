@@ -17,7 +17,6 @@
 #include <fmt/format.h>
 
 #include <atomic>
-#include <chrono>
 #include <cstdint>
 #include <unordered_map>
 #include <utility>

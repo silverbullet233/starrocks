@@ -14,7 +14,6 @@
 
 #include "storage/compaction_manager.h"
 
-#include <chrono>
 #include <thread>
 
 #include "compaction_manager.h"

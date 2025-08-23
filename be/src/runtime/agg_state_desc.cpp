@@ -14,7 +14,6 @@
 
 #include "runtime/agg_state_desc.h"
 
-#include <memory>
 
 #include "exprs/agg/aggregate.h"
 #include "exprs/agg/aggregate_factory.h"

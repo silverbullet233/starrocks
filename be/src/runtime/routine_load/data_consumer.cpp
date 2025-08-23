@@ -34,7 +34,6 @@
 
 #include "runtime/routine_load/data_consumer.h"
 
-#include <functional>
 #include <string>
 #include <vector>
 

@@ -16,8 +16,6 @@
 
 #include <any>
 #include <memory>
-#include <sstream>
-#include <tuple>
 #include <vector>
 
 #include "column/chunk.h"

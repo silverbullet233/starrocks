@@ -17,7 +17,6 @@
 #include <glog/logging.h>
 
 #include <cstring>
-#include <iterator>
 #include <unordered_set>
 #include <utility>
 #include <vector>

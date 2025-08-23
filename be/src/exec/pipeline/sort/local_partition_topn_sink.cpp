@@ -14,7 +14,6 @@
 
 #include "exec/pipeline/sort/local_partition_topn_sink.h"
 
-#include <utility>
 
 namespace starrocks::pipeline {
 

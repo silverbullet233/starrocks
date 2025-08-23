@@ -19,7 +19,6 @@
 
 #include <algorithm>
 #include <memory>
-#include <sstream>
 #include <utility>
 
 #include "column/adaptive_nullable_column.h"

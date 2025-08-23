@@ -15,7 +15,6 @@
 #include "column/json_column.h"
 
 #include <sstream>
-#include <type_traits>
 
 #include "column/bytes.h"
 #include "column/column_helper.h"

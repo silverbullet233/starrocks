@@ -14,7 +14,6 @@
 
 #include "storage/horizontal_compaction_task.h"
 
-#include <vector>
 
 #include "column/schema.h"
 #include "common/statusor.h"

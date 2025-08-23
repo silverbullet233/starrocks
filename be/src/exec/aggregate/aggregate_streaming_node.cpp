@@ -14,7 +14,6 @@
 
 #include "exec/aggregate/aggregate_streaming_node.h"
 
-#include <variant>
 
 #include "exec/pipeline/aggregate/aggregate_streaming_sink_operator.h"
 #include "exec/pipeline/aggregate/aggregate_streaming_source_operator.h"

@@ -14,7 +14,6 @@
 
 #include "util/gc_helper.h"
 
-#include <iostream>
 
 namespace starrocks {
 

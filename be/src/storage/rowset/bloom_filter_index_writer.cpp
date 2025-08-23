@@ -34,7 +34,6 @@
 
 #include "storage/rowset/bloom_filter_index_writer.h"
 
-#include <map>
 #include <memory>
 #include <utility>
 

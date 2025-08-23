@@ -38,7 +38,6 @@
 #include <storage/chunk_helper.h>
 
 #include <memory>
-#include <sstream>
 #include <stdexcept>
 
 #include "column/chunk.h"

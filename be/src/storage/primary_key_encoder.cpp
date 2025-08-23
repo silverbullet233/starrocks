@@ -36,9 +36,7 @@
 #include "storage/primary_key_encoder.h"
 
 #include <cstring>
-#include <memory>
 #include <numeric>
-#include <type_traits>
 
 #include "column/binary_column.h"
 #include "column/chunk.h"

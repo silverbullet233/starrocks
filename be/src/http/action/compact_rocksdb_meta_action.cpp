@@ -14,7 +14,6 @@
 
 #include "compact_rocksdb_meta_action.h"
 
-#include <sstream>
 #include <string>
 
 #include "common/logging.h"

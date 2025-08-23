@@ -14,7 +14,6 @@
 
 #include "exec/analytic_node.h"
 
-#include <algorithm>
 #include <cmath>
 #include <memory>
 

@@ -37,7 +37,6 @@
 #include <arpa/inet.h>
 #include <fmt/format.h>
 
-#include <functional>
 #include <iostream>
 #include <memory>
 #include <random>

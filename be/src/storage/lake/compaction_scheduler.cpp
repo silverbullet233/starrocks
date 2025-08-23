@@ -19,8 +19,6 @@
 #include <bthread/condition_variable.h>
 #include <butil/time.h> // NOLINT
 
-#include <chrono>
-#include <thread>
 
 #include "agent/master_info.h"
 #include "common/status.h"

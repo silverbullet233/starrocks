@@ -18,7 +18,6 @@
 #include <sys/stat.h>
 
 #include <filesystem>
-#include <set>
 
 #include "agent/agent_server.h"
 #include "agent/master_info.h"

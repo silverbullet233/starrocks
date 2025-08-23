@@ -15,7 +15,6 @@
 #include "exec/pipeline/exchange/local_exchange.h"
 
 #include <memory>
-#include <unordered_map>
 
 #include "column/chunk.h"
 #include "connector/utils.h"

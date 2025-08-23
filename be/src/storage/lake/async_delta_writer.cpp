@@ -18,7 +18,6 @@
 #include <fmt/format.h>
 
 #include <memory>
-#include <vector>
 
 #include "common/compiler_util.h"
 #include "storage/lake/delta_writer.h"

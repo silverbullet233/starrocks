@@ -33,7 +33,6 @@
 // under the License.
 
 #include <cstdint>
-#include <functional>
 #include <memory>
 
 #include "gen_cpp/segment.pb.h"

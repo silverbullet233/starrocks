@@ -13,7 +13,6 @@
 // limitations under the License.
 
 #include <array>
-#include <iostream>
 #include <mutex>
 #include <string>
 #include <vector>

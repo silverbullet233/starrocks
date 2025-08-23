@@ -35,7 +35,6 @@
 #include "http/action/compaction_action.h"
 
 #include <atomic>
-#include <sstream>
 #include <string>
 
 #include "common/logging.h"

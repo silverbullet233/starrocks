@@ -37,7 +37,6 @@
 #include <rapidjson/prettywriter.h>
 #include <rapidjson/stringbuffer.h>
 
-#include <vector>
 
 #include "column/column_helper.h"
 #include "column/json_column.h"

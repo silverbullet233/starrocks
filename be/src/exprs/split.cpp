@@ -14,7 +14,6 @@
 
 #include "gutil/strings/split.h"
 
-#include <algorithm>
 
 #include "column/array_column.h"
 #include "column/binary_column.h"

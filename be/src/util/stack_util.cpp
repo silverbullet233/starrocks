@@ -25,7 +25,6 @@
 #include <sys/syscall.h>
 
 #include <thread>
-#include <tuple>
 
 #include "common/config.h"
 #include "gutil/strings/join.h"

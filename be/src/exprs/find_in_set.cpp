@@ -12,7 +12,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include <algorithm>
 
 #include "column/binary_column.h"
 #include "column/column_builder.h"

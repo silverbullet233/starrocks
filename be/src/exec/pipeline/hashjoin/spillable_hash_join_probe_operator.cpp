@@ -18,7 +18,6 @@
 #include <memory>
 #include <mutex>
 #include <numeric>
-#include <optional>
 
 #include "common/config.h"
 #include "exec/hash_joiner.h"

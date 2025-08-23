@@ -16,7 +16,6 @@
 
 #include <llvm/IR/IRBuilder.h>
 
-#include <chrono>
 #include <vector>
 
 #include "column/chunk.h"

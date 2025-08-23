@@ -18,7 +18,6 @@
 
 #include "exec/pipeline/query_context.h"
 
-#include <chrono>
 #include <mutex>
 #include <string_view>
 

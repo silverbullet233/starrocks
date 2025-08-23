@@ -34,7 +34,6 @@
 
 #include "storage/kv_store.h"
 
-#include <sstream>
 #include <utility>
 #include <vector>
 

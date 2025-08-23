@@ -25,7 +25,6 @@
 #include <runtime/current_thread.h>
 
 #include <future>
-#include <ostream>
 #include <utility>
 
 #include "formats/file_writer.h"
