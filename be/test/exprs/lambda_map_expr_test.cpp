@@ -17,6 +17,7 @@
 
 #include "butil/time.h"
 #include "column/column_helper.h"
+#include "column/chunk.h"
 #include "column/fixed_length_column.h"
 #include "column/map_column.h"
 #include "exprs/arithmetic_expr.h"

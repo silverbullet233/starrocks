@@ -27,6 +27,7 @@
 #include "storage/tablet_manager.h"
 #include "storage/tablet_schema_helper.h"
 #include "testutil/assert.h"
+#include "column/chunk.h"
 
 namespace starrocks {
 

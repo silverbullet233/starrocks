@@ -28,6 +28,7 @@
 #include "storage/tablet_manager.h"
 #include "testutil/assert.h"
 #include "testutil/column_test_helper.h"
+#include "column/struct_column.h"
 #include "testutil/exprs_test_helper.h"
 
 namespace starrocks {

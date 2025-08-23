@@ -17,6 +17,7 @@
 #include <sys/stat.h>
 
 #ifdef BE_TEST
+#include "runtime/exec_env.h"
 #include "agent/agent_server.h"
 #endif
 

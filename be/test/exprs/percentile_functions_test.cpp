@@ -18,6 +18,7 @@
 #include <gtest/gtest.h>
 
 #include "util/percentile_value.h"
+#include "column/object_column.h"
 
 namespace starrocks {
 class PercentileFunctionsTest : public ::testing::Test {

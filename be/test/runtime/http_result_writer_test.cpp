@@ -23,6 +23,11 @@
 #include "runtime/buffer_control_block.h"
 #include "storage/chunk_helper.h"
 #include "testutil/assert.h"
+#include "column/field.h"
+#include "column/fixed_length_column.h"
+#include "column/schema.h"
+#include "runtime/runtime_state.h"
+#include "column/chunk.h"
 #include "util/uid_util.h"
 
 namespace starrocks {

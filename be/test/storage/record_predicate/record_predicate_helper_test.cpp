@@ -19,6 +19,7 @@
 #include "storage/chunk_helper.h"
 #include "storage/tablet_schema.h"
 #include "testutil/assert.h"
+#include "column/chunk.h"
 
 namespace starrocks {
 class RecordPredicateHelperTest : public ::testing::Test {

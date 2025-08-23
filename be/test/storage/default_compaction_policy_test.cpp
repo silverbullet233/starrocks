@@ -28,6 +28,7 @@
 #include "storage/compaction.h"
 #include "storage/compaction_context.h"
 #include "storage/compaction_manager.h"
+#include "column/chunk.h"
 #include "storage/compaction_utils.h"
 #include "storage/cumulative_compaction.h"
 #include "storage/rowset/rowset_factory.h"

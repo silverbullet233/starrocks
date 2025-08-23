@@ -20,11 +20,13 @@
 
 #include "column/type_traits.h"
 #include "column/vectorized_fwd.h"
+#include "column/fixed_length_column.h"
 #include "common/object_pool.h"
 #include "simd/simd.h"
 #include "storage/column_predicate.h"
 #include "types/logical_type.h"
 #include "util/value_generator.h"
+#include "column/chunk.h"
 
 namespace starrocks {
 struct SegDataGenerator {

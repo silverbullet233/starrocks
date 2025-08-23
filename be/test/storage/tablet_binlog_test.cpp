@@ -23,6 +23,7 @@
 #include "storage/storage_engine.h"
 #include "storage/tablet.h"
 #include "storage/tablet_manager.h"
+#include "column/chunk.h"
 
 namespace starrocks {
 

@@ -35,6 +35,7 @@
 #include "exec/query_cache/ticket_checker.h"
 #include "exec/query_cache/transform_operator.h"
 #include "gutil/strings/substitute.h"
+#include "exec/pipeline/query_context.h"
 
 namespace starrocks {
 

@@ -27,6 +27,8 @@
 #include "exec/pipeline/empty_set_operator.h"
 #include "exec/pipeline/group_execution/execution_group.h"
 #include "exec/pipeline/noop_sink_operator.h"
+#include "exec/pipeline/fragment_context.h"
+#include "exec/pipeline/query_context.h"
 #include "exec/pipeline/pipeline_driver.h"
 #include "exec/pipeline/pipeline_driver_queue.h"
 #include "exec/pipeline/pipeline_fwd.h"

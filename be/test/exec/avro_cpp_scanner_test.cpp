@@ -22,6 +22,7 @@
 #include "runtime/exec_env.h"
 #include "runtime/runtime_state.h"
 #include "testutil/assert.h"
+#include "fs/fs.h"
 
 namespace starrocks {
 

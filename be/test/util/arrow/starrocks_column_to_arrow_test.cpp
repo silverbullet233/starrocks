@@ -28,6 +28,9 @@
 #include <arrow/result.h>
 
 #include "common/compiler_util.h"
+#include "types/hll.h"
+#include "column/object_column.h"
+#include "column/json_column.h"
 #ifndef __clang__
 DIAGNOSTIC_PUSH
 DIAGNOSTIC_IGNORE("-Wclass-memaccess")

@@ -26,6 +26,7 @@
 #include "column/struct_column.h"
 #include "column/type_traits.h"
 #include "column/vectorized_fwd.h"
+#include "column/json_column.h"
 #include "exprs/exprs_test_helper.h"
 #include "exprs/mock_vectorized_expr.h"
 #include "gen_cpp/Exprs_types.h"

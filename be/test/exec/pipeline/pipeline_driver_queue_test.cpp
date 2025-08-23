@@ -22,6 +22,7 @@
 #include "exec/pipeline/pipeline_metrics.h"
 #include "exec/workgroup/work_group.h"
 #include "testutil/parallel_test.h"
+#include "exec/pipeline/query_context.h"
 
 namespace starrocks::pipeline {
 
@@ -142,7 +143,7 @@ PARALLEL_TEST(QuerySharedDriverQueueTest, test_take_block) {
     auto driver1 = std::make_shared<PipelineDriver>(_gen_operators(), &query_context, nullptr, nullptr, -1);
     _set_driver_level(driver1.get(), 1);
 
-    auto consumer_thread = std::make_shared<std::thread>([&queue, &driver1] {
+    auto consumer_thread = std::make_shared<std::thread>([&queue, driver1] {
         auto maybe_driver = queue.take(true);
         ASSERT_TRUE(maybe_driver.ok());
         ASSERT_EQ(driver1.get(), maybe_driver.value());
@@ -285,7 +286,7 @@ TEST_F(WorkGroupDriverQueueTest, test_take_block) {
     _set_driver_level(driver1.get(), 1);
     driver1->set_workgroup(_wg1);
 
-    auto consumer_thread = std::make_shared<std::thread>([&queue, &driver1] {
+    auto consumer_thread = std::make_shared<std::thread>([&queue, driver1] {
         auto maybe_driver = queue.take(true);
         ASSERT_TRUE(maybe_driver.ok());
         ASSERT_EQ(driver1.get(), maybe_driver.value());

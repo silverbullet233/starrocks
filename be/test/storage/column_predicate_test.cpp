@@ -20,6 +20,7 @@
 #include "gtest/gtest.h"
 #include "storage/chunk_helper.h"
 #include "testutil/assert.h"
+#include "column/field.h"
 
 namespace starrocks {
 

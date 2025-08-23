@@ -28,6 +28,7 @@
 #include "column/map_column.h"
 #include "column/nullable_column.h"
 #include "column/struct_column.h"
+#include "column/json_column.h"
 #include "column/vectorized_fwd.h"
 #include "common/config.h"
 #include "common/status.h"

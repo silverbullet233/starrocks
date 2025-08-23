@@ -28,6 +28,7 @@
 #include "storage/chunk_helper.h"
 #include "storage/olap_common.h"
 #include "storage/record_predicate/record_predicate_helper.h"
+#include "column/binary_column.h"
 #include "storage/rowset/column_iterator.h"
 #include "storage/rowset/segment.h"
 #include "storage/rowset/segment_options.h"

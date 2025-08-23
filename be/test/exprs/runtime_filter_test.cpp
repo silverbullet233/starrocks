@@ -21,6 +21,7 @@
 #include <utility>
 
 #include "column/column_helper.h"
+#include "column/chunk.h"
 #include "exprs/runtime_filter_bank.h"
 #include "simd/simd.h"
 #include "testutil/column_test_helper.h"

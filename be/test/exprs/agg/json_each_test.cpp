@@ -20,6 +20,7 @@
 #include "runtime/runtime_state.h"
 #include "testutil/assert.h"
 #include "testutil/function_utils.h"
+#include "column/json_column.h"
 
 namespace starrocks {
 

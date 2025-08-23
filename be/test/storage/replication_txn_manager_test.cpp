@@ -28,6 +28,7 @@
 #include "storage/rowset/rowset_writer_context.h"
 #include "storage/rowset/segment.h"
 #include "storage/tablet_manager.h"
+#include "column/chunk.h"
 #include "testutil/assert.h"
 #include "util/uuid_generator.h"
 

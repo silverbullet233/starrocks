@@ -13,6 +13,7 @@
 // limitations under the License.
 
 #include "exec/pipeline/sink/table_function_table_sink_operator.h"
+#include "exec/pipeline/query_context.h"
 
 #include "gen_cpp/RuntimeProfile_types.h"
 #include "gtest/gtest.h"

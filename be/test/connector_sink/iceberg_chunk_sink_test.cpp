@@ -26,6 +26,7 @@
 #include "exec/pipeline/fragment_context.h"
 #include "formats/file_writer.h"
 #include "formats/utils.h"
+#include "column/chunk_extra_data.h"
 #include "testutil/assert.h"
 #include "util/defer_op.h"
 #include "util/integer_util.h"

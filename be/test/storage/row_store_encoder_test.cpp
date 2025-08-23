@@ -24,6 +24,9 @@
 #include "gutil/stringprintf.h"
 #include "storage/chunk_helper.h"
 #include "storage/row_store_encoder_factory.h"
+#include "types/bitmap_value.h"
+#include "types/hll.h"
+#include "column/object_column.h"
 
 using namespace std;
 

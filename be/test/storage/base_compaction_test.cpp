@@ -28,6 +28,7 @@
 #include "storage/compaction.h"
 #include "storage/index/index_descriptor.h"
 #include "storage/rowset/rowset_factory.h"
+#include "column/chunk.h"
 #include "storage/rowset/rowset_writer.h"
 #include "storage/rowset/rowset_writer_context.h"
 #include "storage/storage_engine.h"

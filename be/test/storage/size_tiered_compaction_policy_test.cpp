@@ -28,6 +28,7 @@
 #include "runtime/mem_tracker.h"
 #include "storage/chunk_helper.h"
 #include "storage/compaction.h"
+#include "column/chunk.h"
 #include "storage/compaction_context.h"
 #include "storage/compaction_manager.h"
 #include "storage/compaction_utils.h"

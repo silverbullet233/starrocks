@@ -24,6 +24,7 @@
 #include "storage/rowset/rowset_writer_context.h"
 #include "storage/tablet_schema_helper.h"
 #include "testutil/assert.h"
+#include "column/chunk.h"
 
 namespace starrocks {
 

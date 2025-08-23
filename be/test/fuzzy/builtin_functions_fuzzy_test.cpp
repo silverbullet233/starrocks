@@ -28,6 +28,7 @@
 #include "column/map_column.h"
 #include "column/nullable_column.h"
 #include "column/type_traits.h"
+#include "column/struct_column.h"
 #include "exprs/builtin_functions.h"
 #include "exprs/function_context.h"
 #include "runtime/types.h"

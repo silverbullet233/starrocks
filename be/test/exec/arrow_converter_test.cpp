@@ -28,6 +28,7 @@
 #include "arrow/type_fwd.h"
 #include "arrow/type_traits.h"
 #include "column/column_helper.h"
+#include "column/json_column.h"
 #include "column/vectorized_fwd.h"
 #include "exec/arrow_to_starrocks_converter.h"
 #include "exec/parquet_scanner.h"

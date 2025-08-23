@@ -13,6 +13,8 @@
 // limitations under the License.
 
 #include "exprs/hyperloglog_functions.h"
+#include "types/hll.h"
+#include "column/object_column.h"
 
 #include <glog/logging.h>
 #include <gtest/gtest.h>

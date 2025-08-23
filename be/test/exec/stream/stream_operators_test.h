@@ -16,6 +16,7 @@
 
 #include "exec/pipeline/query_context.h"
 #include "exec/pipeline/source_operator.h"
+#include "exec/pipeline/operator.h"
 #include "exec/pipeline/stream_epoch_manager.h"
 
 namespace starrocks::stream {
@@ -99,7 +100,7 @@ private:
 
 class PrinterStreamSinkOperator final : public Operator {
 public:
-    PrinterStreamSinkOperator(OperatorFactory* factory, int32_t id, int32_t plan_node_id, int32_t driver_sequence)
+    PrinterStreamSinkOperator(pipeline::OperatorFactory* factory, int32_t id, int32_t plan_node_id, int32_t driver_sequence)
             : Operator(factory, id, "printer_stream_sink", plan_node_id, false, driver_sequence) {}
 
     ~PrinterStreamSinkOperator() override = default;
@@ -144,10 +145,10 @@ private:
     std::vector<ChunkPtr> _output_chunks;
 };
 
-class PrinterStreamSinkOperatorFactory final : public OperatorFactory {
+class PrinterStreamSinkOperatorFactory final : public pipeline::OperatorFactory {
 public:
     PrinterStreamSinkOperatorFactory(int32_t id, int32_t plan_node_id)
-            : OperatorFactory(id, "printer_stream_sink", plan_node_id) {}
+            : pipeline::OperatorFactory(id, "printer_stream_sink", plan_node_id) {}
 
     ~PrinterStreamSinkOperatorFactory() override = default;
 

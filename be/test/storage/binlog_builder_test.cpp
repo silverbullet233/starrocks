@@ -19,6 +19,7 @@
 #include "fs/fs_util.h"
 #include "storage/binlog_test_base.h"
 #include "testutil/assert.h"
+#include "util/time.h"
 
 namespace starrocks {
 

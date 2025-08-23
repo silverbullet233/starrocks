@@ -26,6 +26,7 @@
 #include "storage/types.h"
 #include "testutil/parallel_test.h"
 #include "util/json.h"
+#include "column/schema.h"
 
 namespace starrocks {
 

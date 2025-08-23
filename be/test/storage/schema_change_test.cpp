@@ -28,6 +28,7 @@
 #include "storage/storage_engine.h"
 #include "storage/tablet_manager.h"
 #include "storage/txn_manager.h"
+#include "column/json_column.h"
 #include "testutil/assert.h"
 #include "testutil/column_test_helper.h"
 #include "testutil/schema_test_helper.h"

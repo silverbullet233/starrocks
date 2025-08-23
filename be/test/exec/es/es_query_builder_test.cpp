@@ -41,6 +41,7 @@
 
 #include "column/column_helper.h"
 #include "common/logging.h"
+#include "common/object_pool.h"
 #include "exec/es/es_predicate.h"
 #include "rapidjson/document.h"
 #include "rapidjson/rapidjson.h"

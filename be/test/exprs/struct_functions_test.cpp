@@ -18,6 +18,7 @@
 
 #include "column/column_helper.h"
 #include "column/struct_column.h"
+#include "exprs/function_context.h"
 #include "testutil/parallel_test.h"
 
 namespace starrocks {

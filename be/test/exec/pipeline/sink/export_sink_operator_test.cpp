@@ -13,6 +13,7 @@
 // limitations under the License.
 
 #include "exec/pipeline/sink/export_sink_operator.h"
+#include "exec/pipeline/query_context.h"
 
 #include <chrono>
 #include <thread>
