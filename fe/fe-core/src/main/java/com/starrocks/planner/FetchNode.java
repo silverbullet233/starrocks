@@ -33,8 +33,10 @@ import software.amazon.awssdk.services.gamelift.model.Compute;
 import software.amazon.awssdk.services.lexruntimev2.model.Slot;
 
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.stream.Collectors;
 
 public class FetchNode extends PlanNode {
@@ -82,9 +84,12 @@ public class FetchNode extends PlanNode {
         for (TupleDescriptor tupleDesc : descs) {
             Table table = tupleDesc.getTable();
             output.append(prefix).append("table: ").append(table.getName()).append("\n");
+            Set<SlotId> lookupRefSlots = new HashSet<>();
+            RowPositionDescriptor rowPositionDescriptor = rowPosDescs.get(tupleDesc.getId());
+            lookupRefSlots.addAll(rowPositionDescriptor.getLookupRefSlots());
+
             if (detailLevel.equals(TExplainLevel.VERBOSE)) {
                 // output row id slot
-                RowPositionDescriptor rowPositionDescriptor = rowPosDescs.get(tupleDesc.getId());
                 output.append(prefix + " <slot ")
                         .append(rowPositionDescriptor.getRowSourceSlot().asInt()).append("> => ROW_SOURCE_ID").append("\n");
                 output.append(prefix + "  <row position slots> => " +
@@ -93,6 +98,10 @@ public class FetchNode extends PlanNode {
                                         Collectors.joining(",", "[", "]"))).append("\n");
             }
             List<SlotDescriptor> slotDescs = tupleDesc.getSlots();
+            if (!detailLevel.equals(TExplainLevel.VERBOSE)) {
+                slotDescs = slotDescs.stream().filter(slotDescriptor -> !lookupRefSlots.contains(slotDescriptor.getId()))
+                        .collect(Collectors.toList());
+            }
             for (SlotDescriptor slotDesc : slotDescs) {
                 output.append(prefix + "  <slot ").
                         append(slotDesc.getId()).append("> => ");

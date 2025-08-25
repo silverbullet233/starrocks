@@ -66,7 +66,6 @@ public class MockIcebergMetadata implements ConnectorMetadata {
     public static final String MOCKED_UNPARTITIONED_DB_NAME = "unpartitioned_db";
     public static final String MOCKED_PARTITIONED_DB_NAME = "partitioned_db";
     public static final String MOCKED_PARTITIONED_TRANSFORMS_DB_NAME = "partitioned_transforms_db";
-    public static final String MOCKED_V3_FORMAT_DB_NAME = "v3_format_db";
 
     public static final String MOCKED_UNPARTITIONED_TABLE_NAME0 = "t0";
     public static final String MOCKED_PARTITIONED_TABLE_NAME1 = "t1";
@@ -101,8 +100,6 @@ public class MockIcebergMetadata implements ConnectorMetadata {
                     MOCKED_PARTITIONED_YEAR_TZ_TABLE_NAME, MOCKED_PARTITIONED_MONTH_TZ_TABLE_NAME,
                     MOCKED_PARTITIONED_DAY_TZ_TABLE_NAME, MOCKED_PARTITIONED_HOUR_TZ_TABLE_NAME,
                     MOCKED_PARTITIONED_EVOLUTION_DATE_MONTH_IDENTITY_TABLE_NAME);
-    private static final List<String> V3_FORMAT_TABLE_NAMES =
-            ImmutableList.of(MOCKED_UNPARTITIONED_TABLE_NAME0, MOCKED_PARTITIONED_TABLE_NAME1);
 
     private static final List<String> PARTITION_NAMES_0 = Lists.newArrayList("date=2020-01-01",
             "date=2020-01-02",
@@ -128,7 +125,6 @@ public class MockIcebergMetadata implements ConnectorMetadata {
             mockUnPartitionedTable();
             mockPartitionedTable();
             mockPartitionTransforms();
-            mockV3FormatTable();
         } catch (IOException e) {
             throw new RuntimeException(e);
         }
@@ -151,7 +147,7 @@ public class MockIcebergMetadata implements ConnectorMetadata {
         TestTables.TestTable baseTable = TestTables.create(
                 new File(getStarRocksHome() + "/" + MOCKED_UNPARTITIONED_DB_NAME + "/" +
                         MOCKED_UNPARTITIONED_TABLE_NAME0), MOCKED_UNPARTITIONED_TABLE_NAME0,
-                schema, spec, 1);
+                schema, spec, 3);
 
         String tableIdentifier = Joiner.on(":").join(MOCKED_UNPARTITIONED_TABLE_NAME0, UUID.randomUUID());
         MockIcebergTable mockIcebergTable = new MockIcebergTable(1, MOCKED_UNPARTITIONED_TABLE_NAME0,
@@ -208,24 +204,6 @@ public class MockIcebergMetadata implements ConnectorMetadata {
         }
     }
 
-    public static void mockV3FormatTable() throws IOException {
-        MOCK_TABLE_MAP.putIfAbsent(MOCKED_V3_FORMAT_DB_NAME, new CaseInsensitiveMap<>());
-        Map<String, IcebergTableInfo> icebergTableInfoMap = MOCK_TABLE_MAP.get(MOCKED_V3_FORMAT_DB_NAME);
-
-        List<String> allTableNames = Lists.newArrayList(V3_FORMAT_TABLE_NAMES);
-        for (String tblName : allTableNames) {
-            List<Column> columns = getV3FormatTableSchema(tblName);
-            MockIcebergTable icebergTable = getV3FormatIcebergTable(tblName, columns);
-            List<String> colNames = columns.stream().map(Column::getName).collect(Collectors.toList());
-            Map<String, ColumnStatistic> columnStatisticMap =
-                    colNames.stream().collect(Collectors.toMap(Function.identity(), col -> ColumnStatistic.unknown()));
-            icebergTableInfoMap.put(tblName, new IcebergTableInfo(icebergTable, Lists.newArrayList(), 1000, columnStatisticMap));
-        }
-
-
-    }
-
-
     private static List<Column> getPartitionedTableSchema(String tblName) {
         if (tblName.equals(MOCKED_PARTITIONED_TABLE_NAME1)) {
             return ImmutableList.of(new Column("id", Type.INT, true),
@@ -235,12 +213,6 @@ public class MockIcebergMetadata implements ConnectorMetadata {
             return Arrays.asList(new Column("a", Type.VARCHAR), new Column("b", Type.VARCHAR),
                     new Column("c", Type.INT), new Column("d", Type.VARCHAR));
         }
-    }
-
-    private static List<Column> getV3FormatTableSchema(String tblName) {
-        return ImmutableList.of(new Column("c0", Type.INT, true),
-                new Column("c1", Type.BIGINT, true),
-                new Column("c2", Type.STRING, true));
     }
 
     private static List<Column> getPartitionedTransformTableSchema(String tblName) {
@@ -262,12 +234,6 @@ public class MockIcebergMetadata implements ConnectorMetadata {
         }
     }
 
-    private static Schema getV3FormatSchema(String tblName) {
-        return new Schema(required(3, "c0", Types.IntegerType.get()),
-                required(4, "c1", Types.IntegerType.get()),
-                required(5, "c2", Types.StringType.get()));
-    }
-
     private static Schema getIcebergPartitionTransformSchema(String tblName) {
         if (tblName.endsWith("tz")) {
             return new Schema(required(3, "id", Types.IntegerType.get()),
@@ -287,7 +253,7 @@ public class MockIcebergMetadata implements ConnectorMetadata {
             return TestTables.create(
                     new File(getStarRocksHome() + "/" + MOCKED_PARTITIONED_DB_NAME + "/"
                             + MOCKED_PARTITIONED_TABLE_NAME1), MOCKED_PARTITIONED_TABLE_NAME1,
-                    schema, spec, 1);
+                    schema, spec, 3);
 
         } else {
             PartitionSpec spec =
@@ -297,13 +263,6 @@ public class MockIcebergMetadata implements ConnectorMetadata {
                     tblName,
                     schema, spec, 1);
         }
-    }
-
-    private static TestTables.TestTable getV3FormatTable(String tblName, Schema schema) throws IOException {
-        PartitionSpec spec = PartitionSpec.unpartitioned();
-        return TestTables.create(
-                new File(getStarRocksHome() + "/" + tblName + "/" + tblName),
-                tblName, schema, spec, 3);
     }
 
     private static TestTables.TestTable getPartitionTransformTable(String tblName, Schema schema) throws IOException {
@@ -449,15 +408,6 @@ public class MockIcebergMetadata implements ConnectorMetadata {
         return new MockIcebergTable(tblName.hashCode(), tblName, MOCKED_ICEBERG_CATALOG_NAME,
                 null, MOCKED_PARTITIONED_DB_NAME, tblName, schemas, baseTable, null,
                 tableIdentifier, "");
-    }
-
-    public static MockIcebergTable getV3FormatIcebergTable(String tblName, List<Column> schemas) throws IOException {
-        return null;
-        /*
-        Schema schema = getV3FormatTableSchema(tblName);
-        TestTables.TestTable baseTable = getV3FormatTable(tblName, schema);
-        String tableIdentifier = Joiner.on(":").join(tblName, UUID.randomUUID());
-        return new MockIcebergTable(tblName.hashCode());*/
     }
 
     public static MockIcebergTable getPartitionTransformIcebergTable(String tblName, List<Column> schemas)

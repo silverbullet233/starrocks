@@ -395,7 +395,7 @@ public class LateMaterializationRewriter {
         public OptExpression visit(OptExpression optExpression, CollectorContext context) {
             PhysicalOperator op = (PhysicalOperator) optExpression.getOp();
             if (op.getProjection() != null &&
-                    !(op instanceof PhysicalProjectOperator && op instanceof PhysicalOlapScanOperator)) {
+                    !(op instanceof PhysicalProjectOperator && op instanceof PhysicalIcebergScanOperator)) {
                 OptExpression newRoot = splitProjection(optExpression);
                 return newRoot.getOp().accept(this, newRoot, context);
             }
@@ -472,7 +472,15 @@ public class LateMaterializationRewriter {
                         materializedBefore(columnRefOperator, scanOperator, context);
                     }
                 });
-
+                if (scanOperator.getProjection() != null) {
+                    List<ColumnRefOperator> columnRefOperators = scanOperator.getProjection().getUsedColumns()
+                            .getColumnRefOperators(optimizerContext.getColumnRefFactory());
+                    columnRefOperators.forEach(columnRefOperator -> {
+                        if (context.columnSources.containsKey(columnRefOperator)) {
+                            materializedBefore(columnRefOperator, scanOperator, context);
+                        }
+                    });
+                }
             }
 
             return optExpression;
