@@ -84,6 +84,7 @@ set(RUNTIME_FILES
     memory/system_allocator.cpp
     memory/mem_chunk_allocator.cpp
     memory/column_allocator.cpp
+    memory/allocator_v2.cpp
     chunk_cursor.cpp
     sorted_chunks_merger.cpp
     tablets_channel.cpp
