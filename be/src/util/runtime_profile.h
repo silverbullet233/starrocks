@@ -220,6 +220,11 @@ public:
             Update(new_val);
         }
 
+        void add_without_update(int64_t delta) {
+            [[maybe_unused]] int64_t new_val = current_value_.fetch_add(delta, std::memory_order_relaxed) + delta;
+            // Update(new_val);
+        }
+
         /// Tries to increase the current value by delta. If current_value() + delta
         /// exceeds max, return false and current_value is not changed.
         bool try_add(int64_t delta, int64_t max) {
@@ -233,6 +238,18 @@ public:
                 }
             }
         }
+        bool try_add_without_update(int64_t delta, int64_t max) {
+            while (true) {
+                int64_t old_val = current_value_.load(std::memory_order_relaxed);
+                int64_t new_val = old_val + delta;
+                if (UNLIKELY(new_val > max)) return false;
+                if (LIKELY(current_value_.compare_exchange_strong(old_val, new_val, std::memory_order_relaxed))) {
+                    return true;
+                }
+            }
+        }
+
+
 
         void set(int64_t v) override {
             current_value_.store(v, std::memory_order_relaxed);

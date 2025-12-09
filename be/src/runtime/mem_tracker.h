@@ -264,6 +264,34 @@ public:
     }
 
     WARN_UNUSED_RESULT
+    MemTracker* try_consume_without_update(int64_t bytes) {
+        if (UNLIKELY(bytes <= 0)) return nullptr;
+        int64_t i;
+        // Walk the tracker tree top-down.
+        for (i = _all_trackers.size() - 1; i >= 0; --i) {
+            MemTracker* tracker = _all_trackers[i];
+            const int64_t limit = tracker->limit();
+            if (limit < 0) {
+                tracker->_consumption->add(bytes); // No limit at this tracker.
+            } else {
+                if (LIKELY(tracker->_consumption->try_add_without_update(bytes, limit))) {
+                    continue;
+                } else {
+                    // Failed for this mem tracker. Roll back the ones that succeeded.
+                    for (int64_t j = _all_trackers.size() - 1; j > i; --j) {
+                        _all_trackers[j]->_consumption->add(-bytes);
+                    }
+                    return tracker;
+                }
+            }
+        }
+        // Everyone succeeded, return.
+        DCHECK_EQ(i, -1);
+        return nullptr;
+    }
+
+
+    WARN_UNUSED_RESULT
     MemTracker* try_consume_with_limited(int64_t bytes) {
         if (UNLIKELY(bytes <= 0)) return nullptr;
         int64_t i;
@@ -301,6 +329,15 @@ public:
         }
         for (auto* tracker : _all_trackers) {
             tracker->_consumption->add(-bytes);
+        }
+    }
+
+    void release_without_update(int64_t bytes) {
+        if (bytes == 0) {
+            return;
+        }
+        for (auto* tracker : _all_trackers) {
+            tracker->_consumption->add_without_update(-bytes);
         }
     }
 

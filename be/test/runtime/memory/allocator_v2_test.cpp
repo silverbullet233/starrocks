@@ -13,6 +13,8 @@
 // limitations under the License.
 
 #include "runtime/memory/allocator_v2.h"
+#include "runtime/current_thread.h"
+#include "runtime/mem_tracker.h"
 
 #include <gtest/gtest.h>
 
@@ -21,44 +23,53 @@
 
 namespace starrocks::memory {
 
-TEST(BaseAllocatorTest, AllocAndFree) {
-    BaseAllocator<false, false, false> allocator;
-    void* ptr = allocator.alloc(64);
+
+TEST(JemallocAllocatorTest, ClearAndAlignment) {
+    JemallocAllocator<true> allocator;
+    auto* ptr = static_cast<char*>(allocator.alloc(16));
     ASSERT_NE(ptr, nullptr);
-    std::memset(ptr, 0xAB, 64);
-    allocator.free(ptr, 64);
-
-    allocator.free(nullptr, 0);
-}
-
-TEST(BaseAllocatorTest, ReallocPreservesAndZeroes) {
-    BaseAllocator<true, false, false> allocator;
-    auto* ptr = static_cast<char*>(allocator.alloc(8));
-    std::memset(ptr, 1, 8);
-
-    auto* grown = static_cast<char*>(allocator.realloc(ptr, 8, 16));
-    ASSERT_NE(grown, nullptr);
-    for (int i = 0; i < 8; ++i) {
-        EXPECT_EQ(grown[i], 1);
+    for (int i = 0; i < 16; ++i) {
+        EXPECT_EQ(ptr[i], 0);
     }
-    for (int i = 8; i < 16; ++i) {
+
+    std::memset(ptr, 0x5A, 16);
+    auto* grown = static_cast<char*>(allocator.realloc(ptr, 16, 32));
+    ASSERT_NE(grown, nullptr);
+    for (int i = 0; i < 16; ++i) {
+        EXPECT_EQ(grown[i], 0x5A);
+    }
+    for (int i = 16; i < 32; ++i) {
         EXPECT_EQ(grown[i], 0);
     }
 
-    auto* shrunk = static_cast<char*>(allocator.realloc(grown, 16, 4));
-    ASSERT_NE(shrunk, nullptr);
-    for (int i = 0; i < 4; ++i) {
-        EXPECT_EQ(shrunk[i], 1);
-    }
-    allocator.free(shrunk, 4);
+    void* aligned = allocator.alloc(32, 64);
+    ASSERT_NE(aligned, nullptr);
+    EXPECT_EQ(reinterpret_cast<uintptr_t>(aligned) % 64, 0);
+
+    allocator.free(aligned, 32);
+    allocator.free(grown, 32);
 }
 
-TEST(BaseAllocatorTest, Alignment) {
-    BaseAllocator<false, false, false> allocator;
-    void* ptr = allocator.alloc(32, 64);
+TEST(TrackedAllocatorTest, TracksMemTrackerConsumption) {
+    TrackedAllocator<JemallocAllocator<false>> allocator;
+    starrocks::MemTracker tracker(-1, "jemalloc-ut");
+    starrocks::CurrentThreadMemTrackerSetter setter(&tracker);
+
+    constexpr size_t size1 = 64;
+    constexpr size_t size2 = 128;
+    int64_t alloc1 = allocator.nallox(size1, 0);
+    int64_t alloc2 = allocator.nallox(size2, 0);
+
+    void* ptr = allocator.alloc(size1);
     ASSERT_NE(ptr, nullptr);
-    ASSERT_EQ(reinterpret_cast<uintptr_t>(ptr) % 64, 0);
-    allocator.free(ptr, 32);
+    EXPECT_EQ(tracker.consumption(), alloc1);
+
+    ptr = allocator.realloc(ptr, size1, size2);
+    ASSERT_NE(ptr, nullptr);
+    EXPECT_EQ(tracker.consumption(), alloc2);
+
+    allocator.free(ptr, size2);
+    EXPECT_EQ(tracker.consumption(), 0);
 }
 
 } // namespace starrocks::memory

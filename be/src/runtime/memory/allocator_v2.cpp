@@ -22,7 +22,8 @@
 
 namespace starrocks::memory {
 
-void try_consume_memory(size_t size) {
+
+void try_consume_memory(int64_t size) {
     if (LIKELY(starrocks::tls_is_thread_status_init)) {
         if (UNLIKELY(!starrocks::tls_thread_status.try_mem_consume(size))) {
             throw std::bad_alloc();
@@ -34,7 +35,7 @@ void try_consume_memory(size_t size) {
     }
 }
 
-void release_memory(size_t size) {
+void release_memory(int64_t size) {
     if (LIKELY(starrocks::tls_is_thread_status_init)) {
         starrocks::tls_thread_status.mem_release(size);
     } else {
@@ -42,93 +43,112 @@ void release_memory(size_t size) {
     }
 }
 
-template <bool clear_memory, bool use_mmap, bool populate>
-void* BaseAllocator<clear_memory, use_mmap, populate>::alloc(size_t size, size_t alignment) {
-    int64_t alloc_size = je_nallocx(size, 0);
-    try_consume_memory(alloc_size);
-
+template <bool clear_memory>
+void* JemallocAllocator<clear_memory>::alloc(size_t size, size_t alignment) {
     void* ret = nullptr;
-    if (use_mmap && size >= config::mmap_bytes_threshold) {
-    } else {
-        if (alignment <= MALLOC_MIN_ALIGNMENT) {
-            if constexpr (clear_memory) {
-                ret = je_calloc(size, 1);
-            } else {
-                ret = je_malloc(size);
-            }
-            if (UNLIKELY(ret == nullptr)) {
-                release_memory(alloc_size);
-                throw std::bad_alloc();
-            }
+    if (alignment <= MALLOC_MIN_ALIGNMENT) {
+        if constexpr (clear_memory) {
+            ret = je_calloc(size, 1);
         } else {
-            int res = je_posix_memalign(&ret, alignment, size);
-            if (res != 0) {
-                release_memory(alloc_size);
-                throw std::bad_alloc();
-            }
-            if constexpr (clear_memory) {
-                memset(ret, 0, size);
-            }
+            ret = je_malloc(size);
+        }
+    } else {
+        int res = je_posix_memalign(&ret, alignment, size);
+        if (UNLIKELY(res != 0)) {
+            return nullptr;
+        }
+        if constexpr (clear_memory) {
+            memset(ret, 0, size);
         }
     }
     return ret;
 }
 
-template <bool clear_memory, bool use_mmap, bool populate>
-void* BaseAllocator<clear_memory, use_mmap, populate>::realloc(void* ptr, size_t old_size, size_t new_size,
+template <bool clear_memory>
+void* JemallocAllocator<clear_memory>::realloc(void* ptr, size_t old_size, size_t new_size,
                                                            size_t alignment) {
     if (old_size == new_size) {
         return ptr;
     }
-    int64_t old_alloc_size = je_nallocx(old_size, 0);
-    int64_t new_alloc_size = je_nallocx(new_size, 0);
-    int64_t delta = new_alloc_size - old_alloc_size;
-    if (delta > 0) {
-        try_consume_memory(delta);
-    }
-
     void* ret = nullptr;
     if (alignment <= MALLOC_MIN_ALIGNMENT) {
         ret = je_realloc(ptr, new_size);
+        if (UNLIKELY(ret == nullptr)) {
+            return nullptr;
+        }
+        if constexpr (clear_memory) {
+            if (new_size > old_size) {
+                memset(static_cast<char*>(ret) + old_size, 0, new_size - old_size);
+            }
+        }
     } else {
-        int res = je_posix_memalign(&ret, alignment, new_size);
-        if (res == 0 && ptr != nullptr) {
-            size_t copy_size = old_size < new_size ? old_size : new_size;
-            memcpy(ret, ptr, copy_size);
-            je_free(ptr);
+        ret = alloc(new_size, alignment);
+        if (UNLIKELY(ret == nullptr)) {
+            return nullptr;
         }
-    }
-
-    if (UNLIKELY(ret == nullptr)) {
-        if (delta > 0) {
-            release_memory(delta);
-        }
-        throw std::bad_alloc();
-    }
-
-    if constexpr (clear_memory) {
-        if (new_size > old_size) {
-            memset(static_cast<char*>(ret) + old_size, 0, new_size - old_size);
-        }
-    }
-    if (delta < 0) {
-        release_memory(-delta);
+        memcpy(ret, ptr, std::min(old_size, new_size));
+        je_free(ptr);
     }
 
     return ret;
 }
 
-template <bool clear_memory, bool use_mmap, bool populate>
-void BaseAllocator<clear_memory, use_mmap, populate>::free(void* ptr, size_t size) {
-    if (ptr == nullptr) {
+template <bool clear_memory>
+void JemallocAllocator<clear_memory>::free(void* ptr, size_t size) {
+    if (UNLIKELY(ptr == nullptr)) {
         return;
     }
-    size_t alloc_size = je_malloc_usable_size(ptr);
     je_free(ptr);
+}
+
+template <bool clear_memory>
+int64_t JemallocAllocator<clear_memory>::nallox(size_t size, int flags) {
+    return je_nallocx(size, flags);
+}
+
+template <class BaseAllocator>
+void* TrackedAllocator<BaseAllocator>::alloc(size_t size, size_t alignment) {
+    int64_t alloc_size = BaseAllocator::nallox(size, 0);
+    try_consume_memory(alloc_size);
+    void* ptr = BaseAllocator::alloc(size, alignment);
+    if (UNLIKELY(ptr == nullptr)) {
+        release_memory(alloc_size);
+        throw std::bad_alloc();
+    }
+    return ptr;
+}
+
+template <class BaseAllocator>
+void* TrackedAllocator<BaseAllocator>::realloc(void* ptr, size_t old_size, size_t new_size, size_t alignment) {
+    // void* new_ptr = JemallocAllocator<clear_memorye>::realloc(ptr, old_size, new_size, alignment);
+    int64_t old_alloc_size = BaseAllocator::nallox(old_size, 0);
+    int64_t new_alloc_size = BaseAllocator::nallox(new_size, 0);
+    int64_t delta = new_alloc_size - old_alloc_size;
+    try_consume_memory(delta);
+
+    void* ret = BaseAllocator::realloc(ptr, old_size, new_size, alignment);
+    if (UNLIKELY(ret == nullptr)) {
+        release_memory(delta);
+        throw std::bad_alloc();
+    }
+    return ret;
+}
+
+template <class BaseAllocator>
+void TrackedAllocator<BaseAllocator>::free(void* ptr, size_t size) {
+    int64_t alloc_size = BaseAllocator::nallox(size, 0);
+    BaseAllocator::free(ptr, size);
     release_memory(alloc_size);
 }
 
-template class BaseAllocator<false, false, false>;
-template class BaseAllocator<true, false, false>;
+template <class BaseAllocator>
+int64_t TrackedAllocator<BaseAllocator>::nallox(size_t size, int flags) {
+    return BaseAllocator::nallox(size, flags);
+}
+
+template class JemallocAllocator<false>;
+template class JemallocAllocator<true>;
+template class TrackedAllocator<JemallocAllocator<false>>;
+template class TrackedAllocator<JemallocAllocator<true>>;
 
 } // namespace starrocks::memory

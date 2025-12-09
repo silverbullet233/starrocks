@@ -18,13 +18,15 @@
 namespace starrocks::memory {
 
 static constexpr size_t MALLOC_MIN_ALIGNMENT = 8;
+static constexpr size_t MMAP_MIN_ALIGNMENT = 4096;
 
 class Allocator {
-public:
+public: 
     virtual ~Allocator() = default;
-    virtual void* alloc(size_t size, size_t alignment = 0);
-    virtual void* realloc(void* ptr, size_t old_size, size_t new_size, size_t alignment = 0);
-    virtual void free(void* ptr, size_t size);
+    virtual void* alloc(size_t size, size_t alignment = 0) = 0;
+    virtual void* realloc(void* ptr, size_t old_size, size_t new_size, size_t alignment = 0) = 0;
+    virtual void free(void* ptr, size_t size) = 0;
+    virtual int64_t nallox(size_t size, int flags = 0) = 0;
 };
 
 template <class Base, class Derived>
@@ -39,15 +41,35 @@ public:
     void free(void* ptr, size_t size) override {
         static_cast<Derived*>(this)->free(ptr, size);
     }
+    int64_t nallox(size_t size, int flags = 0) override {
+        return static_cast<Derived*>(this)->nallox(size, flags);
+    }
 };
 
-template <bool clear_memory, bool use_mmap, bool populate>
-class BaseAllocator: public AllocatorFactory<Allocator, BaseAllocator<clear_memory, use_mmap, populate>> {
+// @TODO(silverbullet): support using mmap for large memory allocation
+template <bool clear_memory>
+class JemallocAllocator: public AllocatorFactory<Allocator, JemallocAllocator<clear_memory>> {
 public:
-    virtual ~BaseAllocator() = default;
-    virtual void* alloc(size_t size, size_t alignment = 0);
-    virtual void* realloc(void* ptr, size_t old_size, size_t new_size, size_t alignment = 0);
-    virtual void free(void* ptr, size_t size);
+    ~JemallocAllocator() override = default;
+    void* alloc(size_t size, size_t alignment = 0) override;
+    void* realloc(void* ptr, size_t old_size, size_t new_size, size_t alignment = 0) override;
+    void free(void* ptr, size_t size) override;
+    int64_t nallox(size_t size, int flags = 0) override;
+#ifndef BE_TEST
+protected:
+#endif
+    JemallocAllocator() = default;
+};
+
+template <class BaseAllocator>
+class TrackedAllocator: public AllocatorFactory<BaseAllocator, TrackedAllocator<BaseAllocator>> {
+public:
+    TrackedAllocator() = default;
+    ~TrackedAllocator() override = default;
+    void* alloc(size_t size, size_t alignment = 0) override;
+    void* realloc(void* ptr, size_t old_size, size_t new_size, size_t alignment = 0) override;
+    void free(void* ptr, size_t size) override;
+    int64_t nallox(size_t size, int flags = 0) override;
 };
 
 }
