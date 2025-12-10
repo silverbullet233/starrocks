@@ -16,7 +16,6 @@
 
 #include <cstring>
 
-#include "common/config.h"
 #include "runtime/current_thread.h"
 #include <jemalloc/jemalloc.h>
 
@@ -120,7 +119,6 @@ void* TrackedAllocator<BaseAllocator>::alloc(size_t size, size_t alignment) {
 
 template <class BaseAllocator>
 void* TrackedAllocator<BaseAllocator>::realloc(void* ptr, size_t old_size, size_t new_size, size_t alignment) {
-    // void* new_ptr = JemallocAllocator<clear_memorye>::realloc(ptr, old_size, new_size, alignment);
     int64_t old_alloc_size = BaseAllocator::nallox(old_size, 0);
     int64_t new_alloc_size = BaseAllocator::nallox(new_size, 0);
     int64_t delta = new_alloc_size - old_alloc_size;

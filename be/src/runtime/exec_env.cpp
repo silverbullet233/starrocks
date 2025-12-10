@@ -170,6 +170,12 @@ Status GlobalEnv::init() {
     return Status::OK();
 }
 
+Status GlobalEnv::init_for_bench(std::shared_ptr<MemTracker> process_mem_tracker) {
+    _process_mem_tracker = std::move(process_mem_tracker);
+    _is_init = true;
+    return Status::OK();
+}
+
 Status GlobalEnv::_init_mem_tracker() {
     MemTracker::init_type_label_map();
 

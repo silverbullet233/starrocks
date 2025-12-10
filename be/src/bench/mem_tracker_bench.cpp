@@ -15,6 +15,8 @@
 #include <benchmark/benchmark.h>
 #include <glog/logging.h>
 
+#include "runtime/current_thread.h"
+#include "runtime/exec_env.h"
 #include "runtime/mem_tracker.h"
 
 namespace starrocks {
@@ -29,17 +31,23 @@ static MemTracker* shared_tracker() {
     return &root_tracker;
 }
 
+// Tracker tree with no limits set (limit = -1).
+static MemTracker* shared_unlimited_tracker() {
+    static MemTracker root_tracker(-1, "mem_tracker_bench_unlimited_root");
+    return &root_tracker;
+}
+
+constexpr int64_t kBytesPerOp = 256;
+constexpr int kOpsPerIteration = 100000;
+
+
+
 static void BM_memtracker_try_consume(benchmark::State& state) {
-    constexpr int64_t kBytesPerOp = 256;
-    constexpr int kOpsPerIteration = 10000;
     MemTracker* tracker = shared_tracker();
 
     // Reset consumption before each run to keep iterations comparable.
     if (state.thread_index == 0) {
         tracker->set(0);
-        if (tracker->parent() != nullptr) {
-            tracker->parent()->set(0);
-        }
     }
 
     for (auto _ : state) {
@@ -53,18 +61,15 @@ static void BM_memtracker_try_consume(benchmark::State& state) {
 
     const double ops = static_cast<double>(state.iterations()) * kOpsPerIteration;
     state.SetItemsProcessed(static_cast<int64_t>(ops));
-    state.SetBytesProcessed(static_cast<int64_t>(ops * kBytesPerOp));
-    // seconds per try_consume+release
     state.counters["s_per_op"] =
             benchmark::Counter(kOpsPerIteration, benchmark::Counter::kIsIterationInvariantRate |
                                                       benchmark::Counter::kInvert);
 }
+static void BM_memtracker_try_consume_unlimited(benchmark::State& state) {
 
-static void BM_memtracker_try_consume_without_update(benchmark::State& state) {
-    constexpr int64_t kBytesPerOp = 256;
-    constexpr int kOpsPerIteration = 10000;
-    MemTracker* tracker = shared_tracker();
+    MemTracker* tracker = shared_unlimited_tracker();
 
+    // Reset consumption before each run to keep iterations comparable.
     if (state.thread_index == 0) {
         tracker->set(0);
         if (tracker->parent() != nullptr) {
@@ -74,15 +79,62 @@ static void BM_memtracker_try_consume_without_update(benchmark::State& state) {
 
     for (auto _ : state) {
         for (int i = 0; i < kOpsPerIteration; ++i) {
-            auto* failed = tracker->try_consume_without_update(kBytesPerOp);
+            auto* failed = tracker->try_consume(kBytesPerOp);
             DCHECK(failed == nullptr);
-            tracker->release_without_update(kBytesPerOp);
+            tracker->release(kBytesPerOp);
         }
     }
 
     const double ops = static_cast<double>(state.iterations()) * kOpsPerIteration;
     state.SetItemsProcessed(static_cast<int64_t>(ops));
-    state.SetBytesProcessed(static_cast<int64_t>(ops * kBytesPerOp));
+    state.counters["s_per_op"] =
+            benchmark::Counter(kOpsPerIteration, benchmark::Counter::kIsIterationInvariantRate |
+                                                      benchmark::Counter::kInvert);
+}
+
+static void BM_current_thread_try_mem_consume_with_cache(benchmark::State& state) {
+    if (!GlobalEnv::is_init()) {
+        auto status = GlobalEnv::GetInstance()->init_for_bench(std::make_shared<MemTracker>(1024*1024*1024, "mem_tracker_bench_unlimited_root"));
+        CHECK(status.ok()) << status.to_string();
+    }
+
+
+    for (auto _ : state) {
+        CurrentThread& current = CurrentThread::current();
+        CHECK(current.mem_tracker() == GlobalEnv::GetInstance()->process_mem_tracker());
+        for (int i = 0; i < kOpsPerIteration; ++i) {
+            bool ok = current.try_mem_consume(kBytesPerOp);
+            DCHECK(ok);
+            current.mem_release(kBytesPerOp);
+        }
+        current.mem_tracker_ctx_shift();
+    }
+    // Flush any cached counters before reporting.
+
+    const double ops = static_cast<double>(state.iterations()) * kOpsPerIteration;
+    state.SetItemsProcessed(static_cast<int64_t>(ops));
+    state.counters["s_per_op"] =
+            benchmark::Counter(kOpsPerIteration, benchmark::Counter::kIsIterationInvariantRate |
+                                                      benchmark::Counter::kInvert);
+}
+
+static void BM_current_thread_try_mem_consume_without_cache(benchmark::State& state) {
+    if (!GlobalEnv::is_init()) {
+        auto status = GlobalEnv::GetInstance()->init_for_bench(std::make_shared<MemTracker>(1024*1024*1024, "mem_tracker_bench_unlimited_root"));
+        CHECK(status.ok()) << status.to_string();
+    }
+
+    for (auto _ : state) {
+        CHECK(CurrentThread::mem_tracker() == GlobalEnv::GetInstance()->process_mem_tracker());
+        for (int i = 0; i < kOpsPerIteration; ++i) {
+            bool ok = CurrentThread::try_mem_consume_without_cache(kBytesPerOp);
+            DCHECK(ok);
+            CurrentThread::mem_release_without_cache(kBytesPerOp);
+        }
+    }
+
+    const double ops = static_cast<double>(state.iterations()) * kOpsPerIteration;
+    state.SetItemsProcessed(static_cast<int64_t>(ops));
     state.counters["s_per_op"] =
             benchmark::Counter(kOpsPerIteration, benchmark::Counter::kIsIterationInvariantRate |
                                                       benchmark::Counter::kInvert);
@@ -97,7 +149,9 @@ static void process_args(benchmark::internal::Benchmark* b) {
 }
 
 BENCHMARK(BM_memtracker_try_consume)->Apply(process_args);
-BENCHMARK(BM_memtracker_try_consume_without_update)->Apply(process_args);
+BENCHMARK(BM_memtracker_try_consume_unlimited)->Apply(process_args);
+BENCHMARK(BM_current_thread_try_mem_consume_with_cache)->Apply(process_args);
+BENCHMARK(BM_current_thread_try_mem_consume_without_cache)->Apply(process_args);
 
 } // namespace starrocks
 

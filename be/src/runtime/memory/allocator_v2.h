@@ -55,9 +55,9 @@ public:
     void* realloc(void* ptr, size_t old_size, size_t new_size, size_t alignment = 0) override;
     void free(void* ptr, size_t size) override;
     int64_t nallox(size_t size, int flags = 0) override;
-#ifndef BE_TEST
-protected:
-#endif
+// #ifndef BE_TEST
+// protected:
+// #endif
     JemallocAllocator() = default;
 };
 

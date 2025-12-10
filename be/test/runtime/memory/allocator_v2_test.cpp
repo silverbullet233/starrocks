@@ -61,14 +61,17 @@ TEST(TrackedAllocatorTest, TracksMemTrackerConsumption) {
     int64_t alloc2 = allocator.nallox(size2, 0);
 
     void* ptr = allocator.alloc(size1);
+    CurrentThread::current().mem_tracker_ctx_shift();
     ASSERT_NE(ptr, nullptr);
     EXPECT_EQ(tracker.consumption(), alloc1);
 
     ptr = allocator.realloc(ptr, size1, size2);
+    CurrentThread::current().mem_tracker_ctx_shift();
     ASSERT_NE(ptr, nullptr);
     EXPECT_EQ(tracker.consumption(), alloc2);
 
     allocator.free(ptr, size2);
+    CurrentThread::current().mem_tracker_ctx_shift();
     EXPECT_EQ(tracker.consumption(), 0);
 }
 
