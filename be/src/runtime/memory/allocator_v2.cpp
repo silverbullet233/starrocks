@@ -109,10 +109,22 @@ template <class BaseAllocator>
 void* TrackedAllocator<BaseAllocator>::alloc(size_t size, size_t alignment) {
     int64_t alloc_size = BaseAllocator::nallox(size, 0);
     try_consume_memory(alloc_size);
-    void* ptr = BaseAllocator::alloc(size, alignment);
-    if (UNLIKELY(ptr == nullptr)) {
-        release_memory(alloc_size);
-        throw std::bad_alloc();
+    void* ptr = nullptr;
+    if constexpr (BaseAllocator::throw_bad_alloc_on_failure()) {
+        try {
+            ptr = BaseAllocator::alloc(size, alignment);
+        } catch (const std::bad_alloc& e) {
+            release_memory(alloc_size);
+            throw;
+        }
+        starrocks::CurrentThread::update_allocation_by_allocator(alloc_size);
+    } else {
+        ptr = BaseAllocator::alloc(size, alignment);
+        if (UNLIKELY(ptr == nullptr)) {
+            release_memory(alloc_size);
+            throw std::bad_alloc();
+        }
+        starrocks::CurrentThread::update_allocation_by_allocator(alloc_size);
     }
     return ptr;
 }
@@ -123,11 +135,22 @@ void* TrackedAllocator<BaseAllocator>::realloc(void* ptr, size_t old_size, size_
     int64_t new_alloc_size = BaseAllocator::nallox(new_size, 0);
     int64_t delta = new_alloc_size - old_alloc_size;
     try_consume_memory(delta);
-
-    void* ret = BaseAllocator::realloc(ptr, old_size, new_size, alignment);
-    if (UNLIKELY(ret == nullptr)) {
-        release_memory(delta);
-        throw std::bad_alloc();
+    void* ret = nullptr;
+    if constexpr (BaseAllocator::throw_bad_alloc_on_failure()) {
+        try {
+            ret = BaseAllocator::realloc(ptr, old_size, new_size, alignment);
+        } catch (const std::bad_alloc& e) {
+            release_memory(delta);
+            throw;
+        }
+        starrocks::CurrentThread::update_allocation_by_allocator(new_alloc_size);
+    } else {
+        ret = BaseAllocator::realloc(ptr, old_size, new_size, alignment);
+        if (UNLIKELY(ret == nullptr)) {
+            release_memory(delta);
+            throw std::bad_alloc();
+        }
+        starrocks::CurrentThread::update_allocation_by_allocator(new_alloc_size);
     }
     return ret;
 }
@@ -144,9 +167,64 @@ int64_t TrackedAllocator<BaseAllocator>::nallox(size_t size, int flags) {
     return BaseAllocator::nallox(size, flags);
 }
 
+template <class BaseAllocator, class Counter>
+void* CountingAllocator<BaseAllocator, Counter>::alloc(size_t size, size_t alignment) {
+    void* ptr = nullptr;
+    if constexpr (BaseAllocator::throw_bad_alloc_on_failure()) {
+        try {
+            ptr = BaseAllocator::alloc(size, alignment);
+        } catch (const std::bad_alloc& e) {
+            throw;
+        }
+    } else {
+         ptr = BaseAllocator::alloc(size, alignment);
+         if (UNLIKELY(ptr == nullptr)) {
+            return nullptr;
+         }
+    }
+    _counter.add(size);
+    return ptr;
+}
+
+template <class BaseAllocator, class Counter>
+void* CountingAllocator<BaseAllocator, Counter>::realloc(void* ptr, size_t old_size, size_t new_size,
+                                                         size_t alignment) {
+    void* ret = nullptr;
+    if constexpr (BaseAllocator::throw_bad_alloc_on_failure()) {
+        try {
+            ret = BaseAllocator::realloc(ptr, old_size, new_size, alignment);
+        } catch (const std::bad_alloc& e) {
+            throw;
+        }
+    } else {
+        ret = BaseAllocator::realloc(ptr, old_size, new_size, alignment);
+        if (UNLIKELY(ret == nullptr)) {
+            return nullptr;
+        }
+    }
+    _counter.add(static_cast<int64_t>(new_size)- static_cast<int64_t>(old_size));
+    return ret;
+}
+
+template <class BaseAllocator, class Counter>
+void CountingAllocator<BaseAllocator, Counter>::free(void* ptr, size_t size) {
+    BaseAllocator::free(ptr, size);
+    _counter.add(-static_cast<int64_t>(size));
+}
+
+template <class BaseAllocator, class Counter>
+int64_t CountingAllocator<BaseAllocator, Counter>::nallox(size_t size, int flags) {
+    return BaseAllocator::nallox(size, flags);
+}
+
 template class JemallocAllocator<false>;
 template class JemallocAllocator<true>;
 template class TrackedAllocator<JemallocAllocator<false>>;
 template class TrackedAllocator<JemallocAllocator<true>>;
+template class CountingAllocator<JemallocAllocator<false>, IntCounter>;
+template class CountingAllocator<JemallocAllocator<false>, AtomicIntCounter>;
+
+
+
 
 } // namespace starrocks::memory

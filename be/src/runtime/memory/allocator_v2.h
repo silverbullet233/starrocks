@@ -13,7 +13,11 @@
 // limitations under the License.
 
 #pragma once
+#include <concepts>
 #include <cstdlib>
+#include <atomic>
+
+#include "common/compiler_util.h"
 
 namespace starrocks::memory {
 
@@ -44,6 +48,9 @@ public:
     int64_t nallox(size_t size, int flags = 0) override {
         return static_cast<Derived*>(this)->nallox(size, flags);
     }
+    static constexpr bool throw_bad_alloc_on_failure() {
+        return Derived::throw_bad_alloc_on_failure();
+    }
 };
 
 // @TODO(silverbullet): support using mmap for large memory allocation
@@ -55,6 +62,7 @@ public:
     void* realloc(void* ptr, size_t old_size, size_t new_size, size_t alignment = 0) override;
     void free(void* ptr, size_t size) override;
     int64_t nallox(size_t size, int flags = 0) override;
+    static constexpr bool throw_bad_alloc_on_failure() {return false;}
 // #ifndef BE_TEST
 // protected:
 // #endif
@@ -70,6 +78,54 @@ public:
     void* realloc(void* ptr, size_t old_size, size_t new_size, size_t alignment = 0) override;
     void free(void* ptr, size_t size) override;
     int64_t nallox(size_t size, int flags = 0) override;
+    static constexpr bool throw_bad_alloc_on_failure() {return true;}
 };
+
+template <typename C>
+concept Counter = requires(C counter, int64_t delta) {
+    { counter.add(delta) } -> std::same_as<void>;
+    { counter.value() } -> std::convertible_to<int64_t>;
+};
+
+struct IntCounter {
+    int64_t v{0};
+    ALWAYS_INLINE void add(int64_t delta) {
+        v += delta;
+    }
+    ALWAYS_INLINE int64_t value() const {
+        return v;
+    }
+};
+
+struct AtomicIntCounter {
+    std::atomic<int64_t> v{0};
+    ALWAYS_INLINE void add(int64_t delta) {
+        v.fetch_add(delta, std::memory_order_relaxed);
+    }
+    ALWAYS_INLINE int64_t value() const {
+        return v.load(std::memory_order_relaxed);
+    }
+};
+
+
+template <class BaseAllocator, class Counter>
+class CountingAllocator: public AllocatorFactory<BaseAllocator, CountingAllocator<BaseAllocator, Counter>> {
+public:
+    CountingAllocator() = default;
+    ~CountingAllocator() override = default;
+    void* alloc(size_t size, size_t alignment = 0) override;
+    void* realloc(void* ptr, size_t old_size, size_t new_size, size_t alignment = 0) override;
+    void free(void* ptr, size_t size) override;
+    int64_t nallox(size_t size, int flags = 0) override;
+
+    static constexpr bool throw_bad_alloc_on_failure() {
+        return BaseAllocator::throw_bad_alloc_on_failure();
+    }
+    int64_t memory_usage() const { return _counter.value(); }
+
+private:
+    Counter _counter;
+};
+
 
 }

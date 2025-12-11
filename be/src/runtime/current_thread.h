@@ -355,6 +355,13 @@ public:
         }
     }
 
+    static void update_allocation_by_allocator(int64_t size) {
+        MemTracker* cur_tracker = mem_tracker();
+        if (cur_tracker != nullptr && size != 0) {
+            cur_tracker->update_allocation_by_allocator(size);
+        }
+    }
+
     // get last time try consume and reset
     int64_t try_consume_mem_size() { return _mem_cache_manager.try_consume_mem_size(); }
 

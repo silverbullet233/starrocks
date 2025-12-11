@@ -18,6 +18,7 @@
 
 #include <gtest/gtest.h>
 
+#include <atomic>
 #include <cstdint>
 #include <cstring>
 
@@ -63,16 +64,42 @@ TEST(TrackedAllocatorTest, TracksMemTrackerConsumption) {
     void* ptr = allocator.alloc(size1);
     CurrentThread::current().mem_tracker_ctx_shift();
     ASSERT_NE(ptr, nullptr);
-    EXPECT_EQ(tracker.consumption(), alloc1);
+    ASSERT_EQ(tracker.consumption(), alloc1);
+    ASSERT_EQ(tracker.allocation_by_allocator(), alloc1);
 
     ptr = allocator.realloc(ptr, size1, size2);
     CurrentThread::current().mem_tracker_ctx_shift();
     ASSERT_NE(ptr, nullptr);
-    EXPECT_EQ(tracker.consumption(), alloc2);
+    ASSERT_EQ(tracker.consumption(), alloc2);
+    ASSERT_EQ(tracker.allocation_by_allocator(), alloc1 + alloc2);
 
     allocator.free(ptr, size2);
     CurrentThread::current().mem_tracker_ctx_shift();
-    EXPECT_EQ(tracker.consumption(), 0);
+    ASSERT_EQ(tracker.consumption(), 0);
+}
+
+template <typename Counter>
+void AssertCountingBehavior(size_t size1, size_t size2) {
+    CountingAllocator<JemallocAllocator<false>, Counter> allocator;
+
+    void* ptr = allocator.alloc(size1);
+    ASSERT_NE(ptr, nullptr);
+    ASSERT_EQ(allocator.memory_usage(), static_cast<int64_t>(size1));
+
+    ptr = allocator.realloc(ptr, size1, size2);
+    ASSERT_NE(ptr, nullptr);
+    ASSERT_EQ(allocator.memory_usage(), static_cast<int64_t>(size2));
+
+    allocator.free(ptr, size2);
+    ASSERT_EQ(allocator.memory_usage(), 0);
+}
+
+TEST(CountingAllocatorTest, CountsWithIntCounter) {
+    AssertCountingBehavior<IntCounter>(64, 128);
+}
+
+TEST(CountingAllocatorTest, CountsWithAtomicIntCounter) {
+    AssertCountingBehavior<AtomicIntCounter>(256, 64);
 }
 
 } // namespace starrocks::memory
