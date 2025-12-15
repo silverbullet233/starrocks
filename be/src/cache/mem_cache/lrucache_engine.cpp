@@ -17,14 +17,17 @@
 #include <butil/fast_rand.h>
 
 namespace starrocks {
-Status LRUCacheEngine::init(const MemCacheOptions& options) {
+
+template <class Alloc>
+Status LRUCacheEngine<Alloc>::init(const MemCacheOptions& options) {
     _cache = std::make_unique<ShardedLRUCache>(options.mem_space_size);
     _initialized.store(true, std::memory_order_relaxed);
     return Status::OK();
 }
 
-Status LRUCacheEngine::insert(const std::string& key, void* value, size_t size, MemCacheDeleter deleter,
-                              MemCacheHandlePtr* handle, const MemCacheWriteOptions& options) {
+template <class Alloc>
+Status LRUCacheEngine<Alloc>::insert(const std::string& key, void* value, size_t size, MemCacheDeleter deleter,
+                                     MemCacheHandlePtr* handle, const MemCacheWriteOptions& options) {
     if (!_check_write(size, options)) {
         return Status::InternalError("cache insertion is rejected");
     }
@@ -35,7 +38,8 @@ Status LRUCacheEngine::insert(const std::string& key, void* value, size_t size, 
     return Status::OK();
 }
 
-Status LRUCacheEngine::lookup(const std::string& key, MemCacheHandlePtr* handle, MemCacheReadOptions* options) {
+template <class Alloc>
+Status LRUCacheEngine<Alloc>::lookup(const std::string& key, MemCacheHandlePtr* handle, MemCacheReadOptions* options) {
     auto* lru_handle = _cache->lookup(CacheKey(key));
     if (!lru_handle) {
         return Status::NotFound("no such entry");
@@ -44,7 +48,8 @@ Status LRUCacheEngine::lookup(const std::string& key, MemCacheHandlePtr* handle,
     return Status::OK();
 }
 
-bool LRUCacheEngine::exist(const std::string& key) const {
+template <class Alloc>
+bool LRUCacheEngine<Alloc>::exist(const std::string& key) const {
     auto* handle = _cache->lookup(CacheKey(key));
     if (!handle) {
         return false;
@@ -54,76 +59,97 @@ bool LRUCacheEngine::exist(const std::string& key) const {
     }
 }
 
-Status LRUCacheEngine::remove(const std::string& key) {
+template <class Alloc>
+Status LRUCacheEngine<Alloc>::remove(const std::string& key) {
     _cache->erase(CacheKey(key));
     return Status::OK();
 }
 
-Status LRUCacheEngine::update_mem_quota(size_t quota_bytes) {
+template <class Alloc>
+Status LRUCacheEngine<Alloc>::update_mem_quota(size_t quota_bytes) {
     _cache->set_capacity(quota_bytes);
     return Status::OK();
 }
 
-const DataCacheMemMetrics LRUCacheEngine::cache_metrics() const {
+template <class Alloc>
+const DataCacheMemMetrics LRUCacheEngine<Alloc>::cache_metrics() const {
     return DataCacheMemMetrics{.mem_quota_bytes = _cache->get_capacity(), .mem_used_bytes = _cache->get_memory_usage()};
 }
 
-Status LRUCacheEngine::shutdown() {
+template <class Alloc>
+Status LRUCacheEngine<Alloc>::shutdown() {
     (void)_cache->prune();
     return Status::OK();
 }
 
-Status LRUCacheEngine::prune() {
+template <class Alloc>
+Status LRUCacheEngine<Alloc>::prune() {
     _cache->prune();
     return Status::OK();
 }
 
-void LRUCacheEngine::release(MemCacheHandlePtr handle) {
+template <class Alloc>
+void LRUCacheEngine<Alloc>::release(MemCacheHandlePtr handle) {
     auto lru_handle = reinterpret_cast<Cache::Handle*>(handle);
     _cache->release(lru_handle);
 }
 
-const void* LRUCacheEngine::value(MemCacheHandlePtr handle) {
+template <class Alloc>
+const void* LRUCacheEngine<Alloc>::value(MemCacheHandlePtr handle) {
     auto lru_handle = reinterpret_cast<Cache::Handle*>(handle);
     return _cache->value(lru_handle);
 }
 
-Status LRUCacheEngine::adjust_mem_quota(int64_t delta, size_t min_capacity) {
+template <class Alloc>
+Status LRUCacheEngine<Alloc>::adjust_mem_quota(int64_t delta, size_t min_capacity) {
     if (_cache->adjust_capacity(delta, min_capacity)) {
         return Status::OK();
     }
     return Status::InternalError("adjust quota failed");
 }
 
-size_t LRUCacheEngine::mem_quota() const {
+template <class Alloc>
+size_t LRUCacheEngine<Alloc>::mem_quota() const {
     return _cache->get_capacity();
 }
 
-size_t LRUCacheEngine::mem_usage() const {
+template <class Alloc>
+size_t LRUCacheEngine<Alloc>::mem_usage() const {
     return _cache->get_memory_usage();
 }
 
-size_t LRUCacheEngine::lookup_count() const {
+template <class Alloc>
+size_t LRUCacheEngine<Alloc>::lookup_count() const {
     return _cache->get_lookup_count();
 }
 
-size_t LRUCacheEngine::hit_count() const {
+template <class Alloc>
+size_t LRUCacheEngine<Alloc>::hit_count() const {
     return _cache->get_hit_count();
 }
 
-size_t LRUCacheEngine::insert_count() const {
+template <class Alloc>
+size_t LRUCacheEngine<Alloc>::insert_count() const {
     return _cache->get_insert_count();
 }
 
-size_t LRUCacheEngine::insert_evict_count() const {
+template <class Alloc>
+size_t LRUCacheEngine<Alloc>::insert_evict_count() const {
     return _cache->get_insert_evict_count();
 }
 
-size_t LRUCacheEngine::release_evict_count() const {
+template <class Alloc>
+size_t LRUCacheEngine<Alloc>::release_evict_count() const {
     return _cache->get_release_evict_count();
 }
 
-bool LRUCacheEngine::_check_write(size_t charge, const MemCacheWriteOptions& options) const {
+template <class Alloc>
+memory::Allocator* LRUCacheEngine<Alloc>::get_allocator() const {
+    return _cache->get_allocator();
+}
+
+template <class Alloc>
+bool LRUCacheEngine<Alloc>::_check_write(size_t charge, const MemCacheWriteOptions& options) const {
     if (options.evict_probability >= 100) {
         return true;
     }
@@ -143,4 +169,7 @@ bool LRUCacheEngine::_check_write(size_t charge, const MemCacheWriteOptions& opt
     }
     return false;
 }
+
+// Explicit instantiation for the default allocator to provide symbols to callers.
+template class LRUCacheEngine<DefaultCacheAllocator>;
 } // namespace starrocks

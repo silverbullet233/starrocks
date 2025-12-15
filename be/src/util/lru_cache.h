@@ -12,6 +12,7 @@
 #include <string>
 #include <string_view>
 #include <vector>
+#include "runtime/memory/allocator_v2.h"
 
 #include "util/slice.h"
 
@@ -222,9 +223,9 @@ typedef struct LRUHandle {
         }
     }
 
-    void free() {
+    void free(memory::Allocator* allocator) {
         (*deleter)(key(), value);
-        ::free(this);
+        allocator->free(this, sizeof(this));
     }
 
 } LRUHandle;
@@ -235,11 +236,18 @@ typedef struct LRUHandle {
 // we have tested.  E.g., readrandom speeds up by ~5% over the g++
 // 4.4.3's builtin hashtable.
 
-class HandleTable {
+using DefaultCacheAllocator = memory::ThreadSafeCountingAllocator<memory::TrackedAllocator<memory::JemallocAllocator<false>>>;
+
+template <class Alloc = DefaultCacheAllocator>
+class HandleTable : private memory::AllocHolder<Alloc> {
 public:
     HandleTable() { _resize(); }
 
-    ~HandleTable() { delete[] _list; }
+    ~HandleTable() {
+        if (_list != nullptr && _length > 0) {
+            this->get_allocator()->free(_list, sizeof(LRUHandle*) * _length);
+        }
+    }
 
     LRUHandle* lookup(const CacheKey& key, uint32_t hash);
 
@@ -262,8 +270,11 @@ private:
 };
 
 // A single shard of sharded cache.
-class LRUCache {
+template <class Alloc = DefaultCacheAllocator>
+class LRUCache : private memory::AllocHolder<Alloc> {
 public:
+    using HandleTable = HandleTable<Alloc>;
+
     LRUCache();
     ~LRUCache() noexcept;
 
@@ -319,8 +330,11 @@ private:
 static const int kNumShardBits = 5;
 static const int kNumShards = 1 << kNumShardBits;
 
-class ShardedLRUCache : public Cache {
+template <class Alloc = DefaultCacheAllocator>
+class ShardedLRUCache : public Cache, private memory::AllocHolder<Alloc> {
 public:
+    using LRUCache = LRUCache<Alloc>;
+
     explicit ShardedLRUCache(size_t capacity);
     ~ShardedLRUCache() override = default;
     Handle* insert(const CacheKey& key, void* value, size_t value_size,
@@ -343,6 +357,7 @@ public:
     size_t get_insert_evict_count() const override;
     size_t get_release_evict_count() const override;
     bool adjust_capacity(int64_t delta, size_t min_capacity = 0) override;
+    memory::Allocator* get_allocator() const;
 
 private:
     static uint32_t _hash_slice(const CacheKey& s);

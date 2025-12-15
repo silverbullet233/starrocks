@@ -74,6 +74,6 @@ public:
     void invalidate_all();
 
 private:
-    ShardedLRUCache _cache;
+    ShardedLRUCache<DefaultCacheAllocator> _cache;
 };
 } // namespace starrocks::query_cache

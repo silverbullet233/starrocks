@@ -352,7 +352,7 @@ public:
     Cache* get_cache() { return &_cache; }
 
 private:
-    ShardedLRUCache _cache;
+    ShardedLRUCache<> _cache;
 };
 
 size_t JITCallable::getSize() {
@@ -411,7 +411,7 @@ public:
     Cache* get_cache() { return &_cache; }
 
 private:
-    ShardedLRUCache _cache;
+    ShardedLRUCache<> _cache;
 };
 
 // Optimise and compile the module.

@@ -184,4 +184,36 @@ Status StoragePageCache::insert(const std::string& key, void* data, int64_t size
     return st;
 }
 
+PageData::~PageData() {
+    if (_data != nullptr) {
+        _allocator->free(_data, _capacity);
+    }
+}
+
+Status StoragePageCache::insert(const std::string& key, PageData* data, const MemCacheWriteOptions& opts,
+                                PageCacheHandle* handle) {
+#ifndef BE_TEST
+    int64_t mem_size = data->_allocator->nallox(data->size()) + sizeof(*data);
+    tls_thread_status.mem_release(mem_size);
+    SCOPED_THREAD_LOCAL_MEM_TRACKER_SETTER(nullptr);
+    tls_thread_status.mem_consume(mem_size);
+#else
+    int64_t mem_size = (*data)->size + sizeof(*data);
+#endif
+
+    auto deleter = [](const starrocks::CacheKey& key, void* value) {
+        auto* cache_item = (PageData*)value;
+        delete cache_item;
+    };
+
+    MemCacheHandle* obj_handle = nullptr;
+    // Use mem size managed by memory allocator as this record charge size.
+    // At the same time, we should record this record size for data fetching when lookup.
+    Status st = _cache->insert(key, (void*)data, mem_size, deleter, &obj_handle, opts);
+    if (st.ok()) {
+        *handle = PageCacheHandle(_cache, obj_handle);
+        StoragePageCacheMetrics::returned_page_handle_count++;
+    }
+    return st;
+}
 } // namespace starrocks

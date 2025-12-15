@@ -101,7 +101,7 @@ void JemallocAllocator<clear_memory>::free(void* ptr, size_t size) {
 }
 
 template <bool clear_memory>
-int64_t JemallocAllocator<clear_memory>::nallox(size_t size, int flags) {
+int64_t JemallocAllocator<clear_memory>::nallox(size_t size, int flags) const {
     return je_nallocx(size, flags);
 }
 
@@ -163,7 +163,7 @@ void TrackedAllocator<BaseAllocator>::free(void* ptr, size_t size) {
 }
 
 template <class BaseAllocator>
-int64_t TrackedAllocator<BaseAllocator>::nallox(size_t size, int flags) {
+int64_t TrackedAllocator<BaseAllocator>::nallox(size_t size, int flags) const {
     return BaseAllocator::nallox(size, flags);
 }
 
@@ -213,7 +213,7 @@ void CountingAllocator<BaseAllocator, Counter>::free(void* ptr, size_t size) {
 }
 
 template <class BaseAllocator, class Counter>
-int64_t CountingAllocator<BaseAllocator, Counter>::nallox(size_t size, int flags) {
+int64_t CountingAllocator<BaseAllocator, Counter>::nallox(size_t size, int flags) const {
     return BaseAllocator::nallox(size, flags);
 }
 
@@ -223,6 +223,8 @@ template class TrackedAllocator<JemallocAllocator<false>>;
 template class TrackedAllocator<JemallocAllocator<true>>;
 template class CountingAllocator<JemallocAllocator<false>, IntCounter>;
 template class CountingAllocator<JemallocAllocator<false>, AtomicIntCounter>;
+template class CountingAllocator<TrackedAllocator<JemallocAllocator<false>>, IntCounter>;
+template class CountingAllocator<TrackedAllocator<JemallocAllocator<false>>, AtomicIntCounter>;
 
 
 
