@@ -34,6 +34,9 @@ public:
     static constexpr size_t kElementSize = sizeof(T);
     static constexpr size_t kPadding = ((padding + kElementSize - 1) / kElementSize) * kElementSize;
 
+    using iterator = T*;
+    using const_iterator = const T*;
+
     RawBuffer() = default;
     RawBuffer(RawBuffer&& rhs) noexcept;
     RawBuffer& operator=(RawBuffer&&) noexcept;
@@ -43,10 +46,10 @@ public:
 
     T* data() { return reinterpret_cast<T*>(_start); }
     const T* data() const { return reinterpret_cast<const T*>(_start); }
-    T* begin() { return reinterpret_cast<T*>(_start); }
-    const T* begin() const { return reinterpret_cast<const T*>(_start); }
-    T* end() { return reinterpret_cast<T*>(_end); }
-    const T* end() const {
+    iterator begin() { return reinterpret_cast<T*>(_start); }
+    const_iterator begin() const { return reinterpret_cast<const T*>(_start); }
+    iterator end() { return reinterpret_cast<T*>(_end); }
+    const_iterator end() const {
         return reinterpret_cast<const T*>(_end);
     }
     bool empty() const { return _start == _end; }
@@ -80,11 +83,11 @@ public:
     T& emplace_back(memory::Allocator* allocator, Args&&... args);
     void pop_back();
 
-    T* insert(const T* pos, const T& value, memory::Allocator* allocator);
-    T* insert(const T* pos, T&& value, memory::Allocator* allocator);
+    iterator insert(const T* pos, const T& value, memory::Allocator* allocator);
+    iterator insert(const T* pos, T&& value, memory::Allocator* allocator);
     template <class InputIt>
-    T* insert(const T* pos, InputIt first, InputIt last, memory::Allocator* allocator);
-    T* insert(const T* pos, std::initializer_list<T> ilist, memory::Allocator* allocator);
+    iterator insert(const T* pos, InputIt first, InputIt last, memory::Allocator* allocator);
+    iterator insert(const T* pos, std::initializer_list<T> ilist, memory::Allocator* allocator);
 
     void swap(RawBuffer& other) noexcept;
 
@@ -98,6 +101,9 @@ protected:
 template <class T, size_t padding = 16>
 class Buffer : protected RawBuffer<T, padding> {
 public:
+    using iterator = typename RawBuffer<T, padding>::iterator;
+    using const_iterator = typename RawBuffer<T, padding>::const_iterator;  
+
     explicit Buffer(memory::Allocator* allocator) : _allocator(allocator) {}
     Buffer(Buffer&&) noexcept;
     Buffer& operator=(Buffer&&) noexcept;
@@ -120,11 +126,11 @@ public:
     T& emplace_back(Args&&... args);
     void pop_back();
 
-    T* insert(const T* pos, const T& value);
-    T* insert(const T* pos, T&& value);
+    iterator insert(const T* pos, const T& value);
+    iterator insert(const T* pos, T&& value);
     template <class InputIt>
-    T* insert(const T* pos, InputIt first, InputIt last);
-    T* insert(const T* pos, std::initializer_list<T> ilist);
+    iterator insert(const T* pos, InputIt first, InputIt last);
+    iterator insert(const T* pos, std::initializer_list<T> ilist);
 
     void swap(Buffer& other) noexcept;
 
