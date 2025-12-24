@@ -14,8 +14,11 @@
 
 #include "runtime/memory/allocator_v2.h"
 
+#include <algorithm>
+#include <cstdlib>
 #include <cstring>
 
+#include "gutil/strings/fastmem.h"
 #include "runtime/current_thread.h"
 #include <jemalloc/jemalloc.h>
 
@@ -44,6 +47,7 @@ void release_memory(int64_t size) {
 
 template <bool clear_memory>
 void* JemallocAllocator<clear_memory>::alloc(size_t size, size_t alignment) {
+    // std::cout << "alloc size: " << size << ", alignment: " << alignment << ", nallox: " << nallox(size, 0) << std::endl;
     void* ret = nullptr;
     if (alignment <= MALLOC_MIN_ALIGNMENT) {
         if constexpr (clear_memory) {
@@ -85,7 +89,7 @@ void* JemallocAllocator<clear_memory>::realloc(void* ptr, size_t old_size, size_
         if (UNLIKELY(ret == nullptr)) {
             return nullptr;
         }
-        memcpy(ret, ptr, std::min(old_size, new_size));
+        strings::memcpy_inlined(ret, ptr, old_size);
         je_free(ptr);
     }
 
@@ -101,13 +105,14 @@ void JemallocAllocator<clear_memory>::free(void* ptr, size_t size) {
 }
 
 template <bool clear_memory>
-int64_t JemallocAllocator<clear_memory>::nallox(size_t size, int flags) const {
+ALWAYS_INLINE int64_t JemallocAllocator<clear_memory>::nallox(size_t size, int flags) const {
     return je_nallocx(size, flags);
 }
 
 template <class BaseAllocator>
 void* TrackedAllocator<BaseAllocator>::alloc(size_t size, size_t alignment) {
     int64_t alloc_size = BaseAllocator::nallox(size, 0);
+    // std::cout << "alloc_size: " << alloc_size << std::endl;
     try_consume_memory(alloc_size);
     void* ptr = nullptr;
     if constexpr (BaseAllocator::throw_bad_alloc_on_failure()) {

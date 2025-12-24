@@ -234,13 +234,13 @@ static void deleter(const CacheKey& key, void* v) {
     std::cout << "delete key " << key.to_string() << std::endl;
 }
 
-static void insert_LRUCache(LRUCache& cache, const CacheKey& key, int value, CachePriority priority) {
+static void insert_LRUCache(LRUCache<>& cache, const CacheKey& key, int value, CachePriority priority) {
     uint32_t hash = key.hash(key.data(), key.size(), 0);
     cache.release(cache.insert(key, hash, EncodeValue(value), value, &deleter, priority));
 }
 
 TEST_F(CacheTest, Usage) {
-    LRUCache cache;
+    LRUCache<> cache;
     cache.set_capacity(1000);
 
     CacheKey key1("100");

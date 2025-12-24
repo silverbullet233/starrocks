@@ -30,6 +30,7 @@
 #include "gutil/strings/substitute.h"
 #include "runtime/current_thread.h"
 #include "runtime/exec_env.h"
+#include "runtime/memory/allocator_v2.h"
 #include "util/raw_container.h"
 #include "util/thrift_util.h"
 
@@ -52,8 +53,9 @@ PageReader::PageReader(io::SeekableInputStream* stream, size_t start_offset, siz
         _cache = DataCache::GetInstance()->page_cache();
         _init_page_cache_key();
     }
-    _compressed_buf = std::make_unique<std::vector<uint8_t>>();
-    _uncompressed_buf = std::make_unique<std::vector<uint8_t>>();
+    auto* allocator = _cache != nullptr ? _cache->get_allocator() : &memory::kDefaultAllocator;
+    _compressed_buf = std::make_unique<PageData>(allocator);
+    _uncompressed_buf = std::make_unique<PageData>(allocator);
 }
 
 Status PageReader::next_page() {
@@ -72,11 +74,9 @@ Status PageReader::_deal_page_with_cache() {
     if (ret) {
         _hit_cache = true;
         _opts.stats->page_cache_read_counter += 1;
-        // TODO: This is an ugly implementation. The _cache_buf is used both as a const pointer
-        //  retrieved from the cache and as a temporary mutable pointer before insertion into the cache.
-        //  Therefore, I must use const_cast here, which will be optimized later.
-        _cache_buf =
-                const_cast<std::vector<uint8_t>*>(reinterpret_cast<const std::vector<uint8_t>*>(cache_handle.data()));
+        // Cache data is stored as PageData* or std::vector<uint8_t>* (for backward compatibility)
+        // We need to handle both cases. For now, assume it's PageData*.
+        _cache_buf = const_cast<PageData*>(reinterpret_cast<const PageData*>(cache_handle.data()));
         _page_handle = PageHandle(std::move(cache_handle));
         _header_length = _cache_buf->size();
         auto st = deserialize_thrift_msg(_cache_buf->data(), &_header_length, TProtocolType::COMPACT, &_cur_header);
@@ -84,7 +84,8 @@ Status PageReader::_deal_page_with_cache() {
         _next_header_pos = _offset + _header_length + _data_length();
         RETURN_IF_ERROR(_skip_bytes(_header_length + _data_length()));
     } else {
-        auto cache_buf = std::make_unique<std::vector<uint8_t>>();
+        auto* allocator = _cache->get_allocator();
+        auto cache_buf = std::make_unique<PageData>(allocator);
         _cache_buf = cache_buf.get();
         RETURN_IF_ERROR(_read_and_deserialize_header(true));
         if (config::enable_adjustment_page_cache_skip && !_cache_decompressed_data()) {
@@ -112,13 +113,14 @@ Status PageReader::_read_and_deserialize_header(bool need_fill_cache) {
     _header_length = 0;
 
     RETURN_IF_ERROR(_stream->seek(_offset));
-    BufferPtr tmp_page_buffer;
-    std::vector<uint8_t>* page_buffer;
+    PageDataPtr tmp_page_buffer;
+    PageData* page_buffer;
     if (need_fill_cache) {
         DCHECK(_cache_buf);
         page_buffer = _cache_buf;
     } else {
-        tmp_page_buffer = std::make_unique<std::vector<uint8_t>>();
+        auto* allocator = _cache != nullptr ? _cache->get_allocator() : &memory::kDefaultAllocator;
+        tmp_page_buffer = std::make_unique<PageData>(allocator);
         page_buffer = tmp_page_buffer.get();
     }
 
@@ -134,7 +136,7 @@ Status PageReader::_read_and_deserialize_header(bool need_fill_cache) {
                 page_buf = (const uint8_t*)st.value().data();
                 peek_mode = true;
             } else {
-                TRY_CATCH_BAD_ALLOC(raw::stl_vector_resize_uninitialized(page_buffer, allowed_page_size));
+                TRY_CATCH_BAD_ALLOC(page_buffer->resize(allowed_page_size));
                 RETURN_IF_ERROR(_stream->read_at_fully(_offset, page_buffer->data(), allowed_page_size));
                 page_buf = page_buffer->data();
                 auto st = _stream->peek(allowed_page_size);
@@ -150,7 +152,7 @@ Status PageReader::_read_and_deserialize_header(bool need_fill_cache) {
 
         if (st.ok()) {
             DCHECK(_header_length > 0);
-            page_buffer->resize(_header_length);
+            TRY_CATCH_BAD_ALLOC(page_buffer->resize(_header_length));
             _next_header_pos = _offset + _header_length + _data_length();
             RETURN_IF_ERROR(_skip_bytes(_header_length));
             if (peek_mode) {
@@ -262,8 +264,7 @@ StatusOr<Slice> PageReader::read_and_decompress_page_data() {
                 _opts.stats->page_cache_read_compressed_counter += 1;
             }
             Slice input = Slice(_cache_buf->data() + _header_length, _cache_buf->size() - _header_length);
-            TRY_CATCH_BAD_ALLOC(
-                    raw::stl_vector_resize_uninitialized(_uncompressed_buf.get(), _cur_header.uncompressed_page_size));
+            TRY_CATCH_BAD_ALLOC(_uncompressed_buf->resize(_cur_header.uncompressed_page_size));
             _uncompressed_data = Slice(_uncompressed_buf->data(), _cur_header.uncompressed_page_size);
             RETURN_IF_ERROR(_decompress_page(input, &_uncompressed_data));
         }
@@ -335,13 +336,13 @@ Status PageReader::_read_and_decompress_internal(bool need_fill_cache) {
         RETURN_IF_ERROR(_skip_bytes(read_size));
         read_data = Slice(ret.value().data(), read_size);
     } else {
-        std::vector<uint8_t>& read_buffer = is_compressed ? *_compressed_buf : *_uncompressed_buf;
+        PageData& read_buffer = is_compressed ? *_compressed_buf : *_uncompressed_buf;
         if (!need_fill_cache || (is_compressed && _cache_decompressed_data())) {
-            TRY_CATCH_BAD_ALLOC(read_buffer.reserve(read_size));
+            TRY_CATCH_BAD_ALLOC(read_buffer.resize(read_size));
             read_data = Slice(read_buffer.data(), read_size);
         } else {
             auto original_size = _cache_buf->size();
-            TRY_CATCH_BAD_ALLOC(raw::stl_vector_resize_uninitialized(_cache_buf, original_size + read_size));
+            TRY_CATCH_BAD_ALLOC(_cache_buf->resize(original_size + read_size));
             read_data = Slice(_cache_buf->data() + original_size, read_size);
         }
         RETURN_IF_ERROR(_read_bytes(read_data.data, read_data.size));
@@ -351,12 +352,12 @@ Status PageReader::_read_and_decompress_internal(bool need_fill_cache) {
     // otherwise we just assign slice.
     if (is_compressed) {
         if (!need_fill_cache) {
-            TRY_CATCH_BAD_ALLOC(raw::stl_vector_resize_uninitialized(_uncompressed_buf.get(), uncompressed_size));
+            TRY_CATCH_BAD_ALLOC(_uncompressed_buf->resize(uncompressed_size));
             _uncompressed_data = Slice(_uncompressed_buf->data(), uncompressed_size);
             return _decompress_page(read_data, &_uncompressed_data);
         } else if (_cache_decompressed_data()) {
             auto original_size = _cache_buf->size();
-            TRY_CATCH_BAD_ALLOC(raw::stl_vector_resize_uninitialized(_cache_buf, uncompressed_size + original_size));
+            TRY_CATCH_BAD_ALLOC(_cache_buf->resize(uncompressed_size + original_size));
             _uncompressed_data = Slice(_cache_buf->data() + original_size, uncompressed_size);
             return _decompress_page(read_data, &_uncompressed_data);
         }

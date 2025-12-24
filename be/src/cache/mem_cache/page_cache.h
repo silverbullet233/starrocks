@@ -38,6 +38,8 @@
 #include <utility>
 
 #include "cache/datacache.h"
+#include "util/buffer.h"
+#include "storage/rowset/page_handle_fwd.h"
 
 namespace starrocks {
 
@@ -56,19 +58,6 @@ struct StoragePageCacheMetrics {
     static std::atomic<size_t> released_page_handle_count;
 };
 
-struct PageData {
-    PageData() = default;
-    PageData(memory::Allocator* allocator) : _allocator(allocator) {}
-    ~PageData();
-    uint8_t* data() const {return _data;}
-    size_t size() const {return _size;}
-    size_t capacity() const {return _capacity;}
-
-    uint8_t* _data = nullptr;
-    size_t _capacity = 0;
-    size_t _size = 0;
-    memory::Allocator* _allocator;
-};
 
 using PageDataPtr = std::unique_ptr<PageData>;
 // Wrapper around Cache, and used for cache page of column datas in Segment.

@@ -81,7 +81,7 @@ public:
         ::free(ptr);
     }
 
-    int64_t nallox(size_t size, int /*flags*/ = 0) override { return static_cast<int64_t>(size); }
+    int64_t nallox(size_t size, int /*flags*/ = 0) const override { return static_cast<int64_t>(size); }
 };
 
 template <typename Alloc>

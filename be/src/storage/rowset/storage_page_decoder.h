@@ -16,6 +16,7 @@
 
 #include <memory>
 
+#include "cache/mem_cache/page_cache.h"
 #include "common/status.h"
 #include "gen_cpp/segment.pb.h"
 #include "storage/rowset/common.h"
@@ -33,7 +34,7 @@ public:
     virtual void reserve_head(uint8_t head_size) {}
 
     virtual Status decode_page_data(PageFooterPB* footer, uint32_t footer_size, EncodingTypePB encoding,
-                                    std::unique_ptr<std::vector<uint8_t>>* page, Slice* page_slice) {
+                                    PageDataPtr* page, Slice* page_slice) {
         return Status::OK();
     }
 };
@@ -41,7 +42,7 @@ public:
 class StoragePageDecoder {
 public:
     static Status decode_page(PageFooterPB* footer, uint32_t footer_size, EncodingTypePB encoding,
-                              std::unique_ptr<std::vector<uint8_t>>* page, Slice* page_slice);
+                              PageDataPtr* page, Slice* page_slice);
 };
 
 } // namespace starrocks

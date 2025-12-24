@@ -35,7 +35,7 @@ protected:
         return oss.str();
     }
 
-    std::shared_ptr<LRUCacheEngine> _cache;
+    std::shared_ptr<LRUCacheEngine<>> _cache;
     MemCacheWriteOptions _write_opt;
     MemCacheReadOptions _read_opt;
 
@@ -73,7 +73,7 @@ void LRUCacheEngineTest::_check_found(int value) {
 }
 
 void LRUCacheEngineTest::SetUp() {
-    _cache = std::make_shared<LRUCacheEngine>();
+    _cache = std::make_shared<LRUCacheEngine<>>();
     MemCacheOptions opts{.mem_space_size = _capacity};
     ASSERT_OK(_cache->init(opts));
 }

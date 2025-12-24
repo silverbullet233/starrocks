@@ -316,7 +316,9 @@ public:
     }
 
     void update_allocation_by_allocator(int64_t bytes) {
-        __sync_fetch_and_add(_allocation_by_allocator.access(), bytes);
+        for (auto* tracker : _all_trackers) {
+            __sync_fetch_and_add(tracker->_allocation_by_allocator.access(), bytes);
+        }
     }
 
     int64_t allocation_by_allocator() const {

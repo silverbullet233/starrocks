@@ -37,3 +37,4 @@
 # ADD_BE_BENCH(${SRC_DIR}/bench/json_path_deriver_bench)
 ADD_BE_BENCH(${SRC_DIR}/bench/mem_tracker_bench)
 ADD_BE_BENCH(${SRC_DIR}/bench/allocator_bench)
+ADD_BE_BENCH(${SRC_DIR}/bench/buffer_bench)
