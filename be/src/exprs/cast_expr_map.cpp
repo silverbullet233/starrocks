@@ -27,8 +27,8 @@ StatusOr<ColumnPtr> CastJsonToMap::evaluate_checked(ExprContext* context, Chunk*
     }
 
     ColumnViewer<TYPE_JSON> src_viewer(src_column);
-    NullColumn::MutablePtr null_column = NullColumn::create(memory::get_default_allocator());
-    UInt32Column::MutablePtr offsets_column = UInt32Column::create(memory::get_default_allocator());
+    NullColumn::MutablePtr null_column = NullColumn::create(context->get_allocator());
+    UInt32Column::MutablePtr offsets_column = UInt32Column::create(context->get_allocator());
     ColumnBuilder<TYPE_VARCHAR> keys_builder(context->get_allocator(), src_column->size());
     ColumnBuilder<TYPE_JSON> values_builder(context->get_allocator(), src_column->size());
 
@@ -75,11 +75,11 @@ StatusOr<ColumnPtr> CastJsonToMap::evaluate_checked(ExprContext* context, Chunk*
         values_column = ColumnHelper::cast_to_nullable_column(std::move(result));
     }
 
-    auto map_column = MapColumn::create(memory::get_default_allocator(), std::move(keys_column),
+    auto map_column = MapColumn::create(context->get_allocator(), std::move(keys_column),
                                         std::move(values_column), std::move(offsets_column));
     map_column->remove_duplicated_keys();
     RETURN_IF_ERROR(map_column->unfold_const_children(_type));
-    return NullableColumn::create(memory::get_default_allocator(), std::move(map_column), std::move(null_column));
+    return NullableColumn::create(context->get_allocator(), std::move(map_column), std::move(null_column));
 }
 
 } // namespace starrocks

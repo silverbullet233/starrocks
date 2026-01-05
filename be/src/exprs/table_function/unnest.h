@@ -40,7 +40,7 @@ public:
         Columns result;
         if (arg0->has_null() || state->get_is_left_join()) {
             auto offset_column = col_array->offsets_column();
-            auto copy_count_column = UInt32Column::create(memory::get_default_allocator());
+            auto copy_count_column = UInt32Column::create(state->get_allocator());
             copy_count_column->append(0);
             MutableColumnPtr unnested_array_elements = col_array->elements_column()->clone_empty();
             uint32_t offset = 0;

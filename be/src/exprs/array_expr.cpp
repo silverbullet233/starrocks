@@ -57,7 +57,7 @@ public:
         }
 
         auto array_elements = ColumnHelper::create_column(element_type, true);
-        auto array_offsets = UInt32Column::create(memory::get_default_allocator());
+        auto array_offsets = UInt32Column::create(context->get_allocator());
 
         // fill array column.
         uint32_t curr_offset = 0;
@@ -70,7 +70,7 @@ public:
             array_offsets->append(curr_offset);
         }
 
-        auto ptr = ArrayColumn::create(memory::get_default_allocator(), std::move(array_elements),
+        auto ptr = ArrayColumn::create(context->get_allocator(), std::move(array_elements),
                                        std::move(array_offsets));
         if (all_const) {
             return ConstColumn::create(context->get_allocator(), std::move(ptr), output_rows);

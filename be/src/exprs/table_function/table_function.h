@@ -22,6 +22,10 @@
 
 namespace starrocks {
 
+namespace memory {
+class Allocator;
+}
+
 class TableFunctionState {
 public:
     TableFunctionState() = default;
@@ -63,6 +67,10 @@ public:
 
     bool is_required() { return _is_required; }
 
+    void set_allocator(memory::Allocator* allocator) { _allocator = allocator; }
+
+    memory::Allocator* get_allocator() const { return _allocator; }
+
 private:
     virtual void on_new_params(){};
 
@@ -84,6 +92,7 @@ private:
     // used to identify left join for table function
     bool _is_left_join = false;
     bool _is_required = true;
+    memory::Allocator* _allocator = nullptr;
 };
 
 class TableFunction {

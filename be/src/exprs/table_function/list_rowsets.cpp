@@ -100,14 +100,15 @@ std::pair<Columns, UInt32Column::Ptr> ListRowsets::process(RuntimeState* runtime
     auto curr_row = state->processed_rows();
     auto num_rows = state->input_rows();
     auto row_offset = state->get_offset();
-        auto offsets = UInt32Column::create(memory::get_default_allocator());
+    auto allocator = state->get_allocator();
+        auto offsets = UInt32Column::create(allocator);
     MutableColumns result;
-    result.push_back(Int64Column::create(memory::get_default_allocator()));                                     // id
-    result.push_back(Int64Column::create(memory::get_default_allocator()));                                     // segments
-    result.push_back(Int64Column::create(memory::get_default_allocator()));                                     // rows
-    result.push_back(Int64Column::create(memory::get_default_allocator()));                                     // size
-    result.push_back(BooleanColumn::create(memory::get_default_allocator()));                                   // overlapped
-    result.push_back(NullableColumn::wrap_if_necessary(BinaryColumn::create(memory::get_default_allocator()))); // delete_predicate
+    result.push_back(Int64Column::create(allocator));                                     // id
+    result.push_back(Int64Column::create(allocator));                                     // segments
+    result.push_back(Int64Column::create(allocator));                                     // rows
+    result.push_back(Int64Column::create(allocator));                                     // size
+    result.push_back(BooleanColumn::create(allocator));                                   // overlapped
+    result.push_back(NullableColumn::wrap_if_necessary(BinaryColumn::create(allocator))); // delete_predicate
 
     while (result[0]->size() < max_column_size && curr_row < num_rows) {
         offsets->append_datum(Datum((uint32_t)result[0]->size()));

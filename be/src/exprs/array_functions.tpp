@@ -358,20 +358,20 @@ public:
             }
             return result_column;
         } else if (state->left_is_notnull_const) {
-            return _array_overlap_const(*state, *columns[1]);
+            return _array_overlap_const(ctx, *state, *columns[1]);
         } else if (state->right_is_notnull_const) {
-            return _array_overlap_const(*state, *columns[0]);
+            return _array_overlap_const(ctx, *state, *columns[0]);
         } else {
-            return _array_overlap(columns);
+            return _array_overlap(ctx, columns);
         }
     }
 
 private:
-    static ColumnPtr _array_overlap_const(const ArrayOverlapState<HashSet>& state, const Column& column) {
+    static ColumnPtr _array_overlap_const(FunctionContext* context, const ArrayOverlapState<HashSet>& state, const Column& column) {
         const size_t num_rows = column.size();
         const auto [is_const, num_packed_rows] = ColumnHelper::num_packed_rows(&column);
 
-        auto result_data_column = BooleanColumn::create(memory::get_default_allocator(), num_packed_rows, 0);
+        auto result_data_column = BooleanColumn::create(context->get_allocator(), num_packed_rows, 0);
         auto& result_data = result_data_column->get_data();
         NullColumnPtr result_null_column;
         const ArrayColumn* src_data_column = ColumnHelper::get_data_column_by_type<TYPE_ARRAY>(&column);
@@ -390,19 +390,19 @@ private:
         if (is_const) {
             // Const null column is handled by `RETURN_IF_COLUMNS_ONLY_NULL` in `process`.
             DCHECK(result_null_column == nullptr);
-            return ConstColumn::create(memory::get_default_allocator(), std::move(result_data_column), num_rows);
+            return ConstColumn::create(context->get_allocator(), std::move(result_data_column), num_rows);
         } else if (result_null_column != nullptr) {
-            return NullableColumn::create(memory::get_default_allocator(), std::move(result_data_column), std::move(result_null_column));
+            return NullableColumn::create(context->get_allocator(), std::move(result_data_column), std::move(result_null_column));
         } else {
             return result_data_column;
         }
     }
 
-    static ColumnPtr _array_overlap(const Columns& columns) {
+    static ColumnPtr _array_overlap(FunctionContext* context, const Columns& columns) {
         const size_t num_rows = columns[0]->size();
         const auto [is_all_const, num_packed_rows] = ColumnHelper::num_packed_rows(columns);
 
-        auto result_data_column = BooleanColumn::create(columns[0]->get_allocator(), num_packed_rows, 0);
+        auto result_data_column = BooleanColumn::create(context->get_allocator(), num_packed_rows, 0);
         auto& result_data = result_data_column->get_data();
 
         const auto* src_data_column_0 = ColumnHelper::get_data_column_by_type<TYPE_ARRAY>(columns[0].get());
@@ -433,9 +433,9 @@ private:
         if (is_all_const) {
             // Const null column is handled by `RETURN_IF_COLUMNS_ONLY_NULL` in `process`.
             DCHECK(result_null_column == nullptr);
-            return ConstColumn::create(memory::get_default_allocator(), std::move(result_data_column), num_rows);
+            return ConstColumn::create(context->get_allocator(), std::move(result_data_column), num_rows);
         } else if (result_null_column != nullptr) {
-            return NullableColumn::create(memory::get_default_allocator(), std::move(result_data_column), std::move(result_null_column));
+            return NullableColumn::create(context->get_allocator(), std::move(result_data_column), std::move(result_null_column));
         } else {
             return result_data_column;
         }
@@ -553,12 +553,12 @@ public:
         static_assert(lt_is_largeint<LT> || lt_is_fixedlength<LT> || lt_is_string<LT>);
 
         return _array_intersect<phmap::flat_hash_set<CppTypeWithOverlapTimes, CppTypeWithOverlapTimesHash<LT>,
-                                                     CppTypeWithOverlapTimesEqual>>(columns);
+                                                     CppTypeWithOverlapTimesEqual>>(ctx, columns);
     }
 
 private:
     template <typename HashSet>
-    static ColumnPtr _array_intersect(const Columns& original_columns) {
+    static ColumnPtr _array_intersect(FunctionContext* context, const Columns& original_columns) {
         if (original_columns.size() == 1) {
             return original_columns[0];
         }
@@ -576,7 +576,7 @@ private:
         int null_index = 0;
         std::vector<const ArrayColumn*> src_columns;
         src_columns.reserve(columns.size());
-        NullColumn::MutablePtr null_result = NullColumn::create(memory::get_default_allocator());
+        NullColumn::MutablePtr null_result = NullColumn::create(context->get_allocator());
         null_result->resize(chunk_size);
 
         for (int i = 0; i < columns.size(); ++i) {
@@ -934,16 +934,16 @@ public:
 
         ColumnPtr src_column = ColumnHelper::unpack_and_duplicate_const_column(chunk_size, columns[0]);
         if (columns.size() <= 2) {
-            return _join_column_ignore_null(src_column, columns[1], chunk_size);
+            return _join_column_ignore_null(ctx, src_column, columns[1], chunk_size);
         } else {
-            return _join_column_replace_null(src_column, columns[1], columns[2], chunk_size);
+            return _join_column_replace_null(ctx, src_column, columns[1], columns[2], chunk_size);
         }
     }
 
 private:
-    static ColumnPtr _join_column_replace_null(const ColumnPtr& src_column, const ColumnPtr& sep_column,
+    static ColumnPtr _join_column_replace_null(FunctionContext* context, const ColumnPtr& src_column, const ColumnPtr& sep_column,
                                                const ColumnPtr& null_replace_column, size_t chunk_size) {
-        NullableBinaryColumnBuilder res(memory::get_default_allocator());
+        NullableBinaryColumnBuilder res(context->get_allocator());
         // byte_size may be smaller or larger than actual used size
         // byte_size is only one reserve size
         size_t byte_size = ColumnHelper::get_data_column(src_column.get())->byte_size() +
@@ -979,9 +979,9 @@ private:
         return res.build_nullable_column();
     }
 
-    static ColumnPtr _join_column_ignore_null(const ColumnPtr& src_column, const ColumnPtr& sep_column,
+    static ColumnPtr _join_column_ignore_null(FunctionContext* context, const ColumnPtr& src_column, const ColumnPtr& sep_column,
                                               size_t chunk_size) {
-        NullableBinaryColumnBuilder res(memory::get_default_allocator());
+        NullableBinaryColumnBuilder res(context->get_allocator());
         // bytes_size may be smaller or larger then actual used size
         // byte_size is only one reserve size
         size_t byte_size = ColumnHelper::get_data_column(src_column.get())->byte_size() +
@@ -1023,12 +1023,12 @@ private:
 template <bool isAny>
 class ArrayMatch {
 public:
-    static ColumnPtr process([[maybe_unused]] FunctionContext* ctx, const Columns& columns) {
-        return _array_match(columns);
+    static ColumnPtr process(FunctionContext* ctx, const Columns& columns) {
+        return _array_match(ctx, columns);
     }
 
 private:
-    static ColumnPtr _array_match(const Columns& columns) {
+    static ColumnPtr _array_match(FunctionContext* context, const Columns& columns) {
         DCHECK(columns.size() == 1);
         RETURN_IF_COLUMNS_ONLY_NULL(columns);
         bool is_const = columns[0]->is_constant();
@@ -1037,8 +1037,8 @@ private:
         ColumnPtr bool_column = is_const ? FunctionHelper::get_data_column_of_const(columns[0]) : columns[0];
 
         size_t dest_num_rows = is_const ? 1 : chunk_size;
-        auto dest_null_column = NullColumn::create(memory::get_default_allocator(), dest_num_rows, 0);
-        auto dest_data_column = BooleanColumn::create(memory::get_default_allocator(), dest_num_rows);
+        auto dest_null_column = NullColumn::create(context->get_allocator(), dest_num_rows, 0);
+        auto dest_data_column = BooleanColumn::create(context->get_allocator(), dest_num_rows);
         dest_null_column->get_data().resize(dest_num_rows, 0);
 
         ArrayColumn* bool_array;
@@ -1077,9 +1077,9 @@ private:
             }
         }
 
-        ColumnPtr dest_column = NullableColumn::create(memory::get_default_allocator(), std::move(dest_data_column), std::move(dest_null_column));
+        ColumnPtr dest_column = NullableColumn::create(context->get_allocator(), std::move(dest_data_column), std::move(dest_null_column));
         if (is_const) {
-            dest_column = ConstColumn::create(memory::get_default_allocator(), std::move(dest_column), chunk_size);
+            dest_column = ConstColumn::create(context->get_allocator(), std::move(dest_column), chunk_size);
         }
         return dest_column;
     }
@@ -2494,16 +2494,16 @@ public:
         }
 
         if (is_nullable_left && is_nullable_right) {
-            return _process<true, true>(state, left_data_column, right_data_column, left_null_data, right_null_data,
+            return _process<true, true>(context, state, left_data_column, right_data_column, left_null_data, right_null_data,
                                         is_const_left, is_const_right);
         } else if (is_nullable_left && !is_nullable_right) {
-            return _process<true, false>(state, left_data_column, right_data_column, left_null_data, right_null_data,
+            return _process<true, false>(context, state, left_data_column, right_data_column, left_null_data, right_null_data,
                                          is_const_left, is_const_right);
         } else if (!is_nullable_left && is_nullable_right) {
-            return _process<false, true>(state, left_data_column, right_data_column, left_null_data, right_null_data,
+            return _process<false, true>(context, state, left_data_column, right_data_column, left_null_data, right_null_data,
                                          is_const_left, is_const_right);
         } else {
-            return _process<false, false>(state, left_data_column, right_data_column, left_null_data, right_null_data,
+            return _process<false, false>(context, state, left_data_column, right_data_column, left_null_data, right_null_data,
                                           is_const_left, is_const_right);
         }
     }
@@ -2670,7 +2670,7 @@ private:
     }
 
     template <bool NullableLeft, bool NullableRight>
-    static ColumnPtr _process(const ArrayContainsAllState* state, const ColumnPtr& left_arrays,
+    static ColumnPtr _process(FunctionContext* context, const ArrayContainsAllState* state, const ColumnPtr& left_arrays,
                               const ColumnPtr& right_arrays, const NullColumn::ValueType* left_null_data,
                               const NullColumn::ValueType* right_null_data, bool is_const_left, bool is_const_right) {
         DCHECK(!left_arrays->is_constant() && !left_arrays->is_nullable() && left_arrays->is_array());
@@ -2693,14 +2693,14 @@ private:
 
         size_t num_rows = (is_const_left && is_const_right) ? 1 : std::max(left_arrays->size(), right_arrays->size());
 
-        auto result_column = BooleanColumn::create(memory::get_default_allocator());
+        auto result_column = BooleanColumn::create(context->get_allocator());
         result_column->resize(num_rows);
         auto* result_data = result_column->get_data().data();
 
         [[maybe_unused]] NullColumn::MutablePtr result_null_column;
         [[maybe_unused]] NullColumn::ValueType* result_null_data = nullptr;
         if constexpr (NullableLeft || NullableRight) {
-            result_null_column = NullColumn::create(memory::get_default_allocator());
+            result_null_column = NullColumn::create(context->get_allocator());
             result_null_column->resize(num_rows);
             result_null_data = result_null_column->get_data().data();
         }

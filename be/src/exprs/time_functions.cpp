@@ -77,7 +77,7 @@ const static int DEFAULT_DATE_FORMAT_LIMIT = 100;
     }
 
 template <LogicalType Type>
-ColumnPtr date_valid(const ColumnPtr& v1) {
+ColumnPtr date_valid(FunctionContext* context, const ColumnPtr& v1) {
     if (v1->only_null()) {
         return v1;
     }
@@ -94,7 +94,7 @@ ColumnPtr date_valid(const ColumnPtr& v1) {
         auto& nulls = v->immutable_null_column_data();
         auto& values = ColumnHelper::cast_to_raw<Type>(v->data_column())->get_data();
 
-        auto null_column = NullColumn::create(memory::get_default_allocator());
+        auto null_column = NullColumn::create(context->get_allocator());
         null_column->resize(v1->size());
         auto& null_result = null_column->get_data();
 
@@ -104,9 +104,9 @@ ColumnPtr date_valid(const ColumnPtr& v1) {
             null_result[i] = nulls[i] | (!values[i].is_valid_non_strict());
         }
 
-        return NullableColumn::create(memory::get_default_allocator(), v->data_column(), std::move(null_column));
+        return NullableColumn::create(context->get_allocator(), v->data_column(), std::move(null_column));
     } else {
-        auto null_column = NullColumn::create(memory::get_default_allocator());
+        auto null_column = NullColumn::create(context->get_allocator());
         null_column->resize(v1->size());
         auto& nulls = null_column->get_data();
         auto& values = ColumnHelper::cast_to_raw<Type>(v1)->get_data();
@@ -116,7 +116,7 @@ ColumnPtr date_valid(const ColumnPtr& v1) {
             nulls[i] = (!values[i].is_valid_non_strict());
         }
 
-        return NullableColumn::create(memory::get_default_allocator(), v1, std::move(null_column));
+        return NullableColumn::create(context->get_allocator(), v1, std::move(null_column));
     }
 }
 
@@ -124,7 +124,7 @@ ColumnPtr date_valid(const ColumnPtr& v1) {
     StatusOr<ColumnPtr> TimeFunctions::NAME(FunctionContext* context, const starrocks::Columns& columns) { \
         auto p = VectorizedStrictBinaryFunction<NAME##Impl>::evaluate<LTYPE, RTYPE, RESULT_TYPE>(          \
                 VECTORIZED_FN_ARGS(0), VECTORIZED_FN_ARGS(1));                                             \
-        return date_valid<RESULT_TYPE>(p);                                                                 \
+        return date_valid<RESULT_TYPE>(context, p);                                                                 \
     }
 
 Status TimeFunctions::convert_tz_prepare(FunctionContext* context, FunctionContext::FunctionStateScope scope) {
@@ -1072,7 +1072,7 @@ Status TimeFunctions::time_slice_prepare(FunctionContext* context, FunctionConte
             time_value.template floor_to_##UNIT##_period<!is_start>(period_value);                     \
             results.append(time_value);                                                                \
         }                                                                                              \
-        return date_valid<ResultType>(results.build(ColumnHelper::is_all_const(columns)));             \
+        return date_valid<ResultType>(context, results.build(ColumnHelper::is_all_const(columns)));             \
     }                                                                                                  \
     DEFINE_TIME_SLICE_FN_CALL(datetime, UNIT, TYPE_DATETIME, TYPE_INT, TYPE_DATETIME);                 \
     DEFINE_TIME_SLICE_FN_CALL(date, UNIT, TYPE_DATE, TYPE_INT, TYPE_DATE);
@@ -2248,7 +2248,7 @@ DEFINE_UNARY_FN_WITH_IMPL(from_daysImpl, v) {
 }
 
 StatusOr<ColumnPtr> TimeFunctions::from_days(FunctionContext* context, const Columns& columns) {
-    return date_valid<TYPE_DATE>(
+    return date_valid<TYPE_DATE>(context,
             VectorizedStrictUnaryFunction<from_daysImpl>::evaluate<TYPE_INT, TYPE_DATE>(VECTORIZED_FN_ARGS(0)));
 }
 
@@ -3392,7 +3392,7 @@ StatusOr<ColumnPtr> TimeFunctions::next_day_wdc(FunctionContext* context, const 
         auto date = (DateValue)timestamp_add<TimeUnit::DAY>(time, (6 + wdc->dow_weekday - datetime_weekday) % 7 + 1);
         result.append(date);
     }
-    return date_valid<TYPE_DATE>(result.build(ColumnHelper::is_all_const(columns)));
+    return date_valid<TYPE_DATE>(context, result.build(ColumnHelper::is_all_const(columns)));
 }
 
 StatusOr<ColumnPtr> TimeFunctions::next_day_common(FunctionContext* context, const Columns& columns) {
@@ -3416,7 +3416,7 @@ StatusOr<ColumnPtr> TimeFunctions::next_day_common(FunctionContext* context, con
         auto date = (DateValue)timestamp_add<TimeUnit::DAY>(time, (6 + dow_weekday - datetime_weekday) % 7 + 1);
         result.append(date);
     }
-    return date_valid<TYPE_DATE>(result.build(ColumnHelper::is_all_const(columns)));
+    return date_valid<TYPE_DATE>(context, result.build(ColumnHelper::is_all_const(columns)));
 }
 
 Status TimeFunctions::next_day_prepare(FunctionContext* context, FunctionContext::FunctionStateScope scope) {
@@ -3483,7 +3483,7 @@ StatusOr<ColumnPtr> TimeFunctions::previous_day_wdc(FunctionContext* context, co
         auto date = (DateValue)timestamp_add<TimeUnit::DAY>(time, -((6 + datetime_weekday - wdc->dow_weekday) % 7 + 1));
         result.append(date);
     }
-    return date_valid<TYPE_DATE>(result.build(ColumnHelper::is_all_const(columns)));
+    return date_valid<TYPE_DATE>(context, result.build(ColumnHelper::is_all_const(columns)));
 }
 
 StatusOr<ColumnPtr> TimeFunctions::previous_day_common(FunctionContext* context, const Columns& columns) {
@@ -3507,7 +3507,7 @@ StatusOr<ColumnPtr> TimeFunctions::previous_day_common(FunctionContext* context,
         auto date = (DateValue)timestamp_add<TimeUnit::DAY>(time, -((6 + datetime_weekday - dow_weekday) % 7 + 1));
         result.append(date);
     }
-    return date_valid<TYPE_DATE>(result.build(ColumnHelper::is_all_const(columns)));
+    return date_valid<TYPE_DATE>(context, result.build(ColumnHelper::is_all_const(columns)));
 }
 
 Status TimeFunctions::previous_day_prepare(FunctionContext* context, FunctionContext::FunctionStateScope scope) {

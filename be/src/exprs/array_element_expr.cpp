@@ -76,7 +76,7 @@ public:
             }
         }
 
-        NullData null_flags(memory::get_default_allocator());
+        NullData null_flags(context->get_allocator());
         null_flags.resize(num_rows);
 
         // Construct null flags.
@@ -127,7 +127,7 @@ public:
 
         // Construct the final result column;
         MutableColumnPtr result_data = array_elements_data->clone_empty();
-        NullColumn::MutablePtr result_null = NullColumn::create(memory::get_default_allocator());
+        NullColumn::MutablePtr result_null = NullColumn::create(context->get_allocator());
         result_null->get_data().swap(null_flags);
 
         if (!array_elements_data->empty()) {
@@ -137,7 +137,7 @@ public:
         }
         DCHECK_EQ(result_null->size(), result_data->size());
 
-        return NullableColumn::create(memory::get_default_allocator(), std::move(result_data),
+        return NullableColumn::create(context->get_allocator(), std::move(result_data),
                                       std::move(result_null));
     }
 

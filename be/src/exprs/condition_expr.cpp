@@ -277,11 +277,11 @@ public:
                 auto lds = get_data_column(num_rows, lhs);
                 auto rds = get_data_column(num_rows, rhs);
                 // call select if
-                auto selector = bhs->only_null() ? UInt8Column::create(memory::get_default_allocator(), num_rows) : bhs;
+                auto selector = bhs->only_null() ? UInt8Column::create(context->get_allocator(), num_rows) : bhs;
                 auto select_data = dispatch_nonull_template<SelectIfOP, Type>(lds, rds, bhs, type());
                 auto select_null =
                         dispatch_nonull_template<SelectIfOP, TYPE_BOOLEAN>(lns, rns, bhs, TypeDescriptor(TYPE_BOOLEAN));
-                auto res = NullableColumn::create(memory::get_default_allocator(), select_data, ColumnHelper::as_column<NullColumn>(select_null));
+                auto res = NullableColumn::create(context->get_allocator(), select_data, ColumnHelper::as_column<NullColumn>(select_null));
                 return res;
             } else {
                 return _evaluate_general<true>(context, list);

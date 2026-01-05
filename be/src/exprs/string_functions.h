@@ -800,7 +800,7 @@ Status StringFunctions::field_close(FunctionContext* context, FunctionContext::F
 template <LogicalType Type>
 StatusOr<ColumnPtr> StringFunctions::field(FunctionContext* context, const Columns& columns) {
     auto size = columns[0]->size();
-    ColumnBuilder<TYPE_INT> result(memory::get_default_allocator(), size);
+    ColumnBuilder<TYPE_INT> result(context->get_allocator(), size);
     const FieldFuncState<Type>* state =
             reinterpret_cast<const FieldFuncState<Type>*>(context->get_function_state(FunctionContext::FRAGMENT_LOCAL));
     if (columns[0]->only_null()) {

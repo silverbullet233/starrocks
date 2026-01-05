@@ -145,7 +145,7 @@ StatusOr<ColumnPtr> ArrayMapExpr::evaluate_lambda_expr(ExprContext* context, Chu
                 // we should unpack the const column before evaluation
                 size_t elements_num = array_column->get_element_size(0);
                 auto new_elements_column = elements_column->clone_empty();
-                auto new_offsets_column = UInt32Column::create(memory::get_default_allocator());
+                auto new_offsets_column = UInt32Column::create(context->get_allocator());
                 // replicate N time and ignore null
                 size_t repeat_times = input_elements[i]->size() - null_rows;
                 size_t offset = 0;
@@ -211,7 +211,7 @@ StatusOr<ColumnPtr> ArrayMapExpr::evaluate_lambda_expr(ExprContext* context, Chu
             if (tmp_col->has_null()) {
                 tmp_col = ColumnHelper::create_const_null_column(1);
             } else {
-                tmp_col = ConstColumn::create(memory::get_default_allocator(),
+                tmp_col = ConstColumn::create(context->get_allocator(),
                                               ColumnHelper::get_data_column(tmp_col.get()), 1);
             }
         } else {
@@ -265,29 +265,29 @@ StatusOr<ColumnPtr> ArrayMapExpr::evaluate_lambda_expr(ExprContext* context, Chu
         // we can return a const column
         auto data_column = FunctionHelper::get_data_column_of_const(column);
 
-        auto new_aligned_offsets = UInt32Column::create(memory::get_default_allocator());
+        auto new_aligned_offsets = UInt32Column::create(context->get_allocator());
         new_aligned_offsets->append(0);
         new_aligned_offsets->append(data_column->size());
         aligned_offsets = std::move(new_aligned_offsets);
         auto array_column =
-                ArrayColumn::create(memory::get_default_allocator(), data_column->as_mutable_ptr(), aligned_offsets);
+                ArrayColumn::create(context->get_allocator(), data_column->as_mutable_ptr(), aligned_offsets);
         array_column->check_or_die();
         ColumnPtr result_column = array_column;
         if (result_null_column != nullptr) {
-            result_column = NullableColumn::create(memory::get_default_allocator(), std::move(array_column),
+            result_column = NullableColumn::create(context->get_allocator(), std::move(array_column),
                                                    std::move(result_null_column));
             result_column->check_or_die();
         }
-        result_column = ConstColumn::create(memory::get_default_allocator(), result_column, chunk->num_rows());
+        result_column = ConstColumn::create(context->get_allocator(), result_column, chunk->num_rows());
         result_column->check_or_die();
         return result_column;
     } else {
         auto array_column =
-                ArrayColumn::create(memory::get_default_allocator(), std::move(column),
+                ArrayColumn::create(context->get_allocator(), std::move(column),
                                     ColumnHelper::as_column<UInt32Column>(aligned_offsets->clone()));
         array_column->check_or_die();
         if (result_null_column != nullptr) {
-            return NullableColumn::create(memory::get_default_allocator(), std::move(array_column),
+            return NullableColumn::create(context->get_allocator(), std::move(array_column),
                                           std::move(result_null_column));
         }
         return array_column;
@@ -347,7 +347,7 @@ StatusOr<ColumnPtr> ArrayMapExpr::evaluate_checked(ExprContext* context, Chunk* 
         ColumnPtr column = data_column;
         if (is_const) {
             // keep it as a const array column in input_elements
-            column = ConstColumn::create(memory::get_default_allocator(), std::move(data_column), num_rows);
+            column = ConstColumn::create(context->get_allocator(), std::move(data_column), num_rows);
         }
 
         // check each array's lengths in input_elements
@@ -381,24 +381,24 @@ StatusOr<ColumnPtr> ArrayMapExpr::evaluate_checked(ExprContext* context, Chunk* 
         column = ColumnHelper::create_column(type().children[0],
                                              true); // array->elements must be of return array->elements' type
         column->append_default(1);
-        auto aligned_offsets = UInt32Column::create(memory::get_default_allocator(), 0);
+        auto aligned_offsets = UInt32Column::create(context->get_allocator(), 0);
         aligned_offsets->append(0);
         aligned_offsets->append(1);
         auto array_col =
-                ArrayColumn::create(memory::get_default_allocator(), std::move(column), std::move(aligned_offsets));
+                ArrayColumn::create(context->get_allocator(), std::move(column), std::move(aligned_offsets));
         array_col->check_or_die();
         if (result_null_column) {
             auto result_null_mut = NullColumn::static_pointer_cast(std::move(result_null_column)->as_mutable_ptr());
             result_null_mut->resize(1);
             auto result = ConstColumn::create(
-                    memory::get_default_allocator(),
-                    NullableColumn::create(memory::get_default_allocator(), std::move(array_col),
+                    context->get_allocator(),
+                    NullableColumn::create(context->get_allocator(), std::move(array_col),
                                            std::move(result_null_mut)),
                                               chunk->num_rows());
             result->check_or_die();
             return result;
         }
-        auto result = ConstColumn::create(memory::get_default_allocator(), std::move(array_col), chunk->num_rows());
+        auto result = ConstColumn::create(context->get_allocator(), std::move(array_col), chunk->num_rows());
         result->check_or_die();
         return result;
     }
@@ -410,12 +410,12 @@ StatusOr<ColumnPtr> ArrayMapExpr::evaluate_checked(ExprContext* context, Chunk* 
     if (total_elements_num == 0) {
         // if all input rows are empty arrays, return a const empty array column as result
         column = ColumnHelper::create_column(type().children[0], true);
-        auto aligned_offsets = UInt32Column::create(memory::get_default_allocator(), 0);
+        auto aligned_offsets = UInt32Column::create(context->get_allocator(), 0);
         aligned_offsets->append_default(2);
         auto array_col =
-                ArrayColumn::create(memory::get_default_allocator(), std::move(column), std::move(aligned_offsets));
+                ArrayColumn::create(context->get_allocator(), std::move(column), std::move(aligned_offsets));
         array_col->check_or_die();
-        auto result = ConstColumn::create(memory::get_default_allocator(), std::move(array_col),
+        auto result = ConstColumn::create(context->get_allocator(), std::move(array_col),
                                           chunk->num_rows() - null_rows);
         result->check_or_die();
         return result;

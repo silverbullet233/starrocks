@@ -417,7 +417,7 @@ StatusOr<ColumnPtr> MapFunctions::distinct_map_keys(FunctionContext* context, co
 }
 
 static inline std::tuple<NullColumn::Ptr, const Column*, const Column*, const UInt32Column*> unpack_map_column(
-        const ColumnPtr& input) {
+        FunctionContext* context, const ColumnPtr& input) {
     NullColumn::Ptr map_null = nullptr;
     const MapColumn* map_col = nullptr;
 
@@ -427,7 +427,7 @@ static inline std::tuple<NullColumn::Ptr, const Column*, const Column*, const UI
         map_col = down_cast<const MapColumn*>(nullable->data_column().get());
         map_null = nullable->null_column();
     } else {
-        map_null = NullColumn::create(memory::get_default_allocator(), input->size(), 0);
+        map_null = NullColumn::create(context->get_allocator(), input->size(), 0);
         map_col = down_cast<const MapColumn*>(map.get());
     }
 
@@ -466,7 +466,7 @@ StatusOr<ColumnPtr> MapFunctions::map_concat(FunctionContext* context, const Col
 
     // compute hash values for all keys
     for (auto i = 0; i < columns_num; ++i) {
-        auto [null, keys, values, offsets] = unpack_map_column(not_null_columns[i]);
+        auto [null, keys, values, offsets] = unpack_map_column(context, not_null_columns[i]);
         auto hash = std::make_unique<uint32_t[]>(keys->size());
         memset(hash.get(), 0, keys->size() * sizeof(uint32_t));
         keys->fnv_hash(hash.get(), 0, keys->size());

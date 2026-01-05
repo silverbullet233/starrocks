@@ -401,19 +401,19 @@ StatusOr<ColumnPtr> BitmapFunctions::bitmap_to_array(FunctionContext* context, c
     //Array Column
     if (!columns[0]->has_null()) {
         return ArrayColumn::create(
-                memory::get_default_allocator(),
-                NullableColumn::create(memory::get_default_allocator(), std::move(array_bigint_column),
-                                       NullColumn::create(memory::get_default_allocator(), offset, 0)),
+                context->get_allocator(),
+                NullableColumn::create(context->get_allocator(), std::move(array_bigint_column),
+                                       NullColumn::create(context->get_allocator(), offset, 0)),
                 std::move(array_offsets));
     } else if (columns[0]->only_null()) {
         return ColumnHelper::create_const_null_column(size);
     } else {
         return NullableColumn::create(
-                memory::get_default_allocator(),
+                context->get_allocator(),
                 ArrayColumn::create(
-                        memory::get_default_allocator(),
-                        NullableColumn::create(memory::get_default_allocator(), std::move(array_bigint_column),
-                                               NullColumn::create(memory::get_default_allocator(), offset, 0)),
+                        context->get_allocator(),
+                        NullableColumn::create(context->get_allocator(), std::move(array_bigint_column),
+                                               NullColumn::create(context->get_allocator(), offset, 0)),
                         std::move(array_offsets)),
                 ColumnHelper::as_raw_column<NullableColumn>(columns[0])->null_column()->clone());
     }

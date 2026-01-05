@@ -40,7 +40,7 @@ struct LocateCaseSensitiveUTF8 {
 };
 
 // locate haystack is a vector and needle is a constant
-ColumnPtr haystack_vector_and_needle_const(const ColumnPtr& haystack_ptr, const ColumnPtr& needle_ptr,
+ColumnPtr haystack_vector_and_needle_const(FunctionContext* context, const ColumnPtr& haystack_ptr, const ColumnPtr& needle_ptr,
                                            const ColumnPtr& start_pos_ptr) {
     const BinaryColumn* haystack = nullptr;
     const FixedLengthColumn<int32_t>* start_pos = nullptr;
@@ -48,7 +48,7 @@ ColumnPtr haystack_vector_and_needle_const(const ColumnPtr& haystack_ptr, const 
     ColumnPtr start_pos_expansion = nullptr;
     if (start_pos_ptr->is_constant()) {
         // expand vector in start_pos_ptr to specfied size
-        auto start_pos_mut = RunTimeColumnType<TYPE_INT>::create(memory::get_default_allocator());
+        auto start_pos_mut = RunTimeColumnType<TYPE_INT>::create(context->get_allocator());
         int32_t value = ColumnHelper::get_const_value<TYPE_INT>(start_pos_ptr);
         start_pos_mut->append_value_multiple_times(&value, haystack_ptr->size());
         start_pos_expansion = std::move(start_pos_mut);
@@ -83,7 +83,7 @@ ColumnPtr haystack_vector_and_needle_const(const ColumnPtr& haystack_ptr, const 
 
     const Buffer<uint32_t>& offsets = haystack->get_offset();
     Slice needle = ColumnHelper::get_const_value<TYPE_VARCHAR>(needle_ptr);
-    auto res = RunTimeColumnType<TYPE_INT>::create(memory::get_default_allocator());
+    auto res = RunTimeColumnType<TYPE_INT>::create(context->get_allocator());
     res->resize(haystack->size());
 
     if (needle.size == 0) {
@@ -104,7 +104,7 @@ ColumnPtr haystack_vector_and_needle_const(const ColumnPtr& haystack_ptr, const 
             }
         }
         if (res_null != nullptr) {
-            return NullableColumn::create(memory::get_default_allocator(), std::move(res), std::move(res_null));
+            return NullableColumn::create(context->get_allocator(), std::move(res), std::move(res_null));
         } else {
             return res;
         }
@@ -149,7 +149,7 @@ ColumnPtr haystack_vector_and_needle_const(const ColumnPtr& haystack_ptr, const 
     }
 
     if (res_null != nullptr) {
-        return NullableColumn::create(memory::get_default_allocator(), std::move(res), std::move(res_null));
+        return NullableColumn::create(context->get_allocator(), std::move(res), std::move(res_null));
     } else {
         return res;
     }
@@ -220,7 +220,7 @@ StatusOr<ColumnPtr> StringFunctions::instr(FunctionContext* context, const Colum
     const ColumnPtr& needle = columns[1];
     ColumnPtr start_pos = ColumnHelper::create_const_column<TYPE_INT>(1, columns[0]->size());
     if (!haystack->is_constant() && needle->is_constant()) {
-        return haystack_vector_and_needle_const(haystack, needle, start_pos);
+        return haystack_vector_and_needle_const(context, haystack, needle, start_pos);
     } else {
         return haystack_vector_and_needle_vector(context, haystack, needle, start_pos);
     }
@@ -234,7 +234,7 @@ StatusOr<ColumnPtr> StringFunctions::locate(FunctionContext* context, const Colu
     const ColumnPtr& needle = columns[0];
     ColumnPtr start_pos = ColumnHelper::create_const_column<TYPE_INT>(1, columns[0]->size());
     if (!haystack->is_constant() && needle->is_constant()) {
-        return haystack_vector_and_needle_const(haystack, needle, start_pos);
+        return haystack_vector_and_needle_const(context, haystack, needle, start_pos);
     } else {
         return haystack_vector_and_needle_vector(context, haystack, needle, start_pos);
     }
@@ -248,7 +248,7 @@ StatusOr<ColumnPtr> StringFunctions::locate_pos(FunctionContext* context, const 
     const ColumnPtr& needle = columns[0];
     const ColumnPtr& start_pos = columns[2];
     if (!haystack->is_constant() && needle->is_constant()) {
-        return haystack_vector_and_needle_const(haystack, needle, start_pos);
+        return haystack_vector_and_needle_const(context, haystack, needle, start_pos);
     } else {
         return haystack_vector_and_needle_vector(context, haystack, needle, start_pos);
     }
