@@ -19,6 +19,7 @@
 #include "column/column_builder.h"
 #include "exprs/overflow.h"
 #include "runtime/decimalv3.h"
+#include "runtime/memory/allocator_v2.h"
 
 namespace starrocks {
 
@@ -46,14 +47,15 @@ struct DecimalDecimalCast {
 
         const auto data = &data_column->get_data().front();
 
-        typename ToColumnType::MutablePtr result = ToColumnType::create(to_precision, to_scale, num_rows);
+        auto* allocator = memory::get_default_allocator();
+        typename ToColumnType::MutablePtr result = ToColumnType::create(allocator, to_precision, to_scale, num_rows);
         NullColumn::MutablePtr null_column;
         NullColumn::ValueType* nulls = nullptr;
         auto has_null = false;
         auto result_data = &ColumnHelper::cast_to_raw<ResultType>(result.get())->get_data().front();
 
         if constexpr (check_overflow<overflow_mode>) {
-            null_column = NullColumn::create();
+            null_column = NullColumn::create(allocator);
             null_column->resize(num_rows);
             nulls = &null_column->get_data().front();
         }
@@ -120,7 +122,7 @@ struct DecimalDecimalCast {
             }
         }
         if constexpr (check_overflow<overflow_mode>) {
-            ColumnBuilder<ResultType> builder(std::move(result), std::move(null_column), has_null);
+            ColumnBuilder<ResultType> builder(allocator, std::move(result), std::move(null_column), has_null);
             return builder.build(column->is_constant());
         } else {
             return result;
@@ -150,14 +152,15 @@ struct DecimalNonDecimalCast<overflow_mode, DecimalType, NonDecimalType, Decimal
     template <bool ZeroScale>
     static inline ColumnPtr _decimal_from(const ColumnPtr& column, int precision, int scale) {
         const auto num_rows = column->size();
-        typename DecimalColumnType::MutablePtr result = DecimalColumnType::create(precision, scale, num_rows);
+        auto* allocator = memory::get_default_allocator();
+        typename DecimalColumnType::MutablePtr result = DecimalColumnType::create(allocator, precision, scale, num_rows);
         const auto data = &ColumnHelper::cast_to_raw<NonDecimalType>(column.get())->immutable_data().front();
         auto result_data = &ColumnHelper::cast_to_raw<DecimalType>(result.get())->get_data().front();
         NullColumn::MutablePtr null_column;
         NullColumn::ValueType* nulls = nullptr;
         bool has_null = false;
         if constexpr (check_overflow<overflow_mode>) {
-            null_column = NullColumn::create();
+            null_column = NullColumn::create(allocator);
             null_column->resize(num_rows);
             nulls = &null_column->get_data().front();
         }
@@ -236,7 +239,7 @@ struct DecimalNonDecimalCast<overflow_mode, DecimalType, NonDecimalType, Decimal
         }
 
         if constexpr (check_overflow<overflow_mode>) {
-            ColumnBuilder<DecimalType> builder(std::move(result), std::move(null_column), has_null);
+            ColumnBuilder<DecimalType> builder(allocator, std::move(result), std::move(null_column), has_null);
             return builder.build(column->is_constant());
         } else {
             return result;
@@ -245,7 +248,8 @@ struct DecimalNonDecimalCast<overflow_mode, DecimalType, NonDecimalType, Decimal
 
     static inline ColumnPtr decimal_to(const ColumnPtr& column) {
         const auto num_rows = column->size();
-        typename NonDecimalColumnType::MutablePtr result = NonDecimalColumnType::create();
+        auto* allocator = memory::get_default_allocator();
+        typename NonDecimalColumnType::MutablePtr result = NonDecimalColumnType::create(allocator);
         result->resize(num_rows);
         const auto data_column = ColumnHelper::cast_to_raw<DecimalType>(column);
         int scale = data_column->scale();
@@ -256,7 +260,7 @@ struct DecimalNonDecimalCast<overflow_mode, DecimalType, NonDecimalType, Decimal
         NullColumn::ValueType* nulls = nullptr;
         bool has_null = false;
         if constexpr (check_overflow<overflow_mode>) {
-            null_column = NullColumn::create();
+            null_column = NullColumn::create(allocator);
             null_column->resize(num_rows);
             nulls = &null_column->get_data().front();
         }
@@ -343,7 +347,7 @@ struct DecimalNonDecimalCast<overflow_mode, DecimalType, NonDecimalType, Decimal
             }
         }
         if constexpr (check_overflow<overflow_mode>) {
-            ColumnBuilder<NonDecimalType> builder(std::move(result), std::move(null_column), has_null);
+            ColumnBuilder<NonDecimalType> builder(allocator, std::move(result), std::move(null_column), has_null);
             return builder.build(false);
         } else {
             return result;
@@ -362,13 +366,14 @@ struct DecimalNonDecimalCast<overflow_mode, DecimalType, StringType, DecimalLTGu
 
     static inline ColumnPtr decimal_from(const ColumnPtr& column, int precision, int scale) {
         const auto num_rows = column->size();
-        typename DecimalColumnType::MutablePtr result = DecimalColumnType::create(precision, scale, num_rows);
+        auto* allocator = memory::get_default_allocator();
+        typename DecimalColumnType::MutablePtr result = DecimalColumnType::create(allocator, precision, scale, num_rows);
         auto result_data = &ColumnHelper::cast_to_raw<DecimalType>(result.get())->get_data().front();
         NullColumn::MutablePtr null_column;
         NullColumn::ValueType* nulls = nullptr;
         auto has_null = false;
         if constexpr (check_overflow<overflow_mode>) {
-            null_column = NullColumn::create();
+            null_column = NullColumn::create(allocator);
             null_column->resize(num_rows);
             nulls = &null_column->get_data().front();
         }
@@ -390,7 +395,7 @@ struct DecimalNonDecimalCast<overflow_mode, DecimalType, StringType, DecimalLTGu
             }
         }
         if constexpr (check_overflow<overflow_mode>) {
-            ColumnBuilder<DecimalType> builder(std::move(result), std::move(null_column), has_null);
+            ColumnBuilder<DecimalType> builder(allocator, std::move(result), std::move(null_column), has_null);
             return builder.build(column->is_constant());
         } else {
             return result;
@@ -399,10 +404,11 @@ struct DecimalNonDecimalCast<overflow_mode, DecimalType, StringType, DecimalLTGu
 
     static inline ColumnPtr decimal_to(const ColumnPtr& column) {
         const auto num_rows = column->size();
-        auto result = BinaryColumn::create();
+        auto* allocator = memory::get_default_allocator();
+        auto result = BinaryColumn::create(allocator);
         auto& bytes = result->get_bytes();
         auto& offsets = result->get_offset();
-        raw::make_room(&offsets, num_rows + 1);
+        offsets.resize(num_rows + 1);
         offsets[0] = 0;
         size_t max_length = decimal_precision_limit<DecimalCppType> + 4;
         bytes.resize(num_rows * max_length);

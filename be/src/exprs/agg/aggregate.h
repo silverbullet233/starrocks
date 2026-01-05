@@ -18,10 +18,13 @@
 
 #include "column/column.h"
 #include "runtime/current_thread.h"
+#include "runtime/memory/allocator_v2.h"
 
 namespace starrocks {
 class FunctionContext;
 }
+
+#include "exprs/function_context.h"
 
 namespace starrocks {
 
@@ -345,7 +348,13 @@ protected:
 public:
     static constexpr bool pod_state() { return std::is_trivially_destructible_v<State>; }
 
-    void create(FunctionContext* ctx, AggDataPtr __restrict ptr) const override { new (ptr) State; }
+    void create(FunctionContext* ctx, AggDataPtr __restrict ptr) const override {
+        if constexpr (std::is_constructible_v<State, memory::Allocator*>) {
+            new (ptr) State(ctx->get_allocator());
+        } else {
+            new (ptr) State;
+        }
+    }
 
     void destroy(FunctionContext* ctx, AggDataPtr __restrict ptr) const override { data(ptr).~State(); }
 

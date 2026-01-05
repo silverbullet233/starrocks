@@ -25,6 +25,7 @@
 #include "simd/simd.h"
 #include "typeinfo"
 #include "types/logical_type.h"
+#include "runtime/memory/allocator_v2.h"
 
 namespace starrocks {
 
@@ -52,7 +53,7 @@ public:
 
         const int s = std::min(v1->size(), v2->size());
 
-        auto result = ResultColumnType::create();
+        auto result = ResultColumnType::create(memory::get_default_allocator());
         result->resize_uninitialized(v1->size());
         auto* data3 = result->get_data().data();
 
@@ -87,7 +88,7 @@ public:
         using ResultColumnType = RunTimeColumnType<ResultType>;
 
         int size = v2->size();
-        auto result = ResultColumnType::create();
+        auto result = ResultColumnType::create(memory::get_default_allocator());
         result->resize_uninitialized(size);
         auto* data3 = result->get_data().data();
 
@@ -122,7 +123,7 @@ public:
         using ResultColumnType = RunTimeColumnType<ResultType>;
 
         int size = v1->size();
-        auto result = ResultColumnType::create();
+        auto result = ResultColumnType::create(memory::get_default_allocator());
         result->resize_uninitialized(size);
         auto& r3 = result->get_data();
         auto* data3 = r3.data();
@@ -157,7 +158,7 @@ public:
         using ResultCppType = RunTimeCppType<ResultType>;
         using ResultColumnType = RunTimeColumnType<ResultType>;
 
-        auto result = ResultColumnType::create();
+        auto result = ResultColumnType::create(memory::get_default_allocator());
         result->resize_uninitialized(1);
         auto& r3 = result->get_data();
 
@@ -202,7 +203,7 @@ public:
 
             auto result = BaseBinaryFunction<OP>::template const_const<LType, RType, ResultType>(data1, data2);
 
-            return ConstColumn::create(result, v1->size());
+            return ConstColumn::create(memory::get_default_allocator(), result, v1->size());
         }
     }
 };
@@ -278,7 +279,7 @@ public:
                 auto nullable_column = ColumnHelper::as_raw_column<NullableColumn>(data);
                 null_flags = NullColumn::static_pointer_cast(nullable_column->null_column()->as_mutable_ptr());
             } else {
-                null_flags = RunTimeColumnType<TYPE_NULL>::create();
+                null_flags = RunTimeColumnType<TYPE_NULL>::create(memory::get_default_allocator());
                 null_flags->resize(data->size());
             }
             const auto& real_data =
@@ -299,9 +300,9 @@ public:
                 ColumnHelper::as_raw_column<NullableColumn>(data)->update_has_null();
             } else {
                 if (SIMD::count_nonzero(null_flags->get_data())) {
-                    auto null_result = NullableColumn::create(data, null_flags);
+                    auto null_result = NullableColumn::create(memory::get_default_allocator(), data, null_flags);
                     if (data_result->is_constant()) {
-                        return ConstColumn::create(std::move(null_result), data_result->size());
+                        return ConstColumn::create(memory::get_default_allocator(), std::move(null_result), data_result->size());
                     }
                     return null_result;
                 }
@@ -357,7 +358,7 @@ public:
             if constexpr (lt_is_decimal<ResultType>) {
                 return FunctionHelper::merge_column_and_null_column(std::move(data_result), std::move(null_result));
             } else {
-                return NullableColumn::create(std::move(data_result), std::move(null_result));
+                return NullableColumn::create(memory::get_default_allocator(), std::move(data_result), std::move(null_result));
             }
         }
 
@@ -376,7 +377,7 @@ public:
         if constexpr (lt_is_decimal<ResultType>) {
             return FunctionHelper::merge_column_and_null_column(std::move(data_result), std::move(null_result));
         } else {
-            return NullableColumn::create(std::move(data_result), std::move(null_result));
+            return NullableColumn::create(memory::get_default_allocator(), std::move(data_result), std::move(null_result));
         }
     }
 
@@ -425,7 +426,7 @@ public:
 
         int size = std::min(lv->size(), rv->size());
 
-        auto null_column = NullColumn::create();
+        auto null_column = NullColumn::create(memory::get_default_allocator());
         null_column->resize_uninitialized(size);
 
         auto* nd = null_column->get_data().data();
@@ -435,7 +436,7 @@ public:
                     lvd[i], lnd[i], rvd[i], rnd[i]);
         }
 
-        auto data_column = RunTimeColumnType<ResultType>::create();
+        auto data_column = RunTimeColumnType<ResultType>::create(memory::get_default_allocator());
         data_column->resize_uninitialized(size);
         auto* dd = data_column->get_data().data();
 
@@ -444,7 +445,7 @@ public:
                     lvd[i], rvd[i]);
         }
 
-        return NullableColumn::create(std::move(data_column), std::move(null_column));
+        return NullableColumn::create(memory::get_default_allocator(), std::move(data_column), std::move(null_column));
     }
 
     template <LogicalType LType, LogicalType RType, LogicalType ResultType>
@@ -458,7 +459,7 @@ public:
 
         int size = rv->size();
 
-        auto null_column = NullColumn::create();
+        auto null_column = NullColumn::create(memory::get_default_allocator());
         null_column->resize_uninitialized(size);
 
         auto* nd = null_column->get_data().data();
@@ -468,7 +469,7 @@ public:
                     lvd[0], lnd[0], rvd[i], rnd[i]);
         }
 
-        auto data_column = RunTimeColumnType<ResultType>::create();
+        auto data_column = RunTimeColumnType<ResultType>::create(memory::get_default_allocator());
         data_column->resize_uninitialized(size);
         auto* dd = data_column->get_data().data();
 
@@ -477,7 +478,7 @@ public:
                     lvd[0], rvd[i]);
         }
 
-        return NullableColumn::create(std::move(data_column), std::move(null_column));
+        return NullableColumn::create(memory::get_default_allocator(), std::move(data_column), std::move(null_column));
     }
 
     template <LogicalType LType, LogicalType RType, LogicalType ResultType>
@@ -491,7 +492,7 @@ public:
 
         int size = lv->size();
 
-        auto null_column = NullColumn::create();
+        auto null_column = NullColumn::create(memory::get_default_allocator());
         null_column->resize_uninitialized(size);
 
         auto* nd = null_column->get_data().data();
@@ -501,7 +502,7 @@ public:
                     lvd[i], lnd[i], rvd[0], rnd[0]);
         }
 
-        auto data_column = RunTimeColumnType<ResultType>::create();
+        auto data_column = RunTimeColumnType<ResultType>::create(memory::get_default_allocator());
         data_column->resize_uninitialized(size);
         auto* dd = data_column->get_data().data();
 
@@ -510,7 +511,7 @@ public:
                     lvd[i], rvd[0]);
         }
 
-        return NullableColumn::create(std::move(data_column), std::move(null_column));
+        return NullableColumn::create(memory::get_default_allocator(), std::move(data_column), std::move(null_column));
     }
 };
 
@@ -539,39 +540,39 @@ public:
         if (v1->only_null()) {
             auto p = ColumnHelper::as_raw_column<NullableColumn>(
                     ColumnHelper::as_raw_column<ConstColumn>(v1)->data_column());
-            auto ld_mut = RunTimeColumnType<LType>::create();
+            auto ld_mut = RunTimeColumnType<LType>::create(memory::get_default_allocator());
             ld_mut->append_default();
             ld = std::move(ld_mut);
             ln = p->null_column();
         } else if (v1->is_constant()) {
             ld = ColumnHelper::as_raw_column<ConstColumn>(v1)->data_column();
-            ln = NullColumn::create(v1->size(), 0);
+            ln = NullColumn::create(memory::get_default_allocator(), v1->size(), 0);
         } else if (v1->is_nullable()) {
             auto p = ColumnHelper::as_raw_column<NullableColumn>(v1);
             ld = p->data_column();
             ln = p->null_column();
         } else {
             ld = v1;
-            ln = NullColumn::create(v1->size(), 0);
+            ln = NullColumn::create(memory::get_default_allocator(), v1->size(), 0);
         }
 
         if (v2->only_null()) {
             auto p = ColumnHelper::as_raw_column<NullableColumn>(
                     ColumnHelper::as_raw_column<ConstColumn>(v2)->data_column());
-            auto rd_mut = RunTimeColumnType<LType>::create();
+            auto rd_mut = RunTimeColumnType<LType>::create(memory::get_default_allocator());
             rd_mut->append_default();
             rd = std::move(rd_mut);
             rn = p->null_column();
         } else if (v2->is_constant()) {
             rd = ColumnHelper::as_raw_column<ConstColumn>(v2)->data_column();
-            rn = NullColumn::create(v2->size(), 0);
+            rn = NullColumn::create(memory::get_default_allocator(), v2->size(), 0);
         } else if (v2->is_nullable()) {
             auto p = ColumnHelper::as_raw_column<NullableColumn>(v2);
             rd = p->data_column();
             rn = p->null_column();
         } else {
             rd = v2;
-            rn = NullColumn::create(v2->size(), 0);
+            rn = NullColumn::create(memory::get_default_allocator(), v2->size(), 0);
         }
 
         // return must be nullable column
@@ -580,10 +581,10 @@ public:
         // INPUT IS CONSTANT, RETURN CONSTANT
         if (v1->is_constant() && v2->is_constant()) {
             if (p->is_null(0)) {
-                return ConstColumn::create(std::move(p), v1->size());
+                return ConstColumn::create(memory::get_default_allocator(), std::move(p), v1->size());
             } else {
                 auto np = ColumnHelper::as_raw_column<NullableColumn>(p);
-                return ConstColumn::create(std::move(np->data_column()), v1->size());
+                return ConstColumn::create(memory::get_default_allocator(), std::move(np->data_column()), v1->size());
             }
         } else {
             return p;

@@ -28,28 +28,21 @@ namespace starrocks {
 
 class ArrayViewColumn final : public CowFactory<ColumnFactory<Column, ArrayViewColumn>, ArrayViewColumn> {
     friend class CowFactory<ColumnFactory<Column, ArrayViewColumn>, ArrayViewColumn>;
+    using Base = CowFactory<ColumnFactory<Column, ArrayViewColumn>, ArrayViewColumn>;
 
 public:
     using ValueType = void;
 
-    ArrayViewColumn(ColumnPtr elements, UInt32Column::Ptr offsets, UInt32Column::Ptr lengths)
-            : _elements(std::move(elements)), _offsets(std::move(offsets)), _lengths(std::move(lengths)) {}
-
-    ArrayViewColumn(const ArrayViewColumn& rhs)
-            : _elements(rhs._elements),
-              _offsets(UInt32Column::static_pointer_cast(rhs._offsets->clone())),
-              _lengths(UInt32Column::static_pointer_cast(rhs._lengths->clone())) {}
+    ArrayViewColumn(memory::Allocator* allocator, ColumnPtr elements, UInt32Column::Ptr offsets,
+                    UInt32Column::Ptr lengths)
+            : Base(allocator), _elements(std::move(elements)), _offsets(std::move(offsets)),
+              _lengths(std::move(lengths)) {}
 
     ArrayViewColumn(ArrayViewColumn&& rhs) noexcept
-            : _elements(std::move(rhs._elements)),
+            : Base(rhs._allocator),
+              _elements(std::move(rhs._elements)),
               _offsets(std::move(rhs._offsets)),
               _lengths(std::move(rhs._lengths)) {}
-
-    ArrayViewColumn& operator=(const ArrayViewColumn& rhs) {
-        ArrayViewColumn tmp(rhs);
-        this->swap_column(tmp);
-        return *this;
-    }
     ArrayViewColumn& operator=(ArrayViewColumn&& rhs) noexcept {
         ArrayViewColumn tmp(std::move(rhs));
         this->swap_column(tmp);
@@ -141,7 +134,13 @@ public:
     uint32_t serialize_size(size_t idx) const override;
     void deserialize_and_append_batch(Buffer<Slice>& srcs, size_t chunk_size) override;
 
-    MutableColumnPtr clone_empty() const override;
+    MutableColumnPtr clone_empty(memory::Allocator* allocator = nullptr) const override;
+    MutableColumnPtr clone(memory::Allocator* allocator = nullptr) const override {
+        allocator = allocator == nullptr ? this->get_allocator() : allocator;
+        return Base::create(allocator, _elements,
+                            UInt32Column::static_pointer_cast(_offsets->clone(allocator)),
+                            UInt32Column::static_pointer_cast(_lengths->clone(allocator)));
+    }
 
     size_t filter_range(const Filter& filter, size_t from, size_t to) override;
 
@@ -235,5 +234,7 @@ private:
     Column::WrappedPtr _elements;
     UInt32Column::WrappedPtr _offsets;
     UInt32Column::WrappedPtr _lengths;
+
+    DISALLOW_COPY(ArrayViewColumn);
 };
 } // namespace starrocks

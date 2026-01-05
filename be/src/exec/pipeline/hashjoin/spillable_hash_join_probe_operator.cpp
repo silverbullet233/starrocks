@@ -211,7 +211,7 @@ Status SpillableHashJoinProbeOperator::push_chunk(RuntimeState* state, const Chu
 Status SpillableHashJoinProbeOperator::_push_probe_chunk(RuntimeState* state, const ChunkPtr& chunk) {
     // compute hash
     size_t num_rows = chunk->num_rows();
-    auto hash_column = spill::SpillHashColumn::create(num_rows);
+    auto hash_column = spill::SpillHashColumn::create(memory::get_default_allocator(), num_rows);
     auto& hash_values = hash_column->get_data();
 
     // TODO: use another hash function

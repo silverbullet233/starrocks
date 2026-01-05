@@ -38,6 +38,7 @@
 #include "column/nullable_column.h"
 #include "column/type_traits.h"
 #include "column/vectorized_fwd.h"
+#include "runtime/memory/allocator_v2.h"
 #include "common/compiler_util.h"
 #include "common/config.h"
 #include "common/status.h"
@@ -1026,7 +1027,8 @@ ColumnPtr JsonMerger::merge(const Columns& columns) {
     DCHECK_GE(columns.size(), 1);
     DCHECK(_src_columns.empty());
 
-    _result = NullableColumn::create(JsonColumn::create(), NullColumn::create());
+    _result = NullableColumn::create(memory::get_default_allocator(), JsonColumn::create(memory::get_default_allocator()),
+                                     NullColumn::create(memory::get_default_allocator()));
     auto* nullable_result = down_cast<NullableColumn*>(_result.get());
     _json_result = down_cast<JsonColumn*>(nullable_result->data_column_raw_ptr());
     _null_result = down_cast<NullColumn*>(nullable_result->null_column_raw_ptr());
@@ -1267,7 +1269,7 @@ HyperJsonTransformer::HyperJsonTransformer(const std::vector<std::string>& paths
     }
 
     if (_dst_remain) {
-        _dst_columns.emplace_back(JsonColumn::create());
+        _dst_columns.emplace_back(JsonColumn::create(memory::get_default_allocator()));
     }
 }
 
@@ -1573,8 +1575,9 @@ Status HyperJsonTransformer::_cast(const MergeTask& task, const ColumnPtr& col) 
         auto data = down_cast<ConstColumn*>(res.get())->data_column();
         _dst_columns[task.dst_index]->append_value_multiple_times(*data, 0, col->size());
     } else if (_dst_columns[task.dst_index]->is_nullable() && !res->is_nullable()) {
-        auto nl = NullColumn::create(col->size(), 0);
-        _dst_columns[task.dst_index] = NullableColumn::create(std::move(res), std::move(nl));
+        auto nl = NullColumn::create(col->get_allocator(), col->size(), 0);
+        _dst_columns[task.dst_index] =
+                NullableColumn::create(col->get_allocator(), std::move(res), std::move(nl));
     } else {
         DCHECK_EQ(_dst_columns[task.dst_index]->is_nullable(), res->is_nullable());
         _dst_columns[task.dst_index].swap(res);

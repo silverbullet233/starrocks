@@ -130,7 +130,7 @@ void ColumnViewBase::_append_selective(const Column& src, std::vector<uint32_t>&
 
 void ColumnViewBase::append_default() {
     const auto habitat_idx = _habitats.size();
-    _habitats.emplace_back(_default_column->clone());
+    _habitats.emplace_back(_default_column->clone(_allocator));
     _num_rows += 1;
     _tasks.emplace_back([=]() {
         _habitat_idx.push_back(habitat_idx);

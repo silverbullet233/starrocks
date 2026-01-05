@@ -124,9 +124,9 @@ public:
             if (!res->is_null(0)) {
                 // map_value is nullable, remove it.
                 auto col = down_cast<NullableColumn*>(res.get())->data_column();
-                return ConstColumn::create(std::move(col), num_rows);
+                return ConstColumn::create(context->get_allocator(), std::move(col), num_rows);
             }
-            return ConstColumn::create(std::move(res), num_rows);
+            return ConstColumn::create(context->get_allocator(), std::move(res), num_rows);
         } else {
             return res;
         }

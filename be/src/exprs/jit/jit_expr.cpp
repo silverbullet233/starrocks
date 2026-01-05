@@ -28,6 +28,7 @@
 #include "exprs/function_context.h"
 #include "exprs/jit/jit_engine.h"
 #include "runtime/runtime_state.h"
+#include "runtime/memory/allocator_v2.h"
 
 namespace starrocks {
 
@@ -136,7 +137,7 @@ StatusOr<ColumnPtr> JITExpr::evaluate_checked(starrocks::ExprContext* context, C
                 << "size unequal " + std::to_string(num_rows) + " != " + std::to_string(column->size());
 
         if (child->is_nullable() && !column->is_nullable()) {
-            column = NullableColumn::create(column, NullColumn::create(column->size(), 0));
+            column = NullableColumn::create(memory::get_default_allocator(), column, NullColumn::create(memory::get_default_allocator(), column->size(), 0));
         } else if (!child->is_nullable() && column->is_nullable()) {
             if (column->has_null()) {
                 return Status::RuntimeError(

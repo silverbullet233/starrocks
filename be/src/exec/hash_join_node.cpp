@@ -914,7 +914,7 @@ Status HashJoinNode::_process_outer_join_with_other_conjunct(ChunkPtr* chunk, si
                                                              size_t column_count) {
     bool filter_all = false;
     bool hit_all = false;
-    Filter filter;
+    Filter filter(memory::get_default_allocator());
 
     RETURN_IF_ERROR(_calc_filter_for_other_conjunct(chunk, filter, filter_all, hit_all));
     _process_row_for_other_conjunct(chunk, start_column, column_count, filter_all, hit_all, filter);
@@ -928,7 +928,7 @@ Status HashJoinNode::_process_outer_join_with_other_conjunct(ChunkPtr* chunk, si
 Status HashJoinNode::_process_semi_join_with_other_conjunct(ChunkPtr* chunk) {
     bool filter_all = false;
     bool hit_all = false;
-    Filter filter;
+    Filter filter(memory::get_default_allocator());
 
     RETURN_IF_ERROR(_calc_filter_for_other_conjunct(chunk, filter, filter_all, hit_all));
 
@@ -941,7 +941,7 @@ Status HashJoinNode::_process_semi_join_with_other_conjunct(ChunkPtr* chunk) {
 Status HashJoinNode::_process_right_anti_join_with_other_conjunct(ChunkPtr* chunk) {
     bool filter_all = false;
     bool hit_all = false;
-    Filter filter;
+    Filter filter(memory::get_default_allocator());
 
     RETURN_IF_ERROR(_calc_filter_for_other_conjunct(chunk, filter, filter_all, hit_all));
 

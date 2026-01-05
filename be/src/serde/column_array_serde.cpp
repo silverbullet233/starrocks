@@ -186,7 +186,7 @@ public:
         uint32_t size = 0;
         buff = read_little_endian_32(buff, &size);
         auto& data = column->get_data();
-        raw::make_room(&data, size / sizeof(T));
+        data.resize(size / sizeof(T));
         if (EncodeContext::enable_encode_integer(encode_level) && size >= ENCODE_SIZE_LIMIT) {
             if (sizeof(T) == 4 && sorted) { // only support sorted 32-bit integers
                 buff = decode_integers<true>(buff, data.data(), size);
@@ -281,7 +281,7 @@ public:
         } else {
             buff = read_little_endian_64(buff, &offsets_size);
         }
-        raw::make_room(&column->get_offset(), offsets_size / sizeof(typename BinaryColumnBase<T>::Offset));
+        column->get_offset().resize(offsets_size / sizeof(typename BinaryColumnBase<T>::Offset));
         if (EncodeContext::enable_encode_integer(encode_level) && offsets_size >= ENCODE_SIZE_LIMIT) {
             if (sizeof(T) == 4) { // only support sorted 32-bit integers
                 buff = decode_integers<true>(buff, column->get_offset().data(), offsets_size);

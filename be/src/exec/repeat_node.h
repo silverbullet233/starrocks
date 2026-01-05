@@ -16,6 +16,7 @@
 
 #include "column/column_helper.h"
 #include "exec/exec_node.h"
+#include "runtime/memory/allocator_v2.h"
 
 namespace starrocks {
 class DescriptorTbl;
@@ -37,15 +38,17 @@ public:
 
 private:
     static ColumnPtr generate_null_column(int64_t num_rows) {
-        auto nullable_column = NullableColumn::create(Int8Column::create(), NullColumn::create());
+        auto nullable_column = NullableColumn::create(
+                memory::get_default_allocator(), Int8Column::create(memory::get_default_allocator()),
+                NullColumn::create(memory::get_default_allocator()));
         nullable_column->append_nulls(1);
-        return ConstColumn::create(std::move(nullable_column), num_rows);
+        return ConstColumn::create(memory::get_default_allocator(), std::move(nullable_column), num_rows);
     }
 
     static ColumnPtr generate_repeat_column(int64_t value, int64_t num_rows) {
-        auto ptr = RunTimeColumnType<TYPE_BIGINT>::create();
+        auto ptr = RunTimeColumnType<TYPE_BIGINT>::create(memory::get_default_allocator());
         ptr->append_datum(Datum(value));
-        return ConstColumn::create(std::move(ptr), num_rows);
+        return ConstColumn::create(memory::get_default_allocator(), std::move(ptr), num_rows);
     }
 
     void extend_and_update_columns(ChunkPtr* curr_chunk, ChunkPtr* chunk);

@@ -340,7 +340,7 @@ private:
                 LOG(FATAL) << "create column for primary key encoder failed";
             }
         } else if (schema.sort_key_idxes().size() == 1 && schema.field(schema.sort_key_idxes()[0])->is_nullable()) {
-            sort_column = BinaryColumn::create();
+            sort_column = BinaryColumn::create(memory::get_default_allocator());
         }
         _chunk_size = calculate_chunk_size_for_column_group(schema, rowsets);
         if (tablet.is_column_with_row_store() && config::update_compaction_chunk_size_for_row_store > 0) {

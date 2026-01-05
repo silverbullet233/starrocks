@@ -29,12 +29,46 @@ namespace starrocks {
 template <LogicalType LT>
 struct AnyValueAggregateData {
     using T = AggDataValueType<LT>;
+    
+    // For string types, use aligned_storage to avoid default construction
+    using StorageType = std::conditional_t<lt_is_string<LT>, 
+                                           std::aligned_storage_t<sizeof(T), alignof(T)>,
+                                           T>;
 
-    T result;
+    StorageType result_storage;
     bool has_value = false;
 
+    // Accessor for result
+    T& result() {
+        if constexpr (lt_is_string<LT>) {
+            return *reinterpret_cast<T*>(&result_storage);
+        } else {
+            return result_storage;
+        }
+    }
+    
+    const T& result() const {
+        if constexpr (lt_is_string<LT>) {
+            return *reinterpret_cast<const T*>(&result_storage);
+        } else {
+            return result_storage;
+        }
+    }
+
+    // Default constructor
+    AnyValueAggregateData() : has_value(false) {
+        if constexpr (!lt_is_string<LT>) {
+            result() = T{};
+        }
+        // For string types, result will be initialized via placement new in create()
+    }
+
     void reset() {
-        result = T{};
+        if constexpr (lt_is_string<LT>) {
+            result().clear();
+        } else {
+            result() = T{};
+        }
         has_value = false;
     }
 };
@@ -45,7 +79,7 @@ struct AnyValueElement {
 
     void operator()(State& state, RefType right) const {
         if (UNLIKELY(!state.has_value)) {
-            AggDataTypeTraits<LT>::assign_value(state.result, right);
+            AggDataTypeTraits<LT>::assign_value(state.result(), right);
             state.has_value = true;
         }
     }
@@ -56,6 +90,13 @@ class AnyValueAggregateFunction final
         : public AggregateFunctionBatchHelper<State, AnyValueAggregateFunction<LT, State, OP, T>> {
 public:
     using InputColumnType = RunTimeColumnType<LT>;
+
+    void create(FunctionContext* ctx, AggDataPtr __restrict ptr) const override {
+        auto* state = new (ptr) State();
+        if constexpr (lt_is_string<LT>) {
+            new (&state->result_storage) Buffer<uint8_t>(ctx->get_allocator());
+        }
+    }
 
     void reset(FunctionContext* ctx, const Columns& args, AggDataPtr state) const override {
         this->data(state).reset();
@@ -81,7 +122,7 @@ public:
 
     void serialize_to_column(FunctionContext* ctx, ConstAggDataPtr __restrict state, Column* to) const override {
         DCHECK(!to->is_nullable());
-        AggDataTypeTraits<LT>::append_value(down_cast<InputColumnType*>(to), this->data(state).result);
+        AggDataTypeTraits<LT>::append_value(down_cast<InputColumnType*>(to), this->data(state).result());
     }
 
     void convert_to_serialize_format(FunctionContext* ctx, const Columns& src, size_t chunk_size,
@@ -91,7 +132,7 @@ public:
 
     void finalize_to_column(FunctionContext* ctx, ConstAggDataPtr __restrict state, Column* to) const override {
         DCHECK(!to->is_nullable());
-        AggDataTypeTraits<LT>::append_value(down_cast<InputColumnType*>(to), this->data(state).result);
+        AggDataTypeTraits<LT>::append_value(down_cast<InputColumnType*>(to), this->data(state).result());
     }
 
     void get_values(FunctionContext* ctx, ConstAggDataPtr __restrict state, Column* dst, size_t start,
@@ -99,7 +140,7 @@ public:
         DCHECK_GT(end, start);
         auto* column = down_cast<InputColumnType*>(dst);
         for (size_t i = start; i < end; ++i) {
-            AggDataTypeTraits<LT>::append_value(column, this->data(state).result);
+            AggDataTypeTraits<LT>::append_value(column, this->data(state).result());
         }
     }
 

@@ -18,6 +18,7 @@
 #include "column/const_column.h"
 #include "column/map_column.h"
 #include "column/nullable_column.h"
+#include "runtime/memory/allocator_v2.h"
 #include "storage/rowset/scalar_column_iterator.h"
 
 namespace starrocks {
@@ -109,7 +110,7 @@ Status MapColumnIterator::next_batch(size_t* n, Column* dst) {
     } else {
         if (!map_column->keys_column()->is_constant()) {
             map_column->keys_column_raw_ptr()->append_default(1);
-            map_column->keys_column() = ConstColumn::create(map_column->keys_column(), num_to_read);
+            map_column->keys_column() = ConstColumn::create(map_column->get_allocator(), map_column->keys_column(), num_to_read);
         } else {
             map_column->keys_column_raw_ptr()->append_default(num_to_read);
         }
@@ -120,7 +121,7 @@ Status MapColumnIterator::next_batch(size_t* n, Column* dst) {
     } else {
         if (!map_column->values_column()->is_constant()) {
             map_column->values_column_raw_ptr()->append_default(1);
-            map_column->values_column() = ConstColumn::create(map_column->values_column(), num_to_read);
+            map_column->values_column() = ConstColumn::create(map_column->get_allocator(), map_column->values_column(), num_to_read);
         } else {
             map_column->values_column_raw_ptr()->append_default(num_to_read);
         }
@@ -160,7 +161,7 @@ Status MapColumnIterator::next_batch(const SparseRange<>& range, Column* dst) {
     } else {
         if (!map_column->keys_column()->is_constant()) {
             map_column->keys_column_raw_ptr()->append_default(1);
-            map_column->keys_column() = ConstColumn::create(map_column->keys_column(), read_rows);
+            map_column->keys_column() = ConstColumn::create(map_column->get_allocator(), map_column->keys_column(), read_rows);
         } else {
             map_column->keys_column_raw_ptr()->append_default(read_rows);
         }
@@ -171,7 +172,7 @@ Status MapColumnIterator::next_batch(const SparseRange<>& range, Column* dst) {
     } else {
         if (!map_column->values_column()->is_constant()) {
             map_column->values_column_raw_ptr()->append_default(1);
-            map_column->values_column() = ConstColumn::create(map_column->values_column(), read_rows);
+            map_column->values_column() = ConstColumn::create(map_column->get_allocator(), map_column->values_column(), read_rows);
         } else {
             map_column->values_column_raw_ptr()->append_default(read_rows);
         }
@@ -195,7 +196,7 @@ Status MapColumnIterator::fetch_values_by_rowid(const rowid_t* rowids, size_t si
     }
 
     // 2. Read offset column
-    UInt32Column array_size;
+    UInt32Column array_size(memory::get_default_allocator());
     array_size.reserve(size);
     RETURN_IF_ERROR(_offsets->fetch_values_by_rowid(rowids, size, &array_size));
 
@@ -231,7 +232,7 @@ Status MapColumnIterator::fetch_values_by_rowid(const rowid_t* rowids, size_t si
     if (!_access_keys) {
         if (!map_column->keys_column()->is_constant()) {
             map_column->keys_column_raw_ptr()->append_default(1);
-            map_column->keys_column() = ConstColumn::create(map_column->keys_column(), offset - start);
+            map_column->keys_column() = ConstColumn::create(map_column->get_allocator(), map_column->keys_column(), offset - start);
         } else {
             map_column->keys_column_raw_ptr()->append_default(offset - start);
         }
@@ -240,7 +241,7 @@ Status MapColumnIterator::fetch_values_by_rowid(const rowid_t* rowids, size_t si
     if (!_access_values) {
         if (!map_column->values_column()->is_constant()) {
             map_column->values_column_raw_ptr()->append_default(1);
-            map_column->values_column() = ConstColumn::create(map_column->values_column(), offset - start);
+            map_column->values_column() = ConstColumn::create(map_column->get_allocator(), map_column->values_column(), offset - start);
         } else {
             map_column->values_column_raw_ptr()->append_default(offset - start);
         }

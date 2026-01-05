@@ -302,8 +302,9 @@ void ObjectColumn<T>::_build_slices() const {
 }
 
 template <typename T>
-MutableColumnPtr ObjectColumn<T>::clone() const {
-    auto p = clone_empty();
+MutableColumnPtr ObjectColumn<T>::clone(memory::Allocator* allocator) const {
+    allocator = allocator == nullptr ? this->get_allocator() : allocator;
+    auto p = clone_empty(allocator);
     p->append(*this, 0, size());
     return p;
 }

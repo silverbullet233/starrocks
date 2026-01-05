@@ -192,7 +192,7 @@ private:
 
         const BinaryColumn* haystack = ColumnHelper::as_raw_column<BinaryColumn>(haystackPtr);
         size_t chunk_size = haystack->size();
-        auto res = RunTimeColumnType<TYPE_DOUBLE>::create(chunk_size);
+        auto res = RunTimeColumnType<TYPE_DOUBLE>::create(context->get_allocator(), chunk_size);
 
         auto state = reinterpret_cast<Ngramstate*>(context->get_function_state(FunctionContext::FRAGMENT_LOCAL));
 
@@ -217,7 +217,7 @@ private:
         }
 
         if (haystack_column->is_nullable()) {
-            return NullableColumn::create(std::move(res), std::move(res_null));
+            return NullableColumn::create(context->get_allocator(), std::move(res), std::move(res_null));
         } else {
             return res;
         }

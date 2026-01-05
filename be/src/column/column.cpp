@@ -161,4 +161,5 @@ void Column::xxh3_hash_selective(uint32_t* hash, uint16_t* sel, uint16_t sel_siz
     xxh3_64_column_selective(*this, hash, sel, sel_size);
 }
 
+
 } // namespace starrocks

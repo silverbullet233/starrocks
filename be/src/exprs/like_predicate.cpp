@@ -247,7 +247,7 @@ StatusOr<ColumnPtr> LikePredicate::match_fn_with_long_constant_pattern(FunctionC
     auto [all_const, num_rows] = ColumnHelper::num_packed_rows(columns);
 
     ColumnViewer<TYPE_VARCHAR> value_viewer(value_column);
-    ColumnBuilder<TYPE_BOOLEAN> result(num_rows);
+    ColumnBuilder<TYPE_BOOLEAN> result(context->get_allocator(), num_rows);
 
     for (int row = 0; row < num_rows; ++row) {
         if (value_viewer.is_null(row)) {
@@ -317,7 +317,7 @@ StatusOr<ColumnPtr> LikePredicate::constant_substring_fn(FunctionContext* contex
     auto state = reinterpret_cast<LikePredicateState*>(context->get_function_state(FunctionContext::THREAD_LOCAL));
 
     Slice needle = ColumnHelper::get_const_value<TYPE_VARCHAR>(state->_search_string_column);
-    auto res = RunTimeColumnType<TYPE_BOOLEAN>::create();
+    auto res = RunTimeColumnType<TYPE_BOOLEAN>::create(context->get_allocator());
 
     if (columns[0]->is_constant()) {
         Slice haystack = ColumnHelper::get_const_value<TYPE_VARCHAR>(columns[0]);
@@ -331,7 +331,7 @@ StatusOr<ColumnPtr> LikePredicate::constant_substring_fn(FunctionContext* contex
         } else {
             res->append(true);
         }
-        return ConstColumn::create(std::move(res), columns[0]->size());
+        return ConstColumn::create(context->get_allocator(), std::move(res), columns[0]->size());
     }
 
     const BinaryColumn* haystack = nullptr;
@@ -386,7 +386,7 @@ StatusOr<ColumnPtr> LikePredicate::constant_substring_fn(FunctionContext* contex
     }
 
     if (columns[0]->has_null()) {
-        return NullableColumn::create(std::move(res), std::move(res_null));
+        return NullableColumn::create(context->get_allocator(), std::move(res), std::move(res_null));
     }
     return res;
 }
@@ -497,7 +497,7 @@ StatusOr<ColumnPtr> LikePredicate::regex_match_full(FunctionContext* context, co
     auto [all_const, num_rows] = ColumnHelper::num_packed_rows(columns);
 
     ColumnViewer<TYPE_VARCHAR> value_viewer(value_column);
-    ColumnBuilder<TYPE_BOOLEAN> result(num_rows);
+    ColumnBuilder<TYPE_BOOLEAN> result(context->get_allocator(), num_rows);
 
     // pattern is constant value, use context's regex
     if (context->is_constant_column(1)) {
@@ -583,7 +583,7 @@ StatusOr<ColumnPtr> LikePredicate::regex_match_partial(FunctionContext* context,
     auto [all_const, num_rows] = ColumnHelper::num_packed_rows(columns);
 
     ColumnViewer<TYPE_VARCHAR> value_viewer(value_column);
-    ColumnBuilder<TYPE_BOOLEAN> result(num_rows);
+    ColumnBuilder<TYPE_BOOLEAN> result(context->get_allocator(), num_rows);
 
     // pattern is constant value, use context's regex
     if (context->is_constant_column(1)) {

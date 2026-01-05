@@ -17,6 +17,7 @@
 #include <memory>
 
 #include "fs/fs_util.h"
+#include "runtime/memory/allocator_v2.h"
 #include "storage/del_vector.h"
 #include "storage/lake/lake_persistent_index.h"
 #include "storage/lake/location_provider.h"
@@ -42,14 +43,14 @@ static std::string delvec_cache_key(int64_t tablet_id, const DelvecPagePB& page)
 }
 
 MetaFileBuilder::MetaFileBuilder(const Tablet& tablet, std::shared_ptr<TabletMetadata> metadata)
-        : _tablet(tablet), _tablet_meta(std::move(metadata)), _update_mgr(_tablet.update_mgr()) {}
+        : _tablet(tablet), _tablet_meta(std::move(metadata)), _update_mgr(_tablet.update_mgr()), _buf(memory::get_default_allocator()) {}
 
 void MetaFileBuilder::append_delvec(const DelVectorPtr& delvec, uint32_t segment_id) {
     if (delvec->cardinality() > 0) {
         const uint64_t offset = _buf.size();
         std::string delvec_str;
         delvec->save_to(&delvec_str);
-        _buf.insert(_buf.end(), delvec_str.begin(), delvec_str.end());
+        _buf.insert(delvec_str.begin(), delvec_str.end());
         const uint64_t size = _buf.size() - offset;
         _delvecs[segment_id].set_offset(offset);
         _delvecs[segment_id].set_size(size);

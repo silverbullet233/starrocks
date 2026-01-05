@@ -254,10 +254,10 @@ public:
 
         DCHECK(data1->is_array());
         DCHECK(data2->is_array());
-        auto lhs_arr = down_cast<const ArrayColumn&>(*data1);
-        auto rhs_arr = down_cast<const ArrayColumn&>(*data2);
+        auto& lhs_arr = down_cast<const ArrayColumn&>(*data1);
+        auto& rhs_arr = down_cast<const ArrayColumn&>(*data2);
 
-        ColumnBuilder<TYPE_BOOLEAN> builder(l->size());
+        ColumnBuilder<TYPE_BOOLEAN> builder(context->get_allocator(), l->size());
         std::vector<int8_t> cmp_result;
         lhs_arr.compare_column(rhs_arr, &cmp_result);
 
@@ -304,7 +304,7 @@ public:
         ColumnPtr data2 = FunctionHelper::get_data_column_of_nullable(const2);
 
         size_t size = l->size();
-        ColumnBuilder<TYPE_BOOLEAN> builder(size);
+        ColumnBuilder<TYPE_BOOLEAN> builder(context->get_allocator(), size);
         for (size_t i = 0, loff = 0, roff = 0; i < size; i++) {
             if (l->is_null(loff) || r->is_null(roff)) {
                 builder.append_null();
@@ -371,7 +371,7 @@ public:
         const auto& data2 = FunctionHelper::get_data_column_of_const(const2);
 
         size_t size = l->size();
-        ColumnBuilder<TYPE_BOOLEAN> builder(size);
+        ColumnBuilder<TYPE_BOOLEAN> builder(context->get_allocator(), size);
         for (size_t i = 0, loff = 0, roff = 0; i < size; i++) {
             auto ln = l->is_null(loff);
             auto rn = r->is_null(roff);
@@ -411,7 +411,7 @@ public:
         Columns list = {l, r};
 
         size_t size = list[0]->size();
-        ColumnBuilder<TYPE_BOOLEAN> builder(size);
+        ColumnBuilder<TYPE_BOOLEAN> builder(context->get_allocator(), size);
         for (int row = 0; row < size; ++row) {
             auto null1 = v1.is_null(row);
             auto null2 = v2.is_null(row);

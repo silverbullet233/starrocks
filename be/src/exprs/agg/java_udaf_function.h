@@ -26,6 +26,7 @@
 #include "column/nullable_column.h"
 #include "column/vectorized_fwd.h"
 #include "common/status.h"
+#include "runtime/memory/allocator_v2.h"
 #include "exprs/agg/aggregate.h"
 #include "exprs/function_context.h"
 #include "gutil/casts.h"
@@ -434,7 +435,8 @@ public:
         // For nullable inputs, our UDAF does not produce nullable results
         if (!to->is_nullable()) {
             MutableColumnPtr wrapper = const_cast<Column*>(to)->as_mutable_ptr();
-            auto output = NullableColumn::create(std::move(wrapper), NullColumn::create());
+            auto output = NullableColumn::create(to->get_allocator(), std::move(wrapper),
+                                                 NullColumn::create(to->get_allocator()));
             helper.get_result_from_boxed_array(ctx, type, output.get(), res, batch_size);
         } else {
             helper.get_result_from_boxed_array(ctx, type, to, res, batch_size);

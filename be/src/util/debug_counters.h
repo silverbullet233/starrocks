@@ -34,7 +34,7 @@ namespace starrocks {
 class DebugRuntimeProfile {
 public:
     static RuntimeProfile& profile() {
-        static RuntimeProfile profile(new ObjectPool(), "DebugProfile");
+        static RuntimeProfile profile("DebugProfile");
         return profile;
     }
 };

@@ -19,6 +19,7 @@
 #include "column/nullable_column.h"
 #include "column/vectorized_fwd.h"
 #include "gen_cpp/PlanNodes_types.h"
+#include "runtime/memory/allocator_v2.h"
 #include "runtime/current_thread.h"
 #include "runtime/descriptors.h"
 #include "simd/simd.h"
@@ -42,7 +43,8 @@ NLJoinProbeOperator::NLJoinProbeOperator(OperatorFactory* factory, int32_t id, i
           _join_conjuncts(join_conjuncts),
           _conjunct_ctxs(conjunct_ctxs),
           _common_expr_ctxs(common_expr_ctxs),
-          _cross_join_context(cross_join_context) {}
+          _cross_join_context(cross_join_context),
+          _self_build_match_flag(memory::get_default_allocator()) {}
 
 Status NLJoinProbeOperator::prepare(RuntimeState* state) {
     RETURN_IF_ERROR(OperatorWithDependency::prepare(state));
@@ -303,10 +305,10 @@ void NLJoinProbeOperator::iterate_enumerate_chunk(const ChunkPtr& chunk,
 Status NLJoinProbeOperator::_eval_nullaware_anti_conjuncts(const ChunkPtr& chunk, FilterPtr* filter) {
     if (!_join_conjuncts.empty() && chunk && !chunk->is_empty()) {
         size_t num_rows = chunk->num_rows();
-        auto null_column = NullColumn::create(chunk->num_rows());
+        auto null_column = NullColumn::create(memory::get_default_allocator(), chunk->num_rows());
         auto& null_data = null_column->get_data();
 
-        *filter = std::make_shared<Filter>(chunk->num_rows(), 1);
+        *filter = std::make_shared<Filter>(memory::get_default_allocator(), chunk->num_rows(), 1);
         auto& filter_data = **filter;
 
         // for null-aware left anti join, join_conjunct[0] is on-predicate
@@ -427,7 +429,7 @@ Status NLJoinProbeOperator::_probe_for_other_join(const ChunkPtr& chunk) {
 
     if ((_is_left_semi_join() || _is_left_anti_join()) && chunk->num_rows() > 0) {
         if (!filter && chunk->num_rows() > 0) {
-            filter = std::make_shared<Filter>(chunk->num_rows(), 0);
+            filter = std::make_shared<Filter>(memory::get_default_allocator(), chunk->num_rows(), 0);
             if (_is_left_semi_join()) {
                 (*filter)[0] = 1;
             } else {

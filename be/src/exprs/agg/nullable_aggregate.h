@@ -268,7 +268,7 @@ public:
                                         start, end);
             if constexpr (IsUnresizableWindowFunctionState<NestedState>) {
                 NullData& null_data = nullable_column->null_column_data();
-                null_data.insert(null_data.end(), end - start, 0);
+                null_data.insert(end - start, 0);
             }
         } else {
             NullData& null_data = nullable_column->null_column_data();

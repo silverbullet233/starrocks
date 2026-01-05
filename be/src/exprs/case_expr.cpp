@@ -403,7 +403,8 @@ private:
             ColumnViewer<WhenType> case_viewer(case_column);
             then_viewers.emplace_back(else_column);
 
-            ColumnBuilder<ResultType> builder(size, this->type().precision, this->type().scale);
+            ColumnBuilder<ResultType> builder(context->get_allocator(), size, this->type().precision,
+                                              this->type().scale);
 
             size_t view_size = when_viewers.size();
             if (!when_columns_has_null) {
@@ -556,7 +557,8 @@ private:
             for (auto& col : then_columns) {
                 then_viewers.emplace_back(col);
             }
-            ColumnBuilder<ResultType> builder(size, this->type().precision, this->type().scale);
+            ColumnBuilder<ResultType> builder(context->get_allocator(), size, this->type().precision,
+                                              this->type().scale);
             // max case size in use SIMD CASE WHEN implements
             constexpr int max_simd_case_when_size = 8;
 
@@ -602,7 +604,7 @@ private:
                                 down_cast<const BooleanColumn*>(data_column)->immutable_data().data());
                     }
 
-                    auto res = RunTimeColumnType<ResultType>::create();
+                    auto res = RunTimeColumnType<ResultType>::create(context->get_allocator());
 
                     if constexpr (lt_is_decimal<ResultType>) {
                         res->set_scale(this->type().scale);

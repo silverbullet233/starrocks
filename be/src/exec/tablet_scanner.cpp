@@ -21,6 +21,7 @@
 #include "common/status.h"
 #include "exec/olap_scan_node.h"
 #include "runtime/current_thread.h"
+#include "runtime/memory/allocator_v2.h"
 #include "service/backend_options.h"
 #include "storage/chunk_helper.h"
 #include "storage/column_predicate_rewriter.h"
@@ -33,7 +34,8 @@
 
 namespace starrocks {
 
-TabletScanner::TabletScanner(OlapScanNode* parent) : _parent(parent) {}
+TabletScanner::TabletScanner(OlapScanNode* parent)
+        : _parent(parent), _selection(memory::get_default_allocator()) {}
 
 TabletScanner::~TabletScanner() {
     if (_runtime_state != nullptr) {

@@ -19,6 +19,7 @@
 #include "common/global_types.h"
 #include "exec/pipeline/operator.h"
 #include "exprs/expr_context.h"
+#include "runtime/memory/allocator_v2.h"
 #include "runtime/runtime_state.h"
 
 namespace starrocks {
@@ -58,9 +59,10 @@ public:
 
 private:
     static ColumnPtr generate_repeat_column(int64_t value, int64_t num_rows) {
-        auto column = RunTimeColumnType<TYPE_BIGINT>::create();
+        auto* allocator = memory::get_default_allocator();
+        auto column = RunTimeColumnType<TYPE_BIGINT>::create(allocator);
         column->append_datum(Datum(value));
-        return ConstColumn::create(std::move(column), num_rows);
+        return ConstColumn::create(allocator, std::move(column), num_rows);
     }
 
     /**
@@ -70,14 +72,16 @@ private:
      * @return ColumnPtr : a constant column with the input column's type.
      */
     static ColumnPtr generate_null_column(ColumnPtr& cur_column, int64_t num_rows) {
+        auto* allocator = memory::get_default_allocator();
         auto clone_column = cur_column->clone_empty();
         if (clone_column->is_nullable()) {
             clone_column->append_nulls(1);
-            return ConstColumn::create(std::move(clone_column), num_rows);
+            return ConstColumn::create(allocator, std::move(clone_column), num_rows);
         } else {
-            auto nullable_column = NullableColumn::create(std::move(clone_column), NullColumn::create());
+            auto nullable_column = NullableColumn::create(allocator, std::move(clone_column),
+                                                          NullColumn::create(allocator));
             nullable_column->append_nulls(1);
-            return ConstColumn::create(std::move(nullable_column), num_rows);
+            return ConstColumn::create(allocator, std::move(nullable_column), num_rows);
         }
     }
 

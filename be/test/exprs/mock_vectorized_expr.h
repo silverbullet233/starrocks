@@ -176,7 +176,7 @@ public:
                 nul->append((flag + i) % 2);
             }
         }
-        auto re = NullableColumn::create(std::move(col), std::move(nul));
+        auto re = NullableColumn::create(context->get_allocator(), std::move(col), std::move(nul));
         re->update_has_null();
         stop();
         return re;

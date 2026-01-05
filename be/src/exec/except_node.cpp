@@ -22,13 +22,17 @@
 #include "exec/pipeline/set/except_output_source_operator.h"
 #include "exec/pipeline/set/except_probe_sink_operator.h"
 #include "exprs/expr.h"
+#include "runtime/memory/allocator_v2.h"
 #include "runtime/current_thread.h"
 #include "runtime/runtime_state.h"
 
 namespace starrocks {
 
 ExceptNode::ExceptNode(ObjectPool* pool, const TPlanNode& tnode, const DescriptorTbl& descs)
-        : ExecNode(pool, tnode, descs), _tuple_id(tnode.except_node.tuple_id), _tuple_desc(nullptr) {}
+        : ExecNode(pool, tnode, descs),
+          _tuple_id(tnode.except_node.tuple_id),
+          _tuple_desc(nullptr),
+          _remained_keys(memory::get_default_allocator()) {}
 
 Status ExceptNode::init(const TPlanNode& tnode, RuntimeState* state) {
     RETURN_IF_ERROR(ExecNode::init(tnode, state));

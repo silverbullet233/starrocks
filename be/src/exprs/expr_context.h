@@ -129,6 +129,8 @@ public:
     }
     bool build_from_only_in_filter() const { return _build_from_only_in_filter; }
 
+    memory::Allocator* get_allocator() const { return _allocator; }
+
 private:
     friend class Expr;
     friend class OlapScanNode;
@@ -157,6 +159,7 @@ private:
     bool _build_from_only_in_filter{false};
     // In operator, the ExprContext::close method will be called concurrently
     std::atomic<bool> _closed{false};
+    memory::Allocator* _allocator = nullptr;
 };
 
 #define RETURN_IF_HAS_ERROR(expr_ctxs)             \

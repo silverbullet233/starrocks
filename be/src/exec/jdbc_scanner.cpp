@@ -30,6 +30,7 @@
 #include "types/type_checker_manager.h"
 #include "udf/java/java_udf.h"
 #include "util/defer_op.h"
+#include "runtime/memory/allocator_v2.h"
 
 namespace starrocks {
 
@@ -342,7 +343,7 @@ Status JDBCScanner::_fill_chunk(jobject jchunk, size_t num_rows, ChunkPtr* chunk
         if (column->is_nullable() == result->is_nullable()) {
             column = result;
         } else if (column->is_nullable() && !result->is_nullable()) {
-            column = NullableColumn::create(result, NullColumn::create(num_rows));
+            column = NullableColumn::create(memory::get_default_allocator(), result, NullColumn::create(memory::get_default_allocator(), num_rows));
         } else if (!column->is_nullable() && result->is_nullable()) {
             if (result->has_null()) {
                 return Status::DataQualityError(

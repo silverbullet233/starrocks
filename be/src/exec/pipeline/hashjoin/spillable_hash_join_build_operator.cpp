@@ -169,7 +169,7 @@ Status SpillableHashJoinBuildOperator::append_hash_columns(const ChunkPtr& chunk
     const auto& build_partition = factory->build_side_partition();
 
     size_t num_rows = chunk->num_rows();
-    auto hash_column = spill::SpillHashColumn::create(num_rows);
+    auto hash_column = spill::SpillHashColumn::create(memory::get_default_allocator(), num_rows);
     auto& hash_values = hash_column->get_data();
 
     // TODO: use different hash method

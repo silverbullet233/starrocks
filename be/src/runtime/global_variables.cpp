@@ -19,8 +19,8 @@ namespace starrocks {
 bool GlobalVariables::_is_init = false;
 
 GlobalVariables::GlobalVariables() {
-    _one_size_not_null_column = NullColumn::create(1, 0);
-    _one_size_null_column = NullColumn::create(1, 1);
+    _one_size_not_null_column = NullColumn::create(memory::get_default_allocator(), 1, 0);
+    _one_size_null_column = NullColumn::create(memory::get_default_allocator(), 1, 1);
     _is_init = true;
 }
 

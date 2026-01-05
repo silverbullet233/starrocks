@@ -15,12 +15,14 @@
 #pragma once
 
 #include <memory>
+#include <utility>
 
 #include "column/column.h"
 #include "column/datum.h"
 #include "column/vectorized_fwd.h"
 #include "common/object_pool.h"
 #include "gutil/strings/substitute.h"
+#include "runtime/memory/allocator_v2.h"
 #include "types/bitmap_value.h"
 #include "types/hll.h"
 #include "types/variant_value.h"
@@ -32,6 +34,7 @@ namespace starrocks {
 template <typename T>
 class ObjectColumn : public CowFactory<ColumnFactory<Column, ObjectColumn<T>>, ObjectColumn<T>> {
     friend class CowFactory<ColumnFactory<Column, ObjectColumn>, ObjectColumn>;
+    using Base = CowFactory<ColumnFactory<Column, ObjectColumn<T>>, ObjectColumn<T>>;
 
 public:
     using ValueType = T;
@@ -49,15 +52,14 @@ public:
     };
     using ImmContainer = ObjectDataProxyContainer;
 
-    ObjectColumn() = default;
+    explicit ObjectColumn(memory::Allocator* allocator) : Base(allocator), _pool(allocator), _cache(allocator), _slices(allocator), _buffer(allocator) {}
 
-    explicit ObjectColumn(size_t size) : _pool(size) {}
+    ObjectColumn(memory::Allocator* allocator, size_t size)
+            : Base(allocator), _pool(allocator, size), _cache(allocator, size), _slices(allocator, size), _buffer(allocator, size) {}
 
-    ObjectColumn(const ObjectColumn& column) { DCHECK(false) << "Can't copy construct object column"; }
-
-    ObjectColumn(ObjectColumn&& object_column) noexcept : _pool(std::move(object_column._pool)) {}
-
-    void operator=(const ObjectColumn&) = delete;
+    ObjectColumn(ObjectColumn&& object_column) noexcept
+            : Base(object_column._allocator), _pool(std::move(object_column._pool)),
+            _cache(std::move(object_column._cache)), _slices(std::move(object_column._slices)), _buffer(std::move(object_column._buffer)) {}
 
     ObjectColumn& operator=(ObjectColumn&& rhs) noexcept {
         ObjectColumn tmp(std::move(rhs));
@@ -144,9 +146,12 @@ public:
     uint32_t serialize_size(size_t idx) const override;
     uint32_t max_one_element_serialize_size() const override;
 
-    MutableColumnPtr clone_empty() const override { return this->create(); }
+    MutableColumnPtr clone_empty(memory::Allocator* allocator = nullptr) const override {
+        allocator = allocator == nullptr ? this->get_allocator() : allocator;
+        return this->create(allocator);
+    }
 
-    MutableColumnPtr clone() const override;
+    MutableColumnPtr clone(memory::Allocator* allocator = nullptr) const override;
 
     size_t filter_range(const Filter& filter, size_t from, size_t to) override;
 
@@ -269,5 +274,7 @@ private:
     // Only for data loading
     mutable Buffer<Slice> _slices;
     mutable Buffer<uint8_t> _buffer;
+
+    DISALLOW_COPY(ObjectColumn);
 };
 } // namespace starrocks

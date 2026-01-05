@@ -19,6 +19,7 @@
 
 #include "exprs/agg/stream/stream_detail_state.h"
 #include "fmt/format.h"
+#include "runtime/memory/allocator_v2.h"
 
 namespace starrocks::stream {
 
@@ -244,15 +245,15 @@ Status AggGroupState::output_changes(size_t chunk_size, const Columns& group_by_
             auto& agg_func_type = agg_state->agg_fn_type();
             auto agg_col = ColumnHelper::create_column(agg_func_type.result_type,
                                                        agg_func_type.has_nullable_child & agg_func_type.is_nullable);
-            auto count_col = Int64Column::create();
+            auto count_col = Int64Column::create(memory::get_default_allocator());
             Columns detail_cols{std::move(agg_col), std::move(count_col)};
 
             // record each column's map count which is used to expand group by columns.
-            auto result_count = Int64Column::create();
+            auto result_count = Int64Column::create(memory::get_default_allocator());
             RETURN_IF_ERROR(agg_state->output_detail(chunk_size, agg_group_state, detail_cols, result_count.get()));
 
-            auto result_count_data = reinterpret_cast<Int64Column*>(result_count.get())->get_data();
-            Buffer<uint32_t> replicate_offsets;
+            const auto& result_count_data = reinterpret_cast<Int64Column*>(result_count.get())->get_data();
+            Buffer<uint32_t> replicate_offsets(memory::get_default_allocator());
             replicate_offsets.reserve(result_count_data.size() + 1);
             int offset = 0;
             for (auto count : result_count_data) {

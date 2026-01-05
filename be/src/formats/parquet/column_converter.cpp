@@ -37,6 +37,7 @@
 #include "gutil/casts.h"
 #include "gutil/integral_types.h"
 #include "gutil/strings/substitute.h"
+#include "runtime/memory/allocator_v2.h"
 #include "runtime/time_types.h"
 #include "runtime/types.h"
 #include "storage/olap_common.h"
@@ -558,29 +559,35 @@ MutableColumnPtr ColumnConverter::create_src_column() {
     MutableColumnPtr data_column = nullptr;
     switch (parquet_type) {
     case tparquet::Type::type::BOOLEAN:
-        data_column = FixedLengthColumn<uint8_t>::create();
+        data_column = FixedLengthColumn<uint8_t>::create(memory::get_default_allocator());
         break;
     case tparquet::Type::type::INT32:
-        data_column = FixedLengthColumn<PhysicalTypeTraits<tparquet::Type::INT32>::CppType>::create();
+        data_column =
+                FixedLengthColumn<PhysicalTypeTraits<tparquet::Type::INT32>::CppType>::create(memory::get_default_allocator());
         break;
     case tparquet::Type::type::INT64:
-        data_column = FixedLengthColumn<PhysicalTypeTraits<tparquet::Type::INT64>::CppType>::create();
+        data_column =
+                FixedLengthColumn<PhysicalTypeTraits<tparquet::Type::INT64>::CppType>::create(memory::get_default_allocator());
         break;
     case tparquet::Type::type::INT96:
-        data_column = FixedLengthColumn<PhysicalTypeTraits<tparquet::Type::INT96>::CppType>::create();
+        data_column =
+                FixedLengthColumn<PhysicalTypeTraits<tparquet::Type::INT96>::CppType>::create(memory::get_default_allocator());
         break;
     case tparquet::Type::type::FLOAT:
-        data_column = FixedLengthColumn<PhysicalTypeTraits<tparquet::Type::FLOAT>::CppType>::create();
+        data_column =
+                FixedLengthColumn<PhysicalTypeTraits<tparquet::Type::FLOAT>::CppType>::create(memory::get_default_allocator());
         break;
     case tparquet::Type::type::DOUBLE:
-        data_column = FixedLengthColumn<PhysicalTypeTraits<tparquet::Type::DOUBLE>::CppType>::create();
+        data_column =
+                FixedLengthColumn<PhysicalTypeTraits<tparquet::Type::DOUBLE>::CppType>::create(memory::get_default_allocator());
         break;
     case tparquet::Type::type::BYTE_ARRAY:
     case tparquet::Type::type::FIXED_LEN_BYTE_ARRAY:
-        data_column = BinaryColumn::create();
+        data_column = BinaryColumn::create(memory::get_default_allocator());
         break;
     }
-    return NullableColumn::create(std::move(data_column), NullColumn::create());
+    return NullableColumn::create(memory::get_default_allocator(), std::move(data_column),
+                                  NullColumn::create(memory::get_default_allocator()));
 }
 
 Status parquet::Int32ToDateConverter::convert(const Column* src, Column* dst) {

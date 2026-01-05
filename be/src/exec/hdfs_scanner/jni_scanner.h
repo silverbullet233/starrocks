@@ -18,6 +18,7 @@
 #include "common/logging.h"
 #include "common/status.h"
 #include "exec/hdfs_scanner/hdfs_scanner.h"
+#include "runtime/memory/allocator_v2.h"
 #include "jni.h"
 #include "runtime/runtime_state.h"
 
@@ -48,7 +49,7 @@ public:
 protected:
     StatusOr<size_t> fill_empty_chunk(ChunkPtr* chunk);
 
-    Filter _chunk_filter;
+    Filter _chunk_filter{memory::get_default_allocator()};
 
 private:
     struct FillColumnArgs {

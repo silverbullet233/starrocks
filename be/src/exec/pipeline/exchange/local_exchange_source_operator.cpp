@@ -236,7 +236,7 @@ ChunkPtr LocalExchangeSourceOperator::_pull_key_partition_chunk(RuntimeState* st
     for (auto& datum : partition_key_datum) {
         auto res = ColumnHelper::create_column(datum.first, true);
         res->append_datum(datum.second->get(0));
-        auto ptr = ConstColumn::create(std::move(res), 1);
+        auto ptr = ConstColumn::create(memory::get_default_allocator(), std::move(res), 1);
         partition_key_columns.emplace_back(ptr);
         extra_metas.push_back(ChunkExtraColumnsMeta{datum.first, true /*useless*/, true /*useless*/});
     }

@@ -19,6 +19,7 @@
 
 #include "column/array_column.h"
 #include "column/chunk.h"
+#include "column/column.h"
 #include "column/column_helper.h"
 #include "column/column_visitor_adapter.h"
 #include "column/json_column.h"
@@ -35,6 +36,7 @@
 #include "storage/tablet_schema.h"
 #include "storage/type_traits.h"
 #include "storage/types.h"
+#include "runtime/memory/allocator_v2.h"
 
 namespace starrocks {
 
@@ -232,7 +234,7 @@ ColumnId ChunkHelper::max_column_id(const starrocks::Schema& schema) {
 
 template <typename T>
 inline typename T::MutablePtr get_column_ptr() {
-    return T::create();
+    return T::create(memory::get_default_allocator());
 }
 
 template <typename T>
@@ -246,23 +248,20 @@ inline typename DecimalColumnType<T>::MutablePtr get_decimal_column_ptr(int prec
 struct ColumnPtrBuilder {
     template <LogicalType ftype>
     MutableColumnPtr operator()(const Field& field, int precision, int scale) {
-        auto NullableIfNeed = [&](MutableColumnPtr&& c) -> MutableColumnPtr {
-            return field.is_nullable()
-                           ? MutableColumnPtr(NullableColumn::create(std::move(c), get_column_ptr<NullColumn>()))
-                           : std::move(c);
+        [[maybe_unused]] auto NullableIfNeed = [&](MutableColumnPtr&& col) -> MutableColumnPtr {
+            if (!field.is_nullable()) {
+                return std::move(col);
+            }
+            return NullableColumn::create(memory::get_default_allocator(), std::move(col),
+                                                       NullColumn::create(memory::get_default_allocator()));
         };
 
         if constexpr (ftype == TYPE_ARRAY) {
-            auto elements = NullableColumn::wrap_if_necessary(field.sub_field(0).create_column());
-            auto offsets = UInt32Column::create();
-            auto array = ArrayColumn::create(std::move(elements), std::move(offsets));
-            return NullableIfNeed(std::move(array));
+            return NullableIfNeed(ArrayColumn::create(memory::get_default_allocator(), field.sub_field(0).create_column(),
+                                                      UInt32Column::create(memory::get_default_allocator())));
         } else if constexpr (ftype == TYPE_MAP) {
-            auto keys = NullableColumn::wrap_if_necessary(field.sub_field(0).create_column());
-            auto values = NullableColumn::wrap_if_necessary(field.sub_field(1).create_column());
-            auto offsets = get_column_ptr<UInt32Column>();
-            auto map = MapColumn::create(std::move(keys), std::move(values), std::move(offsets));
-            return NullableIfNeed(std::move(map));
+            return NullableIfNeed(MapColumn::create(memory::get_default_allocator(), field.sub_field(0).create_column(),
+                                                    field.sub_field(1).create_column(), get_column_ptr<UInt32Column>()));
         } else if constexpr (ftype == TYPE_STRUCT) {
             std::vector<std::string> names;
             MutableColumns fields;
@@ -270,7 +269,7 @@ struct ColumnPtrBuilder {
                 names.emplace_back(sub_field.name());
                 fields.emplace_back(sub_field.create_column());
             }
-            auto struct_column = StructColumn::create(std::move(fields), std::move(names));
+            auto struct_column = StructColumn::create(memory::get_default_allocator(), std::move(fields), std::move(names));
             return NullableIfNeed(std::move(struct_column));
         } else {
             switch (ftype) {
@@ -330,7 +329,7 @@ void ChunkHelper::padding_char_column(const starrocks::TabletSchemaCSPtr& tschem
 
     // Padding 0 to CHAR field, the storage bitmap index and zone map need it.
     // TODO(kks): we could improve this if there are many null valus
-    auto new_binary = BinaryColumn::create();
+    auto new_binary = BinaryColumn::create(memory::get_default_allocator());
     Offsets& new_offset = new_binary->get_offset();
     Bytes& new_bytes = new_binary->get_bytes();
 
@@ -354,7 +353,7 @@ void ChunkHelper::padding_char_column(const starrocks::TabletSchemaCSPtr& tschem
     if (field.is_nullable()) {
         auto* nullable_column = down_cast<NullableColumn*>(column);
         auto null_column = NullColumn::static_pointer_cast(nullable_column->null_column()->as_mutable_ptr());
-        auto new_column = NullableColumn::create(std::move(new_binary), std::move(null_column));
+        auto new_column = Column::mutate(NullableColumn::create(memory::get_default_allocator(), std::move(new_binary), std::move(null_column)));
         new_column->swap_column(*column);
     } else {
         new_binary->swap_column(*column);
@@ -373,8 +372,11 @@ struct ColumnBuilder {
     template <LogicalType ftype>
     MutableColumnPtr operator()(bool nullable) {
         [[maybe_unused]] auto NullableIfNeed = [&](MutableColumnPtr&& col) -> MutableColumnPtr {
-            return nullable ? MutableColumnPtr(NullableColumn::create(std::move(col), NullColumn::create()))
-                            : std::move(col);
+            if (!nullable) {
+                return std::move(col);
+            }
+            return NullableColumn::create(memory::get_default_allocator(), std::move(col),
+                                                       NullColumn::create(memory::get_default_allocator()));
         };
 
         if constexpr (ftype == TYPE_ARRAY) {
@@ -387,7 +389,7 @@ struct ColumnBuilder {
             CHECK(false) << "array not supported";
             return nullptr;
         } else {
-            return NullableIfNeed(CppColumnTraits<ftype>::ColumnType::create());
+            return NullableIfNeed(CppColumnTraits<ftype>::ColumnType::create(memory::get_default_allocator()));
         }
     }
 };
@@ -398,25 +400,31 @@ MutableColumnPtr ChunkHelper::column_from_field_type(LogicalType type, bool null
 
 MutableColumnPtr ChunkHelper::column_from_field(const Field& field) {
     [[maybe_unused]] auto NullableIfNeed = [&](MutableColumnPtr&& col) -> MutableColumnPtr {
-        return field.is_nullable() ? MutableColumnPtr(NullableColumn::create(std::move(col), NullColumn::create()))
-                                   : std::move(col);
+        if (!field.is_nullable()) {
+            return std::move(col);
+        }
+        return NullableColumn::create(memory::get_default_allocator(), std::move(col),
+                                                   NullColumn::create(memory::get_default_allocator()));
     };
     auto type = field.type()->type();
     switch (type) {
     case TYPE_DECIMAL32:
-        return NullableIfNeed(Decimal32Column::create(field.type()->precision(), field.type()->scale()));
+        return NullableIfNeed(Decimal32Column::create(memory::get_default_allocator(), field.type()->precision(), field.type()->scale()));
     case TYPE_DECIMAL64:
-        return NullableIfNeed(Decimal64Column::create(field.type()->precision(), field.type()->scale()));
+        return NullableIfNeed(Decimal64Column::create(memory::get_default_allocator(), field.type()->precision(), field.type()->scale()));
     case TYPE_DECIMAL128:
-        return NullableIfNeed(Decimal128Column::create(field.type()->precision(), field.type()->scale()));
+        return NullableIfNeed(Decimal128Column::create(memory::get_default_allocator(), field.type()->precision(), field.type()->scale()));
     case TYPE_DECIMAL256:
-        return NullableIfNeed(Decimal256Column::create(field.type()->precision(), field.type()->scale()));
+        return NullableIfNeed(Decimal256Column::create(memory::get_default_allocator(), field.type()->precision(), field.type()->scale()));
     case TYPE_ARRAY: {
-        return NullableIfNeed(ArrayColumn::create(column_from_field(field.sub_field(0)), UInt32Column::create()));
+        auto array = Column::mutate(ArrayColumn::create(memory::get_default_allocator(),
+                                                        column_from_field(field.sub_field(0)),
+                                                        UInt32Column::create(memory::get_default_allocator())));
+        return NullableIfNeed(std::move(array));
     }
     case TYPE_MAP:
-        return NullableIfNeed(MapColumn::create(column_from_field(field.sub_field(0)),
-                                                column_from_field(field.sub_field(1)), UInt32Column::create()));
+        return NullableIfNeed(MapColumn::create(memory::get_default_allocator(), column_from_field(field.sub_field(0)),
+                                                column_from_field(field.sub_field(1)), UInt32Column::create(memory::get_default_allocator())));
     case TYPE_STRUCT: {
         std::vector<std::string> names;
         MutableColumns fields;
@@ -424,7 +432,7 @@ MutableColumnPtr ChunkHelper::column_from_field(const Field& field) {
             names.emplace_back(sub_field.name());
             fields.emplace_back(sub_field.create_column());
         }
-        auto struct_column = StructColumn::create(std::move(fields), std::move(names));
+        auto struct_column = StructColumn::create(memory::get_default_allocator(), std::move(fields), std::move(names));
         return NullableIfNeed(std::move(struct_column));
     }
     default:
@@ -822,7 +830,7 @@ public:
         auto segmented_null_column = std::make_shared<SegmentedColumn>(null_columns, _segment_column->segment_size());
         SegmentedColumnSelectiveCopy copy_null(segmented_null_column, _indexes, _from, _size);
         (void)null_columns[0]->accept(&copy_null);
-        _result = NullableColumn::create(copy_data.result(), ColumnHelper::as_column<NullColumn>(copy_null.result()));
+        _result = NullableColumn::create(memory::get_default_allocator(), copy_data.result(), ColumnHelper::as_column<NullColumn>(copy_null.result()));
 
         return {};
     }

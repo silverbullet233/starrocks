@@ -24,6 +24,7 @@
 #include "exec/pipeline/scan/glm_manager.h"
 #include "exec/sorting/sorting.h"
 #include "runtime/descriptors.h"
+#include "runtime/memory/allocator_v2.h"
 #include "serde/column_array_serde.h"
 #include "storage/range.h"
 #include "util/logging.h"
@@ -157,7 +158,7 @@ StatusOr<ChunkPtr> IcebergV3LookUpTask::_calculate_row_id_range(
         Buffer<uint32_t>* replicated_offsets) {
     SCOPED_TIMER(_ctx->parent->_calculate_row_id_range_timer);
     // Step 1: Add position column to track original row order
-    UInt32Column::MutablePtr position_column = UInt32Column::create();
+    UInt32Column::MutablePtr position_column = UInt32Column::create(memory::get_default_allocator());
     position_column->resize_uninitialized(request_chunk->num_rows());
     auto& position_data = position_column->get_data();
     for (size_t i = 0; i < request_chunk->num_rows(); i++) {
@@ -596,7 +597,7 @@ Status IcebergV3LookUpTask::process(RuntimeState* state, const ChunkPtr& request
 
     // Calculate row_id ranges and fetch data from storage
     phmap::flat_hash_map<int32_t, std::shared_ptr<SparseRange<int64_t>>> row_id_ranges;
-    Buffer<uint32_t> replicated_offsets;
+    Buffer<uint32_t> replicated_offsets(memory::get_default_allocator());
     ASSIGN_OR_RETURN(auto sorted_chunk,
                      _calculate_row_id_range(state, request_chunk, &row_id_ranges, &replicated_offsets));
     ASSIGN_OR_RETURN(auto result_chunk, _get_data_from_storage(state, {}, row_id_ranges));

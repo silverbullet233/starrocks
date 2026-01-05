@@ -290,7 +290,7 @@ Status StructColumnIterator::next_batch(size_t* n, Column* dst, ColumnAccessPath
             auto& field_column = struct_column->get_column_by_idx(i);
             if (!field_column->is_constant()) {
                 field_column->as_mutable_raw_ptr()->append_default(1);
-                field_column = ConstColumn::create(std::move(field_column), 1);
+                field_column = ConstColumn::create(struct_column->get_allocator(), std::move(field_column), 1);
             }
             field_column->as_mutable_raw_ptr()->resize(row_count);
         }
@@ -347,7 +347,7 @@ Status StructColumnIterator::next_batch(const SparseRange<>& range, Column* dst,
             auto& field_column = struct_column->get_column_by_idx(i);
             if (!field_column->is_constant()) {
                 field_column->as_mutable_raw_ptr()->append_default(1);
-                field_column = ConstColumn::create(std::move(field_column), 1);
+                field_column = ConstColumn::create(struct_column->get_allocator(), std::move(field_column), 1);
             }
             field_column->as_mutable_raw_ptr()->resize(row_count);
         }

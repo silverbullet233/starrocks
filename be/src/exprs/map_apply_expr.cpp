@@ -155,7 +155,7 @@ StatusOr<ColumnPtr> MapApplyExpr::evaluate_checked(ExprContext* context, Chunk* 
                                                  map_col->keys_column()->size()));
     }
 
-    auto res_map_imm = MapColumn::create(map_col->keys_column(), map_col->values_column(),
+    auto res_map_imm = MapColumn::create(context->get_allocator(), map_col->keys_column(), map_col->values_column(),
                                          ColumnHelper::as_column<UInt32Column>(input_map->offsets_column()->clone()));
     MutableColumnPtr res_map = res_map_imm->clone();
 
@@ -164,7 +164,7 @@ StatusOr<ColumnPtr> MapApplyExpr::evaluate_checked(ExprContext* context, Chunk* 
     }
     // attach null info
     if (input_null_map != nullptr) {
-        return NullableColumn::create(std::move(res_map), std::move(input_null_map));
+        return NullableColumn::create(context->get_allocator(), std::move(res_map), std::move(input_null_map));
     }
     return res_map;
 }

@@ -24,6 +24,7 @@
 #include "exec/pipeline/context_with_dependency.h"
 #include "exprs/expr_context.h"
 #include "gutil/casts.h"
+#include "runtime/memory/allocator_v2.h"
 #include "runtime/mem_pool.h"
 #include "util/hash_util.hpp"
 #include "util/phmap/phmap.h"
@@ -42,6 +43,7 @@ class ExceptContext final : public ContextWithDependency {
 public:
     explicit ExceptContext(const int dst_tuple_id, const size_t num_probe_factories)
             : _dst_tuple_id(dst_tuple_id),
+              _remained_keys(memory::get_default_allocator()),
               _num_probers_per_factory(num_probe_factories),
               _num_finished_probers_per_factory(num_probe_factories) {}
     ~ExceptContext() override = default;

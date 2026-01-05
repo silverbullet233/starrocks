@@ -129,7 +129,7 @@ inline void FunctionHelper::get_data_of_column<BinaryColumn, Slice>(const Column
             has_null = true;                                            \
             null_flags = FunctionHelper::union_nullable_column(c0, c1); \
         } else {                                                        \
-            auto null_flags_mut = NullColumn::create();                 \
+            auto null_flags_mut = NullColumn::create(memory::get_default_allocator());                 \
             null_flags_mut->reserve(c0->size());                        \
             null_flags_mut->append_default(c0->size());                 \
             null_flags = std::move(null_flags_mut);                     \

@@ -18,6 +18,7 @@
 #include "exec/join/join_hash_map.h"
 #include "exec/join/join_hash_table_descriptor.h"
 #include "exec/join/join_key_constructor.h"
+#include "runtime/memory/allocator_v2.h"
 #include "simd/simd.h"
 #include "util/runtime_profile.h"
 
@@ -285,7 +286,9 @@ void JoinHashMap<LT, CT, MT>::_copy_probe_column(ColumnPtr& src_column, ChunkPtr
                                                  bool to_nullable) {
     if (_probe_state->match_flag == JoinMatchFlag::ALL_MATCH_ONE) {
         if (to_nullable) {
-            auto dest_column = NullableColumn::create(src_column, NullColumn::create(src_column->size()));
+            auto dest_column = NullableColumn::create(
+                    memory::get_default_allocator(), src_column,
+                    NullColumn::create(memory::get_default_allocator(), src_column->size()));
             (*chunk)->append_column(std::move(dest_column), slot->id());
         } else {
             (*chunk)->append_column(src_column, slot->id());
@@ -293,7 +296,9 @@ void JoinHashMap<LT, CT, MT>::_copy_probe_column(ColumnPtr& src_column, ChunkPtr
     } else if (_probe_state->match_flag == JoinMatchFlag::MOST_MATCH_ONE) {
         if (to_nullable) {
             src_column->as_mutable_raw_ptr()->filter(_probe_state->probe_match_filter, _probe_state->probe_row_count);
-            auto dest_column = NullableColumn::create(src_column, NullColumn::create(src_column->size()));
+            auto dest_column = NullableColumn::create(
+                    memory::get_default_allocator(), src_column,
+                    NullColumn::create(memory::get_default_allocator(), src_column->size()));
             (*chunk)->append_column(std::move(dest_column), slot->id());
         } else {
             src_column->as_mutable_raw_ptr()->filter(_probe_state->probe_match_filter, _probe_state->probe_row_count);
@@ -332,14 +337,15 @@ void JoinHashMap<LT, CT, MT>::_copy_build_column(const ColumnPtr& src_column, Ch
         // build_index[i] Equal to 0 means it is not found in the hash table,
         // but append_selective() has set item of NullColumn to not null
         // so NullColumn needs to be set back to null
-        auto null_column = NullColumn::create(_probe_state->count, 0);
+        auto null_column = NullColumn::create(memory::get_default_allocator(), _probe_state->count, 0);
         size_t end = _probe_state->count;
         for (size_t i = 0; i < end; i++) {
             if (_probe_state->build_index[i] == 0) {
                 null_column->get_data()[i] = 1;
             }
         }
-        auto dest_column = NullableColumn::create(std::move(data_column), std::move(null_column));
+        auto dest_column = NullableColumn::create(memory::get_default_allocator(), std::move(data_column),
+                                                  std::move(null_column));
         (*chunk)->append_column(std::move(dest_column), slot->id());
     } else {
         auto dest_column = src_column->clone_empty();
@@ -618,11 +624,11 @@ void JoinHashMap<LT, CT, MT>::_search_ht_impl(RuntimeState* state, const ImmBuff
 
 #define REORDER_PROBE_INDEX()                                                                                         \
     if (_probe_state->match_flag != JoinMatchFlag::NORMAL) {                                                          \
-        Buffer<uint32_t> permutation(_probe_state->probe_index.size(), -1);                                           \
+        Buffer<uint32_t> permutation(memory::get_default_allocator(), _probe_state->probe_index.size(), -1);         \
         for (auto i = 0; i < _probe_state->match_count; ++i) {                                                        \
             permutation[_probe_state->probe_index[i]] = i;                                                            \
         }                                                                                                             \
-        Buffer<uint32_t> new_order(_probe_state->build_index.size(), 0);                                              \
+        Buffer<uint32_t> new_order(memory::get_default_allocator(), _probe_state->build_index.size(), 0);            \
         uint32_t count = 0;                                                                                           \
         for (auto i = 0; i < _probe_state->probe_row_count; ++i) {                                                    \
             if (_probe_state->match_flag == JoinMatchFlag::ALL_MATCH_ONE ||                                           \

@@ -97,7 +97,7 @@ public:
 
     static void prepare(RuntimeState* state, HashTableProbeState* probe_state) {
         probe_state->is_nulls.resize(state->chunk_size());
-        probe_state->probe_key_column = ColumnType::create(state->chunk_size());
+        probe_state->probe_key_column = ColumnType::create(memory::get_default_allocator(), state->chunk_size());
     }
 
     static void build_key(const JoinHashTableItems& table_items, HashTableProbeState* probe_state);

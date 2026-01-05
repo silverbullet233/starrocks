@@ -235,7 +235,7 @@ static StatusOr<ColumnPtr> aes_encrypt_2params(FunctionContext* ctx, const Colum
     auto key_viewer = ColumnViewer<TYPE_VARCHAR>(columns[1]);
 
     const int size = columns[0]->size();
-    ColumnBuilder<TYPE_VARCHAR> result(size);
+    ColumnBuilder<TYPE_VARCHAR> result(ctx->get_allocator(), size);
 
     // Reuse buffer across all rows
     std::vector<unsigned char> encrypt_buf;
@@ -290,7 +290,7 @@ static StatusOr<ColumnPtr> aes_decrypt_2params(FunctionContext* ctx, const Colum
     auto key_viewer = ColumnViewer<TYPE_VARCHAR>(columns[1]);
 
     const int size = columns[0]->size();
-    ColumnBuilder<TYPE_VARCHAR> result(size);
+    ColumnBuilder<TYPE_VARCHAR> result(ctx->get_allocator(), size);
 
     // Reuse buffer across all rows
     std::vector<unsigned char> decrypt_buf;
@@ -357,7 +357,7 @@ StatusOr<ColumnPtr> EncryptionFunctions::aes_encrypt_with_mode(FunctionContext* 
     AesParameterExtractor extractor(columns);
 
     const int size = columns[0]->size();
-    ColumnBuilder<TYPE_VARCHAR> result(size);
+    ColumnBuilder<TYPE_VARCHAR> result(ctx->get_allocator(), size);
 
     // Reuse buffer across all rows to reduce memory allocation overhead
     std::vector<unsigned char> encrypt_buf;
@@ -431,7 +431,7 @@ StatusOr<ColumnPtr> EncryptionFunctions::aes_decrypt_with_mode(FunctionContext* 
     AesParameterExtractor extractor(columns);
 
     const int size = columns[0]->size();
-    ColumnBuilder<TYPE_VARCHAR> result(size);
+    ColumnBuilder<TYPE_VARCHAR> result(ctx->get_allocator(), size);
 
     // Reuse buffer across all rows to reduce memory allocation overhead
     std::vector<unsigned char> decrypt_buf;
@@ -479,7 +479,7 @@ StatusOr<ColumnPtr> EncryptionFunctions::aes_decrypt_with_mode(FunctionContext* 
 StatusOr<ColumnPtr> EncryptionFunctions::from_base64(FunctionContext* ctx, const Columns& columns) {
     auto src_viewer = ColumnViewer<TYPE_VARCHAR>(columns[0]);
     const int size = columns[0]->size();
-    ColumnBuilder<TYPE_VARCHAR> result(size);
+    ColumnBuilder<TYPE_VARCHAR> result(ctx->get_allocator(), size);
     for (int row = 0; row < size; ++row) {
         if (src_viewer.is_null(row)) {
             result.append_null();
@@ -512,7 +512,7 @@ StatusOr<ColumnPtr> EncryptionFunctions::to_base64(FunctionContext* ctx, const C
     auto src_viewer = ColumnViewer<TYPE_VARCHAR>(columns[0]);
 
     const int size = columns[0]->size();
-    ColumnBuilder<TYPE_VARCHAR> result(size);
+    ColumnBuilder<TYPE_VARCHAR> result(ctx->get_allocator(), size);
     for (int row = 0; row < size; ++row) {
         if (src_viewer.is_null(row)) {
             result.append_null();
@@ -553,7 +553,7 @@ StatusOr<ColumnPtr> EncryptionFunctions::md5sum(FunctionContext* ctx, const Colu
     }
 
     auto size = columns[0]->size();
-    ColumnBuilder<TYPE_VARCHAR> result(size);
+    ColumnBuilder<TYPE_VARCHAR> result(ctx->get_allocator(), size);
     for (int row = 0; row < size; row++) {
         Md5Digest digest;
         for (auto& view : list) {
@@ -578,7 +578,7 @@ StatusOr<ColumnPtr> EncryptionFunctions::md5sum_numeric(FunctionContext* ctx, co
         list.emplace_back(col);
     }
     auto size = columns[0]->size();
-    ColumnBuilder<TYPE_LARGEINT> result(size);
+    ColumnBuilder<TYPE_LARGEINT> result(ctx->get_allocator(), size);
     for (int row = 0; row < size; row++) {
         Md5Digest digest;
         for (auto& view : list) {
@@ -602,7 +602,7 @@ StatusOr<ColumnPtr> EncryptionFunctions::md5(FunctionContext* ctx, const Columns
     auto src_viewer = ColumnViewer<TYPE_VARCHAR>(columns[0]);
 
     auto size = columns[0]->size();
-    ColumnBuilder<TYPE_VARCHAR> result(size);
+    ColumnBuilder<TYPE_VARCHAR> result(ctx->get_allocator(), size);
     for (int row = 0; row < size; row++) {
         if (src_viewer.is_null(row)) {
             result.append_null();
@@ -660,7 +660,7 @@ StatusOr<ColumnPtr> EncryptionFunctions::sha224(FunctionContext* ctx, const Colu
     auto src_viewer = ColumnViewer<TYPE_VARCHAR>(columns[0]);
 
     auto size = columns[0]->size();
-    ColumnBuilder<TYPE_VARCHAR> result(size);
+    ColumnBuilder<TYPE_VARCHAR> result(ctx->get_allocator(), size);
     for (int row = 0; row < size; row++) {
         if (src_viewer.is_null(row)) {
             result.append_null();
@@ -682,7 +682,7 @@ StatusOr<ColumnPtr> EncryptionFunctions::sha256(FunctionContext* ctx, const Colu
     auto src_viewer = ColumnViewer<TYPE_VARCHAR>(columns[0]);
 
     auto size = columns[0]->size();
-    ColumnBuilder<TYPE_VARCHAR> result(size);
+    ColumnBuilder<TYPE_VARCHAR> result(ctx->get_allocator(), size);
     for (int row = 0; row < size; row++) {
         if (src_viewer.is_null(row)) {
             result.append_null();
@@ -704,7 +704,7 @@ StatusOr<ColumnPtr> EncryptionFunctions::sha384(FunctionContext* ctx, const Colu
     auto src_viewer = ColumnViewer<TYPE_VARCHAR>(columns[0]);
 
     auto size = columns[0]->size();
-    ColumnBuilder<TYPE_VARCHAR> result(size);
+    ColumnBuilder<TYPE_VARCHAR> result(ctx->get_allocator(), size);
     for (int row = 0; row < size; row++) {
         if (src_viewer.is_null(row)) {
             result.append_null();
@@ -726,7 +726,7 @@ StatusOr<ColumnPtr> EncryptionFunctions::sha512(FunctionContext* ctx, const Colu
     auto src_viewer = ColumnViewer<TYPE_VARCHAR>(columns[0]);
 
     auto size = columns[0]->size();
-    ColumnBuilder<TYPE_VARCHAR> result(size);
+    ColumnBuilder<TYPE_VARCHAR> result(ctx->get_allocator(), size);
     for (int row = 0; row < size; row++) {
         if (src_viewer.is_null(row)) {
             result.append_null();
@@ -750,7 +750,7 @@ StatusOr<ColumnPtr> EncryptionFunctions::sha2(FunctionContext* ctx, const Column
         auto length_viewer = ColumnViewer<TYPE_INT>(columns[1]);
 
         auto size = columns[0]->size();
-        ColumnBuilder<TYPE_VARCHAR> result(size);
+        ColumnBuilder<TYPE_VARCHAR> result(ctx->get_allocator(), size);
 
         for (int row = 0; row < size; row++) {
             if (src_viewer.is_null(row) || length_viewer.is_null(row)) {
@@ -931,7 +931,7 @@ StatusOr<ColumnPtr> EncryptionFunctions::encode_fingerprint_sha256(FunctionConte
     }
 
     // Build result column with raw binary digests as VARBINARY
-    ColumnBuilder<TYPE_VARBINARY> result(chunk_size);
+    ColumnBuilder<TYPE_VARBINARY> result(ctx->get_allocator(), chunk_size);
     for (size_t row = 0; row < chunk_size; row++) {
         digests[row].digest();
         // Use raw binary (32 bytes) instead of hex (64 bytes) - 50% more efficient

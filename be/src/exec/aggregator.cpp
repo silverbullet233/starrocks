@@ -28,6 +28,7 @@
 #include "exec/aggregate/agg_hash_variant.h"
 #include "exec/aggregate/agg_profile.h"
 #include "exec/exec_node.h"
+#include "runtime/memory/allocator_v2.h"
 #include "exec/pipeline/operator.h"
 #include "exprs/agg/aggregate_factory.h"
 #include "exprs/agg/aggregate_state_allocator.h"
@@ -271,7 +272,10 @@ void AggregatorParams::init() {
 #define ALIGN_TO(size, align) ((size + align - 1) / align * align)
 #define PAD(size, align) (align - (size % align)) % align;
 
-Aggregator::Aggregator(AggregatorParamsPtr params) : _params(std::move(params)) {
+Aggregator::Aggregator(AggregatorParamsPtr params)
+        : _params(std::move(params)),
+          _tmp_agg_states(memory::get_default_allocator()),
+          _streaming_selection(memory::get_default_allocator()) {
     _allocator = std::make_unique<CountingAllocatorWithHook>();
 }
 
@@ -1319,8 +1323,9 @@ Status Aggregator::_evaluate_group_by_exprs(Chunk* chunk) {
         // for nullable column when the real whole chunk data all not-null.
         if (_group_by_types[i].is_nullable && !_group_by_columns[i]->is_nullable()) {
             // TODO: optimized the memory usage
-            _group_by_columns[i] =
-                    NullableColumn::create(_group_by_columns[i], NullColumn::create(_group_by_columns[i]->size(), 0));
+            _group_by_columns[i] = NullableColumn::create(
+                    memory::get_default_allocator(), _group_by_columns[i],
+                    NullColumn::create(memory::get_default_allocator(), _group_by_columns[i]->size(), 0));
         } else if (!_group_by_types[i].is_nullable && _group_by_columns[i]->is_nullable()) {
             return Status::InternalError(fmt::format("error nullablel column, index: {}, slot: {}", i,
                                                      _group_by_expr_ctxs[i]->root()->debug_string()));

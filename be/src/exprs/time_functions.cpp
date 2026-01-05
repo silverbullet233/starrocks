@@ -36,6 +36,7 @@ typedef unsigned long ulong;
 #include "exprs/binary_function.h"
 #include "exprs/unary_function.h"
 #include "runtime/datetime_value.h"
+#include "runtime/memory/allocator_v2.h"
 #include "runtime/runtime_state.h"
 #include "types/date_value.h"
 
@@ -93,7 +94,7 @@ ColumnPtr date_valid(const ColumnPtr& v1) {
         auto& nulls = v->immutable_null_column_data();
         auto& values = ColumnHelper::cast_to_raw<Type>(v->data_column())->get_data();
 
-        auto null_column = NullColumn::create();
+        auto null_column = NullColumn::create(memory::get_default_allocator());
         null_column->resize(v1->size());
         auto& null_result = null_column->get_data();
 
@@ -103,9 +104,9 @@ ColumnPtr date_valid(const ColumnPtr& v1) {
             null_result[i] = nulls[i] | (!values[i].is_valid_non_strict());
         }
 
-        return NullableColumn::create(v->data_column(), std::move(null_column));
+        return NullableColumn::create(memory::get_default_allocator(), v->data_column(), std::move(null_column));
     } else {
-        auto null_column = NullColumn::create();
+        auto null_column = NullColumn::create(memory::get_default_allocator());
         null_column->resize(v1->size());
         auto& nulls = null_column->get_data();
         auto& values = ColumnHelper::cast_to_raw<Type>(v1)->get_data();
@@ -115,7 +116,7 @@ ColumnPtr date_valid(const ColumnPtr& v1) {
             nulls[i] = (!values[i].is_valid_non_strict());
         }
 
-        return NullableColumn::create(v1, std::move(null_column));
+        return NullableColumn::create(memory::get_default_allocator(), v1, std::move(null_column));
     }
 }
 
@@ -183,7 +184,7 @@ StatusOr<ColumnPtr> TimeFunctions::convert_tz_general(FunctionContext* context, 
     auto to_str = ColumnViewer<TYPE_VARCHAR>(columns[2]);
 
     auto size = columns[0]->size();
-    ColumnBuilder<TYPE_DATETIME> result(size);
+    ColumnBuilder<TYPE_DATETIME> result(context->get_allocator(), size);
     TimezoneHsScan timezone_hsscan;
     RETURN_IF_ERROR(timezone_hsscan.compile());
     for (int row = 0; row < size; ++row) {
@@ -236,7 +237,7 @@ StatusOr<ColumnPtr> TimeFunctions::convert_tz_const(FunctionContext* context, co
     auto time_viewer = ColumnViewer<TYPE_DATETIME>(columns[0]);
 
     auto size = columns[0]->size();
-    ColumnBuilder<TYPE_DATETIME> result(size);
+    ColumnBuilder<TYPE_DATETIME> result(context->get_allocator(), size);
     for (int row = 0; row < size; ++row) {
         if (time_viewer.is_null(row)) {
             result.append_null();
@@ -348,7 +349,7 @@ StatusOr<ColumnPtr> TimeFunctions::now(FunctionContext* context, const Columns& 
 
     auto size = columns[0]->size();
     auto precision_viewer = ColumnViewer<TYPE_INT>(columns[0]);
-    ColumnBuilder<TYPE_DATETIME> result(size);
+    ColumnBuilder<TYPE_DATETIME> result(context->get_allocator(), size);
     for (int row = 0; row < size; row++) {
         if (precision_viewer.is_null(row)) {
             return Status::InvalidArgument("the precision of now function must between 0 and 6");
@@ -763,7 +764,7 @@ StatusOr<ColumnPtr> TimeFunctions::to_tera_date(FunctionContext* context, const 
     RETURN_IF_COLUMNS_ONLY_NULL(columns);
 
     size_t size = columns[0]->size(); // minimum number of rows.
-    ColumnBuilder<TYPE_DATE> result(size);
+    ColumnBuilder<TYPE_DATE> result(context->get_allocator(), size);
     auto str_viewer = ColumnViewer<TYPE_VARCHAR>(columns[0]);
 
     auto state = reinterpret_cast<TeradataFormatState*>(context->get_function_state(FunctionContext::FRAGMENT_LOCAL));
@@ -826,7 +827,7 @@ StatusOr<ColumnPtr> TimeFunctions::to_tera_timestamp(FunctionContext* context, c
     RETURN_IF_COLUMNS_ONLY_NULL(columns);
 
     size_t size = columns[0]->size(); // minimum number of rows.
-    ColumnBuilder<TYPE_DATETIME> result(size);
+    ColumnBuilder<TYPE_DATETIME> result(context->get_allocator(), size);
     auto str_viewer = ColumnViewer<TYPE_VARCHAR>(columns[0]);
 
     auto state = reinterpret_cast<TeradataFormatState*>(context->get_function_state(FunctionContext::FRAGMENT_LOCAL));
@@ -1057,7 +1058,7 @@ Status TimeFunctions::time_slice_prepare(FunctionContext* context, FunctionConte
         auto time_viewer = ColumnViewer<LType>(columns[0]);                                            \
         auto period_viewer = ColumnViewer<RType>(columns[1]);                                          \
         auto size = columns[0]->size();                                                                \
-        ColumnBuilder<ResultType> results(size);                                                       \
+        ColumnBuilder<ResultType> results(context->get_allocator(), size);                             \
         for (int row = 0; row < size; row++) {                                                         \
             if (time_viewer.is_null(row) || period_viewer.is_null(row)) {                              \
                 results.append_null();                                                                 \
@@ -1358,7 +1359,7 @@ StatusOr<ColumnPtr> TimeFunctions::_t_to_unix_from_datetime(FunctionContext* con
     auto date_viewer = ColumnViewer<TYPE_DATETIME>(columns[0]);
 
     auto size = columns[0]->size();
-    ColumnBuilder<TIMESTAMP_TYPE> result(size);
+    ColumnBuilder<TIMESTAMP_TYPE> result(context->get_allocator(), size);
     for (int row = 0; row < size; ++row) {
         if (date_viewer.is_null(row)) {
             result.append_null();
@@ -1402,7 +1403,7 @@ StatusOr<ColumnPtr> TimeFunctions::_t_to_unix_from_date(FunctionContext* context
     auto date_viewer = ColumnViewer<TYPE_DATE>(columns[0]);
 
     auto size = columns[0]->size();
-    ColumnBuilder<TIMESTAMP_TYPE> result(size);
+    ColumnBuilder<TIMESTAMP_TYPE> result(context->get_allocator(), size);
     for (int row = 0; row < size; ++row) {
         if (date_viewer.is_null(row)) {
             result.append_null();
@@ -1445,7 +1446,7 @@ StatusOr<ColumnPtr> TimeFunctions::_t_to_unix_from_datetime_with_format(Function
     auto formatViewer = ColumnViewer<TYPE_VARCHAR>(columns[1]);
 
     auto size = columns[0]->size();
-    ColumnBuilder<TIMESTAMP_TYPE> result(size);
+    ColumnBuilder<TIMESTAMP_TYPE> result(context->get_allocator(), size);
     for (int row = 0; row < size; ++row) {
         if (date_viewer.is_null(row) || formatViewer.is_null(row)) {
             result.append_null();
@@ -1490,17 +1491,17 @@ StatusOr<ColumnPtr> TimeFunctions::to_unix_from_datetime_with_format_32(Function
 StatusOr<ColumnPtr> TimeFunctions::to_unix_for_now_64(FunctionContext* context, const Columns& columns) {
     RETURN_IF(0 != columns.size(), Status::InvalidArgument("to_unix_for_now requires 0 arguments"));
     int64_t value = context->state()->timestamp_ms() / 1000;
-    auto result = Int64Column::create();
+    auto result = Int64Column::create(context->get_allocator());
     result->append(value);
-    return ConstColumn::create(std::move(result), 1);
+    return ConstColumn::create(context->get_allocator(), std::move(result), 1);
 }
 
 StatusOr<ColumnPtr> TimeFunctions::to_unix_for_now_32(FunctionContext* context, const Columns& columns) {
     RETURN_IF(0 != columns.size(), Status::InvalidArgument("to_unix_for_now requires 0 arguments"));
     int64_t value = context->state()->timestamp_ms() / 1000;
-    auto result = Int32Column::create();
+    auto result = Int32Column::create(context->get_allocator());
     result->append(value);
-    return ConstColumn::create(std::move(result), 1);
+    return ConstColumn::create(context->get_allocator(), std::move(result), 1);
 }
 
 /*
@@ -1518,7 +1519,7 @@ StatusOr<ColumnPtr> TimeFunctions::_t_from_unix_to_datetime(FunctionContext* con
     ColumnViewer<TIMESTAMP_TYPE> data_column(columns[0]);
 
     auto size = columns[0]->size();
-    ColumnBuilder<TYPE_VARCHAR> result(size);
+    ColumnBuilder<TYPE_VARCHAR> result(context->get_allocator(), size);
     for (int row = 0; row < size; ++row) {
         if (data_column.is_null(row)) {
             result.append_null();
@@ -1553,7 +1554,7 @@ StatusOr<ColumnPtr> TimeFunctions::_t_from_unix_to_datetime_ms(FunctionContext* 
     ColumnViewer<TIMESTAMP_TYPE> data_column(columns[0]);
 
     auto size = columns[0]->size();
-    ColumnBuilder<TYPE_VARCHAR> result(size);
+    ColumnBuilder<TYPE_VARCHAR> result(context->get_allocator(), size);
     for (int row = 0; row < size; ++row) {
         if (data_column.is_null(row)) {
             result.append_null();
@@ -1620,7 +1621,7 @@ StatusOr<ColumnPtr> TimeFunctions::hour_from_unixtime(FunctionContext* context, 
     auto ctz = context->state()->timezone_obj();
     auto size = columns[0]->size();
     ColumnViewer<TYPE_BIGINT> data_column(columns[0]);
-    ColumnBuilder<TYPE_TINYINT> result(size);
+    ColumnBuilder<TYPE_TINYINT> result(context->get_allocator(), size);
     for (int row = 0; row < size; ++row) {
         if (data_column.is_null(row)) {
             result.append_null();
@@ -1750,7 +1751,7 @@ StatusOr<ColumnPtr> TimeFunctions::_t_from_unix_with_format_general(FunctionCont
     ColumnViewer<TYPE_VARCHAR> format_column(columns[1]);
 
     auto size = columns[0]->size();
-    ColumnBuilder<TYPE_VARCHAR> result(size);
+    ColumnBuilder<TYPE_VARCHAR> result(context->get_allocator(), size);
     for (int row = 0; row < size; ++row) {
         if (data_column.is_null(row) || format_column.is_null(row)) {
             result.append_null();
@@ -1798,7 +1799,7 @@ StatusOr<ColumnPtr> TimeFunctions::_t_from_unix_with_format_const(std::string& f
     ColumnViewer<TIMESTAMP_TYPE> data_column(columns[0]);
 
     auto size = columns[0]->size();
-    ColumnBuilder<TYPE_VARCHAR> result(size);
+    ColumnBuilder<TYPE_VARCHAR> result(context->get_allocator(), size);
     for (int row = 0; row < size; ++row) {
         if (data_column.is_null(row) || format_content.empty()) {
             result.append_null();
@@ -1839,7 +1840,7 @@ StatusOr<ColumnPtr> TimeFunctions::_t_from_unix_with_format_timezone(FunctionCon
     ColumnViewer<TYPE_VARCHAR> timezone_column(columns[2]);
 
     auto size = columns[0]->size();
-    ColumnBuilder<TYPE_VARCHAR> result(size);
+    ColumnBuilder<TYPE_VARCHAR> result(context->get_allocator(), size);
     for (int row = 0; row < size; ++row) {
         if (data_column.is_null(row) || format_column.is_null(row) || timezone_column.is_null(row)) {
             result.append_null();
@@ -1893,7 +1894,7 @@ StatusOr<ColumnPtr> TimeFunctions::_t_from_unix_with_format_timezone_const(const
     ColumnViewer<TIMESTAMP_TYPE> data_column(columns[0]);
 
     auto size = columns[0]->size();
-    ColumnBuilder<TYPE_VARCHAR> result(size);
+    ColumnBuilder<TYPE_VARCHAR> result(context->get_allocator(), size);
     for (int row = 0; row < size; ++row) {
         if (data_column.is_null(row) || format_content.empty() || timezone_content.empty()) {
             result.append_null();
@@ -2134,7 +2135,7 @@ StatusOr<ColumnPtr> TimeFunctions::_unixtime_to_datetime(FunctionContext* contex
     }
 
     ColumnViewer<TIMESTAMP_TYPE> timestamp_viewer(columns[0]);
-    ColumnBuilder<TYPE_DATETIME> result(size);
+    ColumnBuilder<TYPE_DATETIME> result(context->get_allocator(), size);
 
     if (conv_ctx->scale_is_const) {
         auto conversion_func = conv_ctx->active_conversion_func;
@@ -2342,7 +2343,7 @@ StatusOr<ColumnPtr> TimeFunctions::str_to_date_from_date_format(FunctionContext*
                                                                 const starrocks::Columns& columns,
                                                                 const char* str_format) {
     size_t size = columns[0]->size();
-    ColumnBuilder<TYPE_DATETIME> result(size);
+    ColumnBuilder<TYPE_DATETIME> result(context->get_allocator(), size);
 
     TimestampValue ts;
     auto str_viewer = ColumnViewer<TYPE_VARCHAR>(columns[0]);
@@ -2381,7 +2382,7 @@ StatusOr<ColumnPtr> TimeFunctions::str_to_date_uncommon(FunctionContext* context
     RETURN_IF_COLUMNS_ONLY_NULL(columns);
 
     size_t size = columns[0]->size(); // minimum number of rows.
-    ColumnBuilder<TYPE_DATETIME> result(size);
+    ColumnBuilder<TYPE_DATETIME> result(context->get_allocator(), size);
 
     auto str_viewer = ColumnViewer<TYPE_VARCHAR>(columns[0]);
     auto fmt_viewer = ColumnViewer<TYPE_VARCHAR>(columns[1]);
@@ -2433,7 +2434,7 @@ StatusOr<ColumnPtr> TimeFunctions::parse_jodatime(FunctionContext* context, cons
     RETURN_IF_COLUMNS_ONLY_NULL(columns);
 
     size_t size = columns[0]->size(); // minimum number of rows.
-    ColumnBuilder<TYPE_DATETIME> result(size);
+    ColumnBuilder<TYPE_DATETIME> result(context->get_allocator(), size);
     auto str_viewer = ColumnViewer<TYPE_VARCHAR>(columns[0]);
 
     auto state = reinterpret_cast<ParseJodaState*>(context->get_function_state(FunctionContext::FRAGMENT_LOCAL));
@@ -2562,11 +2563,11 @@ Status TimeFunctions::format_close(FunctionContext* context, FunctionContext::Fu
 }
 
 template <typename OP, LogicalType Type>
-ColumnPtr date_format_func(const Columns& cols, size_t patten_size) {
+ColumnPtr date_format_func(FunctionContext* context, const Columns& cols, size_t patten_size) {
     ColumnViewer<Type> viewer(cols[0]);
 
     size_t num_rows = viewer.size();
-    ColumnBuilder<TYPE_VARCHAR> builder(num_rows);
+    ColumnBuilder<TYPE_VARCHAR> builder(context->get_allocator(), num_rows);
     builder.data_column()->reserve(num_rows, num_rows * patten_size);
 
     for (int i = 0; i < num_rows; ++i) {
@@ -2696,7 +2697,8 @@ bool standard_format_one_row(const TimestampValue& timestamp_value, char* buf, c
 }
 
 template <LogicalType Type>
-StatusOr<ColumnPtr> standard_format(const std::string& fmt, int len, const starrocks::Columns& columns) {
+StatusOr<ColumnPtr> standard_format(FunctionContext* context, const std::string& fmt, int len,
+                                    const starrocks::Columns& columns) {
     if (fmt.size() <= 0) {
         return ColumnHelper::create_const_null_column(columns[0]->size());
     }
@@ -2704,7 +2706,7 @@ StatusOr<ColumnPtr> standard_format(const std::string& fmt, int len, const starr
     auto ts_viewer = ColumnViewer<Type>(columns[0]);
 
     size_t size = columns[0]->size();
-    ColumnBuilder<TYPE_VARCHAR> result(size);
+    ColumnBuilder<TYPE_VARCHAR> result(context->get_allocator(), size);
 
     char buf[len];
     for (size_t i = 0; i < size; ++i) {
@@ -2720,21 +2722,21 @@ StatusOr<ColumnPtr> standard_format(const std::string& fmt, int len, const starr
 }
 
 template <LogicalType Type>
-StatusOr<ColumnPtr> do_format(const TimeFunctions::FormatCtx* ctx, const Columns& cols) {
+StatusOr<ColumnPtr> do_format(FunctionContext* context, const TimeFunctions::FormatCtx* ctx, const Columns& cols) {
     if (ctx->fmt_type == TimeFunctions::yyyyMMdd) {
-        return date_format_func<yyyyMMddImpl, Type>(cols, 8);
+        return date_format_func<yyyyMMddImpl, Type>(context, cols, 8);
     } else if (ctx->fmt_type == TimeFunctions::yyyy_MM_dd) {
-        return date_format_func<yyyy_MM_dd_Impl, Type>(cols, 10);
+        return date_format_func<yyyy_MM_dd_Impl, Type>(context, cols, 10);
     } else if (ctx->fmt_type == TimeFunctions::yyyy_MM_dd_HH_mm_ss) {
-        return date_format_func<yyyyMMddHHmmssImpl, Type>(cols, 28);
+        return date_format_func<yyyyMMddHHmmssImpl, Type>(context, cols, 28);
     } else if (ctx->fmt_type == TimeFunctions::yyyy_MM) {
-        return date_format_func<yyyy_MMImpl, Type>(cols, 7);
+        return date_format_func<yyyy_MMImpl, Type>(context, cols, 7);
     } else if (ctx->fmt_type == TimeFunctions::yyyyMM) {
-        return date_format_func<yyyyMMImpl, Type>(cols, 6);
+        return date_format_func<yyyyMMImpl, Type>(context, cols, 6);
     } else if (ctx->fmt_type == TimeFunctions::yyyy) {
-        return date_format_func<yyyyImpl, Type>(cols, 4);
+        return date_format_func<yyyyImpl, Type>(context, cols, 4);
     } else {
-        return standard_format<Type>(ctx->fmt, 128, cols);
+        return standard_format<Type>(context, ctx->fmt, 128, cols);
     }
 }
 
@@ -2773,13 +2775,13 @@ StatusOr<ColumnPtr> TimeFunctions::datetime_format(FunctionContext* context, con
     auto* fc = reinterpret_cast<FormatCtx*>(context->get_function_state(FunctionContext::FRAGMENT_LOCAL));
 
     if (fc != nullptr && fc->is_valid) {
-        return do_format<TYPE_DATETIME>(fc, columns);
+        return do_format<TYPE_DATETIME>(context, fc, columns);
     } else {
         auto [all_const, num_rows] = ColumnHelper::num_packed_rows(columns);
         ColumnViewer<TYPE_DATETIME> viewer_date(columns[0]);
         ColumnViewer<TYPE_VARCHAR> viewer_format(columns[1]);
 
-        ColumnBuilder<TYPE_VARCHAR> builder(num_rows);
+        ColumnBuilder<TYPE_VARCHAR> builder(context->get_allocator(), num_rows);
         for (int i = 0; i < num_rows; ++i) {
             if (viewer_date.is_null(i)) {
                 builder.append_null();
@@ -2800,13 +2802,13 @@ StatusOr<ColumnPtr> TimeFunctions::date_format(FunctionContext* context, const C
     auto* fc = reinterpret_cast<FormatCtx*>(context->get_function_state(FunctionContext::FRAGMENT_LOCAL));
 
     if (fc != nullptr && fc->is_valid) {
-        return do_format<TYPE_DATE>(fc, columns);
+        return do_format<TYPE_DATE>(context, fc, columns);
     } else {
         int num_rows = columns[0]->size();
         ColumnViewer<TYPE_DATE> viewer_date(columns[0]);
         ColumnViewer<TYPE_VARCHAR> viewer_format(columns[1]);
 
-        ColumnBuilder<TYPE_VARCHAR> builder(columns[0]->size());
+        ColumnBuilder<TYPE_VARCHAR> builder(context->get_allocator(), columns[0]->size());
 
         for (int i = 0; i < num_rows; ++i) {
             if (viewer_date.is_null(i)) {
@@ -2889,7 +2891,8 @@ bool joda_standard_format_one_row(const TimestampValue& timestamp_value, char* b
 }
 
 template <LogicalType Type>
-StatusOr<ColumnPtr> joda_standard_format(const std::string& fmt, int len, const starrocks::Columns& columns) {
+StatusOr<ColumnPtr> joda_standard_format(FunctionContext* context, const std::string& fmt, int len,
+                                         const starrocks::Columns& columns) {
     if (fmt.size() <= 0) {
         return ColumnHelper::create_const_null_column(columns[0]->size());
     }
@@ -2897,7 +2900,7 @@ StatusOr<ColumnPtr> joda_standard_format(const std::string& fmt, int len, const 
     auto ts_viewer = ColumnViewer<Type>(columns[0]);
 
     size_t size = columns[0]->size();
-    ColumnBuilder<TYPE_VARCHAR> result(size);
+    ColumnBuilder<TYPE_VARCHAR> result(context->get_allocator(), size);
 
     char buf[len];
     for (size_t i = 0; i < size; ++i) {
@@ -2913,21 +2916,21 @@ StatusOr<ColumnPtr> joda_standard_format(const std::string& fmt, int len, const 
 }
 
 template <LogicalType Type>
-StatusOr<ColumnPtr> joda_format(const TimeFunctions::FormatCtx* ctx, const Columns& cols) {
+StatusOr<ColumnPtr> joda_format(FunctionContext* context, const TimeFunctions::FormatCtx* ctx, const Columns& cols) {
     if (ctx->fmt_type == TimeFunctions::yyyyMMdd) {
-        return date_format_func<yyyyMMddImpl, Type>(cols, 8);
+        return date_format_func<yyyyMMddImpl, Type>(context, cols, 8);
     } else if (ctx->fmt_type == TimeFunctions::yyyy_MM_dd) {
-        return date_format_func<yyyy_MM_dd_Impl, Type>(cols, 10);
+        return date_format_func<yyyy_MM_dd_Impl, Type>(context, cols, 10);
     } else if (ctx->fmt_type == TimeFunctions::yyyy_MM_dd_HH_mm_ss) {
-        return date_format_func<yyyyMMddHHmmssImpl, Type>(cols, 28);
+        return date_format_func<yyyyMMddHHmmssImpl, Type>(context, cols, 28);
     } else if (ctx->fmt_type == TimeFunctions::yyyy_MM) {
-        return date_format_func<yyyy_MMImpl, Type>(cols, 7);
+        return date_format_func<yyyy_MMImpl, Type>(context, cols, 7);
     } else if (ctx->fmt_type == TimeFunctions::yyyyMM) {
-        return date_format_func<yyyyMMImpl, Type>(cols, 6);
+        return date_format_func<yyyyMMImpl, Type>(context, cols, 6);
     } else if (ctx->fmt_type == TimeFunctions::yyyy) {
-        return date_format_func<yyyyImpl, Type>(cols, 4);
+        return date_format_func<yyyyImpl, Type>(context, cols, 4);
     } else {
-        return joda_standard_format<Type>(ctx->fmt, 128, cols);
+        return joda_standard_format<Type>(context, ctx->fmt, 128, cols);
     }
 }
 
@@ -2966,13 +2969,13 @@ StatusOr<ColumnPtr> TimeFunctions::jodadatetime_format(FunctionContext* context,
     auto* fc = reinterpret_cast<FormatCtx*>(context->get_function_state(FunctionContext::FRAGMENT_LOCAL));
 
     if (fc != nullptr && fc->is_valid) {
-        return joda_format<TYPE_DATETIME>(fc, columns);
+        return joda_format<TYPE_DATETIME>(context, fc, columns);
     } else {
         auto [all_const, num_rows] = ColumnHelper::num_packed_rows(columns);
         ColumnViewer<TYPE_DATETIME> viewer_date(columns[0]);
         ColumnViewer<TYPE_VARCHAR> viewer_format(columns[1]);
 
-        ColumnBuilder<TYPE_VARCHAR> builder(num_rows);
+        ColumnBuilder<TYPE_VARCHAR> builder(context->get_allocator(), num_rows);
         for (int i = 0; i < num_rows; ++i) {
             if (viewer_date.is_null(i)) {
                 builder.append_null();
@@ -2992,13 +2995,13 @@ StatusOr<ColumnPtr> TimeFunctions::jodadate_format(FunctionContext* context, con
     auto* fc = reinterpret_cast<FormatCtx*>(context->get_function_state(FunctionContext::FRAGMENT_LOCAL));
 
     if (fc != nullptr && fc->is_valid) {
-        return joda_format<TYPE_DATE>(fc, columns);
+        return joda_format<TYPE_DATE>(context, fc, columns);
     } else {
         int num_rows = columns[0]->size();
         ColumnViewer<TYPE_DATE> viewer_date(columns[0]);
         ColumnViewer<TYPE_VARCHAR> viewer_format(columns[1]);
 
-        ColumnBuilder<TYPE_VARCHAR> builder(columns[0]->size());
+        ColumnBuilder<TYPE_VARCHAR> builder(context->get_allocator(), columns[0]->size());
 
         for (int i = 0; i < num_rows; ++i) {
             if (viewer_date.is_null(i)) {
@@ -3015,13 +3018,13 @@ StatusOr<ColumnPtr> TimeFunctions::jodadate_format(FunctionContext* context, con
 StatusOr<ColumnPtr> TimeFunctions::date_to_iso8601(FunctionContext* context, const Columns& columns) {
     RETURN_IF_COLUMNS_ONLY_NULL(columns);
 
-    return date_format_func<yyyy_MM_dd_Impl, TYPE_DATE>(columns, 10);
+    return date_format_func<yyyy_MM_dd_Impl, TYPE_DATE>(context, columns, 10);
 }
 
 StatusOr<ColumnPtr> TimeFunctions::datetime_to_iso8601(FunctionContext* context, const Columns& columns) {
     RETURN_IF_COLUMNS_ONLY_NULL(columns);
 
-    return date_format_func<to_iso8601Impl, TYPE_DATETIME>(columns, 26);
+    return date_format_func<to_iso8601Impl, TYPE_DATETIME>(context, columns, 26);
 }
 
 Status TimeFunctions::datetime_trunc_prepare(FunctionContext* context, FunctionContext::FunctionStateScope scope) {
@@ -3378,7 +3381,7 @@ StatusOr<ColumnPtr> TimeFunctions::next_day_wdc(FunctionContext* context, const 
     }
     auto time_viewer = ColumnViewer<TYPE_DATETIME>(columns[0]);
     auto size = columns[0]->size();
-    ColumnBuilder<TYPE_DATE> result(size);
+    ColumnBuilder<TYPE_DATE> result(context->get_allocator(), size);
     for (int row = 0; row < size; ++row) {
         if (time_viewer.is_null(row)) {
             result.append_null();
@@ -3397,7 +3400,7 @@ StatusOr<ColumnPtr> TimeFunctions::next_day_common(FunctionContext* context, con
     auto dow_str = ColumnViewer<TYPE_VARCHAR>(columns[1]);
 
     auto size = columns[0]->size();
-    ColumnBuilder<TYPE_DATE> result(size);
+    ColumnBuilder<TYPE_DATE> result(context->get_allocator(), size);
     for (int row = 0; row < size; ++row) {
         if (time_viewer.is_null(row) || dow_str.is_null(row)) {
             result.append_null();
@@ -3469,7 +3472,7 @@ StatusOr<ColumnPtr> TimeFunctions::previous_day_wdc(FunctionContext* context, co
     }
     auto time_viewer = ColumnViewer<TYPE_DATETIME>(columns[0]);
     auto size = columns[0]->size();
-    ColumnBuilder<TYPE_DATE> result(size);
+    ColumnBuilder<TYPE_DATE> result(context->get_allocator(), size);
     for (int row = 0; row < size; ++row) {
         if (time_viewer.is_null(row)) {
             result.append_null();
@@ -3488,7 +3491,7 @@ StatusOr<ColumnPtr> TimeFunctions::previous_day_common(FunctionContext* context,
     auto dow_str = ColumnViewer<TYPE_VARCHAR>(columns[1]);
 
     auto size = columns[0]->size();
-    ColumnBuilder<TYPE_DATE> result(size);
+    ColumnBuilder<TYPE_DATE> result(context->get_allocator(), size);
     for (int row = 0; row < size; ++row) {
         if (time_viewer.is_null(row) || dow_str.is_null(row)) {
             result.append_null();
@@ -3548,7 +3551,7 @@ StatusOr<ColumnPtr> TimeFunctions::make_date(FunctionContext* context, const Col
     auto date_viewer = ColumnViewer<TYPE_INT>(columns[1]);
 
     auto size = columns[0]->size();
-    ColumnBuilder<TYPE_DATE> result(size);
+    ColumnBuilder<TYPE_DATE> result(context->get_allocator(), size);
     for (int row = 0; row < size; ++row) {
         if (year_viewer.is_null(row) || date_viewer.is_null(row)) {
             result.append_null();
@@ -3609,7 +3612,7 @@ StatusOr<ColumnPtr> TimeFunctions::datediff(FunctionContext* context, const Colu
     ColumnViewer<TYPE_DATETIME> lv_column(columns[DateDiffCtx::LHS_INDEX]);
     ColumnViewer<TYPE_DATETIME> rv_column(columns[DateDiffCtx::RHS_INDEX]);
     auto size = columns[DateDiffCtx::TYPE_INDEX]->size();
-    ColumnBuilder<TYPE_BIGINT> result(size);
+    ColumnBuilder<TYPE_BIGINT> result(context->get_allocator(), size);
     for (int row = 0; row < size; ++row) {
         if (lv_column.is_null(row) || rv_column.is_null(row) || type_column.is_null(row)) {
             result.append_null();
@@ -3662,7 +3665,7 @@ StatusOr<ColumnPtr> TimeFunctions::_last_day(FunctionContext* context, const Col
     ColumnViewer<DATE_TYPE> data_column(columns[0]);
     auto size = columns[0]->size();
 
-    ColumnBuilder<TYPE_DATE> result(size);
+    ColumnBuilder<TYPE_DATE> result(context->get_allocator(), size);
     for (int row = 0; row < size; ++row) {
         if (data_column.is_null(row)) {
             result.append_null();
@@ -3696,7 +3699,7 @@ StatusOr<ColumnPtr> TimeFunctions::_last_day_with_format_const(std::string& form
     ColumnViewer<DATE_TYPE> data_column(columns[0]);
     auto size = columns[0]->size();
 
-    ColumnBuilder<TYPE_DATE> result(size);
+    ColumnBuilder<TYPE_DATE> result(context->get_allocator(), size);
     if (format_content == "year") {
         for (int row = 0; row < size; ++row) {
             if (data_column.is_null(row)) {
@@ -3740,7 +3743,7 @@ StatusOr<ColumnPtr> TimeFunctions::_last_day_with_format(FunctionContext* contex
     ColumnViewer<TYPE_VARCHAR> format_column(columns[1]);
     auto size = columns[0]->size();
 
-    ColumnBuilder<TYPE_DATE> result(size);
+    ColumnBuilder<TYPE_DATE> result(context->get_allocator(), size);
     for (int row = 0; row < size; ++row) {
         if (data_column.is_null(row) || format_column.is_null(row)) {
             result.append_null();
@@ -3838,7 +3841,7 @@ StatusOr<ColumnPtr> TimeFunctions::time_format(FunctionContext* context, const s
     auto format_viewer = ColumnViewer<TYPE_VARCHAR>(format_column);
 
     const size_t size = time_column->size();
-    auto builder = ColumnBuilder<TYPE_VARCHAR>(size);
+    auto builder = ColumnBuilder<TYPE_VARCHAR>(context->get_allocator(), size);
 
     for (size_t i = 0; i < size; ++i) {
         if (time_viewer.is_null(i) || format_viewer.is_null(i)) {
@@ -3931,7 +3934,7 @@ StatusOr<ColumnPtr> TimeFunctions::sec_to_time(FunctionContext* context, const s
 
     auto bigint_viewer = ColumnViewer<TYPE_BIGINT>(bigint_column);
     const size_t size = bigint_column->size();
-    auto builder = ColumnBuilder<TYPE_TIME>(size);
+    auto builder = ColumnBuilder<TYPE_TIME>(context->get_allocator(), size);
 
     for (size_t i = 0; i < size; ++i) {
         if (bigint_viewer.is_null(i)) {

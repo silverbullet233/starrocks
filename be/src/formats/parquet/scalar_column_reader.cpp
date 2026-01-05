@@ -18,6 +18,7 @@
 #include "formats/parquet/parquet_block_split_bloom_filter.h"
 #include "formats/parquet/predicate_filter_evaluator.h"
 #include "formats/parquet/stored_column_reader_with_index.h"
+#include "runtime/memory/allocator_v2.h"
 #include "formats/parquet/utils.h"
 #include "gutil/casts.h"
 #include "io/shared_buffered_input_stream.h"
@@ -329,7 +330,7 @@ StatusOr<bool> RawColumnReader::_page_index_zone_map_filter(const std::vector<co
     }
 
     // select all pages by default
-    Filter selected(page_num, 1);
+    Filter selected(memory::get_default_allocator(), page_num, 1);
     for (size_t i = 0; i < page_num; i++) {
         selected[i] = PredicateFilterEvaluatorUtils::zonemap_satisfy(predicates, zone_map_details[i], pred_relation);
     }

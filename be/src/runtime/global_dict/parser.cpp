@@ -36,6 +36,7 @@
 #include "runtime/types.h"
 #include "simd/gather.h"
 #include "types/logical_type.h"
+#include "runtime/memory/allocator_v2.h"
 
 namespace starrocks {
 
@@ -149,7 +150,7 @@ private:
                 auto idx = input->only_null() ? 0 : input->get(0).get_int32();
                 auto res = _data_column_ptr->clone_empty();
                 res->append_datum(_data_column_ptr->get(_dict_opt_ctx->code_convert_map[idx]));
-                return ConstColumn::create(std::move(res));
+                return ConstColumn::create(memory::get_default_allocator(), std::move(res));
             }
         } else if (input->is_nullable()) {
             // is nullable
@@ -200,30 +201,30 @@ private:
             array_col = down_cast<const ArrayColumn*>(const_column->data_column().get());
 
             auto element = array_col->elements_column();
-            auto offsets = UInt32Column::create(array_col->offsets());
+            auto offsets = UInt32Column::static_pointer_cast(array_col->offsets().clone(memory::get_default_allocator()));
 
             ASSIGN_OR_RETURN(ColumnPtr string_col, _translate_string(element, element->size()));
             string_col = ColumnHelper::unfold_const_column(stringType, element->size(), std::move(string_col));
-            return ConstColumn::create(ArrayColumn::create(string_col, std::move(offsets)), num_rows);
+            return ConstColumn::create(memory::get_default_allocator(), ArrayColumn::create(memory::get_default_allocator(), string_col, std::move(offsets)), num_rows);
         } else if (array->is_nullable()) {
             const auto* nullable = down_cast<const NullableColumn*>(array.get());
             array_col = down_cast<const ArrayColumn*>(nullable->data_column_raw_ptr());
-            NullColumnPtr array_null = NullColumn::create(*nullable->null_column());
+            NullColumnPtr array_null = NullColumn::static_pointer_cast(nullable->null_column()->clone());
 
             auto element = array_col->elements_column();
-            auto offsets = UInt32Column::create(array_col->offsets());
+            auto offsets = UInt32Column::static_pointer_cast(array_col->offsets().clone(memory::get_default_allocator()));
 
             ASSIGN_OR_RETURN(ColumnPtr string_col, _translate_string(element, element->size()));
             string_col = ColumnHelper::unfold_const_column(stringType, element->size(), std::move(string_col));
-            return NullableColumn::create(ArrayColumn::create(string_col, std::move(offsets)), array_null);
+            return NullableColumn::create(memory::get_default_allocator(), ArrayColumn::create(memory::get_default_allocator(), string_col, std::move(offsets)), array_null);
         } else {
             array_col = down_cast<const ArrayColumn*>(array.get());
             auto element = array_col->elements_column();
-            auto offsets = UInt32Column::create(array_col->offsets());
+            auto offsets = UInt32Column::static_pointer_cast(array_col->offsets().clone(memory::get_default_allocator()));
 
             ASSIGN_OR_RETURN(ColumnPtr string_col, _translate_string(element, element->size()));
             string_col = ColumnHelper::unfold_const_column(stringType, element->size(), std::move(string_col));
-            return ArrayColumn::create(string_col, std::move(offsets));
+            return ArrayColumn::create(memory::get_default_allocator(), string_col, std::move(offsets));
         }
     }
 
@@ -378,7 +379,7 @@ Status DictOptimizeParser::_eval_and_rewrite(ExprContext* ctx, Expr* expr, DictO
             rresult_map[sorted_id++] = slice;
         }
 
-        ColumnBuilder<LowCardDictType> builder(codes.size());
+        ColumnBuilder<LowCardDictType> builder(ctx->get_allocator(), codes.size());
         // build code convert map
         for (int i = 0; i < num_rows; ++i) {
             if (viewer.is_null(i)) {

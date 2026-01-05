@@ -47,7 +47,7 @@
 
 namespace starrocks {
 
-ScalarColumnIterator::ScalarColumnIterator(ColumnReader* reader) : _reader(reader) {}
+ScalarColumnIterator::ScalarColumnIterator(ColumnReader* reader) : _reader(reader), _array_size(memory::get_default_allocator()) {}
 
 ScalarColumnIterator::~ScalarColumnIterator() = default;
 

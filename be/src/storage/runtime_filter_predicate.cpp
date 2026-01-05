@@ -138,7 +138,7 @@ Status DictColumnRuntimeFilterPredicate::prepare() {
     if (!_result.empty()) {
         return Status::OK();
     }
-    auto binary_column = BinaryColumn::create();
+    auto binary_column = BinaryColumn::create(memory::get_default_allocator());
     std::vector<Slice> data_slice;
     for (const auto& word : _dict_words) {
         data_slice.emplace_back(word.data(), word.size());

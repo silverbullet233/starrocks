@@ -21,6 +21,7 @@
 #include "simd/simd.h"
 #include "storage/chunk_helper.h"
 #include "storage/storage_engine.h"
+#include "runtime/memory/allocator_v2.h"
 
 namespace starrocks {
 
@@ -59,7 +60,7 @@ StatusOr<ColumnPtr> DictionaryGetExpr::evaluate_checked(ExprContext* context, Ch
     }
     value_chunk->reserve(size);
 
-    auto null_column = UInt8Column::create(size, 0);
+    auto null_column = UInt8Column::create(memory::get_default_allocator(), size, 0);
     // assign the value chunk
     RETURN_IF_ERROR(DictionaryCacheManager::probe_given_dictionary_cache(
             *_key_chunk->schema().get(), *_value_chunk->schema().get(), _dictionary, key_chunk, value_chunk,
@@ -121,12 +122,12 @@ Status DictionaryGetExpr::prepare(RuntimeState* state, ExprContext* context) {
     // construct nullable struct column
     Columns sub_columns;
     for (const ColumnPtr& column : _value_chunk->columns()) {
-        auto sub_null_column = UInt8Column::create(0, 0);
-        sub_columns.emplace_back(NullableColumn::create(column, std::move(sub_null_column)));
+        auto sub_null_column = UInt8Column::create(memory::get_default_allocator(), 0, 0);
+        sub_columns.emplace_back(NullableColumn::create(memory::get_default_allocator(), column, std::move(sub_null_column)));
     }
-    auto null_column = UInt8Column::create(0, 0);
-    _nullable_struct_column = NullableColumn::create(
-            StructColumn::create(std::move(sub_columns), std::move(value_columns_name)), std::move(null_column));
+    auto null_column = UInt8Column::create(memory::get_default_allocator(), 0, 0);
+    _nullable_struct_column = NullableColumn::create(memory::get_default_allocator(), 
+            StructColumn::create(memory::get_default_allocator(), std::move(sub_columns), std::move(value_columns_name)), std::move(null_column));
     DCHECK(_nullable_struct_column != nullptr);
 
     return Status::OK();

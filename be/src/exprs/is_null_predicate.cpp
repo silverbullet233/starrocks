@@ -47,7 +47,7 @@ public:
         if (column->is_json()) {
             // Consider JSON NULL as NULL
             ColumnViewer<TYPE_JSON> viewer(column);
-            ColumnBuilder<TYPE_BOOLEAN> builder(column->size());
+            ColumnBuilder<TYPE_BOOLEAN> builder(context->get_allocator(), column->size());
             for (size_t i = 0; i < column->size(); i++) {
                 bool value = viewer.is_null(i) || viewer.value(i)->is_null_or_none();
                 builder.append(value);
@@ -82,7 +82,7 @@ public:
         if (column->is_json()) {
             // Consider JSON NULL as NULL
             ColumnViewer<TYPE_JSON> viewer(column);
-            ColumnBuilder<TYPE_BOOLEAN> builder(column->size());
+            ColumnBuilder<TYPE_BOOLEAN> builder(context->get_allocator(), column->size());
             for (size_t i = 0; i < column->size(); i++) {
                 bool value = !viewer.is_null(i) && !viewer.value(i)->is_null_or_none();
                 builder.append(value);

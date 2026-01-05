@@ -30,6 +30,7 @@
 #include "storage/rowset/column_writer.h"
 #include "types/constexpr.h"
 #include "util/json_flattener.h"
+#include "runtime/memory/allocator_v2.h"
 
 namespace starrocks {
 Status FlatJsonColumnCompactor::append(const Column& column) {
@@ -111,7 +112,7 @@ Status FlatJsonColumnCompactor::_merge_columns(MutableColumns& json_datas) {
             auto j = merger->merge(json_col->get_flat_fields());
 
             if (col->is_nullable()) {
-                auto n_ptr = NullableColumn::create(j, null_col)->as_mutable_raw_ptr();
+                auto n_ptr = NullableColumn::create(memory::get_default_allocator(), j, null_col)->as_mutable_raw_ptr();
                 auto* n = down_cast<NullableColumn*>(n_ptr);
                 n->set_has_null(col->has_null());
                 RETURN_IF_ERROR(_json_writer->append(*n));
@@ -160,7 +161,7 @@ Status FlatJsonColumnCompactor::_flatten_columns(MutableColumns& json_datas) {
 
         // recode null column in 1st
         if (_json_meta->is_nullable()) {
-            auto nulls = NullColumn::create();
+            auto nulls = NullColumn::create(memory::get_default_allocator());
             uint8_t IS_NULL = 1;
             uint8_t NOT_NULL = 0;
             if (col->only_null()) {
@@ -224,7 +225,7 @@ Status JsonColumnCompactor::append(const Column& column) {
     auto p = merger.merge(json_col->get_flat_fields());
 
     if (column.is_nullable()) {
-        auto n = NullableColumn::create(p, nulls);
+        auto n = NullableColumn::create(memory::get_default_allocator(), p, nulls);
         return _json_writer->append(*n);
     } else {
         return _json_writer->append(*p);

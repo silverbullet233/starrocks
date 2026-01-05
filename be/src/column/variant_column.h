@@ -31,14 +31,18 @@ public:
     using BaseClass = VariantColumnBase;
     using ImmContainer = ObjectDataProxyContainer;
 
-    VariantColumn() = default;
-    explicit VariantColumn(size_t size) : SuperClass(size) {}
-    VariantColumn(const VariantColumn& rhs) : SuperClass(rhs) {}
-
+    explicit VariantColumn(memory::Allocator* allocator) : SuperClass(allocator) {}
+    VariantColumn(memory::Allocator* allocator, size_t size) : SuperClass(allocator, size) {}
     VariantColumn(VariantColumn&& rhs) noexcept : SuperClass(std::move(rhs)) {}
 
-    MutableColumnPtr clone() const override { return BaseClass::clone(); }
-    MutableColumnPtr clone_empty() const override { return this->create(); }
+    MutableColumnPtr clone(memory::Allocator* allocator = nullptr) const override {
+        allocator = allocator == nullptr ? this->get_allocator() : allocator;
+        return BaseClass::clone(allocator);
+    }
+    MutableColumnPtr clone_empty(memory::Allocator* allocator = nullptr) const override {
+        allocator = allocator == nullptr ? this->get_allocator() : allocator;
+        return this->create(allocator);
+    }
 
     uint32_t serialize(size_t idx, uint8_t* pos) const override;
     uint32_t serialize_size(size_t idx) const override;
@@ -50,7 +54,7 @@ public:
     void append(const Column& src, size_t offset, size_t count) override;
 
     // Add a forwarding function to expose the base class append function
-    void append(const Column& src) { append(src, 0, src.size()); }
+    void append(const Column& src) override { append(src, 0, src.size()); }
     void append(const VariantValue* object);
     void append(VariantValue&& object);
     void append(const VariantValue& object);
@@ -63,6 +67,9 @@ public:
     void put_mysql_row_buffer(MysqlRowBuffer* buf, size_t idx, bool is_binary_protocol = false) const override;
 
     std::string debug_item(size_t idx) const override;
+
+private:
+    DISALLOW_COPY(VariantColumn);
 };
 
 } // namespace starrocks

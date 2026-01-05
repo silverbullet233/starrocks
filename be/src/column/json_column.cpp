@@ -87,18 +87,19 @@ std::string JsonColumn::get_name() const {
     return "json";
 }
 
-MutableColumnPtr JsonColumn::clone() const {
+MutableColumnPtr JsonColumn::clone(memory::Allocator* allocator) const {
+    allocator = allocator == nullptr ? get_allocator() : allocator;
     if (this->is_flat_json()) {
-        auto p = this->create();
+        auto p = this->create(allocator);
         p->_flat_column_paths = this->_flat_column_paths;
         p->_flat_column_types = this->_flat_column_types;
         p->_path_to_index = this->_path_to_index;
         for (auto& f : this->_flat_columns) {
-            p->_flat_columns.emplace_back(f->clone());
+            p->_flat_columns.emplace_back(f->clone(allocator));
         }
         return p;
     } else {
-        return BaseClass::clone();
+        return BaseClass::clone(allocator);
     }
 }
 
@@ -267,7 +268,7 @@ void JsonColumn::append_selective(const Column& src, const uint32_t* indexes, ui
         MutableColumns copy;
         copy.reserve(other_json->_flat_columns.size());
         for (const auto& col : other_json->_flat_columns) {
-            copy.emplace_back(col->clone_empty());
+            copy.emplace_back(col->clone_empty(_allocator));
         }
         set_flat_columns(other_json->flat_column_paths(), other_json->flat_column_types(), std::move(copy));
     }
@@ -348,7 +349,7 @@ void JsonColumn::append(const Column& src, size_t offset, size_t count) {
         DCHECK_EQ(0, this->size());
         MutableColumns copy;
         for (const auto& col : other_json->_flat_columns) {
-            copy.emplace_back(col->clone_empty());
+            copy.emplace_back(col->clone_empty(_allocator));
         }
         set_flat_columns(other_json->flat_column_paths(), other_json->flat_column_types(), std::move(copy));
     }

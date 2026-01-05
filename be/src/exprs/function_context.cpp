@@ -218,10 +218,11 @@ const FunctionContext::TypeDesc* FunctionContext::get_arg_type(int arg_idx) cons
 }
 
 struct ColumnBuilder {
+    memory::Allocator* allocator;
     template <LogicalType Type>
     ColumnPtr operator()(const FunctionContext::TypeDesc& type_desc) {
         if constexpr (lt_is_decimal<Type>) {
-            return RunTimeColumnType<Type>::create(type_desc.precision, type_desc.scale);
+            return RunTimeColumnType<Type>::create(allocator, type_desc.precision, type_desc.scale);
         } else if constexpr (lt_is_collection<Type>) {
             throw std::runtime_error(fmt::format("Unsupported collection type {}", Type));
             return nullptr;
@@ -229,7 +230,7 @@ struct ColumnBuilder {
             throw std::runtime_error(fmt::format("Unsupported column type {}", Type));
             return nullptr;
         } else {
-            return RunTimeColumnType<Type>::create();
+            return RunTimeColumnType<Type>::create(allocator);
         }
     }
 };
@@ -237,6 +238,7 @@ struct ColumnBuilder {
 MutableColumnPtr FunctionContext::create_column(const FunctionContext::TypeDesc& type_desc, bool nullable) {
     const auto type = type_desc.type;
     MutableColumnPtr p = nullptr;
+    ColumnBuilder builder{_allocator};
 
     if (type == TYPE_STRUCT) {
         size_t field_size = type_desc.children.size();
@@ -246,13 +248,13 @@ MutableColumnPtr FunctionContext::create_column(const FunctionContext::TypeDesc&
             auto field_column = create_column(type_desc.children[i], true);
             columns.emplace_back(std::move(field_column));
         }
-        p = StructColumn::create(std::move(columns), type_desc.field_names);
+        p = StructColumn::create(_allocator, std::move(columns), type_desc.field_names);
     } else if (type == TYPE_ARRAY) {
-        auto offsets = UInt32Column::create();
+        auto offsets = UInt32Column::create(_allocator);
         auto data = create_column(type_desc.children[0], true);
-        p = ArrayColumn::create(std::move(data), std::move(offsets));
+        p = ArrayColumn::create(_allocator, std::move(data), std::move(offsets));
     } else if (type == TYPE_MAP) {
-        auto offsets = UInt32Column ::create();
+        auto offsets = UInt32Column::create(_allocator);
         MutableColumnPtr keys = nullptr;
         MutableColumnPtr values = nullptr;
         if (type_desc.children[0].type == TYPE_UNKNOWN) {
@@ -269,14 +271,14 @@ MutableColumnPtr FunctionContext::create_column(const FunctionContext::TypeDesc&
         } else {
             values = create_column(type_desc.children[1], true);
         }
-        p = MapColumn::create(std::move(keys), std::move(values), std::move(offsets));
+        p = MapColumn::create(_allocator, std::move(keys), std::move(values), std::move(offsets));
     } else {
-        auto col = type_dispatch_column(type, ColumnBuilder(), type_desc);
+        auto col = type_dispatch_column(type, builder, type_desc);
         p = col ? std::move(col)->as_mutable_ptr() : nullptr;
     }
 
     if (nullable && p != nullptr) {
-        return NullableColumn::create(std::move(p), NullColumn::create());
+        return NullableColumn::create(_allocator, std::move(p), NullColumn::create(_allocator));
     }
     return p;
 }

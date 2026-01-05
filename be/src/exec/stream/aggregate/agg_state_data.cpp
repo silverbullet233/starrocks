@@ -19,6 +19,7 @@
 
 #include "exprs/agg/stream/stream_detail_state.h"
 #include "fmt/format.h"
+#include "runtime/memory/allocator_v2.h"
 
 namespace starrocks::stream {
 
@@ -96,7 +97,7 @@ Status AggStateData::output_result(size_t chunk_size, const Columns& group_by_co
                                    Column* to) const {
     if (detail_state_table && is_detail_agg_state()) {
         DCHECK(detail_state_table);
-        UInt8Column::MutablePtr is_sync_col = UInt8Column::create();
+        UInt8Column::MutablePtr is_sync_col = UInt8Column::create(memory::get_default_allocator());
         for (size_t i = 0; i < chunk_size; i++) {
             _agg_function->output_is_sync(_agg_fn_ctx, chunk_size, is_sync_col.get(),
                                           agg_group_data[i] + _agg_state_offset);

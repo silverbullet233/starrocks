@@ -19,13 +19,14 @@
 #include "common/config.h"
 #include "common/logging.h"
 #include "common/status.h"
+#include "runtime/memory/allocator_v2.h"
 #include "serde/column_array_serde.h"
 #include "storage/olap_define.h"
 
 namespace starrocks {
 
 RowSourceMaskBuffer::RowSourceMaskBuffer(int64_t tablet_id, std::string storage_root_path)
-        : _mask_column(UInt16Column::create()),
+        : _mask_column(UInt16Column::create(memory::get_default_allocator())),
           _tablet_id(tablet_id),
           _storage_root_path(std::move(storage_root_path)) {}
 
@@ -162,8 +163,8 @@ Status RowSourceMaskBuffer::_deserialize_masks() {
         return Status::InternalError("fail to read masks size from mask file");
     }
 
-    Buffer<uint16_t> content;
-    raw::stl_vector_resize_uninitialized(&content, num_rows);
+    Buffer<uint16_t> content(memory::get_default_allocator());
+    content.resize(num_rows);
     r_size = ::read(_tmp_file_fd, content.data(), content.size() * sizeof(content[0]));
     if (r_size != content.size() * sizeof(content[0])) {
         PLOG(WARNING) << "fail to read masks from mask file. read size=" << r_size;

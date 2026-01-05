@@ -992,7 +992,7 @@ private:
     };
 
     template <LogicalType Type>
-    friend StatusOr<ColumnPtr> do_format(const FormatCtx* ctx, const Columns& cols);
+    friend StatusOr<ColumnPtr> do_format(FunctionContext* context, const FormatCtx* ctx, const Columns& cols);
 };
 
 } // namespace starrocks

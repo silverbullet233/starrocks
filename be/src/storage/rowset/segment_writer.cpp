@@ -419,7 +419,7 @@ Status SegmentWriter::append_chunk(const Chunk& chunk) {
         _tablet_schema->columns().back().name() == Schema::FULL_ROW_COLUMN &&
         chunk_num_columns + 1 == _column_writers.size()) {
         // just missing full row column, generate it and write to file
-        auto full_row_col = BinaryColumn::create();
+        auto full_row_col = BinaryColumn::create(memory::get_default_allocator());
         auto row_encoder = RowStoreEncoderFactory::instance()->get_or_create_encoder(SIMPLE);
         RETURN_IF_ERROR(row_encoder->encode_chunk_to_full_row_column(*_schema_without_full_row_column, chunk,
                                                                      full_row_col.get()));

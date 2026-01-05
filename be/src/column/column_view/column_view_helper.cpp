@@ -48,6 +48,6 @@ std::optional<MutableColumnPtr> ColumnViewHelper::create_column_view(const TypeD
     } else {
         default_column->append_default();
     }
-    return ColumnView::create(std::move(default_column), concat_rows_limit, concat_bytes_limit);
+    return ColumnView::create(default_column->get_allocator(), std::move(default_column), concat_rows_limit, concat_bytes_limit);
 }
 } // namespace starrocks

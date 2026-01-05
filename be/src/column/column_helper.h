@@ -25,6 +25,7 @@
 #include "column/vectorized_fwd.h"
 #include "gutil/casts.h"
 #include "gutil/cpu.h"
+#include "runtime/memory/allocator_v2.h"
 #include "simd/simd.h"
 #include "types/logical_type.h"
 #include "types/logical_type_infra.h"
@@ -83,14 +84,15 @@ public:
         static_assert(!lt_is_decimal<Type>,
                       "Decimal column can not created by this function because of missing "
                       "precision and scale param");
-        auto ptr = RunTimeColumnType<Type>::create();
+        auto* allocator = memory::get_default_allocator();
+        auto ptr = RunTimeColumnType<Type>::create(allocator);
         ptr->append_datum(Datum(value));
         // @FIXME: BinaryColumn get_data() will call build_slice() to modify the column's memory data,
         // but the operator is thread-unsafe, it's will cause crash in multi-thread(OLAP_SCANNER) when
         // OLAP_SCANNER call expression.
         // Call the get_data() when create ConstColumn is a short-term solution
         ptr->get_data();
-        return ConstColumn::create(std::move(ptr), chunk_size);
+        return ConstColumn::create(allocator, std::move(ptr), chunk_size);
     }
 
     template <LogicalType LT>
@@ -98,11 +100,12 @@ public:
                                                         size_t size) {
         static_assert(lt_is_decimal<LT>);
         using ColumnType = RunTimeColumnType<LT>;
-        auto data_column = ColumnType::create(precision, scale, 1);
+        auto* allocator = memory::get_default_allocator();
+        auto data_column = ColumnType::create(allocator, precision, scale, 1);
         auto& data = ColumnHelper::cast_to_raw<LT>(data_column.get())->get_data();
         DCHECK(data.size() == 1);
         data[0] = value;
-        return ConstColumn::create(std::move(data_column), size);
+        return ConstColumn::create(allocator, std::move(data_column), size);
     }
 
     // If column is const column, duplicate the data column to chunk_size
@@ -235,7 +238,8 @@ public:
             } else {
                 // 4. src column is non-nullable, and dest column is nullable.
                 auto mut_column = Column::mutate(std::move(src_column));
-                return NullableColumn::create(std::move(mut_column), NullColumn::create(num_rows, 0));
+                return NullableColumn::create(memory::get_default_allocator(), std::move(mut_column),
+                                              NullColumn::create(memory::get_default_allocator(), num_rows, 0));
             }
         }
     }
@@ -258,7 +262,8 @@ public:
                 return std::move(src_column);
             } else {
                 // 4. src column is non-nullable, and dest column is nullable.
-                return NullableColumn::create(std::move(src_column), NullColumn::create(num_rows, 0));
+                return NullableColumn::create(memory::get_default_allocator(), std::move(src_column),
+                                              NullColumn::create(memory::get_default_allocator(), num_rows, 0));
             }
         }
     }
@@ -269,7 +274,8 @@ public:
         if (mut_column->is_nullable()) {
             return mut_column;
         }
-        return NullableColumn::create(std::move(mut_column), NullColumn::create(mut_column->size(), 0));
+        return NullableColumn::create(memory::get_default_allocator(), std::move(mut_column),
+                                      NullColumn::create(memory::get_default_allocator(), mut_column->size(), 0));
     }
 
     // Move the source column according to the specific dest type and nullable.

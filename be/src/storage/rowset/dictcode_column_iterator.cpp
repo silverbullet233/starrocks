@@ -18,6 +18,7 @@
 #include "column/column_helper.h"
 #include "column/nullable_column.h"
 #include "column/vectorized_fwd.h"
+#include "runtime/memory/allocator_v2.h"
 #include "common/status.h"
 #include "gutil/casts.h"
 #include "storage/rowset/scalar_column_iterator.h"
@@ -98,7 +99,7 @@ Status GlobalDictCodeColumnIterator::build_code_convert_map(ColumnIterator* file
 
     int dict_size = file_column_iter->dict_size();
 
-    auto column = BinaryColumn::create();
+    auto column = BinaryColumn::create(memory::get_default_allocator());
 
     int dict_codes[dict_size];
     for (int i = 0; i < dict_size; ++i) {
@@ -126,14 +127,18 @@ Status GlobalDictCodeColumnIterator::build_code_convert_map(ColumnIterator* file
 }
 
 MutableColumnPtr GlobalDictCodeColumnIterator::_new_local_dict_col(Column* src) {
-    MutableColumnPtr res = Int32Column::create();
+    MutableColumnPtr res = Int32Column::create(memory::get_default_allocator());
     auto code_data = ColumnHelper::get_data_column(src);
     if (code_data->is_array()) {
-        res = ArrayColumn::create(NullableColumn::create(std::move(res), NullColumn::create()), UInt32Column::create());
+        res = ArrayColumn::create(memory::get_default_allocator(),
+                                  NullableColumn::create(memory::get_default_allocator(), std::move(res),
+                                                         NullColumn::create(memory::get_default_allocator())),
+                                  UInt32Column::create(memory::get_default_allocator()));
     }
 
     if (src->is_nullable()) {
-        res = NullableColumn::create(std::move(res), NullColumn::create());
+        res = NullableColumn::create(memory::get_default_allocator(), std::move(res),
+                                     NullColumn::create(memory::get_default_allocator()));
     }
     return res;
 }

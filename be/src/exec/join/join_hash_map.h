@@ -19,6 +19,7 @@
 
 #if defined(__aarch64__)
 #include "arm_acle.h"
+#include "runtime/memory/allocator_v2.h"
 #endif
 
 namespace starrocks {
@@ -111,7 +112,7 @@ private:
     void _copy_probe_column(ColumnPtr& src_column, ChunkPtr* chunk, const SlotDescriptor* slot, bool to_nullable) {
         if (_probe_state->match_flag == JoinMatchFlag::ALL_MATCH_ONE) {
             if (to_nullable) {
-                auto dest_column = NullableColumn::create(src_column, NullColumn::create(_probe_state->count));
+                auto dest_column = NullableColumn::create(memory::get_default_allocator(), src_column, NullColumn::create(memory::get_default_allocator(), _probe_state->count));
                 (*chunk)->append_column(std::move(dest_column), slot->id());
             } else {
                 (*chunk)->append_column(src_column, slot->id());

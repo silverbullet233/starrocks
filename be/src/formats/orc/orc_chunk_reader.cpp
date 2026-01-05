@@ -28,6 +28,7 @@
 #include "exprs/cast_expr.h"
 #include "exprs/literal.h"
 #include "exprs/runtime_filter.h"
+#include "runtime/memory/allocator_v2.h"
 #include "formats/orc/orc_mapping.h"
 #include "formats/orc/orc_memory_pool.h"
 #include "formats/orc/utils.h"
@@ -475,7 +476,8 @@ Status OrcChunkReader::_fill_chunk(ChunkPtr* chunk, const std::vector<SlotDescri
     if (_broker_load_mode) {
         // always allocate load filter. it's much easier to use in fill chunk function.
         if (_broker_load_filter == nullptr) {
-            _broker_load_filter = std::make_shared<Filter>(_read_chunk_size);
+            auto* allocator = memory::get_default_allocator();
+            _broker_load_filter = std::make_shared<Filter>(allocator, _read_chunk_size);
         }
         _broker_load_filter->assign(_batch->numElements, 1);
     }
@@ -1214,7 +1216,7 @@ Status OrcChunkReader::build_search_argument_by_predicates(const OrcPredicates* 
 StatusOr<MutableColumnPtr> OrcChunkReader::get_row_delete_filter(const SkipRowsContextPtr& skip_rows_ctx) {
     int64_t start_pos = _row_reader->getRowNumber();
     auto num_rows = _batch->numElements;
-    auto filter_column = BooleanColumn::create(num_rows, 1);
+    auto filter_column = BooleanColumn::create(memory::get_default_allocator(), num_rows);
     auto& filter = static_cast<BooleanColumn*>(filter_column.get())->get_data();
 
     if (skip_rows_ctx == nullptr || !skip_rows_ctx->has_skip_rows()) {
@@ -1260,7 +1262,7 @@ Status OrcChunkReader::apply_dict_filter_eval_cache(const std::unordered_map<Slo
         uint64_t column_id = _root_mapping->get_orc_type_child_mapping(pos_in_src_slot_descs).orc_type->getColumnId();
 
         const Filter& dict_filter = (*it.second);
-        auto data_filter = BooleanColumn::create(size);
+        auto data_filter = BooleanColumn::create(memory::get_default_allocator(), size);
         Filter& data = static_cast<BooleanColumn*>(data_filter.get())->get_data();
         DCHECK(data.size() == size);
 

@@ -20,6 +20,7 @@
 #include "formats/disk_range.hpp"
 #include "formats/orc/orc_chunk_reader.h"
 #include "formats/orc/orc_input_stream.h"
+#include "runtime/memory/allocator_v2.h"
 
 namespace starrocks {
 
@@ -65,8 +66,8 @@ private:
     OrcChunkReader::LazyLoadContext _lazy_load_ctx;
     std::unique_ptr<OrcChunkReader> _orc_reader;
     std::shared_ptr<OrcRowReaderFilter> _orc_row_reader_filter;
-    Filter _dict_filter;
-    Filter _chunk_filter;
+    Filter _dict_filter{memory::get_default_allocator()};
+    Filter _chunk_filter{memory::get_default_allocator()};
     SkipRowsContextPtr _skip_rows_ctx;
     std::unique_ptr<ORCHdfsFileStream> _input_stream;
 };

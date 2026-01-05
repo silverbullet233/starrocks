@@ -20,7 +20,8 @@
 
 namespace starrocks {
 
-StructColumn::StructColumn(MutableColumns&& fields) {
+StructColumn::StructColumn(memory::Allocator* allocator, MutableColumns&& fields)
+        : Base(allocator) {
     DCHECK_GT(fields.size(), 0);
     size_t size = fields[0]->size();
     for (auto&& f : fields) {
@@ -31,8 +32,9 @@ StructColumn::StructColumn(MutableColumns&& fields) {
     DCHECK_EQ(_fields.size(), fields.size());
 }
 
-StructColumn::StructColumn(MutableColumns&& fields, std::vector<std::string> field_names)
-        : _field_names(std::move(field_names)) {
+StructColumn::StructColumn(memory::Allocator* allocator, MutableColumns&& fields,
+                           std::vector<std::string> field_names)
+        : Base(allocator), _field_names(std::move(field_names)) {
     // Struct must have at least one field.
     DCHECK_GT(_field_names.size(), 0);
     for (auto&& f : fields) {
@@ -43,14 +45,38 @@ StructColumn::StructColumn(MutableColumns&& fields, std::vector<std::string> fie
     DCHECK(_fields.size() == _field_names.size());
 }
 
-StructColumn::Ptr StructColumn::create(const Columns& columns, std::vector<std::string> field_names) {
-    MutableColumns mutable_columns = ColumnHelper::to_mutable_columns(columns);
-    return StructColumn::create(std::move(mutable_columns), std::move(field_names));
+StructColumn::StructColumn(memory::Allocator* allocator, const Columns& fields) : Base(allocator) {
+    DCHECK_GT(fields.size(), 0);
+    size_t size = fields[0]->size();
+    for (const auto& f : fields) {
+        DCHECK_EQ(f->size(), size) << "All fields must have the same size";
+        f->check_or_die();
+        _fields.emplace_back(f->clone(allocator));
+    }
+    DCHECK_EQ(_fields.size(), fields.size());
 }
 
-StructColumn::Ptr StructColumn::create(const Columns& columns) {
+StructColumn::StructColumn(memory::Allocator* allocator, const Columns& fields,
+                           std::vector<std::string> field_names)
+        : Base(allocator), _field_names(std::move(field_names)) {
+    // Struct must have at least one field.
+    DCHECK_GT(_field_names.size(), 0);
+    for (const auto& f : fields) {
+        _fields.emplace_back(f->clone(allocator));
+    }
+    DCHECK_GT(_fields.size(), 0);
+    // fields and field_names must have the same size.
+    DCHECK(_fields.size() == _field_names.size());
+}
+
+StructColumn::Ptr StructColumn::create(memory::Allocator* allocator, const Columns& columns, std::vector<std::string> field_names) {
     MutableColumns mutable_columns = ColumnHelper::to_mutable_columns(columns);
-    return StructColumn::create(std::move(mutable_columns));
+    return StructColumn::create(allocator, std::move(mutable_columns), std::move(field_names));
+}
+
+StructColumn::Ptr StructColumn::create(memory::Allocator* allocator, const Columns& columns) {
+    MutableColumns mutable_columns = ColumnHelper::to_mutable_columns(columns);
+    return StructColumn::create(allocator, std::move(mutable_columns));
 }
 
 bool StructColumn::is_struct() const {
@@ -317,13 +343,14 @@ uint32_t StructColumn::serialize_size(size_t idx) const {
     return ser_size;
 }
 
-MutableColumnPtr StructColumn::clone_empty() const {
+MutableColumnPtr StructColumn::clone_empty(memory::Allocator* allocator) const {
+    allocator = allocator == nullptr ? get_allocator() : allocator;
     MutableColumns fields;
     fields.reserve(_fields.size());
     for (const auto& field : _fields) {
-        fields.emplace_back(field->clone_empty());
+        fields.emplace_back(field->clone_empty(allocator));
     }
-    return create(std::move(fields), _field_names);
+    return create(allocator, std::move(fields), _field_names);
 }
 
 size_t StructColumn::filter_range(const Filter& filter, size_t from, size_t to) {

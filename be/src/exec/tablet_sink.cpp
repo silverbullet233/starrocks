@@ -69,6 +69,7 @@
 #include "util/thread.h"
 #include "util/thrift_rpc_helper.h"
 #include "util/uid_util.h"
+#include "runtime/memory/allocator_v2.h"
 
 static const uint8_t VALID_SEL_FAILED = 0x0;
 static const uint8_t VALID_SEL_OK = 0x1;
@@ -793,9 +794,10 @@ Status OlapTableSink::_fill_auto_increment_id_internal(Chunk* chunk, SlotDescrip
     auto nullable_col_mut = down_cast<NullableColumn*>(col->as_mutable_raw_ptr());
     auto* data_col_mut = nullable_col_mut->data_column_raw_ptr();
     const auto null_datas = nullable_col_mut->immutable_null_column_data();
-    Filter filter(null_datas.begin(), null_datas.end());
+    Filter filter(memory::get_default_allocator());
+    filter.insert(null_datas.begin(), null_datas.end());
 
-    Filter init_filter(chunk->num_rows(), 0);
+    Filter init_filter(memory::get_default_allocator(), chunk->num_rows(), 0);
 
     if (_keys_type == TKeysType::PRIMARY_KEYS && _output_tuple_desc->slots().back()->col_name() == "__op") {
         size_t op_column_id = chunk->num_columns() - 1;
@@ -1027,7 +1029,7 @@ void OlapTableSink::_validate_data(RuntimeState* state, Chunk* chunk) {
         // Column nullable info need to respect slot nullable info
         if (desc->is_nullable() && !column_ptr->is_nullable()) {
             MutableColumnPtr new_column =
-                    NullableColumn::create(std::move(column_ptr)->as_mutable_ptr(), NullColumn::create(num_rows, 0));
+                    NullableColumn::create(memory::get_default_allocator(), std::move(column_ptr)->as_mutable_ptr(), NullColumn::create(memory::get_default_allocator(), num_rows, 0));
             chunk->update_column(std::move(new_column), desc->id());
             // Auto increment column is not nullable but use NullableColumn to implement. We should skip the check for it.
         } else if (!desc->is_nullable() && column_ptr->is_nullable() &&
@@ -1159,7 +1161,7 @@ void OlapTableSink::_padding_char_column(Chunk* chunk) {
 
             // Padding 0 to CHAR field, the storage bitmap index and zone map need it.
             // TODO(kks): we could improve this if there are many null values
-            auto new_binary = BinaryColumn::create();
+            auto new_binary = BinaryColumn::create(memory::get_default_allocator());
             Offsets& new_offset = new_binary->get_offset();
             Bytes& new_bytes = new_binary->get_bytes();
             new_offset.resize(num_rows + 1);
@@ -1178,7 +1180,7 @@ void OlapTableSink::_padding_char_column(Chunk* chunk) {
 
             if (desc->is_nullable()) {
                 auto* nullable_column = down_cast<NullableColumn*>(column);
-                auto new_column = NullableColumn::create(std::move(new_binary), nullable_column->null_column());
+                auto new_column = NullableColumn::create(memory::get_default_allocator(), std::move(new_binary), nullable_column->null_column());
                 chunk->update_column(std::move(new_column), desc->id());
             } else {
                 chunk->update_column(std::move(new_binary), desc->id());

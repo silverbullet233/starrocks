@@ -38,6 +38,7 @@
 #include "storage/column_predicate.h"
 #include "storage/column_predicate_rewriter.h"
 #include "storage/del_vector.h"
+#include "runtime/memory/allocator_v2.h"
 #include "storage/index/index_descriptor.h"
 #include "storage/index/vector/tenann/del_id_filter.h"
 #include "storage/index/vector/tenann/tenann_index_utils.h"
@@ -514,6 +515,8 @@ SegmentIterator::SegmentIterator(std::shared_ptr<Segment> segment, Schema schema
           _segment(std::move(segment)),
           _opts(std::move(options)),
           _bitmap_index_evaluator(_schema, _opts.pred_tree),
+          _selection(memory::get_default_allocator()),
+          _selected_idx(memory::get_default_allocator()),
           _predicate_columns(_opts.pred_tree.num_columns()) {
     // Initialize vector index context only when needed
     if (_opts.use_vector_index) {
@@ -1708,7 +1711,7 @@ Status SegmentIterator::_do_get_next(Chunk* result, vector<rowid_t>* rowid) {
 
     if (_vector_index_ctx && _vector_index_ctx->use_vector_index && !_vector_index_ctx->use_ivfpq) {
         DCHECK(rowid != nullptr);
-        FloatColumn::MutablePtr distance_column = FloatColumn::create();
+        FloatColumn::MutablePtr distance_column = FloatColumn::create(memory::get_default_allocator());
         vector<rowid_t> rowids;
         for (const auto& rid : *rowid) {
             auto it = _vector_index_ctx->id2distance_map.find(rid);
@@ -2745,8 +2748,8 @@ void SegmentIterator::close() {
         rfile.reset();
     }
 
-    STLClearObject(&_selection);
-    STLClearObject(&_selected_idx);
+    _selection.clear();
+    _selected_idx.clear();
 
     _bitmap_index_evaluator.close();
 

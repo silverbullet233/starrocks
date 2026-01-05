@@ -192,10 +192,10 @@ class AppendWithMask : public ColumnVisitorMutableAdapter<AppendWithMask> {
 public:
     using SelMask = Filter;
 
-    AppendWithMask(Column* column, SelMask sel_mask, size_t selected_size)
+    AppendWithMask(Column* column, const SelMask& sel_mask, size_t selected_size)
             : ColumnVisitorMutableAdapter(this),
               _column(column),
-              _sel_mask(std::move(sel_mask)),
+              _sel_mask(sel_mask),
               _selected_size(selected_size) {}
 
     Status do_visit(NullableColumn* column) {
@@ -286,7 +286,7 @@ public:
 
 private:
     Column* _column;
-    const SelMask _sel_mask;
+    const SelMask& _sel_mask;
     size_t _selected_size;
 };
 
@@ -360,7 +360,7 @@ StatusOr<ChunkPtr> SortedStreamingAggregator::streaming_compute_agg_state(size_t
     RETURN_IF_ERROR(_update_states(chunk_size, is_update_phase));
 
     // selector[i] == 0 means selected
-    Filter selector(chunk_size);
+    Filter selector(memory::get_default_allocator(), chunk_size);
     size_t selected_size = _init_selector(selector, chunk_size);
 
     // finalize state
@@ -408,7 +408,7 @@ StatusOr<ChunkPtr> SortedStreamingAggregator::streaming_compute_distinct(size_t 
 
     RETURN_IF_ERROR(_compute_group_by(chunk_size));
     // selector[i] == 0 means selected
-    Filter selector(chunk_size);
+    Filter selector(memory::get_default_allocator(), chunk_size);
     size_t selected_size = _init_selector(selector, chunk_size);
     auto res_group_by_columns = _create_group_by_columns(chunk_size);
     RETURN_IF_ERROR(_build_group_by_columns(chunk_size, selected_size, selector, res_group_by_columns));
@@ -474,7 +474,7 @@ Status SortedStreamingAggregator::_update_states(size_t chunk_size, bool is_upda
         }
 
         // only create the state when selector == 0
-        Filter create_selector(chunk_size);
+        Filter create_selector(memory::get_default_allocator(), chunk_size);
         for (size_t i = 0; i < _cmp_vector.size(); ++i) {
             create_selector[i] = _cmp_vector[i] == 0;
         }

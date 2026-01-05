@@ -44,14 +44,14 @@ StatusOr<ColumnPtr> CastJsonToStruct::evaluate_checked(ExprContext* context, Chu
     }
 
     ColumnViewer<TYPE_JSON> src(column);
-    NullColumn::MutablePtr null_column = NullColumn::create();
+    NullColumn::MutablePtr null_column = NullColumn::create(context->get_allocator());
 
     // 1. Cast Json to json columns.
     size_t field_size = _type.children.size();
     DCHECK_EQ(field_size, _type.field_names.size());
     vector<ColumnBuilder<TYPE_JSON>> json_columns;
     for (size_t i = 0; i < field_size; i++) {
-        ColumnBuilder<TYPE_JSON> json_column_builder(src.size());
+        ColumnBuilder<TYPE_JSON> json_column_builder(context->get_allocator(), src.size());
         json_columns.emplace_back(json_column_builder);
     }
     for (size_t i = 0; i < src.size(); i++) {
@@ -117,15 +117,15 @@ StatusOr<ColumnPtr> CastJsonToStruct::evaluate_checked(ExprContext* context, Chu
         DCHECK(casted_fields[i]->is_nullable());
     }
 
-    MutableColumnPtr res = StructColumn::create(std::move(casted_fields), _type.field_names);
+    MutableColumnPtr res = StructColumn::create(context->get_allocator(), std::move(casted_fields), _type.field_names);
     RETURN_IF_ERROR(res->unfold_const_children(_type));
     if (column->is_nullable()) {
-        res = NullableColumn::create(std::move(res), std::move(null_column));
+        res = NullableColumn::create(context->get_allocator(), std::move(res), std::move(null_column));
     }
 
     // Wrap constant column if source column is constant.
     if (column->is_constant()) {
-        res = ConstColumn::create(std::move(res), column->size());
+        res = ConstColumn::create(context->get_allocator(), std::move(res), column->size());
     }
     return std::move(res);
 }

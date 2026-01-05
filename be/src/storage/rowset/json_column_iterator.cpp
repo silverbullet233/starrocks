@@ -133,7 +133,7 @@ Status JsonFlatColumnIterator::init(const ColumnIteratorOptions& opts) {
 
     DCHECK_EQ(_source_column_modules.size(), _source_paths.size());
     if (has_remain) {
-        _source_column_modules.emplace_back(JsonColumn::create());
+        _source_column_modules.emplace_back(JsonColumn::create(memory::get_default_allocator()));
     }
 
     if (!opts.has_preaggregation && config::enable_lazy_dynamic_flat_json) {
@@ -517,7 +517,7 @@ Status JsonMergeIterator::init(const ColumnIteratorOptions& opts) {
 
     if (_all_iter.size() != _src_paths.size()) {
         // remain
-        _src_column_modules.emplace_back(JsonColumn::create());
+        _src_column_modules.emplace_back(JsonColumn::create(memory::get_default_allocator()));
     }
 
     opts.stats->merge_json_hits["MergeAllSubfield"] += 1;

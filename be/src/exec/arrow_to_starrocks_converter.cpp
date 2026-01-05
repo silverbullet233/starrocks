@@ -36,6 +36,7 @@
 #include "gutil/strings/substitute.h"
 #include "runtime/datetime_value.h"
 #include "runtime/descriptors.h"
+#include "runtime/memory/allocator_v2.h"
 #include "runtime/runtime_state.h"
 #include "runtime/types.h"
 #include "types/logical_type.h"
@@ -840,7 +841,7 @@ struct ArrowConverter<AT, LT, is_nullable, is_strict, ArrayGuard<LT>> {
             return Status::InternalError(fmt::format("Unnest arrow list type({}) fail", array->type()->name()));
         }
 
-        Filter child_chunk_filter;
+        Filter child_chunk_filter(memory::get_default_allocator());
         auto* elements_col = col_array->elements_column_raw_ptr();
         child_chunk_filter.resize(elements_col->size() + child_array_num_elements, 1);
 #ifndef __APPLE__
@@ -877,7 +878,7 @@ struct ArrowConverter<AT, LT, is_nullable, is_strict, MapGuard<LT>> {
             }
 
 #ifndef __APPLE__
-            Filter child_chunk_filter;
+            Filter child_chunk_filter(memory::get_default_allocator());
             child_chunk_filter.resize(kv_size[i] + child_array_num_elements, 1);
             RETURN_IF_ERROR(ParquetScanner::convert_array_to_column(
                     conv_func->children[i].get(), child_array_num_elements, child_array, kv_columns[i],

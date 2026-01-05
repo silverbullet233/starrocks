@@ -32,6 +32,7 @@
 #include "exec/spill/spiller.h"
 #include "exec/spill/spiller.hpp"
 #include "exec/workgroup/scan_task_queue.h"
+#include "runtime/memory/allocator_v2.h"
 #include "exec/workgroup/work_group.h"
 #include "exec/workgroup/work_group_fwd.h"
 #include "runtime/current_thread.h"
@@ -739,7 +740,7 @@ Status PartitionedSpillerWriter::_compact_skew_chunks(size_t num_rows, std::vect
         auto* hash_column = down_cast<const UInt32Column*>(chunk->columns().back().get());
         auto& hash_values = hash_column->get_data();
         std::vector<uint32_t> indices;
-        Filter filter;
+        Filter filter(memory::get_default_allocator());
         indices.reserve(chunk->num_rows());
         filter.reserve(chunk->num_rows());
         for (uint32_t i = 0; i < hash_values.size(); ++i) {
@@ -778,7 +779,7 @@ Status PartitionedSpillerWriter::_compact_skew_chunks(size_t num_rows, std::vect
         RETURN_IF_ERROR(merger->convert_hash_map_to_chunk(hash_map_sz, &chunk_merged, true));
     }
     if (chunk_merged != nullptr && !chunk_merged->is_empty()) {
-        auto hash_column = UInt32Column::create(chunk_merged->num_rows(), target_hash_value);
+        auto hash_column = UInt32Column::create(memory::get_default_allocator(), chunk_merged->num_rows(), target_hash_value);
         chunk_merged->append_column(hash_column, Chunk::HASH_AGG_SPILL_HASH_SLOT_ID);
         new_chunks.emplace_back(std::move(chunk_merged));
     }

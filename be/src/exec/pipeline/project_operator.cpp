@@ -20,6 +20,7 @@
 #include "exprs/expr.h"
 #include "runtime/current_thread.h"
 #include "runtime/runtime_state.h"
+#include "runtime/memory/allocator_v2.h"
 
 namespace starrocks::pipeline {
 Status ProjectOperator::prepare(RuntimeState* state) {
@@ -77,7 +78,7 @@ Status ProjectOperator::push_chunk(RuntimeState* state, const ChunkPtr& chunk) {
             // follow SlotDescriptor is_null flag
             if (_type_is_nullable[i] && !result_columns[i]->is_nullable()) {
                 result_columns[i] =
-                        NullableColumn::create(std::move(result_columns[i]), NullColumn::create(num_rows, 0));
+                        NullableColumn::create(memory::get_default_allocator(), std::move(result_columns[i]), NullColumn::create(memory::get_default_allocator(), num_rows, 0));
             }
         }
         RETURN_IF_HAS_ERROR(_expr_ctxs);

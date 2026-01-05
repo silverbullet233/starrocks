@@ -347,7 +347,7 @@ StatusOr<ColumnPtr> MathFunctions::iceberg_truncate_decimal(FunctionContext* con
     }
 
     const RunTimeCppType<Type>* raw_c0 = decimalv3_col->get_data().data();
-    MutableColumnPtr res = RunTimeColumnType<Type>::create(original_precision, original_scale);
+    MutableColumnPtr res = RunTimeColumnType<Type>::create(context->get_allocator(), original_precision, original_scale);
     res->resize_uninitialized(size);
 
     // result column is mutable, use non-const raw pointer
@@ -356,7 +356,7 @@ StatusOr<ColumnPtr> MathFunctions::iceberg_truncate_decimal(FunctionContext* con
     if (c0_is_const) {
         raw_res[0] = raw_c0[0] - ((raw_c0[0] % width) + width) % width;
         res->resize(1);
-        res = ConstColumn::create(std::move(res), size);
+        res = ConstColumn::create(context->get_allocator(), std::move(res), size);
     } else {
         for (auto i = 0; i < size; i++) {
             raw_res[i] = raw_c0[i] - ((raw_c0[i] % width) + width) % width;
@@ -374,7 +374,7 @@ StatusOr<ColumnPtr> MathFunctions::iceberg_truncate_decimal(FunctionContext* con
     }
 #undef ABS
     if (has_null) {
-        res = NullableColumn::create(std::move(res), std::move(null_flags));
+        res = NullableColumn::create(res->get_allocator(), std::move(res), std::move(null_flags));
     }
     return res;
 }
@@ -397,7 +397,7 @@ StatusOr<ColumnPtr> MathFunctions::iceberg_truncate_int(FunctionContext* context
     uint8_t* raw_null_flags = null_flags->get_data().data();
     auto int_col = ColumnHelper::cast_to_raw<Type>(c0);
     const RunTimeCppType<Type>* raw_c0 = int_col->get_data().data();
-    MutableColumnPtr res = RunTimeColumnType<Type>::create();
+    MutableColumnPtr res = RunTimeColumnType<Type>::create(context->get_allocator());
     res->resize_uninitialized(size);
 
     // result column is mutable, use non-const raw pointer
@@ -406,7 +406,7 @@ StatusOr<ColumnPtr> MathFunctions::iceberg_truncate_int(FunctionContext* context
     if (c0_is_const) {
         raw_res[0] = raw_c0[0] - ((raw_c0[0] % width) + width) % width;
         res->resize(1);
-        res = ConstColumn::create(std::move(res), size);
+        res = ConstColumn::create(context->get_allocator(), std::move(res), size);
     } else {
         for (auto i = 0; i < size; i++) {
             raw_res[i] = raw_c0[i] - ((raw_c0[i] % width) + width) % width;
@@ -423,7 +423,7 @@ StatusOr<ColumnPtr> MathFunctions::iceberg_truncate_int(FunctionContext* context
     }
 #undef haveDifferentSigns
     if (has_null) {
-        res = NullableColumn::create(std::move(res), std::move(null_flags));
+        res = NullableColumn::create(res->get_allocator(), std::move(res), std::move(null_flags));
     }
     return res;
 }
@@ -442,7 +442,7 @@ StatusOr<ColumnPtr> MathFunctions::iceberg_bucket_int(FunctionContext* context, 
     int64_t width = c1->get(0).get_int32();
 
     auto col = ColumnHelper::cast_to_raw<Type>(c0);
-    MutableColumnPtr res = RunTimeColumnType<TYPE_UNSIGNED_INT>::create();
+    MutableColumnPtr res = RunTimeColumnType<TYPE_UNSIGNED_INT>::create(context->get_allocator());
     res->resize_uninitialized(size);
     const RunTimeCppType<Type>* raw_c0 = col->get_data().data();
     // result column is mutable, use non-const raw pointer
@@ -455,7 +455,7 @@ StatusOr<ColumnPtr> MathFunctions::iceberg_bucket_int(FunctionContext* context, 
         murmur_hash3_x86_32(&val, sizeof(val), 0, (void*)&raw_res[0]);
         raw_res[0] = (raw_res[0] & INT_MAX) % width;
         res->resize(1);
-        res = ConstColumn::create(std::move(res), size);
+        res = ConstColumn::create(context->get_allocator(), std::move(res), size);
     } else {
         for (auto i = 0; i < size; i++) {
             int64_t val = raw_c0[i];
@@ -465,7 +465,7 @@ StatusOr<ColumnPtr> MathFunctions::iceberg_bucket_int(FunctionContext* context, 
     }
 
     if (has_null) {
-        res = NullableColumn::create(std::move(res), std::move(null_flags));
+        res = NullableColumn::create(res->get_allocator(), std::move(res), std::move(null_flags));
     }
     return res;
 }
@@ -484,7 +484,7 @@ StatusOr<ColumnPtr> MathFunctions::iceberg_bucket_string(FunctionContext* contex
     int64_t width = c1->get(0).get_int32();
 
     auto col = ColumnHelper::cast_to_raw<TYPE_VARCHAR>(c0);
-    MutableColumnPtr res = RunTimeColumnType<TYPE_UNSIGNED_INT>::create();
+    MutableColumnPtr res = RunTimeColumnType<TYPE_UNSIGNED_INT>::create(context->get_allocator());
     res->resize_uninitialized(size);
     auto raw_c0 = col->get_proxy_data();
     // result column is mutable, use non-const raw pointer
@@ -496,7 +496,7 @@ StatusOr<ColumnPtr> MathFunctions::iceberg_bucket_string(FunctionContext* contex
         murmur_hash3_x86_32(raw_c0[0].data, raw_c0[0].size, 0, (void*)&raw_res[0]);
         raw_res[0] = (raw_res[0] & INT_MAX) % width;
         res->resize(1);
-        res = ConstColumn::create(std::move(res), size);
+        res = ConstColumn::create(context->get_allocator(), std::move(res), size);
     } else {
         for (auto i = 0; i < size; i++) {
             murmur_hash3_x86_32(raw_c0[i].data, raw_c0[i].size, 0, (void*)&raw_res[i]);
@@ -505,7 +505,7 @@ StatusOr<ColumnPtr> MathFunctions::iceberg_bucket_string(FunctionContext* contex
     }
 
     if (has_null) {
-        res = NullableColumn::create(std::move(res), std::move(null_flags));
+        res = NullableColumn::create(res->get_allocator(), std::move(res), std::move(null_flags));
     }
     return res;
 }
@@ -521,7 +521,7 @@ StatusOr<ColumnPtr> MathFunctions::iceberg_bucket_date(FunctionContext* context,
     int64_t width = c1->get(0).get_int32();
 
     auto col = ColumnHelper::cast_to_raw<TYPE_DATE>(c0);
-    MutableColumnPtr res = RunTimeColumnType<TYPE_UNSIGNED_INT>::create();
+    MutableColumnPtr res = RunTimeColumnType<TYPE_UNSIGNED_INT>::create(context->get_allocator());
     res->resize_uninitialized(size);
     const RunTimeCppType<TYPE_DATE>* raw_c0 = col->get_data().data();
     // result column is mutable, use non-const raw pointer
@@ -534,7 +534,7 @@ StatusOr<ColumnPtr> MathFunctions::iceberg_bucket_date(FunctionContext* context,
         murmur_hash3_x86_32(&val, sizeof(int64_t), 0, (void*)&raw_res[0]);
         raw_res[0] = (raw_res[0] & INT_MAX) % width;
         res->resize(1);
-        res = ConstColumn::create(std::move(res), size);
+        res = ConstColumn::create(context->get_allocator(), std::move(res), size);
     } else {
         for (auto i = 0; i < size; i++) {
             int64_t val = raw_c0[i].julian() - date::UNIX_EPOCH_JULIAN;
@@ -544,7 +544,7 @@ StatusOr<ColumnPtr> MathFunctions::iceberg_bucket_date(FunctionContext* context,
     }
 
     if (has_null) {
-        res = NullableColumn::create(std::move(res), std::move(null_flags));
+        res = NullableColumn::create(res->get_allocator(), std::move(res), std::move(null_flags));
     }
     return res;
 }
@@ -560,7 +560,7 @@ StatusOr<ColumnPtr> MathFunctions::iceberg_bucket_datetime(FunctionContext* cont
     int64_t width = c1->get(0).get_int32();
 
     auto col = ColumnHelper::cast_to_raw<TYPE_DATETIME>(c0);
-    MutableColumnPtr res = RunTimeColumnType<TYPE_UNSIGNED_INT>::create();
+    MutableColumnPtr res = RunTimeColumnType<TYPE_UNSIGNED_INT>::create(context->get_allocator());
     res->resize_uninitialized(size);
     const RunTimeCppType<TYPE_DATETIME>* raw_c0 = col->get_data().data();
     // result column is mutable, use non-const raw pointer
@@ -577,7 +577,7 @@ StatusOr<ColumnPtr> MathFunctions::iceberg_bucket_datetime(FunctionContext* cont
         murmur_hash3_x86_32(&result, sizeof(int64_t), 0, (void*)&raw_res[0]);
         raw_res[0] = (raw_res[0] & INT_MAX) % width;
         res->resize(1);
-        res = ConstColumn::create(std::move(res), size);
+        res = ConstColumn::create(context->get_allocator(), std::move(res), size);
     } else {
         for (auto i = 0; i < size; i++) {
             int64_t result = timestamp::to_julian(raw_c0[i].timestamp());
@@ -591,7 +591,7 @@ StatusOr<ColumnPtr> MathFunctions::iceberg_bucket_datetime(FunctionContext* cont
     }
 
     if (has_null) {
-        res = NullableColumn::create(std::move(res), std::move(null_flags));
+        res = NullableColumn::create(res->get_allocator(), std::move(res), std::move(null_flags));
     }
     return res;
 }
@@ -630,7 +630,7 @@ StatusOr<ColumnPtr> MathFunctions::iceberg_bucket_decimal(FunctionContext* conte
     int64_t width = c1->get(0).get_int32();
     auto decimalv3_col = ColumnHelper::cast_to_raw<Type>(c0);
 
-    MutableColumnPtr res = RunTimeColumnType<TYPE_UNSIGNED_INT>::create();
+    MutableColumnPtr res = RunTimeColumnType<TYPE_UNSIGNED_INT>::create(context->get_allocator());
     res->resize_uninitialized(size);
     const RunTimeCppType<Type>* raw_c0 = decimalv3_col->get_data().data();
     // result column is mutable, use non-const raw pointer
@@ -643,7 +643,7 @@ StatusOr<ColumnPtr> MathFunctions::iceberg_bucket_decimal(FunctionContext* conte
         murmur_hash3_x86_32(byte_array.data(), byte_array.size(), 0, (void*)&raw_res[0]);
         raw_res[0] = (raw_res[0] & INT_MAX) % width;
         res->resize(1);
-        res = ConstColumn::create(std::move(res), size);
+        res = ConstColumn::create(context->get_allocator(), std::move(res), size);
     } else {
         for (auto i = 0; i < size; i++) {
             auto result = raw_c0[i];
@@ -654,7 +654,7 @@ StatusOr<ColumnPtr> MathFunctions::iceberg_bucket_decimal(FunctionContext* conte
     }
 
     if (has_null) {
-        res = NullableColumn::create(std::move(res), std::move(null_flags));
+        res = NullableColumn::create(res->get_allocator(), std::move(res), std::move(null_flags));
     }
     return res;
 }
@@ -861,7 +861,7 @@ StatusOr<ColumnPtr> MathFunctions::decimal_round(FunctionContext* context, const
         has_null = true;
         null_flags = FunctionHelper::union_nullable_column(c0, c1);
     } else {
-        null_flags = NullColumn::create();
+        null_flags = NullColumn::create(context->get_allocator());
         null_flags->reserve(c0->size());
         null_flags->append_default(c0->size());
     }
@@ -878,7 +878,7 @@ StatusOr<ColumnPtr> MathFunctions::decimal_round(FunctionContext* context, const
     c0 = FunctionHelper::get_data_column_of_nullable(c0);
     c1 = FunctionHelper::get_data_column_of_nullable(c1);
 
-    MutableColumnPtr res = RunTimeColumnType<TYPE_DECIMAL128>::create(type.precision, type.scale);
+    MutableColumnPtr res = RunTimeColumnType<TYPE_DECIMAL128>::create(context->get_allocator(), type.precision, type.scale);
     res->resize_uninitialized(size);
 
     const int32_t original_scale = ColumnHelper::cast_to_raw<TYPE_DECIMAL128>(c0)->scale();
@@ -903,7 +903,7 @@ StatusOr<ColumnPtr> MathFunctions::decimal_round(FunctionContext* context, const
             res = ColumnHelper::create_const_null_column(size);
         } else {
             res->resize(1);
-            res = ConstColumn::create(std::move(res), size);
+            res = ConstColumn::create(context->get_allocator(), std::move(res), size);
         }
     } else if (c0_is_const) {
         for (auto i = 0; i < size; i++) {
@@ -935,7 +935,7 @@ StatusOr<ColumnPtr> MathFunctions::decimal_round(FunctionContext* context, const
     }
 
     if (has_null) {
-        return NullableColumn::create(std::move(res), std::move(null_flags));
+        return NullableColumn::create(res->get_allocator(), std::move(res), std::move(null_flags));
     } else {
         return res;
     }
@@ -963,7 +963,7 @@ StatusOr<ColumnPtr> MathFunctions::conv_int(FunctionContext* context, const Colu
     auto dest_base = ColumnViewer<TYPE_TINYINT>(columns[2]);
 
     auto size = columns[0]->size();
-    ColumnBuilder<TYPE_VARCHAR> result(size);
+    ColumnBuilder<TYPE_VARCHAR> result(context->get_allocator(), size);
     for (int row = 0; row < size; ++row) {
         if (bigint.is_null(row) || src_base.is_null(row) || dest_base.is_null(row)) {
             result.append_null();
@@ -998,7 +998,7 @@ StatusOr<ColumnPtr> MathFunctions::conv_string(FunctionContext* context, const C
     auto dest_base = ColumnViewer<TYPE_TINYINT>(columns[2]);
 
     auto size = columns[0]->size();
-    ColumnBuilder<TYPE_VARCHAR> result(size);
+    ColumnBuilder<TYPE_VARCHAR> result(context->get_allocator(), size);
     for (int row = 0; row < size; ++row) {
         if (string_viewer.is_null(row) || src_base.is_null(row) || dest_base.is_null(row)) {
             result.append_null();
@@ -1088,7 +1088,7 @@ Status MathFunctions::rand_close(FunctionContext* context, FunctionContext::Func
 
 StatusOr<ColumnPtr> MathFunctions::rand(FunctionContext* context, const Columns& columns) {
     int32_t num_rows = ColumnHelper::get_const_value<TYPE_INT>(columns[columns.size() - 1]);
-    ColumnBuilder<TYPE_DOUBLE> result(num_rows);
+    ColumnBuilder<TYPE_DOUBLE> result(context->get_allocator(), num_rows);
     for (int i = 0; i < num_rows; ++i) {
         result.append(distribution(generator));
     }

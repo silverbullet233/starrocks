@@ -29,6 +29,7 @@
 #include "types/logical_type.h"
 #include "util/dispatch.h"
 #include "util/percentile_value.h"
+#include "runtime/memory/allocator_v2.h"
 
 namespace starrocks {
 
@@ -96,19 +97,19 @@ public:
 
         Columns list = {lhs, rhs};
         if constexpr (lt_is_collection<Type>) {
-            return _evaluate_complex(list);
+            return _evaluate_complex(context, list);
         } else {
-            return _evaluate_general(list);
+            return _evaluate_general(context, list);
         }
     }
 
 private:
-    ColumnPtr _evaluate_general(const Columns& columns) {
+    ColumnPtr _evaluate_general(ExprContext* context, const Columns& columns) {
         ColumnViewer<Type> lhs_viewer(columns[0]);
         ColumnViewer<Type> rhs_viewer(columns[1]);
         auto [all_const, num_rows] = ColumnHelper::num_packed_rows(columns);
 
-        ColumnBuilder<Type> result(num_rows, this->type().precision, this->type().scale);
+        ColumnBuilder<Type> result(context->get_allocator(), num_rows, this->type().precision, this->type().scale);
 
         for (int row = 0; row < num_rows; ++row) {
             if (lhs_viewer.is_null(row)) {
@@ -121,7 +122,7 @@ private:
         return result.build(ColumnHelper::is_all_const(columns));
     }
 
-    ColumnPtr _evaluate_complex(const Columns& inputs) {
+    ColumnPtr _evaluate_complex(ExprContext* context, const Columns& inputs) {
         auto num_rows = inputs[0]->size();
         Columns columns;
         for (const auto& col : inputs) {
@@ -165,19 +166,19 @@ public:
 
         Columns list = {lhs, rhs};
         if constexpr (lt_is_collection<Type>) {
-            return _evaluate_complex(list);
+            return _evaluate_complex(context, list);
         } else {
-            return _evaluate_general(list);
+            return _evaluate_general(context, list);
         }
     }
 
 private:
-    ColumnPtr _evaluate_general(const Columns& columns) {
+    ColumnPtr _evaluate_general(ExprContext* context, const Columns& columns) {
         ColumnViewer<Type> lhs_viewer(columns[0]);
         ColumnViewer<Type> rhs_viewer(columns[1]);
 
         size_t size = columns[0]->size();
-        ColumnBuilder<Type> result(size, this->type().precision, this->type().scale);
+        ColumnBuilder<Type> result(context->get_allocator(), size, this->type().precision, this->type().scale);
         for (int row = 0; row < size; ++row) {
             if (lhs_viewer.is_null(row)) {
                 result.append_null();
@@ -195,7 +196,7 @@ private:
         return result.build(ColumnHelper::is_all_const(columns));
     }
 
-    ColumnPtr _evaluate_complex(const Columns& inputs) {
+    ColumnPtr _evaluate_complex(ExprContext* context, const Columns& inputs) {
         auto num_rows = inputs[0]->size();
         Columns columns;
         for (const auto& col : inputs) {
@@ -257,7 +258,7 @@ public:
             if constexpr (lt_is_collection<Type>) {
                 return _evaluate_complex<false>(list);
             } else if (bhs->is_constant() || !isArithmeticLT<Type>) {
-                return _evaluate_general<false>(list);
+                return _evaluate_general<false>(context, list);
             } else if constexpr (isArithmeticLT<Type>) {
                 return dispatch_nonull_template<SelectIfOP, Type>(lhs, rhs, bhs, type());
             } else {
@@ -276,14 +277,14 @@ public:
                 auto lds = get_data_column(num_rows, lhs);
                 auto rds = get_data_column(num_rows, rhs);
                 // call select if
-                auto selector = bhs->only_null() ? UInt8Column::create(num_rows) : bhs;
+                auto selector = bhs->only_null() ? UInt8Column::create(memory::get_default_allocator(), num_rows) : bhs;
                 auto select_data = dispatch_nonull_template<SelectIfOP, Type>(lds, rds, bhs, type());
                 auto select_null =
                         dispatch_nonull_template<SelectIfOP, TYPE_BOOLEAN>(lns, rns, bhs, TypeDescriptor(TYPE_BOOLEAN));
-                auto res = NullableColumn::create(select_data, ColumnHelper::as_column<NullColumn>(select_null));
+                auto res = NullableColumn::create(memory::get_default_allocator(), select_data, ColumnHelper::as_column<NullColumn>(select_null));
                 return res;
             } else {
-                return _evaluate_general<true>(list);
+                return _evaluate_general<true>(context, list);
             }
         }
     }
@@ -302,7 +303,7 @@ private:
         if (input_col->only_null()) {
             auto res = ColumnHelper::create_column(type(), false);
             res->resize(1);
-            return ConstColumn::create(std::move(res), num_rows);
+            return ConstColumn::create(memory::get_default_allocator(), std::move(res), num_rows);
         } else if (input_col->is_nullable()) {
             return down_cast<const NullableColumn*>(input_col.get())->data_column();
         } else {
@@ -311,12 +312,12 @@ private:
     }
 
     template <bool check_null>
-    ColumnPtr _evaluate_general(const Columns& columns) {
+    ColumnPtr _evaluate_general(ExprContext* context, const Columns& columns) {
         auto [all_const, num_rows] = ColumnHelper::num_packed_rows(columns);
         ColumnViewer<TYPE_BOOLEAN> bhs_viewer(columns[0]);
         ColumnViewer<Type> lhs_viewer(columns[1]);
         ColumnViewer<Type> rhs_viewer(columns[2]);
-        ColumnBuilder<Type> result(num_rows, this->type().precision, this->type().scale);
+        ColumnBuilder<Type> result(context->get_allocator(), num_rows, this->type().precision, this->type().scale);
         if constexpr (check_null) {
             for (int row = 0; row < num_rows; ++row) {
                 if (bhs_viewer.is_null(row) || !bhs_viewer.value(row)) {
@@ -417,14 +418,14 @@ public:
         }
 
         if constexpr (lt_is_collection<Type>) {
-            return _evaluate_complex(columns);
+            return _evaluate_complex(context, columns);
         } else {
-            return _evaluate_general(columns);
+            return _evaluate_general(context, columns);
         }
     }
 
 private:
-    StatusOr<ColumnPtr> _evaluate_general(const Columns& columns) {
+    StatusOr<ColumnPtr> _evaluate_general(ExprContext* context, const Columns& columns) {
         std::vector<ColumnViewer<Type>> viewers;
         for (auto& value : columns) {
             viewers.push_back(ColumnViewer<Type>(value));
@@ -432,7 +433,7 @@ private:
         // choose not null
         int size = columns[0]->size();
         int col_size = viewers.size();
-        ColumnBuilder<Type> builder(size, this->type().precision, this->type().scale);
+        ColumnBuilder<Type> builder(context->get_allocator(), size, this->type().precision, this->type().scale);
 
         for (int row = 0; row < size; ++row) {
             int col;
@@ -452,7 +453,7 @@ private:
         return builder.build(ColumnHelper::is_all_const(columns));
     }
 
-    StatusOr<ColumnPtr> _evaluate_complex(const Columns& inputs) { // without only-null columns
+    StatusOr<ColumnPtr> _evaluate_complex(ExprContext* context, const Columns& inputs) { // without only-null columns
         int size = inputs[0]->size();
         Columns columns;
         for (const auto& col : inputs) {

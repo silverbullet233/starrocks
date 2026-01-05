@@ -189,8 +189,9 @@ using ThreadSafeCountingAllocator = CountingAllocator<BaseAllocator, AtomicIntCo
 template <class BaseAllocator>
 using NonThreadSafeCountingAllocator = CountingAllocator<BaseAllocator, IntCounter>;
 
-
 static TrackedAllocator<JemallocAllocator<false>> kDefaultAllocator;
+
+Allocator* get_default_allocator();
 
 
 }

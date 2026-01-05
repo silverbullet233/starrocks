@@ -18,6 +18,7 @@
 
 #include "formats/parquet/encoding_dict.h"
 #include "formats/parquet/encoding_plain.h"
+#include "runtime/memory/allocator_v2.h"
 
 namespace starrocks::parquet {
 
@@ -64,7 +65,7 @@ static void BM_DictDecoder(benchmark::State& state) {
     std::random_device rd;
     std::mt19937 rng(rd());
     std::uniform_int_distribution<int> dist(0, 99);
-    Buffer<int32_t> dict_codes;
+    Buffer<int32_t> dict_codes(memory::get_default_allocator());
     int count = 0;
 
     for (int i = 0; i < kTestChunkSize; i++) {

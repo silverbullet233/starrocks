@@ -73,7 +73,7 @@ private:
     size_t _capacity = 100L * 1024 * 1024 * 1024;
     size_t _page_size = 1024;
 
-    std::shared_ptr<LRUCacheEngine> _lru_cache;
+    std::shared_ptr<LRUCacheEngine<>> _lru_cache;
     std::shared_ptr<StarCacheEngine> _star_cache;
     std::shared_ptr<StoragePageCache> _page_cache;
 };
@@ -119,7 +119,7 @@ void ObjectCacheBench::init_cache(CacheType cache_type) {
     opt.eviction_policy = config::datacache_eviction_policy;
 
     if (cache_type == CacheType::LRU) {
-        _lru_cache = std::make_shared<LRUCacheEngine>();
+        _lru_cache = std::make_shared<LRUCacheEngine<>>();
         Status st = _lru_cache->init(opt);
         if (!st.ok()) {
             LOG(FATAL) << "init star cache failed: " << st;

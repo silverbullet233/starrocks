@@ -20,19 +20,24 @@
 namespace starrocks {
 
 template <typename T>
-DecimalV3Column<T>::DecimalV3Column(size_t num_rows) {
+DecimalV3Column<T>::DecimalV3Column(memory::Allocator* allocator) : Base(allocator) {}
+
+template <typename T>
+DecimalV3Column<T>::DecimalV3Column(memory::Allocator* allocator, size_t num_rows) : Base(allocator) {
     this->resize_uninitialized(num_rows);
 }
 
 template <typename T>
-DecimalV3Column<T>::DecimalV3Column(int precision, int scale) : _precision(precision), _scale(scale) {
+DecimalV3Column<T>::DecimalV3Column(memory::Allocator* allocator, int precision, int scale)
+        : Base(allocator), _precision(precision), _scale(scale) {
     DCHECK(0 <= _scale && _scale <= _precision && _precision <= decimal_precision_limit<T>)
             << "precision: " << _precision << ", scale: " << _scale
             << ", decimal_precision_limit<T>: " << decimal_precision_limit<T>;
 }
 
 template <typename T>
-DecimalV3Column<T>::DecimalV3Column(int precision, int scale, size_t num_rows) : DecimalV3Column(precision, scale) {
+DecimalV3Column<T>::DecimalV3Column(memory::Allocator* allocator, int precision, int scale, size_t num_rows)
+        : DecimalV3Column(allocator, precision, scale) {
     this->resize_uninitialized(num_rows);
 }
 template <typename T>

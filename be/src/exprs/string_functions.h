@@ -25,6 +25,7 @@
 #include "exprs/function_context.h"
 #include "exprs/function_helper.h"
 #include "runtime/current_thread.h"
+#include "runtime/memory/allocator_v2.h"
 #include "util/phmap/phmap.h"
 #include "util/url_parser.h"
 
@@ -445,8 +446,10 @@ public:
      */
     DEFINE_VECTORIZED_FN(regexp_replace);
 
-    static StatusOr<ColumnPtr> regexp_replace_use_hyperscan(StringFunctionsState* state, const Columns& columns);
-    static StatusOr<ColumnPtr> regexp_replace_use_hyperscan_vec(StringFunctionsState* state, const Columns& columns);
+    static StatusOr<ColumnPtr> regexp_replace_use_hyperscan(FunctionContext* context, StringFunctionsState* state,
+                                                            const Columns& columns);
+    static StatusOr<ColumnPtr> regexp_replace_use_hyperscan_vec(FunctionContext* context, StringFunctionsState* state,
+                                                                const Columns& columns);
 
     /**
      * @param: [string_value, pattern, max_split]
@@ -737,7 +740,7 @@ StatusOr<ColumnPtr> StringFunctions::money_format_decimal(FunctionContext* conte
     int scale = type->scale;
 
     auto num_rows = columns[0]->size();
-    ColumnBuilder<TYPE_VARCHAR> result(num_rows);
+    ColumnBuilder<TYPE_VARCHAR> result(context->get_allocator(), num_rows);
     if (scale > 2) {
         // scale down
         money_format_decimal_impl<Type, false, true>(context, money_viewer, num_rows, scale - 2, &result);
@@ -797,7 +800,7 @@ Status StringFunctions::field_close(FunctionContext* context, FunctionContext::F
 template <LogicalType Type>
 StatusOr<ColumnPtr> StringFunctions::field(FunctionContext* context, const Columns& columns) {
     auto size = columns[0]->size();
-    ColumnBuilder<TYPE_INT> result(size);
+    ColumnBuilder<TYPE_INT> result(memory::get_default_allocator(), size);
     const FieldFuncState<Type>* state =
             reinterpret_cast<const FieldFuncState<Type>*>(context->get_function_state(FunctionContext::FRAGMENT_LOCAL));
     if (columns[0]->only_null()) {

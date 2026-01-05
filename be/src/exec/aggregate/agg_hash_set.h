@@ -129,7 +129,7 @@ struct AggHashSetOfOneNumberKey : public AggHashSet<HashSet, AggHashSetOfOneNumb
     static_assert(sizeof(FieldType) <= sizeof(KeyType), "hash set key size needs to be larger than the actual element");
 
     template <class... Args>
-    AggHashSetOfOneNumberKey(Args&&... args) : Base(std::forward<Args>(args)...) {}
+    AggHashSetOfOneNumberKey(Args&&... args) : Base(std::forward<Args>(args)...), results(memory::get_default_allocator()) {}
 
     // When compute_and_allocate=false:
     // Elements queried in HashSet will be added to HashSet
@@ -189,7 +189,7 @@ struct AggHashSetOfOneNumberKey : public AggHashSet<HashSet, AggHashSetOfOneNumb
 
     void insert_keys_to_columns(const ResultVector& keys, MutableColumns& key_columns, size_t chunk_size) {
         auto* column = down_cast<ColumnType*>(key_columns[0].get());
-        column->get_data().insert(column->get_data().end(), keys.begin(), keys.begin() + chunk_size);
+        column->get_data().insert(keys.begin(), keys.begin() + chunk_size);
     }
 
     static constexpr bool has_single_null_key = false;
@@ -211,7 +211,7 @@ struct AggHashSetOfOneNullableNumberKey
     static_assert(sizeof(FieldType) <= sizeof(KeyType), "hash set key size needs to be larger than the actual element");
 
     template <class... Args>
-    AggHashSetOfOneNullableNumberKey(Args&&... args) : Base(std::forward<Args>(args)...) {}
+    AggHashSetOfOneNullableNumberKey(Args&&... args) : Base(std::forward<Args>(args)...), results(memory::get_default_allocator()) {}
 
     // When compute_and_allocate=false:
     // Elements queried in HashSet will be added to HashSet
@@ -293,7 +293,7 @@ struct AggHashSetOfOneNullableNumberKey
     void insert_keys_to_columns(ResultVector& keys, MutableColumns& key_columns, size_t chunk_size) {
         auto* nullable_column = down_cast<NullableColumn*>(key_columns[0].get());
         auto* column = down_cast<ColumnType*>(nullable_column->data_column_raw_ptr());
-        column->get_data().insert(column->get_data().end(), keys.begin(), keys.begin() + chunk_size);
+        column->get_data().insert(keys.begin(), keys.begin() + chunk_size);
         nullable_column->null_column_data().resize(chunk_size);
     }
 
@@ -311,7 +311,7 @@ struct AggHashSetOfOneStringKey : public AggHashSet<HashSet, AggHashSetOfOneStri
     using ResultVector = Buffer<Slice>;
 
     template <class... Args>
-    AggHashSetOfOneStringKey(Args&&... args) : Base(std::forward<Args>(args)...) {}
+    AggHashSetOfOneStringKey(Args&&... args) : Base(std::forward<Args>(args)...), results(memory::get_default_allocator()) {}
 
     // When compute_and_allocate=false:
     // Elements queried in HashSet will be added to HashSet
@@ -397,7 +397,7 @@ struct AggHashSetOfOneNullableStringKey : public AggHashSet<HashSet, AggHashSetO
     using ResultVector = Buffer<Slice>;
 
     template <class... Args>
-    AggHashSetOfOneNullableStringKey(Args&&... args) : Base(std::forward<Args>(args)...) {}
+    AggHashSetOfOneNullableStringKey(Args&&... args) : Base(std::forward<Args>(args)...), results(memory::get_default_allocator()) {}
 
     // When compute_and_allocate=false:
     // Elements queried in HashSet will be added to HashSet
@@ -517,8 +517,10 @@ struct AggHashSetOfSerializedKey : public AggHashSet<HashSet, AggHashSetOfSerial
     template <class... Args>
     AggHashSetOfSerializedKey(int32_t chunk_size, Args&&... args)
             : Base(chunk_size, std::forward<Args>(args)...),
+              slice_sizes(memory::get_default_allocator()),
               _mem_pool(std::make_unique<MemPool>()),
               _buffer(_mem_pool->allocate(max_one_row_size * chunk_size + SLICE_MEMEQUAL_OVERFLOW_PADDING)),
+              results(memory::get_default_allocator()),
               _chunk_size(chunk_size) {}
 
     // When compute_and_allocate=false:
@@ -652,8 +654,10 @@ struct AggHashSetOfSerializedKeyFixedSize : public AggHashSet<HashSet, AggHashSe
     template <class... Args>
     AggHashSetOfSerializedKeyFixedSize(int32_t chunk_size, Args&&... args)
             : Base(chunk_size, std::forward<Args>(args)...),
+              slice_sizes(memory::get_default_allocator()),
               _mem_pool(std::make_unique<MemPool>()),
               buffer(_mem_pool->allocate(max_fixed_size * chunk_size + SLICE_MEMEQUAL_OVERFLOW_PADDING)),
+              tmp_slices(memory::get_default_allocator()),
               _chunk_size(chunk_size) {
         memset(buffer, 0x0, max_fixed_size * _chunk_size);
     }

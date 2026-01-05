@@ -5333,7 +5333,7 @@ Status TabletUpdates::get_column_values(const std::vector<uint32_t>& column_ids,
     // if we are getting multiple(>2) columns, and full row column is available,
     // get values from full row column as an optimization
     if (_tablet.is_column_with_row_store() && column_ids.size() > 2) {
-        full_row_column = BinaryColumn::create();
+        full_row_column = BinaryColumn::create(memory::get_default_allocator());
     }
     std::shared_ptr<FileSystem> fs;
     for (const auto& [rssid, rowids] : rowids_by_rssid) {

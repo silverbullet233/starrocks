@@ -23,9 +23,11 @@
 
 namespace starrocks {
 
-ConstColumn::ConstColumn(ColumnPtr data) : ConstColumn(std::move(data), 0) {}
+ConstColumn::ConstColumn(memory::Allocator* allocator, ColumnPtr data)
+        : ConstColumn(allocator, std::move(data), 0) {}
 
-ConstColumn::ConstColumn(ColumnPtr data, size_t size) : _data(std::move(data)), _size(size) {
+ConstColumn::ConstColumn(memory::Allocator* allocator, ColumnPtr data, size_t size)
+        : Base(allocator), _data(std::move(data)), _size(size) {
     DCHECK(!_data->is_constant());
     if (_data->is_nullable() && size > 0 && !_data->is_null(0)) {
         _data = down_cast<NullableColumn*>(_data.get())->data_column();
@@ -53,7 +55,7 @@ void ConstColumn::append_value_multiple_times(const Column& src, uint32_t index,
 }
 
 StatusOr<MutableColumnPtr> ConstColumn::replicate(const Buffer<uint32_t>& offsets) {
-    return ConstColumn::create(this->_data->clone(), offsets.back());
+    return ConstColumn::create(this->_allocator, this->_data->clone(), offsets.back());
 }
 
 void ConstColumn::fill_default(const Filter& filter) {

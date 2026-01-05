@@ -25,6 +25,7 @@
 #include "exprs/literal.h"
 #include "exprs/predicate.h"
 #include "gutil/strings/substitute.h"
+#include "runtime/memory/allocator_v2.h"
 #include "runtime/types.h"
 #include "simd/simd.h"
 
@@ -183,7 +184,7 @@ public:
     }
 
     template <bool use_array>
-    ColumnPtr eval_on_chunk_both_column_and_set_not_has_null(const ColumnPtr& lhs, uint8_t* filter) {
+    ColumnPtr eval_on_chunk_both_column_and_set_not_has_null(ExprContext* context, const ColumnPtr& lhs, uint8_t* filter) {
         DCHECK(!_null_in_set);
         auto size = lhs->size();
 
@@ -192,7 +193,7 @@ public:
         auto data = ColumnHelper::cast_to_raw<Type>(lhs_data)->get_data().data();
 
         // output data
-        auto result = RunTimeColumnType<TYPE_BOOLEAN>::create();
+        auto result = RunTimeColumnType<TYPE_BOOLEAN>::create(context->get_allocator());
         result->resize_uninitialized(size);
         uint8_t* data3 = result->get_data().data();
 
@@ -222,7 +223,7 @@ public:
         }
 
         if (lhs->is_constant()) {
-            return ConstColumn::create(std::move(result), size);
+            return ConstColumn::create(context->get_allocator(), std::move(result), size);
         }
         return result;
     }
@@ -230,10 +231,10 @@ public:
     // null_in_set: true means null is a value of _hash_set.
     // equal_null: true means that 'null' in column and 'null' in set is equal.
     template <bool null_in_set, bool equal_null, bool use_array>
-    ColumnPtr eval_on_chunk(const ColumnPtr& lhs, uint8_t* filter) {
+    ColumnPtr eval_on_chunk(ExprContext* context, const ColumnPtr& lhs, uint8_t* filter) {
         ColumnViewer<Type> viewer(lhs);
         size_t size = viewer.size();
-        ColumnBuilder<TYPE_BOOLEAN> builder(size);
+        ColumnBuilder<TYPE_BOOLEAN> builder(context->get_allocator(), size);
         builder.resize_uninitialized(size);
 
         uint8_t* null_data = builder.null_column()->get_data().data();
@@ -301,28 +302,28 @@ public:
         if (_null_in_set) {
             if (_eq_null) {
                 if (!use_array) {
-                    return this->template eval_on_chunk<true, true, false>(lhs, filter);
+                    return this->template eval_on_chunk<true, true, false>(context, lhs, filter);
                 } else {
-                    return this->template eval_on_chunk<true, true, true>(lhs, filter);
+                    return this->template eval_on_chunk<true, true, true>(context, lhs, filter);
                 }
             } else {
                 if (!use_array) {
-                    return this->template eval_on_chunk<true, false, false>(lhs, filter);
+                    return this->template eval_on_chunk<true, false, false>(context, lhs, filter);
                 } else {
-                    return this->template eval_on_chunk<true, false, true>(lhs, filter);
+                    return this->template eval_on_chunk<true, false, true>(context, lhs, filter);
                 }
             }
         } else if (lhs->is_nullable()) {
             if (!use_array) {
-                return this->template eval_on_chunk<false, false, false>(lhs, filter);
+                return this->template eval_on_chunk<false, false, false>(context, lhs, filter);
             } else {
-                return this->template eval_on_chunk<false, false, true>(lhs, filter);
+                return this->template eval_on_chunk<false, false, true>(context, lhs, filter);
             }
         } else {
             if (!use_array) {
-                return eval_on_chunk_both_column_and_set_not_has_null<false>(lhs, filter);
+                return eval_on_chunk_both_column_and_set_not_has_null<false>(context, lhs, filter);
             } else {
-                return eval_on_chunk_both_column_and_set_not_has_null<true>(lhs, filter);
+                return eval_on_chunk_both_column_and_set_not_has_null<true>(context, lhs, filter);
             }
         }
     }
@@ -497,8 +498,9 @@ public:
         if (all_const) {
             dest_size = 1;
         }
-        BooleanColumn::MutablePtr res = BooleanColumn::create(dest_size, _is_not_in);
-        NullColumn::MutablePtr res_null = NullColumn::create(dest_size, DATUM_NULL);
+        auto* allocator = context->get_allocator();
+        BooleanColumn::MutablePtr res = BooleanColumn::create(allocator, dest_size);
+        NullColumn::MutablePtr res_null = NullColumn::create(allocator, dest_size, DATUM_NULL);
         auto& res_data = res->get_data();
         auto& res_null_data = res_null->get_data();
         for (auto i = 0; i < dest_size; ++i) {
@@ -531,11 +533,11 @@ public:
             if (res_null_data[0]) { // return only_null column
                 return ColumnHelper::create_const_null_column(size);
             } else {
-                return ConstColumn::create(std::move(res), size);
+                return ConstColumn::create(allocator, std::move(res), size);
             }
         } else {
             if (SIMD::count_nonzero(res_null_data) > 0) {
-                return NullableColumn::create(std::move(res), std::move(res_null));
+                return NullableColumn::create(res->get_allocator(), std::move(res), std::move(res_null));
             } else {
                 return res;
             }

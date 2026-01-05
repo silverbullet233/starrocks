@@ -47,6 +47,7 @@
 #include "storage/storage_engine.h"
 #include "storage/tablet_index.h"
 #include "types/logical_type.h"
+#include "runtime/memory/allocator_v2.h"
 #include "util/runtime_profile.h"
 #include "util/table_metrics.h"
 
@@ -58,7 +59,8 @@ OlapChunkSource::OlapChunkSource(ScanOperator* op, RuntimeProfile* runtime_profi
           _scan_node(scan_node),
           _scan_ctx(scan_ctx),
           _limit(scan_node->limit()),
-          _scan_range(down_cast<ScanMorsel*>(_morsel.get())->get_olap_scan_range()) {}
+          _scan_range(down_cast<ScanMorsel*>(_morsel.get())->get_olap_scan_range()),
+          _selection(memory::get_default_allocator()) {}
 
 OlapChunkSource::~OlapChunkSource() {
     _reader.reset();

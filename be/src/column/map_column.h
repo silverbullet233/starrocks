@@ -30,21 +30,14 @@ class MapColumn final : public CowFactory<ColumnFactory<Column, MapColumn>, MapC
 public:
     using ValueType = void;
 
-    MapColumn(MutableColumnPtr&& keys, MutableColumnPtr&& values, MutableColumnPtr&& offsets);
-
-    MapColumn(const MapColumn& rhs)
-            : _keys(rhs._keys->clone()),
-              _values(rhs._values->clone()),
-              _offsets(UInt32Column::static_pointer_cast(rhs._offsets->clone())) {}
+    MapColumn(memory::Allocator* allocator, MutableColumnPtr&& keys, MutableColumnPtr&& values,
+              MutableColumnPtr&& offsets);
 
     MapColumn(MapColumn&& rhs) noexcept
-            : _keys(std::move(rhs._keys)), _values(std::move(rhs._values)), _offsets(std::move(rhs._offsets)) {}
-
-    MapColumn& operator=(const MapColumn& rhs) {
-        MapColumn tmp(rhs);
-        this->swap_column(tmp);
-        return *this;
-    }
+            : Base(rhs._allocator),
+              _keys(std::move(rhs._keys)),
+              _values(std::move(rhs._values)),
+              _offsets(std::move(rhs._offsets)) {}
 
     MapColumn& operator=(MapColumn&& rhs) noexcept {
         MapColumn tmp(std::move(rhs));
@@ -52,17 +45,24 @@ public:
         return *this;
     }
 
-    static Ptr create(const ColumnPtr& keys, const ColumnPtr& values, const ColumnPtr& offsets) {
-        return MapColumn::create(keys->as_mutable_ptr(), values->as_mutable_ptr(), offsets->as_mutable_ptr());
+    static Ptr create(memory::Allocator* allocator, const ColumnPtr& keys, const ColumnPtr& values, const ColumnPtr& offsets) {
+        return MapColumn::create(allocator, keys->as_mutable_ptr(), values->as_mutable_ptr(), offsets->as_mutable_ptr());
     }
 
-    static Ptr create(const MapColumn& rhs) { return Base::create(rhs); }
+    static Ptr create(memory::Allocator* allocator, const MapColumn& rhs) {
+        return MapColumn::static_pointer_cast(rhs.clone(allocator));
+    }
 
     static Ptr create(MapColumn&& rhs) { return Base::create(std::move(rhs)); }
 
+    static MutablePtr create(memory::Allocator* allocator, MutableColumnPtr&& keys, MutableColumnPtr&& values,
+                             MutableColumnPtr&& offsets) {
+        return Base::create(allocator, std::move(keys), std::move(values), std::move(offsets));
+    }
+
     template <typename... Args>
-    requires(IsMutableColumns<Args...>::value) static MutablePtr create(Args&&... args) {
-        return Base::create(std::forward<Args>(args)...);
+    requires(IsMutableColumns<Args...>::value) static MutablePtr create(memory::Allocator* allocator, Args&&... args) {
+        return Base::create(allocator, std::forward<Args>(args)...);
     }
     ~MapColumn() override = default;
 
@@ -128,7 +128,11 @@ public:
 
     uint32_t serialize_size(size_t idx) const override;
 
-    MutableColumnPtr clone_empty() const override;
+    MutableColumnPtr clone_empty(memory::Allocator* allocator = nullptr) const override;
+    MutableColumnPtr clone(memory::Allocator* allocator = nullptr) const override {
+        allocator = allocator == nullptr ? this->get_allocator() : allocator;
+        return create(allocator, _keys->clone(allocator), _values->clone(allocator), _offsets->clone(allocator));
+    }
 
     size_t filter_range(const Filter& filter, size_t from, size_t to) override;
 
@@ -234,6 +238,8 @@ private:
     //                          m1vals [v1, v2, v3], m2vals [v4, v5, v6]
     // The two element array has three offsets(0, 3, 6)
     UInt32Column::WrappedPtr _offsets;
+
+    DISALLOW_COPY(MapColumn);
 };
 
 } // namespace starrocks

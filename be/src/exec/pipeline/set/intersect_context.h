@@ -25,6 +25,7 @@
 #include "exec/pipeline/schedule/observer.h"
 #include "exprs/expr_context.h"
 #include "gutil/casts.h"
+#include "runtime/memory/allocator_v2.h"
 #include "runtime/mem_pool.h"
 #include "util/hash_util.hpp"
 #include "util/phmap/phmap.h"
@@ -42,7 +43,9 @@ using IntersectPartitionContextFactoryPtr = std::shared_ptr<IntersectPartitionCo
 class IntersectContext final : public ContextWithDependency {
 public:
     IntersectContext(const int dst_tuple_id, const size_t intersect_times)
-            : _dst_tuple_id(dst_tuple_id), _intersect_times(intersect_times) {}
+            : _dst_tuple_id(dst_tuple_id),
+              _intersect_times(intersect_times),
+              _remained_keys(memory::get_default_allocator()) {}
     ~IntersectContext() override = default;
 
     bool is_ht_empty() const { return _is_hash_set_empty; }

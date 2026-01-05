@@ -231,6 +231,9 @@ template class CountingAllocator<JemallocAllocator<false>, AtomicIntCounter>;
 template class CountingAllocator<TrackedAllocator<JemallocAllocator<false>>, IntCounter>;
 template class CountingAllocator<TrackedAllocator<JemallocAllocator<false>>, AtomicIntCounter>;
 
+Allocator* get_default_allocator() {
+    return &kDefaultAllocator;
+}
 
 
 

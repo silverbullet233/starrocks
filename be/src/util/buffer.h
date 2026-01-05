@@ -22,6 +22,8 @@
 #include <type_traits>
 #include <utility>
 
+#include "common/compiler_util.h"
+#include "common/logging.h"
 #include "fmt/format.h"
 #include "gutil/macros.h"
 #include "runtime/memory/allocator_v2.h"
@@ -67,6 +69,7 @@ public:
     static constexpr size_t kPadding = ((padding + kElementSize - 1) / kElementSize) * kElementSize;
     static constexpr uint8_t* null = const_cast<uint8_t*>(empty_raw_buffer);
 
+    using value_type = T;
     using iterator = T*;
     using const_iterator = const T*;
 
@@ -92,6 +95,22 @@ public:
 
     T& operator[](size_t idx) { return data()[idx]; }
     const T& operator[](size_t idx) const { return data()[idx]; }
+    const T& front() const {
+        DCHECK(!empty());
+        return *begin();
+    }
+    T& front() {
+        DCHECK(!empty());
+        return *begin();
+    }
+    const T& back() const {
+        DCHECK(!empty());
+        return *(end() - 1);
+    }
+    T& back() {
+        DCHECK(!empty());
+        return *(end() - 1);
+    }
 
     bool is_initialized() const {
         return _start != null;
@@ -102,6 +121,7 @@ public:
     void reserve(memory::Allocator* allocator, size_t new_cap);
     void shrink_to_fit(memory::Allocator* allocator);
     void resize(memory::Allocator* allocator, size_t count);
+    void resize(memory::Allocator* allocator, size_t count, const T& value);
 
     void assign(memory::Allocator* allocator, size_t count, const T& value);
     template <class InputIt,
@@ -119,6 +139,7 @@ public:
     template <class InputIt, std::enable_if_t<std::is_base_of_v<std::input_iterator_tag, typename std::iterator_traits<InputIt>::iterator_category>, bool> = true>
     iterator insert(memory::Allocator* allocator, InputIt first, InputIt last);
     iterator insert(memory::Allocator* allocator, std::initializer_list<T> ilist);
+    iterator insert(memory::Allocator* allocator, size_t count, const T& value);
 
     void swap(RawBuffer& other) noexcept;
 
@@ -133,7 +154,9 @@ class Buffer: public RawBuffer<T, padding> {
 public:
     using iterator = typename RawBuffer<T, padding>::iterator;
     using const_iterator = typename RawBuffer<T, padding>::const_iterator;
+    using value_type = typename RawBuffer<T, padding>::value_type;
 
+    Buffer() = delete;
     explicit Buffer(memory::Allocator* allocator) : _allocator(allocator) {}
     Buffer(memory::Allocator* allocator, size_t count) : _allocator(allocator) {
         this->resize(count);
@@ -150,6 +173,7 @@ public:
     void reserve(size_t new_cap);
     void shrink_to_fit();
     void resize(size_t count);
+    void resize(size_t count, const T& value);
     void assign(size_t count, const T& value);
     template <class InputIt, std::enable_if_t<std::is_base_of_v<std::input_iterator_tag, typename std::iterator_traits<InputIt>::iterator_category>, bool> = true>
     void assign(InputIt first, InputIt last);
@@ -164,6 +188,7 @@ public:
     template <class InputIt, std::enable_if_t<std::is_base_of_v<std::input_iterator_tag, typename std::iterator_traits<InputIt>::iterator_category>, bool> = true>
     iterator insert(InputIt first, InputIt last);
     iterator insert(std::initializer_list<T> ilist);
+    iterator insert(size_t count, const T& value);
 
     void swap(Buffer& other) noexcept;
 
@@ -235,6 +260,15 @@ void RawBuffer<T, padding>::resize(memory::Allocator* allocator, size_t new_size
         reserve(allocator, new_size);
     }
     _end = _start + new_size * kElementSize;
+}
+
+template <class T, size_t padding>
+void RawBuffer<T, padding>::resize(memory::Allocator* allocator, size_t new_size, const T& value) {
+    size_t old_size = size();
+    resize(allocator, new_size);
+    for (size_t i = old_size; i < new_size; ++i) {
+        new (data() + i) T(value);
+    }
 }
 
 template <class T, size_t padding>
@@ -361,7 +395,7 @@ typename RawBuffer<T, padding>::iterator RawBuffer<T, padding>::insert(memory::A
 template <class T, size_t padding>
 typename RawBuffer<T, padding>::iterator RawBuffer<T, padding>::insert(memory::Allocator* allocator, std::initializer_list<T> ilist) {
     size_t count = ilist.size();
-    if (count == 0) {
+    if (UNLIKELY(count == 0)) {
         return end();
     }
     size_t old_size = size();
@@ -379,6 +413,26 @@ typename RawBuffer<T, padding>::iterator RawBuffer<T, padding>::insert(memory::A
     _end += count * kElementSize;
     return insert_pos;
 }
+
+template <class T, size_t padding>
+typename RawBuffer<T, padding>::iterator RawBuffer<T, padding>::insert(memory::Allocator* allocator, size_t count, const T& value) {
+    if (UNLIKELY(count == 0)) {
+        return end();
+    }
+    size_t old_size = size();
+    if (old_size + count > capacity()) {
+        size_t new_cap = (capacity() == 0) ? count : std::max(capacity() * 2, old_size + count);
+        reserve(allocator, new_cap);
+    }
+    T* insert_pos = reinterpret_cast<T*>(_end);
+    // Insert new elements at the end
+    for (size_t i = 0; i < count; ++i) {
+        new (insert_pos + i) T(value);
+    }
+    _end += count * kElementSize;
+    return insert_pos;
+}
+
 
 template <class T, size_t padding>
 void RawBuffer<T, padding>::swap(RawBuffer& other) noexcept {
@@ -422,6 +476,11 @@ void Buffer<T, padding>::shrink_to_fit() {
 template <class T, size_t padding>
 void Buffer<T, padding>::resize(size_t count) {
     RawBuffer<T, padding>::resize(this->_allocator, count);
+}
+
+template <class T, size_t padding>
+void Buffer<T, padding>::resize(size_t count, const T& value) {
+    RawBuffer<T, padding>::resize(this->_allocator, count, value);
 }
 
 template <class T, size_t padding>
@@ -470,6 +529,11 @@ typename Buffer<T, padding>::iterator Buffer<T, padding>::insert(InputIt first, 
 template <class T, size_t padding>
 typename Buffer<T, padding>::iterator Buffer<T, padding>::insert(std::initializer_list<T> ilist) {
     return RawBuffer<T, padding>::insert(this->_allocator, ilist);
+}
+
+template <class T, size_t padding>
+typename Buffer<T, padding>::iterator Buffer<T, padding>::insert(size_t count, const T& value) {
+    return RawBuffer<T, padding>::insert(this->_allocator, count, value);
 }
 
 template <class T, size_t padding>
