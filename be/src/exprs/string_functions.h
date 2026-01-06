@@ -126,7 +126,7 @@ struct MatchInfoChain {
 };
 
 struct LowerUpperState {
-    std::function<StatusOr<ColumnPtr>(const ColumnPtr&)> impl_func;
+    std::function<StatusOr<ColumnPtr>(memory::Allocator*, const ColumnPtr&)> impl_func;
 };
 
 class StringFunctions {
@@ -692,7 +692,7 @@ template <bool to_upper>
 struct StringCaseToggleFunction {
 public:
     template <LogicalType Type, LogicalType ResultType>
-    static ColumnPtr evaluate(const ColumnPtr& v1);
+    static ColumnPtr evaluate(memory::Allocator* allocator, const ColumnPtr& v1);
 };
 
 template <LogicalType Type, bool scale_up, bool check_overflow>

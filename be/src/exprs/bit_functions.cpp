@@ -94,7 +94,7 @@ StatusOr<ColumnPtr> BitFunctions::bitShiftRightLogical(FunctionContext* context,
 template <LogicalType Type>
 StatusOr<ColumnPtr> BitFunctions::bitNot(FunctionContext* context, const Columns& columns) {
     auto& v = VECTORIZED_FN_ARGS(0);
-    return VectorizedStrictUnaryFunction<bitNotImpl>::evaluate<Type>(v);
+    return VectorizedStrictUnaryFunction<bitNotImpl>::evaluate<Type>(context->get_allocator(), v);
 }
 
 } // namespace starrocks

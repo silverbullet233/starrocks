@@ -29,7 +29,7 @@ UNION_VALUE_GUARD(LogicalType, FixedNonDecimalTypeGuard, lt_is_fixed_non_decimal
 
 template <OverflowMode overflow_mode, LogicalType Type, LogicalType ResultType>
 struct DecimalDecimalCast {
-    static inline ColumnPtr evaluate(const ColumnPtr& column, int to_precision, int to_scale) {
+    static inline ColumnPtr evaluate(memory::Allocator* allocator, const ColumnPtr& column, int to_precision, int to_scale) {
         using FromCppType = RunTimeCppType<Type>;
         using FromColumnType = RunTimeColumnType<Type>;
         using ToCppType = RunTimeCppType<ResultType>;
@@ -46,8 +46,6 @@ struct DecimalDecimalCast {
         }
 
         const auto data = &data_column->get_data().front();
-
-        auto* allocator = memory::get_default_allocator();
         typename ToColumnType::MutablePtr result = ToColumnType::create(allocator, to_precision, to_scale, num_rows);
         NullColumn::MutablePtr null_column;
         NullColumn::ValueType* nulls = nullptr;
@@ -141,18 +139,17 @@ struct DecimalNonDecimalCast<overflow_mode, DecimalType, NonDecimalType, Decimal
     using NonDecimalCppType = RunTimeCppType<NonDecimalType>;
     using NonDecimalColumnType = RunTimeColumnType<NonDecimalType>;
 
-    static inline ColumnPtr decimal_from(const ColumnPtr& column, int precision, int scale) {
+    static inline ColumnPtr decimal_from(memory::Allocator* allocator, const ColumnPtr& column, int precision, int scale) {
         if (scale == 0) {
-            return _decimal_from<true>(column, precision, scale);
+            return _decimal_from<true>(allocator, column, precision, scale);
         } else {
-            return _decimal_from<false>(column, precision, scale);
+            return _decimal_from<false>(allocator, column, precision, scale);
         }
     }
 
     template <bool ZeroScale>
-    static inline ColumnPtr _decimal_from(const ColumnPtr& column, int precision, int scale) {
+    static inline ColumnPtr _decimal_from(memory::Allocator* allocator, const ColumnPtr& column, int precision, int scale) {
         const auto num_rows = column->size();
-        auto* allocator = memory::get_default_allocator();
         typename DecimalColumnType::MutablePtr result = DecimalColumnType::create(allocator, precision, scale, num_rows);
         const auto data = &ColumnHelper::cast_to_raw<NonDecimalType>(column.get())->immutable_data().front();
         auto result_data = &ColumnHelper::cast_to_raw<DecimalType>(result.get())->get_data().front();
@@ -246,9 +243,8 @@ struct DecimalNonDecimalCast<overflow_mode, DecimalType, NonDecimalType, Decimal
         }
     }
 
-    static inline ColumnPtr decimal_to(const ColumnPtr& column) {
+    static inline ColumnPtr decimal_to(memory::Allocator* allocator, const ColumnPtr& column) {
         const auto num_rows = column->size();
-        auto* allocator = memory::get_default_allocator();
         typename NonDecimalColumnType::MutablePtr result = NonDecimalColumnType::create(allocator);
         result->resize(num_rows);
         const auto data_column = ColumnHelper::cast_to_raw<DecimalType>(column);
@@ -364,9 +360,8 @@ struct DecimalNonDecimalCast<overflow_mode, DecimalType, StringType, DecimalLTGu
     using StringCppType = RunTimeCppType<StringType>;
     using StringColumnType = RunTimeColumnType<StringType>;
 
-    static inline ColumnPtr decimal_from(const ColumnPtr& column, int precision, int scale) {
+    static inline ColumnPtr decimal_from(memory::Allocator* allocator, const ColumnPtr& column, int precision, int scale) {
         const auto num_rows = column->size();
-        auto* allocator = memory::get_default_allocator();
         typename DecimalColumnType::MutablePtr result = DecimalColumnType::create(allocator, precision, scale, num_rows);
         auto result_data = &ColumnHelper::cast_to_raw<DecimalType>(result.get())->get_data().front();
         NullColumn::MutablePtr null_column;
@@ -402,9 +397,8 @@ struct DecimalNonDecimalCast<overflow_mode, DecimalType, StringType, DecimalLTGu
         }
     }
 
-    static inline ColumnPtr decimal_to(const ColumnPtr& column) {
+    static inline ColumnPtr decimal_to(memory::Allocator* allocator, const ColumnPtr& column) {
         const auto num_rows = column->size();
-        auto* allocator = memory::get_default_allocator();
         auto result = BinaryColumn::create(allocator);
         auto& bytes = result->get_bytes();
         auto& offsets = result->get_offset();
@@ -432,8 +426,8 @@ struct DecimalNonDecimalCast<overflow_mode, DecimalType, StringType, DecimalLTGu
 template <OverflowMode overflow_mode>
 struct DecimalToDecimal {
     template <LogicalType Type, LogicalType ResultType, typename... Args>
-    static inline ColumnPtr evaluate(const ColumnPtr& column, Args&&... args) {
-        return DecimalDecimalCast<overflow_mode, Type, ResultType>::evaluate(column, std::forward<Args>(args)...);
+    static inline ColumnPtr evaluate(memory::Allocator* allocator, const ColumnPtr& column, Args&&... args) {
+        return DecimalDecimalCast<overflow_mode, Type, ResultType>::evaluate(allocator, column, std::forward<Args>(args)...);
     }
 };
 
@@ -441,8 +435,8 @@ struct DecimalToDecimal {
 template <OverflowMode overflow_mode>
 struct DecimalFrom {
     template <LogicalType Type, LogicalType ResultType, typename... Args>
-    static inline ColumnPtr evaluate(const ColumnPtr& column, Args&&... args) {
-        return DecimalNonDecimalCast<overflow_mode, ResultType, Type>::decimal_from(column,
+    static inline ColumnPtr evaluate(memory::Allocator* allocator, const ColumnPtr& column, Args&&... args) {
+        return DecimalNonDecimalCast<overflow_mode, ResultType, Type>::decimal_from(allocator, column,
                                                                                     std::forward<Args>(args)...);
     }
 };
@@ -451,8 +445,8 @@ struct DecimalFrom {
 template <OverflowMode overflow_mode>
 struct DecimalTo {
     template <LogicalType Type, LogicalType ResultType>
-    static inline ColumnPtr evaluate(const ColumnPtr& column) {
-        return DecimalNonDecimalCast<overflow_mode, Type, ResultType>::decimal_to(column);
+    static inline ColumnPtr evaluate(memory::Allocator* allocator, const ColumnPtr& column) {
+        return DecimalNonDecimalCast<overflow_mode, Type, ResultType>::decimal_to(allocator, column);
     }
 };
 

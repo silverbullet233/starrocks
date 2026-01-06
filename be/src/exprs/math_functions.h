@@ -434,10 +434,10 @@ public:
     DEFINE_VECTORIZED_FN(negative) {
         if constexpr (lt_is_decimal<Type>) {
             const auto& type = context->get_return_type();
-            return VectorizedStrictUnaryFunction<negativeImpl>::evaluate<Type>(VECTORIZED_FN_ARGS(0), type.precision,
+            return VectorizedStrictUnaryFunction<negativeImpl>::evaluate<Type>(context->get_allocator(), VECTORIZED_FN_ARGS(0), type.precision,
                                                                                type.scale);
         } else {
-            return VectorizedStrictUnaryFunction<negativeImpl>::evaluate<Type>(VECTORIZED_FN_ARGS(0));
+            return VectorizedStrictUnaryFunction<negativeImpl>::evaluate<Type>(context->get_allocator(), VECTORIZED_FN_ARGS(0));
         }
     }
 

@@ -212,7 +212,7 @@ DEFINE_STRING_UNARY_FN_WITH_IMPL(bitmapToStingImpl, bitmap_ptr) {
 }
 
 StatusOr<ColumnPtr> BitmapFunctions::bitmap_to_string(FunctionContext* context, const starrocks::Columns& columns) {
-    return VectorizedStringStrictUnaryFunction<bitmapToStingImpl>::evaluate<TYPE_OBJECT, TYPE_VARCHAR>(columns[0]);
+    return VectorizedStringStrictUnaryFunction<bitmapToStingImpl>::evaluate<TYPE_OBJECT, TYPE_VARCHAR>(context->get_allocator(), columns[0]);
 }
 
 StatusOr<ColumnPtr> BitmapFunctions::bitmap_from_string(FunctionContext* context, const Columns& columns) {

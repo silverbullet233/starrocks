@@ -49,12 +49,12 @@ const static int DEFAULT_DATE_FORMAT_LIMIT = 100;
 
 #define DEFINE_TIME_UNARY_FN(NAME, TYPE, RESULT_TYPE)                                                         \
     StatusOr<ColumnPtr> TimeFunctions::NAME(FunctionContext* context, const starrocks::Columns& columns) {    \
-        return VectorizedStrictUnaryFunction<NAME##Impl>::evaluate<TYPE, RESULT_TYPE>(VECTORIZED_FN_ARGS(0)); \
+        return VectorizedStrictUnaryFunction<NAME##Impl>::evaluate<TYPE, RESULT_TYPE>(context->get_allocator(), VECTORIZED_FN_ARGS(0)); \
     }
 
 #define DEFINE_TIME_STRING_UNARY_FN(NAME, TYPE, RESULT_TYPE)                                                        \
     StatusOr<ColumnPtr> TimeFunctions::NAME(FunctionContext* context, const starrocks::Columns& columns) {          \
-        return VectorizedStringStrictUnaryFunction<NAME##Impl>::evaluate<TYPE, RESULT_TYPE>(VECTORIZED_FN_ARGS(0)); \
+        return VectorizedStringStrictUnaryFunction<NAME##Impl>::evaluate<TYPE, RESULT_TYPE>(context->get_allocator(), VECTORIZED_FN_ARGS(0)); \
     }
 
 #define DEFINE_TIME_UNARY_FN_WITH_IMPL(NAME, TYPE, RESULT_TYPE, FN) \
@@ -73,7 +73,7 @@ const static int DEFAULT_DATE_FORMAT_LIMIT = 100;
 
 #define DEFINE_TIME_UNARY_FN_EXTEND(NAME, TYPE, RESULT_TYPE, IDX)                                               \
     StatusOr<ColumnPtr> TimeFunctions::NAME(FunctionContext* context, const starrocks::Columns& columns) {      \
-        return VectorizedStrictUnaryFunction<NAME##Impl>::evaluate<TYPE, RESULT_TYPE>(VECTORIZED_FN_ARGS(IDX)); \
+        return VectorizedStrictUnaryFunction<NAME##Impl>::evaluate<TYPE, RESULT_TYPE>(context->get_allocator(), VECTORIZED_FN_ARGS(IDX)); \
     }
 
 template <LogicalType Type>
@@ -2249,7 +2249,7 @@ DEFINE_UNARY_FN_WITH_IMPL(from_daysImpl, v) {
 
 StatusOr<ColumnPtr> TimeFunctions::from_days(FunctionContext* context, const Columns& columns) {
     return date_valid<TYPE_DATE>(context,
-            VectorizedStrictUnaryFunction<from_daysImpl>::evaluate<TYPE_INT, TYPE_DATE>(VECTORIZED_FN_ARGS(0)));
+            VectorizedStrictUnaryFunction<from_daysImpl>::evaluate<TYPE_INT, TYPE_DATE>(context->get_allocator(), VECTORIZED_FN_ARGS(0)));
 }
 
 // to_days
@@ -2499,7 +2499,7 @@ DEFINE_UNARY_FN_WITH_IMPL(TimestampToDate, value) {
 
 StatusOr<ColumnPtr> TimeFunctions::str2date(FunctionContext* context, const Columns& columns) {
     ASSIGN_OR_RETURN(ColumnPtr datetime, str_to_date(context, columns));
-    return VectorizedStrictUnaryFunction<TimestampToDate>::evaluate<TYPE_DATETIME, TYPE_DATE>(datetime);
+    return VectorizedStrictUnaryFunction<TimestampToDate>::evaluate<TYPE_DATETIME, TYPE_DATE>(context->get_allocator(), datetime);
 }
 
 Status TimeFunctions::format_prepare(FunctionContext* context, FunctionContext::FunctionStateScope scope) {
@@ -3263,13 +3263,13 @@ DEFINE_UNARY_FN_WITH_IMPL(iceberg_years_since_epoch_datetimeImpl, v) {
 StatusOr<ColumnPtr> TimeFunctions::iceberg_years_since_epoch_date(FunctionContext* context,
                                                                   const starrocks::Columns& columns) {
     return VectorizedStrictUnaryFunction<iceberg_years_since_epoch_dateImpl>::evaluate<TYPE_DATE, TYPE_BIGINT>(
-            VECTORIZED_FN_ARGS(0));
+            context->get_allocator(), VECTORIZED_FN_ARGS(0));
 }
 
 StatusOr<ColumnPtr> TimeFunctions::iceberg_years_since_epoch_datetime(FunctionContext* context,
                                                                       const starrocks::Columns& columns) {
     return VectorizedStrictUnaryFunction<iceberg_years_since_epoch_datetimeImpl>::evaluate<TYPE_DATETIME, TYPE_BIGINT>(
-            VECTORIZED_FN_ARGS(0));
+            context->get_allocator(), VECTORIZED_FN_ARGS(0));
 }
 
 DEFINE_UNARY_FN_WITH_IMPL(iceberg_months_since_epoch_dateImpl, v) {
@@ -3286,13 +3286,13 @@ DEFINE_UNARY_FN_WITH_IMPL(iceberg_months_since_epoch_datetimeImpl, v) {
 StatusOr<ColumnPtr> TimeFunctions::iceberg_months_since_epoch_date(FunctionContext* context,
                                                                    const starrocks::Columns& columns) {
     return VectorizedStrictUnaryFunction<iceberg_months_since_epoch_dateImpl>::evaluate<TYPE_DATE, TYPE_BIGINT>(
-            VECTORIZED_FN_ARGS(0));
+            context->get_allocator(), VECTORIZED_FN_ARGS(0));
 }
 
 StatusOr<ColumnPtr> TimeFunctions::iceberg_months_since_epoch_datetime(FunctionContext* context,
                                                                        const starrocks::Columns& columns) {
     return VectorizedStrictUnaryFunction<iceberg_months_since_epoch_datetimeImpl>::evaluate<TYPE_DATETIME, TYPE_BIGINT>(
-            VECTORIZED_FN_ARGS(0));
+            context->get_allocator(), VECTORIZED_FN_ARGS(0));
 }
 
 DEFINE_UNARY_FN_WITH_IMPL(iceberg_days_since_epoch_dateImpl, v) {
@@ -3309,13 +3309,13 @@ DEFINE_UNARY_FN_WITH_IMPL(iceberg_days_since_epoch_datetimeImpl, v) {
 StatusOr<ColumnPtr> TimeFunctions::iceberg_days_since_epoch_date(FunctionContext* context,
                                                                  const starrocks::Columns& columns) {
     return VectorizedStrictUnaryFunction<iceberg_days_since_epoch_dateImpl>::evaluate<TYPE_DATE, TYPE_BIGINT>(
-            VECTORIZED_FN_ARGS(0));
+            context->get_allocator(), VECTORIZED_FN_ARGS(0));
 }
 
 StatusOr<ColumnPtr> TimeFunctions::iceberg_days_since_epoch_datetime(FunctionContext* context,
                                                                      const starrocks::Columns& columns) {
     return VectorizedStrictUnaryFunction<iceberg_days_since_epoch_datetimeImpl>::evaluate<TYPE_DATETIME, TYPE_BIGINT>(
-            VECTORIZED_FN_ARGS(0));
+            context->get_allocator(), VECTORIZED_FN_ARGS(0));
 }
 
 DEFINE_UNARY_FN_WITH_IMPL(iceberg_hours_since_epoch_datetimeImpl, v) {
@@ -3325,7 +3325,7 @@ DEFINE_UNARY_FN_WITH_IMPL(iceberg_hours_since_epoch_datetimeImpl, v) {
 StatusOr<ColumnPtr> TimeFunctions::iceberg_hours_since_epoch_datetime(FunctionContext* context,
                                                                       const starrocks::Columns& columns) {
     return VectorizedStrictUnaryFunction<iceberg_hours_since_epoch_datetimeImpl>::evaluate<TYPE_DATETIME, TYPE_BIGINT>(
-            VECTORIZED_FN_ARGS(0));
+            context->get_allocator(), VECTORIZED_FN_ARGS(0));
 }
 
 // used as start point of time_slice.

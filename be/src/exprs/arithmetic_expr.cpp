@@ -176,15 +176,15 @@ public:
     switch (_children[0]->type().type) {                                                  \
     case TYPE_DECIMAL32: {                                                                \
         ASSIGN_OR_RETURN(auto column, evaluate_internal<TYPE_DECIMAL32>(context, ptr));   \
-        return CastFunction::evaluate<TYPE_DECIMAL32, LogicalType::TYPE_BIGINT>(column);  \
+        return CastFunction::evaluate<TYPE_DECIMAL32, LogicalType::TYPE_BIGINT>(context->get_allocator(), column);  \
     }                                                                                     \
     case TYPE_DECIMAL64: {                                                                \
         ASSIGN_OR_RETURN(auto column, evaluate_internal<TYPE_DECIMAL64>(context, ptr));   \
-        return CastFunction::evaluate<TYPE_DECIMAL64, LogicalType::TYPE_BIGINT>(column);  \
+        return CastFunction::evaluate<TYPE_DECIMAL64, LogicalType::TYPE_BIGINT>(context->get_allocator(), column);  \
     }                                                                                     \
     case TYPE_DECIMAL128: {                                                               \
         ASSIGN_OR_RETURN(auto column, evaluate_internal<TYPE_DECIMAL128>(context, ptr));  \
-        return CastFunction::evaluate<TYPE_DECIMAL128, LogicalType::TYPE_BIGINT>(column); \
+        return CastFunction::evaluate<TYPE_DECIMAL128, LogicalType::TYPE_BIGINT>(context->get_allocator(), column); \
     }                                                                                     \
     default:                                                                              \
         return evaluate_internal<Type>(context, ptr);                                     \
@@ -358,7 +358,7 @@ public:
     StatusOr<ColumnPtr> evaluate_checked(ExprContext* context, Chunk* ptr) override {
         ASSIGN_OR_RETURN(auto l, _children[0]->evaluate_checked(context, ptr));
         using ArithmeticBitNot = ArithmeticUnaryOperator<BitNotOp, Type>;
-        return VectorizedStrictUnaryFunction<ArithmeticBitNot>::template evaluate<Type>(l);
+        return VectorizedStrictUnaryFunction<ArithmeticBitNot>::template evaluate<Type>(context->get_allocator(), l);
     }
 #ifdef STARROCKS_JIT_ENABLE
 

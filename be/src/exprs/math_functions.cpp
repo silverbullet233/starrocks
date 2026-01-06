@@ -63,41 +63,41 @@ DEFINE_UNARY_FN_WITH_IMPL(ZeroCheck, value) {
         using VectorizedUnaryFunction = VectorizedStrictUnaryFunction<NAME##Impl>;                             \
         if constexpr (lt_is_decimal<TYPE>) {                                                                   \
             const auto& type = context->get_return_type();                                                     \
-            return VectorizedUnaryFunction::evaluate<TYPE, RESULT_TYPE>(VECTORIZED_FN_ARGS(0), type.precision, \
+            return VectorizedUnaryFunction::evaluate<TYPE, RESULT_TYPE>(context->get_allocator(), VECTORIZED_FN_ARGS(0), type.precision, \
                                                                         type.scale);                           \
         } else {                                                                                               \
-            return VectorizedUnaryFunction::evaluate<TYPE, RESULT_TYPE>(VECTORIZED_FN_ARGS(0));                \
+            return VectorizedUnaryFunction::evaluate<TYPE, RESULT_TYPE>(context->get_allocator(), VECTORIZED_FN_ARGS(0));                \
         }                                                                                                      \
     }
 
 #define DEFINE_MATH_UNARY_WITH_ZERO_CHECK_FN(NAME, TYPE, RESULT_TYPE)                             \
     StatusOr<ColumnPtr> MathFunctions::NAME(FunctionContext* context, const Columns& columns) {   \
         using VectorizedUnaryFunction = VectorizedInputCheckUnaryFunction<NAME##Impl, ZeroCheck>; \
-        return VectorizedUnaryFunction::evaluate<TYPE, RESULT_TYPE>(VECTORIZED_FN_ARGS(0));       \
+        return VectorizedUnaryFunction::evaluate<TYPE, RESULT_TYPE>(context->get_allocator(), VECTORIZED_FN_ARGS(0));       \
     }
 
 #define DEFINE_MATH_UNARY_WITH_NEGATIVE_CHECK_FN(NAME, TYPE, RESULT_TYPE)                             \
     StatusOr<ColumnPtr> MathFunctions::NAME(FunctionContext* context, const Columns& columns) {       \
         using VectorizedUnaryFunction = VectorizedInputCheckUnaryFunction<NAME##Impl, NegativeCheck>; \
-        return VectorizedUnaryFunction::evaluate<TYPE, RESULT_TYPE>(VECTORIZED_FN_ARGS(0));           \
+        return VectorizedUnaryFunction::evaluate<TYPE, RESULT_TYPE>(context->get_allocator(), VECTORIZED_FN_ARGS(0));           \
     }
 
 #define DEFINE_MATH_UNARY_WITH_NON_POSITIVE_CHECK_FN(NAME, TYPE, RESULT_TYPE)                            \
     StatusOr<ColumnPtr> MathFunctions::NAME(FunctionContext* context, const Columns& columns) {          \
         using VectorizedUnaryFunction = VectorizedInputCheckUnaryFunction<NAME##Impl, NonPositiveCheck>; \
-        return VectorizedUnaryFunction::evaluate<TYPE, RESULT_TYPE>(VECTORIZED_FN_ARGS(0));              \
+        return VectorizedUnaryFunction::evaluate<TYPE, RESULT_TYPE>(context->get_allocator(), VECTORIZED_FN_ARGS(0));              \
     }
 
 #define DEFINE_MATH_UNARY_WITH_OUTPUT_NAN_CHECK_FN(NAME, TYPE, RESULT_TYPE)                       \
     StatusOr<ColumnPtr> MathFunctions::NAME(FunctionContext* context, const Columns& columns) {   \
         using VectorizedUnaryFunction = VectorizedOutputCheckUnaryFunction<NAME##Impl, NanCheck>; \
-        return VectorizedUnaryFunction::evaluate<TYPE, RESULT_TYPE>(VECTORIZED_FN_ARGS(0));       \
+        return VectorizedUnaryFunction::evaluate<TYPE, RESULT_TYPE>(context->get_allocator(), VECTORIZED_FN_ARGS(0));       \
     }
 
 #define DEFINE_MATH_UNARY_WITH_OUTPUT_INF_NAN_CHECK_FN(NAME, TYPE, RESULT_TYPE)                      \
     StatusOr<ColumnPtr> MathFunctions::NAME(FunctionContext* context, const Columns& columns) {      \
         using VectorizedUnaryFunction = VectorizedOutputCheckUnaryFunction<NAME##Impl, InfNanCheck>; \
-        return VectorizedUnaryFunction::evaluate<TYPE, RESULT_TYPE>(VECTORIZED_FN_ARGS(0));          \
+        return VectorizedUnaryFunction::evaluate<TYPE, RESULT_TYPE>(context->get_allocator(), VECTORIZED_FN_ARGS(0));          \
     }
 
 #define DEFINE_MATH_BINARY_WITH_OUTPUT_NAN_CHECK_FN(NAME, LTYPE, RTYPE, RESULT_TYPE)                 \
@@ -239,7 +239,7 @@ DEFINE_STRING_UNARY_FN_WITH_IMPL(binImpl, v) {
 }
 
 StatusOr<ColumnPtr> MathFunctions::bin(FunctionContext* context, const Columns& columns) {
-    return VectorizedStringStrictUnaryFunction<binImpl>::evaluate<TYPE_BIGINT, TYPE_VARCHAR>(columns[0]);
+    return VectorizedStringStrictUnaryFunction<binImpl>::evaluate<TYPE_BIGINT, TYPE_VARCHAR>(context->get_allocator(), columns[0]);
 }
 
 // unary math

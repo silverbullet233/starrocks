@@ -201,7 +201,7 @@ public:
     StatusOr<ColumnPtr> evaluate_checked(ExprContext* context, Chunk* ptr) override {
         ASSIGN_OR_RETURN(auto l, _children[0]->evaluate_checked(context, ptr));
 
-        return VectorizedStrictUnaryFunction<CompoundPredNot>::template evaluate<TYPE_BOOLEAN>(l);
+        return VectorizedStrictUnaryFunction<CompoundPredNot>::template evaluate<TYPE_BOOLEAN>(context->get_allocator(), l);
     }
 #ifdef STARROCKS_JIT_ENABLE
 

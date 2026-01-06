@@ -1926,7 +1926,7 @@ DEFINE_UNARY_FN_WITH_IMPL(lengthImpl, str) {
 }
 
 StatusOr<ColumnPtr> StringFunctions::length(FunctionContext* context, const Columns& columns) {
-    return VectorizedStrictUnaryFunction<lengthImpl>::evaluate<TYPE_VARCHAR, TYPE_INT>(columns[0]);
+    return VectorizedStrictUnaryFunction<lengthImpl>::evaluate<TYPE_VARCHAR, TYPE_INT>(context->get_allocator(), columns[0]);
 }
 
 DEFINE_UNARY_FN_WITH_IMPL(utf8LengthImpl, str) {
@@ -1934,7 +1934,7 @@ DEFINE_UNARY_FN_WITH_IMPL(utf8LengthImpl, str) {
 }
 
 StatusOr<ColumnPtr> StringFunctions::utf8_length(FunctionContext* context, const starrocks::Columns& columns) {
-    return VectorizedStrictUnaryFunction<utf8LengthImpl>::evaluate<TYPE_VARCHAR, TYPE_INT>(columns[0]);
+    return VectorizedStrictUnaryFunction<utf8LengthImpl>::evaluate<TYPE_VARCHAR, TYPE_INT>(context->get_allocator(), columns[0]);
 }
 
 template <char CA, char CZ>
@@ -2033,11 +2033,11 @@ void utf8_case_toggle(const Bytes& src_bytes, const Offsets& src_offsets, Bytes*
 
 template <bool to_upper>
 template <LogicalType Type, LogicalType ResultType>
-ColumnPtr StringCaseToggleFunction<to_upper>::evaluate(const ColumnPtr& v1) {
+ColumnPtr StringCaseToggleFunction<to_upper>::evaluate(memory::Allocator* allocator, const ColumnPtr& v1) {
     const auto* src = down_cast<const BinaryColumn*>(v1.get());
     const auto& src_bytes = src->get_bytes();
     const auto& src_offsets = src->get_offset();
-    auto dst = RunTimeColumnType<TYPE_VARCHAR>::create(v1->get_allocator());
+    auto dst = RunTimeColumnType<TYPE_VARCHAR>::create(allocator);
     auto& dst_offsets = dst->get_offset();
     auto& dst_bytes = dst->get_bytes();
     dst_offsets.assign(src_offsets.begin(), src_offsets.end());
@@ -2050,20 +2050,20 @@ ColumnPtr StringCaseToggleFunction<to_upper>::evaluate(const ColumnPtr& v1) {
 }
 
 template struct StringCaseToggleFunction<true>;
-template ColumnPtr StringCaseToggleFunction<true>::evaluate<TYPE_VARCHAR, TYPE_VARCHAR>(const ColumnPtr& v1);
+template ColumnPtr StringCaseToggleFunction<true>::evaluate<TYPE_VARCHAR, TYPE_VARCHAR>(memory::Allocator*, const ColumnPtr&);
 
 template struct StringCaseToggleFunction<false>;
-template ColumnPtr StringCaseToggleFunction<false>::evaluate<TYPE_VARCHAR, TYPE_VARCHAR>(const ColumnPtr& v1);
+template ColumnPtr StringCaseToggleFunction<false>::evaluate<TYPE_VARCHAR, TYPE_VARCHAR>(memory::Allocator*, const ColumnPtr&);
 
 template <bool to_upper>
 struct UTF8StringCaseToggleFunction {
 public:
     template <LogicalType Type, LogicalType ResultType>
-    static ColumnPtr evaluate(const ColumnPtr& v1) {
+    static ColumnPtr evaluate(memory::Allocator* allocator, const ColumnPtr& v1) {
         const auto* src = down_cast<const BinaryColumn*>(v1.get());
         const auto& src_bytes = src->get_bytes();
         const auto& src_offsets = src->get_offset();
-        auto dst = RunTimeColumnType<TYPE_VARCHAR>::create(v1->get_allocator());
+        auto dst = RunTimeColumnType<TYPE_VARCHAR>::create(allocator);
         auto& dst_offsets = dst->get_offset();
         auto& dst_bytes = dst->get_bytes();
         if (validate_ascii_fast(reinterpret_cast<const char*>(src_bytes.data()), src_bytes.size())) {
@@ -2097,9 +2097,13 @@ Status StringFunctions::lower_prepare(FunctionContext* context, FunctionContext:
     }
     auto state = new LowerUpperState();
     if (context->state()->lower_upper_support_utf8()) {
-        state->impl_func = VectorizedUnaryFunction<UTF8StringCaseToggleFunction<false>>::evaluate<TYPE_VARCHAR>;
+        state->impl_func = [](memory::Allocator* allocator, const ColumnPtr& col) {
+            return VectorizedUnaryFunction<UTF8StringCaseToggleFunction<false>>::evaluate<TYPE_VARCHAR>(allocator, col);
+        };
     } else {
-        state->impl_func = VectorizedUnaryFunction<StringCaseToggleFunction<false>>::evaluate<TYPE_VARCHAR>;
+        state->impl_func = [](memory::Allocator* allocator, const ColumnPtr& col) {
+            return VectorizedUnaryFunction<StringCaseToggleFunction<false>>::evaluate<TYPE_VARCHAR>(allocator, col);
+        };
     }
     context->set_function_state(scope, state);
     return Status::OK();
@@ -2115,7 +2119,7 @@ Status StringFunctions::lower_close(FunctionContext* context, FunctionContext::F
 
 StatusOr<ColumnPtr> StringFunctions::lower(FunctionContext* context, const Columns& columns) {
     auto* state = reinterpret_cast<LowerUpperState*>(context->get_function_state(FunctionContext::FRAGMENT_LOCAL));
-    return state->impl_func(columns[0]);
+    return state->impl_func(context->get_allocator(), columns[0]);
 }
 
 // upper
@@ -2131,9 +2135,13 @@ Status StringFunctions::upper_prepare(FunctionContext* context, FunctionContext:
     }
     auto state = new LowerUpperState();
     if (context->state()->lower_upper_support_utf8()) {
-        state->impl_func = VectorizedUnaryFunction<UTF8StringCaseToggleFunction<true>>::evaluate<TYPE_VARCHAR>;
+        state->impl_func = [](memory::Allocator* allocator, const ColumnPtr& col) {
+            return VectorizedUnaryFunction<UTF8StringCaseToggleFunction<true>>::evaluate<TYPE_VARCHAR>(allocator, col);
+        };
     } else {
-        state->impl_func = VectorizedUnaryFunction<StringCaseToggleFunction<true>>::evaluate<TYPE_VARCHAR>;
+        state->impl_func = [](memory::Allocator* allocator, const ColumnPtr& col) {
+            return VectorizedUnaryFunction<StringCaseToggleFunction<true>>::evaluate<TYPE_VARCHAR>(allocator, col);
+        };
     }
     context->set_function_state(scope, state);
     return Status::OK();
@@ -2149,7 +2157,7 @@ Status StringFunctions::upper_close(FunctionContext* context, FunctionContext::F
 
 StatusOr<ColumnPtr> StringFunctions::upper(FunctionContext* context, const Columns& columns) {
     auto* state = reinterpret_cast<LowerUpperState*>(context->get_function_state(FunctionContext::FRAGMENT_LOCAL));
-    return state->impl_func(columns[0]);
+    return state->impl_func(context->get_allocator(), columns[0]);
 }
 
 static inline void ascii_reverse_per_slice(const char* src_begin, const char* src_end, char* dst_curr) {
@@ -2202,12 +2210,12 @@ static inline void reverse(const BinaryColumn* src, Bytes* dst_bytes) {
 
 struct ReverseFunction {
     template <LogicalType Type, LogicalType ResultType>
-    static inline ColumnPtr evaluate(const ColumnPtr& column) {
+    static inline ColumnPtr evaluate(memory::Allocator* allocator, const ColumnPtr& column) {
         const auto* src = down_cast<const BinaryColumn*>(column.get());
         const auto& src_bytes = src->get_bytes();
         const auto& src_offsets = src->get_offset();
 
-        auto result = BinaryColumn::create(column->get_allocator());
+        auto result = BinaryColumn::create(allocator);
         auto& dst_bytes = result->get_bytes();
         auto& dst_offsets = result->get_offset();
 
@@ -2225,7 +2233,7 @@ struct ReverseFunction {
 };
 
 StatusOr<ColumnPtr> StringFunctions::reverse(FunctionContext* context, const Columns& columns) {
-    return VectorizedUnaryFunction<ReverseFunction>::evaluate<TYPE_VARCHAR>(columns[0]);
+    return VectorizedUnaryFunction<ReverseFunction>::evaluate<TYPE_VARCHAR>(context->get_allocator(), columns[0]);
 }
 
 // strings with little spaces can not benefit from simd optimization,
@@ -2373,10 +2381,10 @@ static inline void trim_per_slice(const BinaryColumn* src, const size_t i, Bytes
 template <TrimType trim_type, size_t simd_threshold, bool trim_single, bool trim_utf8>
 struct AdaptiveTrimFunction {
     template <LogicalType Type, LogicalType ResultType, class RemoveArg, class Utf8Index>
-    static ColumnPtr evaluate(const ColumnPtr& column, RemoveArg&& remove, Utf8Index&& utf8_index) {
+    static ColumnPtr evaluate(memory::Allocator* allocator, const ColumnPtr& column, RemoveArg&& remove, Utf8Index&& utf8_index) {
         const auto* src = down_cast<const BinaryColumn*>(column.get());
 
-        auto dst = RunTimeColumnType<TYPE_VARCHAR>::create(column->get_allocator());
+        auto dst = RunTimeColumnType<TYPE_VARCHAR>::create(allocator);
         auto& dst_offsets = dst->get_offset();
         auto& dst_bytes = dst->get_bytes();
 
@@ -2442,14 +2450,14 @@ static StatusOr<ColumnPtr> trim_impl(FunctionContext* context, const starrocks::
     if (!state->is_utf8) {
         if (remove_chars.size() == 1) {
             return VectorizedUnaryFunction<AdaptiveTrimFunction<trim_type, 8, true, false>>::template evaluate<
-                    TYPE_VARCHAR, const std::string&>(columns[0], remove_chars, state->utf8_index);
+                    TYPE_VARCHAR, const std::string&>(context->get_allocator(), columns[0], remove_chars, state->utf8_index);
         } else {
             return VectorizedUnaryFunction<AdaptiveTrimFunction<trim_type, 8, false, false>>::template evaluate<
-                    TYPE_VARCHAR, const std::string&>(columns[0], remove_chars, state->utf8_index);
+                    TYPE_VARCHAR, const std::string&>(context->get_allocator(), columns[0], remove_chars, state->utf8_index);
         }
     } else {
         return VectorizedUnaryFunction<AdaptiveTrimFunction<trim_type, 8, false, true>>::template evaluate<
-                TYPE_VARCHAR, const std::string&>(columns[0], remove_chars, state->utf8_index);
+                TYPE_VARCHAR, const std::string&>(context->get_allocator(), columns[0], remove_chars, state->utf8_index);
     }
 }
 
@@ -2514,7 +2522,7 @@ DEFINE_STRING_UNARY_FN_WITH_IMPL(hex_intImpl, v) {
 }
 
 StatusOr<ColumnPtr> StringFunctions::hex_int(FunctionContext* context, const starrocks::Columns& columns) {
-    return VectorizedStringStrictUnaryFunction<hex_intImpl>::evaluate<TYPE_BIGINT, TYPE_VARCHAR>(columns[0]);
+    return VectorizedStringStrictUnaryFunction<hex_intImpl>::evaluate<TYPE_BIGINT, TYPE_VARCHAR>(context->get_allocator(), columns[0]);
 }
 
 static constexpr char const* alphabet = "0123456789ABCDEF";
@@ -2533,7 +2541,7 @@ DEFINE_STRING_UNARY_FN_WITH_IMPL(hex_stringImpl, str) {
 }
 
 StatusOr<ColumnPtr> StringFunctions::hex_string(FunctionContext* context, const starrocks::Columns& columns) {
-    return VectorizedStringStrictUnaryFunction<hex_stringImpl>::evaluate<TYPE_VARCHAR, TYPE_VARCHAR>(columns[0]);
+    return VectorizedStringStrictUnaryFunction<hex_stringImpl>::evaluate<TYPE_VARCHAR, TYPE_VARCHAR>(context->get_allocator(), columns[0]);
 }
 
 #ifdef __AVX2__
@@ -2659,7 +2667,7 @@ DEFINE_STRING_UNARY_FN_WITH_IMPL(unhexImpl, str) {
 }
 
 StatusOr<ColumnPtr> StringFunctions::unhex(FunctionContext* context, const starrocks::Columns& columns) {
-    return VectorizedStringStrictUnaryFunction<unhexImpl>::evaluate<TYPE_VARCHAR, TYPE_VARCHAR>(columns[0]);
+    return VectorizedStringStrictUnaryFunction<unhexImpl>::evaluate<TYPE_VARCHAR, TYPE_VARCHAR>(context->get_allocator(), columns[0]);
 }
 
 DEFINE_STRING_UNARY_FN_WITH_IMPL(url_encodeImpl, str) {
@@ -2685,7 +2693,7 @@ std::string StringFunctions::url_encode_func(const std::string& value) {
 }
 
 StatusOr<ColumnPtr> StringFunctions::url_encode(FunctionContext* context, const starrocks::Columns& columns) {
-    return VectorizedStringStrictUnaryFunction<url_encodeImpl>::evaluate<TYPE_VARCHAR, TYPE_VARCHAR>(columns[0]);
+    return VectorizedStringStrictUnaryFunction<url_encodeImpl>::evaluate<TYPE_VARCHAR, TYPE_VARCHAR>(context->get_allocator(), columns[0]);
 }
 
 DEFINE_STRING_UNARY_FN_WITH_IMPL(url_decodeImpl, str) {
@@ -2737,7 +2745,7 @@ std::string StringFunctions::url_decode_func(const std::string& value) {
 }
 
 StatusOr<ColumnPtr> StringFunctions::url_decode(FunctionContext* context, const starrocks::Columns& columns) {
-    return VectorizedStringStrictUnaryFunction<url_decodeImpl>::evaluate<TYPE_VARCHAR, TYPE_VARCHAR>(columns[0]);
+    return VectorizedStringStrictUnaryFunction<url_decodeImpl>::evaluate<TYPE_VARCHAR, TYPE_VARCHAR>(context->get_allocator(), columns[0]);
 }
 
 DEFINE_STRING_UNARY_FN_WITH_IMPL(sm3Impl, str) {
@@ -2771,7 +2779,7 @@ DEFINE_STRING_UNARY_FN_WITH_IMPL(sm3Impl, str) {
 }
 
 StatusOr<ColumnPtr> StringFunctions::sm3(FunctionContext* context, const starrocks::Columns& columns) {
-    return VectorizedStringStrictUnaryFunction<sm3Impl>::evaluate<TYPE_VARCHAR, TYPE_VARCHAR>(columns[0]);
+    return VectorizedStringStrictUnaryFunction<sm3Impl>::evaluate<TYPE_VARCHAR, TYPE_VARCHAR>(context->get_allocator(), columns[0]);
 }
 
 // ascii
@@ -2780,7 +2788,7 @@ DEFINE_UNARY_FN_WITH_IMPL(asciiImpl, str) {
 }
 
 StatusOr<ColumnPtr> StringFunctions::ascii(FunctionContext* context, const Columns& columns) {
-    return VectorizedStrictUnaryFunction<asciiImpl>::evaluate<TYPE_CHAR, TYPE_INT>(columns[0]);
+    return VectorizedStrictUnaryFunction<asciiImpl>::evaluate<TYPE_CHAR, TYPE_INT>(context->get_allocator(), columns[0]);
 }
 
 DEFINE_UNARY_FN_WITH_IMPL(get_charImpl, value) {
@@ -2789,7 +2797,7 @@ DEFINE_UNARY_FN_WITH_IMPL(get_charImpl, value) {
 }
 
 StatusOr<ColumnPtr> StringFunctions::get_char(FunctionContext* context, const Columns& columns) {
-    return VectorizedStringStrictUnaryFunction<get_charImpl>::evaluate<TYPE_INT, TYPE_CHAR>(columns[0]);
+    return VectorizedStringStrictUnaryFunction<get_charImpl>::evaluate<TYPE_INT, TYPE_CHAR>(context->get_allocator(), columns[0]);
 }
 
 // strcmp
@@ -4990,7 +4998,7 @@ DEFINE_UNARY_FN_WITH_IMPL(crc32Impl, str) {
 }
 
 StatusOr<ColumnPtr> StringFunctions::crc32(FunctionContext* context, const Columns& columns) {
-    return VectorizedStrictUnaryFunction<crc32Impl>::evaluate<TYPE_VARCHAR, TYPE_BIGINT>(columns[0]);
+    return VectorizedStrictUnaryFunction<crc32Impl>::evaluate<TYPE_VARCHAR, TYPE_BIGINT>(context->get_allocator(), columns[0]);
 }
 
 // format_bytes
