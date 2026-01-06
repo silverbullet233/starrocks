@@ -771,7 +771,7 @@ DEFINE_BINARY_FUNCTION_WITH_IMPL(starts_withImpl, str, prefix) {
 }
 
 StatusOr<ColumnPtr> StringFunctions::starts_with(FunctionContext* context, const Columns& columns) {
-    return VectorizedStrictBinaryFunction<starts_withImpl>::evaluate<TYPE_VARCHAR, TYPE_BOOLEAN>(columns[0],
+    return VectorizedStrictBinaryFunction<starts_withImpl>::evaluate<TYPE_VARCHAR, TYPE_BOOLEAN>(context->get_allocator(), columns[0],
                                                                                                  columns[1]);
 }
 
@@ -783,7 +783,7 @@ DEFINE_BINARY_FUNCTION_WITH_IMPL(ends_withImpl, str, suffix) {
 }
 
 StatusOr<ColumnPtr> StringFunctions::ends_with(FunctionContext* context, const Columns& columns) {
-    return VectorizedStrictBinaryFunction<ends_withImpl>::evaluate<TYPE_VARCHAR, TYPE_BOOLEAN>(columns[0], columns[1]);
+    return VectorizedStrictBinaryFunction<ends_withImpl>::evaluate<TYPE_VARCHAR, TYPE_BOOLEAN>(context->get_allocator(), columns[0], columns[1]);
 }
 
 StatusOr<ColumnPtr> StringFunctions::space(FunctionContext* context, const Columns& columns) {
@@ -2802,7 +2802,7 @@ DEFINE_BINARY_FUNCTION_WITH_IMPL(strcmpImpl, lhs, rhs) {
 }
 
 StatusOr<ColumnPtr> StringFunctions::strcmp(FunctionContext* context, const Columns& columns) {
-    return VectorizedStrictBinaryFunction<strcmpImpl>::evaluate<TYPE_VARCHAR, TYPE_INT>(columns[0], columns[1]);
+    return VectorizedStrictBinaryFunction<strcmpImpl>::evaluate<TYPE_VARCHAR, TYPE_INT>(context->get_allocator(), columns[0], columns[1]);
 }
 
 // strpos without instance parameter

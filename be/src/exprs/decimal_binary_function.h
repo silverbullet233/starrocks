@@ -114,7 +114,7 @@ struct DecimalBinaryFunction {
     }
 
     template <bool lhs_is_const, bool rhs_is_const, LogicalType LhsType, LogicalType RhsType, LogicalType ResultType>
-    static inline ColumnPtr evaluate(const ColumnPtr& lhs, const ColumnPtr& rhs) {
+    static inline ColumnPtr evaluate(memory::Allocator* allocator, const ColumnPtr& lhs, const ColumnPtr& rhs) {
         using ResultCppType = RunTimeCppType<ResultType>;
         using ResultColumnType = RunTimeColumnType<ResultType>;
 
@@ -127,8 +127,6 @@ struct DecimalBinaryFunction {
         const auto lhs_scale = lhs_column->scale();
         const auto rhs_scale = rhs_column->scale();
         auto [precision, scale, adjust_scale] = compute_decimal_result_type<ResultCppType, Op>(lhs_scale, rhs_scale);
-
-        auto* allocator = lhs->get_allocator() != nullptr ? lhs->get_allocator() : (rhs->get_allocator() != nullptr ? rhs->get_allocator() : memory::get_default_allocator());
         typename ResultColumnType::MutablePtr result_column = ResultColumnType::create(allocator, precision, scale, num_rows);
         auto result_data = &ColumnHelper::cast_to_raw<ResultType>(result_column.get())->get_data().front();
         NullColumn::MutablePtr null_column;
@@ -222,20 +220,20 @@ struct DecimalBinaryFunction {
 #endif
 
     template <LogicalType LhsType, LogicalType RhsType, LogicalType ResultType>
-    static inline ColumnPtr const_const(const ColumnPtr& lhs, const ColumnPtr& rhs) {
-        return evaluate<true, true, LhsType, RhsType, ResultType>(lhs, rhs);
+    static inline ColumnPtr const_const(memory::Allocator* allocator, const ColumnPtr& lhs, const ColumnPtr& rhs) {
+        return evaluate<true, true, LhsType, RhsType, ResultType>(allocator, lhs, rhs);
     }
     template <LogicalType LhsType, LogicalType RhsType, LogicalType ResultType>
-    static inline ColumnPtr const_vector(const ColumnPtr& lhs, const ColumnPtr& rhs) {
-        return evaluate<true, false, LhsType, RhsType, ResultType>(lhs, rhs);
+    static inline ColumnPtr const_vector(memory::Allocator* allocator, const ColumnPtr& lhs, const ColumnPtr& rhs) {
+        return evaluate<true, false, LhsType, RhsType, ResultType>(allocator, lhs, rhs);
     }
     template <LogicalType LhsType, LogicalType RhsType, LogicalType ResultType>
-    static inline ColumnPtr vector_const(const ColumnPtr& lhs, const ColumnPtr& rhs) {
-        return evaluate<false, true, LhsType, RhsType, ResultType>(lhs, rhs);
+    static inline ColumnPtr vector_const(memory::Allocator* allocator, const ColumnPtr& lhs, const ColumnPtr& rhs) {
+        return evaluate<false, true, LhsType, RhsType, ResultType>(allocator, lhs, rhs);
     }
     template <LogicalType LhsType, LogicalType RhsType, LogicalType ResultType>
-    static inline ColumnPtr vector_vector(const ColumnPtr& lhs, const ColumnPtr& rhs) {
-        return evaluate<false, false, LhsType, RhsType, ResultType>(lhs, rhs);
+    static inline ColumnPtr vector_vector(memory::Allocator* allocator, const ColumnPtr& lhs, const ColumnPtr& rhs) {
+        return evaluate<false, false, LhsType, RhsType, ResultType>(allocator, lhs, rhs);
     }
 };
 
@@ -243,20 +241,20 @@ template <typename OP, OverflowMode overflow_mode>
 class UnpackConstColumnDecimalBinaryFunction {
 public:
     template <LogicalType LType, LogicalType RType, LogicalType ResultType>
-    static ColumnPtr evaluate(const ColumnPtr& v1, const ColumnPtr& v2) {
+    static ColumnPtr evaluate(memory::Allocator* allocator, const ColumnPtr& v1, const ColumnPtr& v2) {
         using Function = DecimalBinaryFunction<overflow_mode, OP>;
         if (!v1->is_constant() && !v2->is_constant()) {
-            return Function::template vector_vector<LType, RType, ResultType>(v1, v2);
+            return Function::template vector_vector<LType, RType, ResultType>(allocator, v1, v2);
         } else if (!v1->is_constant() && v2->is_constant()) {
             const ColumnPtr& data2 = ColumnHelper::as_raw_column<ConstColumn>(v2)->data_column();
-            return Function::template vector_const<LType, RType, ResultType>(v1, data2);
+            return Function::template vector_const<LType, RType, ResultType>(allocator, v1, data2);
         } else if (v1->is_constant() && !v2->is_constant()) {
             const ColumnPtr& data1 = ColumnHelper::as_raw_column<ConstColumn>(v1)->data_column();
-            return Function::template const_vector<LType, RType, ResultType>(data1, v2);
+            return Function::template const_vector<LType, RType, ResultType>(allocator, data1, v2);
         } else {
             const ColumnPtr& data1 = ColumnHelper::as_raw_column<ConstColumn>(v1)->data_column();
             const ColumnPtr& data2 = ColumnHelper::as_raw_column<ConstColumn>(v2)->data_column();
-            return Function::template const_const<LType, RType, ResultType>(data1, data2);
+            return Function::template const_const<LType, RType, ResultType>(allocator, data1, data2);
         }
     }
 };

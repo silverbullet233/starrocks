@@ -103,14 +103,14 @@ DEFINE_UNARY_FN_WITH_IMPL(ZeroCheck, value) {
 #define DEFINE_MATH_BINARY_WITH_OUTPUT_NAN_CHECK_FN(NAME, LTYPE, RTYPE, RESULT_TYPE)                 \
     StatusOr<ColumnPtr> MathFunctions::NAME(FunctionContext* context, const Columns& columns) {      \
         using VectorizedBinaryFunction = VectorizedOuputCheckBinaryFunction<NAME##Impl, NanCheck>;   \
-        return VectorizedBinaryFunction::evaluate<LTYPE, RTYPE, RESULT_TYPE>(VECTORIZED_FN_ARGS(0),  \
+        return VectorizedBinaryFunction::evaluate<LTYPE, RTYPE, RESULT_TYPE>(context->get_allocator(), VECTORIZED_FN_ARGS(0),  \
                                                                              VECTORIZED_FN_ARGS(1)); \
     }
 
 #define DEFINE_MATH_BINARY_WITH_OUTPUT_INF_NAN_CHECK_FN(NAME, LTYPE, RTYPE, RESULT_TYPE)              \
     StatusOr<ColumnPtr> MathFunctions::NAME(FunctionContext* context, const Columns& columns) {       \
         using VectorizedBinaryFunction = VectorizedOuputCheckBinaryFunction<NAME##Impl, InfNanCheck>; \
-        return VectorizedBinaryFunction::evaluate<LTYPE, RTYPE, RESULT_TYPE>(VECTORIZED_FN_ARGS(0),   \
+        return VectorizedBinaryFunction::evaluate<LTYPE, RTYPE, RESULT_TYPE>(context->get_allocator(), VECTORIZED_FN_ARGS(0),   \
                                                                              VECTORIZED_FN_ARGS(1));  \
     }
 
@@ -126,14 +126,14 @@ DEFINE_UNARY_FN_WITH_IMPL(ZeroCheck, value) {
 
 #define DEFINE_MATH_BINARY_FN(NAME, LTYPE, RTYPE, RESULT_TYPE)                                                         \
     StatusOr<ColumnPtr> MathFunctions::NAME(FunctionContext* context, const Columns& columns) {                        \
-        return VectorizedStrictBinaryFunction<NAME##Impl>::evaluate<LTYPE, RTYPE, RESULT_TYPE>(VECTORIZED_FN_ARGS(0),  \
+        return VectorizedStrictBinaryFunction<NAME##Impl>::evaluate<LTYPE, RTYPE, RESULT_TYPE>(context->get_allocator(), VECTORIZED_FN_ARGS(0),  \
                                                                                                VECTORIZED_FN_ARGS(1)); \
     }
 
 #define DEFINE_MATH_BINARY_FN_WITH_NAN_CHECK(NAME, LTYPE, RTYPE, RESULT_TYPE)                                 \
     StatusOr<ColumnPtr> MathFunctions::NAME(FunctionContext* context, const Columns& columns) {               \
         return VectorizedOuputCheckBinaryFunction<NAME##Impl, NanCheck>::evaluate<LTYPE, RTYPE, RESULT_TYPE>( \
-                VECTORIZED_FN_ARGS(0), VECTORIZED_FN_ARGS(1));                                                \
+                context->get_allocator(), VECTORIZED_FN_ARGS(0), VECTORIZED_FN_ARGS(1));                                                \
     }
 
 #define DEFINE_MATH_BINARY_FN_WITH_IMPL(NAME, LTYPE, RTYPE, RESULT_TYPE, FN) \
@@ -195,7 +195,7 @@ DEFINE_BINARY_FUNCTION_WITH_IMPL(logImpl, base, v) {
 StatusOr<ColumnPtr> MathFunctions::log(FunctionContext* context, const Columns& columns) {
     const auto& l = VECTORIZED_FN_ARGS(0);
     const auto& r = VECTORIZED_FN_ARGS(1);
-    return VectorizedUnstrictBinaryFunction<logProduceNullImpl, logImpl>::evaluate<TYPE_DOUBLE>(l, r);
+    return VectorizedUnstrictBinaryFunction<logProduceNullImpl, logImpl>::evaluate<TYPE_DOUBLE>(context->get_allocator(), l, r);
 }
 
 // log2

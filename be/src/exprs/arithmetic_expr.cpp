@@ -78,25 +78,25 @@ public:
                 ASSIGN_OR_RETURN(auto l, _children[0]->get_child(0)->evaluate_checked(context, chunk));
                 ASSIGN_OR_RETURN(auto r, _children[1]->get_child(0)->evaluate_checked(context, chunk));
                 return VectorizedStrictDecimalBinaryFunction<MulOp64x64_128, OverflowMode::IGNORE>::template evaluate<
-                        TYPE_DECIMAL64, TYPE_DECIMAL64, Type>(l, r);
+                        TYPE_DECIMAL64, TYPE_DECIMAL64, Type>(context->get_allocator(), l, r);
             }
             if (lhs_pt == TYPE_DECIMAL32 && rhs_pt == TYPE_DECIMAL64 && Type == TYPE_DECIMAL128) {
                 ASSIGN_OR_RETURN(auto l, _children[0]->get_child(0)->evaluate_checked(context, chunk));
                 ASSIGN_OR_RETURN(auto r, _children[1]->get_child(0)->evaluate_checked(context, chunk));
                 return VectorizedStrictDecimalBinaryFunction<MulOp32x64_128, OverflowMode::IGNORE>::template evaluate<
-                        TYPE_DECIMAL32, TYPE_DECIMAL64, Type>(l, r);
+                        TYPE_DECIMAL32, TYPE_DECIMAL64, Type>(context->get_allocator(), l, r);
             }
             if (lhs_pt == TYPE_DECIMAL64 && rhs_pt == TYPE_DECIMAL32 && Type == TYPE_DECIMAL128) {
                 ASSIGN_OR_RETURN(auto l, _children[0]->get_child(0)->evaluate_checked(context, chunk));
                 ASSIGN_OR_RETURN(auto r, _children[1]->get_child(0)->evaluate_checked(context, chunk));
                 return VectorizedStrictDecimalBinaryFunction<MulOp32x64_128, OverflowMode::IGNORE>::template evaluate<
-                        TYPE_DECIMAL32, TYPE_DECIMAL64, Type>(r, l);
+                        TYPE_DECIMAL32, TYPE_DECIMAL64, Type>(context->get_allocator(), r, l);
             }
             if (lhs_pt == TYPE_DECIMAL32 && rhs_pt == TYPE_DECIMAL32 && Type == TYPE_DECIMAL128) {
                 ASSIGN_OR_RETURN(auto l, _children[0]->get_child(0)->evaluate_checked(context, chunk));
                 ASSIGN_OR_RETURN(auto r, _children[1]->get_child(0)->evaluate_checked(context, chunk));
                 return VectorizedStrictDecimalBinaryFunction<MulOp32x32_128, OverflowMode::IGNORE>::template evaluate<
-                        TYPE_DECIMAL32, TYPE_DECIMAL32, Type>(r, l);
+                        TYPE_DECIMAL32, TYPE_DECIMAL32, Type>(context->get_allocator(), r, l);
             }
         }
         return nullptr;
@@ -117,14 +117,14 @@ public:
             // Enable overflow checking in decimal arithmetic
             if (context != nullptr && context->error_if_overflow()) {
                 return VectorizedStrictDecimalBinaryFunction<OP, OverflowMode::REPORT_ERROR>::template evaluate<Type>(
-                        l, r);
+                        context->get_allocator(), l, r);
             } else {
-                return VectorizedStrictDecimalBinaryFunction<OP, OverflowMode::OUTPUT_NULL>::template evaluate<Type>(l,
+                return VectorizedStrictDecimalBinaryFunction<OP, OverflowMode::OUTPUT_NULL>::template evaluate<Type>(context->get_allocator(), l,
                                                                                                                      r);
             }
         } else {
             using ArithmeticOp = ArithmeticBinaryOperator<OP, Type>;
-            return VectorizedStrictBinaryFunction<ArithmeticOp>::template evaluate<Type>(l, r);
+            return VectorizedStrictBinaryFunction<ArithmeticOp>::template evaluate<Type>(context->get_allocator(), l, r);
         }
     }
 #ifdef STARROCKS_JIT_ENABLE
@@ -261,16 +261,16 @@ private:
         if constexpr (lt_is_decimal<LType>) {
             if (context != nullptr && context->error_if_overflow()) {
                 using VectorizedDiv = VectorizedUnstrictDecimalBinaryFunction<LType, DivOp, OverflowMode::REPORT_ERROR>;
-                return VectorizedDiv::template evaluate<LType>(l, r);
+                return VectorizedDiv::template evaluate<LType>(context->get_allocator(), l, r);
             } else {
                 using VectorizedDiv = VectorizedUnstrictDecimalBinaryFunction<LType, DivOp, OverflowMode::OUTPUT_NULL>;
-                return VectorizedDiv::template evaluate<LType>(l, r);
+                return VectorizedDiv::template evaluate<LType>(context->get_allocator(), l, r);
             }
         } else {
             using RightZeroCheck = ArithmeticRightZeroCheck<LType>;
             using ArithmeticDiv = ArithmeticBinaryOperator<DivOp, LType>;
             using VectorizedDiv = VectorizedUnstrictBinaryFunction<RightZeroCheck, ArithmeticDiv>;
-            return VectorizedDiv::template evaluate<LType>(l, r);
+            return VectorizedDiv::template evaluate<LType>(context->get_allocator(), l, r);
         }
     }
 };
@@ -286,16 +286,16 @@ public:
         if constexpr (lt_is_decimal<Type>) {
             if (context != nullptr && context->error_if_overflow()) {
                 using VectorizedDiv = VectorizedUnstrictDecimalBinaryFunction<Type, ModOp, OverflowMode::REPORT_ERROR>;
-                return VectorizedDiv::template evaluate<Type>(l, r);
+                return VectorizedDiv::template evaluate<Type>(context->get_allocator(), l, r);
             } else {
                 using VectorizedDiv = VectorizedUnstrictDecimalBinaryFunction<Type, ModOp, OverflowMode::OUTPUT_NULL>;
-                return VectorizedDiv::template evaluate<Type>(l, r);
+                return VectorizedDiv::template evaluate<Type>(context->get_allocator(), l, r);
             }
         } else {
             using RightZeroCheck = ArithmeticRightZeroCheck<Type>;
             using ArithmeticMod = ArithmeticBinaryOperator<ModOp, Type>;
             using VectorizedMod = VectorizedUnstrictBinaryFunction<RightZeroCheck, ArithmeticMod>;
-            return VectorizedMod::template evaluate<Type>(l, r);
+            return VectorizedMod::template evaluate<Type>(context->get_allocator(), l, r);
         }
     }
 #ifdef STARROCKS_JIT_ENABLE
@@ -413,7 +413,7 @@ public:
         auto r = _children[1]->evaluate(context, ptr);
 
         using ArithmeticOp = ArithmeticBinaryOperator<OP, Type>;
-        return VectorizedStrictBinaryFunction<ArithmeticOp>::template evaluate<Type, TYPE_BIGINT, Type>(l, r);
+        return VectorizedStrictBinaryFunction<ArithmeticOp>::template evaluate<Type, TYPE_BIGINT, Type>(context->get_allocator(), l, r);
     }
 
 #ifdef STARROCKS_JIT_ENABLE

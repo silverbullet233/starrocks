@@ -251,7 +251,7 @@ DEFINE_BINARY_FUNCTION_WITH_IMPL(bitmapContainsImpl, bitmap_ptr, int_value) {
 
 StatusOr<ColumnPtr> BitmapFunctions::bitmap_contains(FunctionContext* context, const starrocks::Columns& columns) {
     return VectorizedStrictBinaryFunction<bitmapContainsImpl>::evaluate<TYPE_OBJECT, TYPE_BIGINT, TYPE_BOOLEAN>(
-            columns[0], columns[1]);
+            context->get_allocator(), columns[0], columns[1]);
 }
 
 // bitmap_has_any
@@ -264,7 +264,7 @@ DEFINE_BINARY_FUNCTION_WITH_IMPL(bitmapHasAny, lhs, rhs) {
 }
 
 StatusOr<ColumnPtr> BitmapFunctions::bitmap_has_any(FunctionContext* context, const starrocks::Columns& columns) {
-    return VectorizedStrictBinaryFunction<bitmapHasAny>::evaluate<TYPE_OBJECT, TYPE_BOOLEAN>(columns[0], columns[1]);
+    return VectorizedStrictBinaryFunction<bitmapHasAny>::evaluate<TYPE_OBJECT, TYPE_BOOLEAN>(context->get_allocator(), columns[0], columns[1]);
 }
 
 StatusOr<ColumnPtr> BitmapFunctions::bitmap_andnot(FunctionContext* context, const starrocks::Columns& columns) {

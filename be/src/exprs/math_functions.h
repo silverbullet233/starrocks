@@ -364,9 +364,9 @@ public:
         auto r = VECTORIZED_FN_ARGS(1);
 
         if constexpr (Type == TYPE_FLOAT || Type == TYPE_DOUBLE) {
-            return VectorizedUnstrictBinaryFunction<RValueCheckZeroImpl, pmodFloatImpl>::evaluate<Type>(l, r);
+            return VectorizedUnstrictBinaryFunction<RValueCheckZeroImpl, pmodFloatImpl>::evaluate<Type>(context->get_allocator(), l, r);
         } else {
-            return VectorizedUnstrictBinaryFunction<RValueCheckZeroImpl, pmodImpl>::evaluate<Type>(l, r);
+            return VectorizedUnstrictBinaryFunction<RValueCheckZeroImpl, pmodImpl>::evaluate<Type>(context->get_allocator(), l, r);
         }
     }
 
@@ -380,7 +380,7 @@ public:
         auto l = VECTORIZED_FN_ARGS(0);
         auto r = VECTORIZED_FN_ARGS(1);
 
-        return VectorizedUnstrictBinaryFunction<RValueCheckZeroImpl, fmodImpl>::evaluate<Type>(l, r);
+        return VectorizedUnstrictBinaryFunction<RValueCheckZeroImpl, fmodImpl>::evaluate<Type>(context->get_allocator(), l, r);
     }
 
     /**
@@ -396,20 +396,20 @@ public:
         auto r = VECTORIZED_FN_ARGS(1);
 
         if constexpr (lt_is_decimalv2<Type>) {
-            return VectorizedUnstrictBinaryFunction<RValueCheckZeroDecimalv2Impl, modDecimalv2Impl>::evaluate<Type>(l,
+            return VectorizedUnstrictBinaryFunction<RValueCheckZeroDecimalv2Impl, modDecimalv2Impl>::evaluate<Type>(context->get_allocator(), l,
                                                                                                                     r);
         } else if constexpr (lt_is_decimal<Type>) {
             // TODO(by satanson):
             //  FunctionContext carry decimal_overflow_check flag to control overflow checking.
             if (context != nullptr && context->error_if_overflow()) {
                 using VectorizedDiv = VectorizedUnstrictDecimalBinaryFunction<Type, ModOp, OverflowMode::REPORT_ERROR>;
-                return VectorizedDiv::template evaluate<Type>(l, r);
+                return VectorizedDiv::template evaluate<Type>(context->get_allocator(), l, r);
             } else {
                 using VectorizedDiv = VectorizedUnstrictDecimalBinaryFunction<Type, ModOp, OverflowMode::OUTPUT_NULL>;
-                return VectorizedDiv::template evaluate<Type>(l, r);
+                return VectorizedDiv::template evaluate<Type>(context->get_allocator(), l, r);
             }
         } else {
-            return VectorizedUnstrictBinaryFunction<RValueCheckZeroImpl, modImpl>::evaluate<Type>(l, r);
+            return VectorizedUnstrictBinaryFunction<RValueCheckZeroImpl, modImpl>::evaluate<Type>(context->get_allocator(), l, r);
         }
     }
 

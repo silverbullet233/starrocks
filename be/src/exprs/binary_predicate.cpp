@@ -132,7 +132,7 @@ public:
     StatusOr<ColumnPtr> evaluate_checked(ExprContext* context, Chunk* ptr) override {
         ASSIGN_OR_RETURN(auto l, _children[0]->evaluate_checked(context, ptr));
         ASSIGN_OR_RETURN(auto r, _children[1]->evaluate_checked(context, ptr));
-        return VectorizedStrictBinaryFunction<OP>::template evaluate<Type, TYPE_BOOLEAN>(l, r);
+        return VectorizedStrictBinaryFunction<OP>::template evaluate<Type, TYPE_BOOLEAN>(context->get_allocator(), l, r);
     }
 #ifdef STARROCKS_JIT_ENABLE
 

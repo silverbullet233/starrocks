@@ -60,7 +60,7 @@ public:
 
         ASSIGN_OR_RETURN(auto r, _children[1]->evaluate_checked(context, ptr));
 
-        return VectorizedLogicPredicateBinaryFunction<AndNullImpl, AndImpl>::template evaluate<TYPE_BOOLEAN>(l, r);
+        return VectorizedLogicPredicateBinaryFunction<AndNullImpl, AndImpl>::template evaluate<TYPE_BOOLEAN>(context->get_allocator(), l, r);
     }
 
 #ifdef STARROCKS_JIT_ENABLE
@@ -139,7 +139,7 @@ public:
 
         ASSIGN_OR_RETURN(auto r, _children[1]->evaluate_checked(context, ptr));
 
-        return VectorizedLogicPredicateBinaryFunction<OrNullImpl, OrImpl>::template evaluate<TYPE_BOOLEAN>(l, r);
+        return VectorizedLogicPredicateBinaryFunction<OrNullImpl, OrImpl>::template evaluate<TYPE_BOOLEAN>(context->get_allocator(), l, r);
     }
 
 #ifdef STARROCKS_JIT_ENABLE

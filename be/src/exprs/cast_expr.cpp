@@ -1246,7 +1246,7 @@ DEFINE_BINARY_FUNCTION_WITH_IMPL(timeToDatetime, date, time) {
                 return ColumnHelper::create_const_null_column(column->size());                                  \
             }                                                                                                   \
                                                                                                                 \
-            return VectorizedStrictBinaryFunction<IMPL>::evaluate<TYPE_DATE, TYPE_TIME, TO_TYPE>(_now, column); \
+            return VectorizedStrictBinaryFunction<IMPL>::evaluate<TYPE_DATE, TYPE_TIME, TO_TYPE>(context->get_allocator(), _now, column); \
         };                                                                                                      \
                                                                                                                 \
         std::string debug_string() const override {                                                             \

@@ -63,7 +63,7 @@ const static int DEFAULT_DATE_FORMAT_LIMIT = 100;
 
 #define DEFINE_TIME_BINARY_FN(NAME, LTYPE, RTYPE, RESULT_TYPE)                                                         \
     StatusOr<ColumnPtr> TimeFunctions::NAME(FunctionContext* context, const starrocks::Columns& columns) {             \
-        return VectorizedStrictBinaryFunction<NAME##Impl>::evaluate<LTYPE, RTYPE, RESULT_TYPE>(VECTORIZED_FN_ARGS(0),  \
+        return VectorizedStrictBinaryFunction<NAME##Impl>::evaluate<LTYPE, RTYPE, RESULT_TYPE>(context->get_allocator(), VECTORIZED_FN_ARGS(0),  \
                                                                                                VECTORIZED_FN_ARGS(1)); \
     }
 
@@ -123,7 +123,7 @@ ColumnPtr date_valid(FunctionContext* context, const ColumnPtr& v1) {
 #define DEFINE_TIME_CALC_FN(NAME, LTYPE, RTYPE, RESULT_TYPE)                                               \
     StatusOr<ColumnPtr> TimeFunctions::NAME(FunctionContext* context, const starrocks::Columns& columns) { \
         auto p = VectorizedStrictBinaryFunction<NAME##Impl>::evaluate<LTYPE, RTYPE, RESULT_TYPE>(          \
-                VECTORIZED_FN_ARGS(0), VECTORIZED_FN_ARGS(1));                                             \
+                context->get_allocator(), VECTORIZED_FN_ARGS(0), VECTORIZED_FN_ARGS(1));                                             \
         return date_valid<RESULT_TYPE>(context, p);                                                                 \
     }
 
