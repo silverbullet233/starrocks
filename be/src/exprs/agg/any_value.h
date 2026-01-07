@@ -19,56 +19,37 @@
 
 #include "column/fixed_length_column.h"
 #include "column/type_traits.h"
+#include "column/vectorized_fwd.h"
 #include "exprs/agg/aggregate.h"
 #include "exprs/agg/aggregate_traits.h"
 #include "gutil/casts.h"
+#include "runtime/memory/allocator_v2.h"
 #include "util/raw_container.h"
 
 namespace starrocks {
 
-template <LogicalType LT>
+template <LogicalType LT, typename = guard::Guard>
 struct AnyValueAggregateData {
     using T = AggDataValueType<LT>;
-    
-    // For string types, use aligned_storage to avoid default construction
-    using StorageType = std::conditional_t<lt_is_string<LT>, 
-                                           std::aligned_storage_t<sizeof(T), alignof(T)>,
-                                           T>;
 
-    StorageType result_storage;
+    T result;
     bool has_value = false;
 
-    // Accessor for result
-    T& result() {
-        if constexpr (lt_is_string<LT>) {
-            return *reinterpret_cast<T*>(&result_storage);
-        } else {
-            return result_storage;
-        }
-    }
-    
-    const T& result() const {
-        if constexpr (lt_is_string<LT>) {
-            return *reinterpret_cast<const T*>(&result_storage);
-        } else {
-            return result_storage;
-        }
-    }
-
-    // Default constructor
-    AnyValueAggregateData() : has_value(false) {
-        if constexpr (!lt_is_string<LT>) {
-            result() = T{};
-        }
-        // For string types, result will be initialized via placement new in create()
-    }
-
     void reset() {
-        if constexpr (lt_is_string<LT>) {
-            result().clear();
-        } else {
-            result() = T{};
-        }
+        result = T{};
+        has_value = false;
+    }
+};
+
+template <LogicalType LT>
+struct AnyValueAggregateData<LT, StringLTGuard<LT>> {
+    using T = AggDataValueType<LT>;
+
+    T result;
+    bool has_value = false;
+
+    void reset(memory::Allocator* allocator) {
+        result.release(allocator);
         has_value = false;
     }
 };
@@ -77,9 +58,14 @@ template <LogicalType LT, typename State>
 struct AnyValueElement {
     using RefType = AggDataRefType<LT>;
 
-    void operator()(State& state, RefType right) const {
+    void operator()(State& state, RefType right,
+                    [[maybe_unused]] memory::Allocator* allocator = nullptr) const {
         if (UNLIKELY(!state.has_value)) {
-            AggDataTypeTraits<LT>::assign_value(state.result(), right);
+            if constexpr (lt_is_string<LT>) {
+                AggDataTypeTraits<LT>::assign_value(state.result, right, allocator);
+            } else {
+                AggDataTypeTraits<LT>::assign_value(state.result, right);
+            }
             state.has_value = true;
         }
     }
@@ -91,22 +77,30 @@ class AnyValueAggregateFunction final
 public:
     using InputColumnType = RunTimeColumnType<LT>;
 
-    void create(FunctionContext* ctx, AggDataPtr __restrict ptr) const override {
-        auto* state = new (ptr) State();
+    void destroy(FunctionContext* ctx, AggDataPtr __restrict ptr) const override {
         if constexpr (lt_is_string<LT>) {
-            new (&state->result_storage) Buffer<uint8_t>(ctx->get_allocator());
+            this->data(ptr).result.release(ctx->get_allocator());
         }
+        AggregateFunctionBatchHelper<State, AnyValueAggregateFunction<LT, State, OP, T>>::destroy(ctx, ptr);
     }
 
     void reset(FunctionContext* ctx, const Columns& args, AggDataPtr state) const override {
-        this->data(state).reset();
+        if constexpr (lt_is_string<LT>) {
+            this->data(state).reset(ctx->get_allocator());
+        } else {
+            this->data(state).reset();
+        }
     }
 
     void update(FunctionContext* ctx, const Column** columns, AggDataPtr __restrict state,
                 size_t row_num) const override {
         DCHECK(!columns[0]->is_nullable());
         const auto& column = down_cast<const InputColumnType&>(*columns[0]);
-        OP()(this->data(state), AggDataTypeTraits<LT>::get_row_ref(column, row_num));
+        if constexpr (lt_is_string<LT>) {
+            OP()(this->data(state), AggDataTypeTraits<LT>::get_row_ref(column, row_num), ctx->get_allocator());
+        } else {
+            OP()(this->data(state), AggDataTypeTraits<LT>::get_row_ref(column, row_num));
+        }
     }
 
     void update_batch_single_state(FunctionContext* ctx, size_t chunk_size, const Column** columns,
@@ -117,12 +111,16 @@ public:
     void merge(FunctionContext* ctx, const Column* column, AggDataPtr __restrict state, size_t row_num) const override {
         DCHECK(!column->is_nullable());
         const auto& input_column = down_cast<const InputColumnType&>(*column);
-        OP()(this->data(state), AggDataTypeTraits<LT>::get_row_ref(input_column, row_num));
+        if constexpr (lt_is_string<LT>) {
+            OP()(this->data(state), AggDataTypeTraits<LT>::get_row_ref(input_column, row_num), ctx->get_allocator());
+        } else {
+            OP()(this->data(state), AggDataTypeTraits<LT>::get_row_ref(input_column, row_num));
+        }
     }
 
     void serialize_to_column(FunctionContext* ctx, ConstAggDataPtr __restrict state, Column* to) const override {
         DCHECK(!to->is_nullable());
-        AggDataTypeTraits<LT>::append_value(down_cast<InputColumnType*>(to), this->data(state).result());
+        AggDataTypeTraits<LT>::append_value(down_cast<InputColumnType*>(to), this->data(state).result);
     }
 
     void convert_to_serialize_format(FunctionContext* ctx, const Columns& src, size_t chunk_size,
@@ -132,7 +130,7 @@ public:
 
     void finalize_to_column(FunctionContext* ctx, ConstAggDataPtr __restrict state, Column* to) const override {
         DCHECK(!to->is_nullable());
-        AggDataTypeTraits<LT>::append_value(down_cast<InputColumnType*>(to), this->data(state).result());
+        AggDataTypeTraits<LT>::append_value(down_cast<InputColumnType*>(to), this->data(state).result);
     }
 
     void get_values(FunctionContext* ctx, ConstAggDataPtr __restrict state, Column* dst, size_t start,
@@ -140,7 +138,7 @@ public:
         DCHECK_GT(end, start);
         auto* column = down_cast<InputColumnType*>(dst);
         for (size_t i = start; i < end; ++i) {
-            AggDataTypeTraits<LT>::append_value(column, this->data(state).result());
+            AggDataTypeTraits<LT>::append_value(column, this->data(state).result);
         }
     }
 

@@ -24,6 +24,7 @@
 #include "exprs/agg/aggregate.h"
 #include "exprs/agg/aggregate_traits.h"
 #include "gutil/casts.h"
+#include "runtime/memory/allocator_v2.h"
 #include "types/logical_type.h"
 #include "util/raw_container.h"
 
@@ -115,6 +116,8 @@ struct MaxByElement<LT, State, JsonGuard<LT>> {
             bool is_null = col->only_null() || col->is_null(row_num);
             if (is_null) {
                 if constexpr (State::not_filter_nulls_flag) {
+                    // Note: This specialization is for JsonGuard, not string types
+                    // String types would need their own specialization or use AggregateComplexLTGuard path
                     AggDataTypeTraits<LT>::assign_value(state.value, right);
                     state.buffer_result.clear();
                     state.null_result = true;

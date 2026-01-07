@@ -38,7 +38,7 @@ namespace starrocks {
 
 /**
  * For each aggregate function, it may use different agg state kind for Incremental MV:
- *  - RESULT                : Use result table data as AggStateData, eg sum/count
+*  - RESULT                : Use result table data as AggStateData, eg sum/count
  *  - INTERMEDIATE          : Use intermediate table data as AggStateData which is a common state
  *                              for Accumulate mode just as agg_data in OLAP mode.
  *  - DETAIL_RESULT         : Use detail table data as AggStateData to retract in retract mode and
@@ -349,11 +349,7 @@ public:
     static constexpr bool pod_state() { return std::is_trivially_destructible_v<State>; }
 
     void create(FunctionContext* ctx, AggDataPtr __restrict ptr) const override {
-        if constexpr (std::is_constructible_v<State, memory::Allocator*>) {
-            new (ptr) State(ctx->get_allocator());
-        } else {
-            new (ptr) State;
-        }
+        new (ptr) State;
     }
 
     void destroy(FunctionContext* ctx, AggDataPtr __restrict ptr) const override { data(ptr).~State(); }

@@ -199,6 +199,27 @@ private:
 };
 
 template <class T, size_t padding>
+RawBuffer<T, padding>::RawBuffer(RawBuffer&& rhs) noexcept
+        : _start(rhs._start), _end(rhs._end), _end_of_storage(rhs._end_of_storage) {
+    rhs._start = null;
+    rhs._end = null;
+    rhs._end_of_storage = null;
+}
+
+template <class T, size_t padding>
+RawBuffer<T, padding>& RawBuffer<T, padding>::operator=(RawBuffer&& rhs) noexcept {
+    if (this != &rhs) {
+        _start = rhs._start;
+        _end = rhs._end;
+        _end_of_storage = rhs._end_of_storage;
+        rhs._start = null;
+        rhs._end = null;
+        rhs._end_of_storage = null;
+    }
+    return *this;
+}
+
+template <class T, size_t padding>
 void RawBuffer<T, padding>::release(memory::Allocator* allocator) {
     if (_start == null) {
         return;
