@@ -193,7 +193,7 @@ struct DecimalBinaryFunction {
         if constexpr (check_overflow<overflow_mode>) {
             if (all_null) {
                 // all the elements of the result are overflow, return const null column
-                return ColumnHelper::create_const_null_column(num_rows);
+                return ColumnHelper::create_const_null_column(allocator, num_rows);
             }
             ColumnBuilder<ResultType> builder(allocator, std::move(result_column), std::move(null_column), has_null);
             return builder.build(lhs_is_const && rhs_is_const);

@@ -575,7 +575,7 @@ void JoinHashTable::_init_build_column(const HashTableParam& param) {
                     (join_key_col_refs.find(slot->id()) == join_key_col_refs.end()) &&
                     (param.column_view_concat_rows_limit >= 0 || param.column_view_concat_bytes_limit >= 0);
 
-            MutableColumnPtr column = ColumnHelper::create_column(slot->type(), slot->is_nullable(), use_view,
+            MutableColumnPtr column = ColumnHelper::create_column(memory::get_default_allocator(), slot->type(), slot->is_nullable(), use_view,
                                                                   param.column_view_concat_rows_limit,
                                                                   param.column_view_concat_bytes_limit);
             if (column->is_nullable()) {
@@ -595,7 +595,7 @@ void JoinHashTable::_init_join_keys() {
         if (key_desc.col_ref) {
             _table_items->key_columns.emplace_back(nullptr);
         } else {
-            auto key_column = ColumnHelper::create_column(*key_desc.type, false);
+            auto key_column = ColumnHelper::create_column(memory::get_default_allocator(), *key_desc.type, false);
             key_column->append_default();
             _table_items->key_columns.emplace_back(std::move(key_column));
         }
@@ -795,7 +795,7 @@ ChunkPtr JoinHashTable::convert_to_spill_schema(const ChunkPtr& chunk) const {
         SlotDescriptor* slot = _table_items->build_slots[i].slot;
         ColumnPtr& column = chunk->get_column_by_slot_id(slot->id());
         if (slot->is_nullable()) {
-            column = ColumnHelper::cast_to_nullable_column(std::move(column));
+            column = ColumnHelper::cast_to_nullable_column(memory::get_default_allocator(), std::move(column));
         }
         output->append_column(column, slot->id());
     }

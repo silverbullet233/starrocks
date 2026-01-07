@@ -271,7 +271,7 @@ ChunkPtr NLJoinProbeOperator::_init_output_chunk(size_t chunk_size) const {
         if (_probe_chunk) {
             nullable |= _probe_chunk->is_column_nullable(slot->id());
         }
-        MutableColumnPtr new_col = ColumnHelper::create_column(slot->type(), nullable);
+        MutableColumnPtr new_col = ColumnHelper::create_column(memory::get_default_allocator(), slot->type(), nullable);
         chunk->append_column(std::move(new_col), slot->id());
     }
     for (size_t i = _probe_column_count; i < _col_types.size(); i++) {
@@ -280,7 +280,7 @@ ChunkPtr NLJoinProbeOperator::_init_output_chunk(size_t chunk_size) const {
         if (_curr_build_chunk) {
             nullable |= _curr_build_chunk->is_column_nullable(slot->id());
         }
-        MutableColumnPtr new_col = ColumnHelper::create_column(slot->type(), nullable);
+        MutableColumnPtr new_col = ColumnHelper::create_column(memory::get_default_allocator(), slot->type(), nullable);
         chunk->append_column(std::move(new_col), slot->id());
     }
 

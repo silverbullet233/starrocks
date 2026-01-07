@@ -313,7 +313,7 @@ StatusOr<ColumnPtr> ArraySortLambdaExpr::evaluate_checked(ExprContext* context, 
 
     // Handle null array
     if (array_col->only_null()) {
-        return ColumnHelper::align_return_type(std::move(array_col), type(), chunk->num_rows(), true);
+        return ColumnHelper::align_return_type(context->get_allocator(), std::move(array_col), type(), chunk->num_rows(), true);
     }
 
     NullColumnPtr null_column = nullptr;

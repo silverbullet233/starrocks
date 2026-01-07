@@ -132,7 +132,7 @@ Status AvroCppScanner::create_src_chunk(ChunkPtr* chunk) {
             continue;
         }
 
-        auto column = ColumnHelper::create_column(slot_desc->type(), true, false, 0, true);
+        auto column = ColumnHelper::create_column(memory::get_default_allocator(), slot_desc->type(), true, false, 0, true);
         (*chunk)->append_column(std::move(column), slot_desc->id());
     }
 

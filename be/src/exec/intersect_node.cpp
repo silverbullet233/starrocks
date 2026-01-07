@@ -203,7 +203,7 @@ Status IntersectNode::get_next(RuntimeState* state, ChunkPtr* chunk, bool* eos) 
         MutableColumns result_columns(_types.size());
         for (size_t i = 0; i < _types.size(); ++i) {
             result_columns[i] = // default NullableColumn
-                    ColumnHelper::create_column(_types[i].result_type, _types[i].is_nullable);
+                    ColumnHelper::create_column(memory::get_default_allocator(), _types[i].result_type, _types[i].is_nullable);
             result_columns[i]->reserve(runtime_state()->chunk_size());
         }
 

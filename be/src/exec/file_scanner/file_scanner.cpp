@@ -29,6 +29,7 @@
 #include "gutil/strings/substitute.h"
 #include "io/compressed_input_stream.h"
 #include "runtime/descriptors.h"
+#include "runtime/memory/allocator_v2.h"
 #include "runtime/runtime_state.h"
 #include "runtime/stream_load/load_stream_mgr.h"
 #include "util/compression/stream_compression.h"
@@ -160,7 +161,7 @@ void FileScanner::fill_columns_from_path(starrocks::ChunkPtr& chunk, int slot_st
     for (int i = 0; i < columns_from_path.size(); ++i) {
         auto slot_desc = _src_slot_descriptors.at(i + slot_start);
         if (slot_desc == nullptr) continue;
-        auto col = ColumnHelper::create_column(varchar_type, slot_desc->is_nullable());
+        auto col = ColumnHelper::create_column(memory::get_default_allocator(), varchar_type, slot_desc->is_nullable());
         const std::string& column_from_path = columns_from_path[i];
         Slice s(column_from_path.c_str(), column_from_path.size());
         col->append_value_multiple_times(&s, size);
@@ -203,12 +204,12 @@ StatusOr<ChunkPtr> FileScanner::materialize(const starrocks::ChunkPtr& src, star
             column_pointers.emplace(col_pointer);
         }
 
-        col = ColumnHelper::unfold_const_column(slot->type(), cast->num_rows(), std::move(col));
+        col = ColumnHelper::unfold_const_column(ctx->get_allocator(), slot->type(), cast->num_rows(), std::move(col));
 
         // The column builder in ctx->evaluate may build column as non-nullable.
         // See be/src/column/column_builder.h#L79.
         if (!col->is_nullable()) {
-            col = ColumnHelper::cast_to_nullable_column(std::move(col));
+            col = ColumnHelper::cast_to_nullable_column(memory::get_default_allocator(), std::move(col));
         }
 
         dest_chunk->append_column(col, slot->id());

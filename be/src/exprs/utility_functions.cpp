@@ -54,12 +54,12 @@
 namespace starrocks {
 
 StatusOr<ColumnPtr> UtilityFunctions::version(FunctionContext* context, const Columns& columns) {
-    return ColumnHelper::create_const_column<TYPE_VARCHAR>("5.1.0", 1);
+    return ColumnHelper::create_const_column<TYPE_VARCHAR>(context->get_allocator(), "5.1.0", 1);
 }
 
 StatusOr<ColumnPtr> UtilityFunctions::current_version(FunctionContext* context, const Columns& columns) {
     static std::string version = std::string(STARROCKS_VERSION) + "-" + STARROCKS_COMMIT_HASH;
-    return ColumnHelper::create_const_column<TYPE_VARCHAR>(version, 1);
+    return ColumnHelper::create_const_column<TYPE_VARCHAR>(context->get_allocator(), version, 1);
 }
 
 StatusOr<ColumnPtr> UtilityFunctions::sleep(FunctionContext* context, const Columns& columns) {
@@ -90,9 +90,9 @@ StatusOr<ColumnPtr> UtilityFunctions::last_query_id(FunctionContext* context, co
     starrocks::RuntimeState* state = context->state();
     const std::string& id = state->last_query_id();
     if (!id.empty()) {
-        return ColumnHelper::create_const_column<TYPE_VARCHAR>(id, 1);
+        return ColumnHelper::create_const_column<TYPE_VARCHAR>(context->get_allocator(), id, 1);
     } else {
-        return ColumnHelper::create_const_null_column(1);
+        return ColumnHelper::create_const_null_column(context->get_allocator(), 1);
     }
 }
 
@@ -261,17 +261,17 @@ StatusOr<ColumnPtr> UtilityFunctions::assert_true(FunctionContext* context, cons
             }
         }
     }
-    return ColumnHelper::create_const_column<TYPE_BOOLEAN>(true, size);
+    return ColumnHelper::create_const_column<TYPE_BOOLEAN>(context->get_allocator(), true, size);
 }
 
 StatusOr<ColumnPtr> UtilityFunctions::host_name(FunctionContext* context, const Columns& columns) {
     std::string host_name;
     auto status = get_hostname(&host_name);
     if (status.ok()) {
-        return ColumnHelper::create_const_column<TYPE_VARCHAR>(host_name, 1);
+        return ColumnHelper::create_const_column<TYPE_VARCHAR>(context->get_allocator(), host_name, 1);
     } else {
         host_name = "error";
-        return ColumnHelper::create_const_column<TYPE_VARCHAR>(host_name, 1);
+        return ColumnHelper::create_const_column<TYPE_VARCHAR>(context->get_allocator(), host_name, 1);
     }
 }
 

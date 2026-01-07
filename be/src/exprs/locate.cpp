@@ -218,7 +218,7 @@ StatusOr<ColumnPtr> StringFunctions::instr(FunctionContext* context, const Colum
 
     const ColumnPtr& haystack = columns[0];
     const ColumnPtr& needle = columns[1];
-    ColumnPtr start_pos = ColumnHelper::create_const_column<TYPE_INT>(1, columns[0]->size());
+    ColumnPtr start_pos = ColumnHelper::create_const_column<TYPE_INT>(context->get_allocator(), 1, columns[0]->size());
     if (!haystack->is_constant() && needle->is_constant()) {
         return haystack_vector_and_needle_const(context, haystack, needle, start_pos);
     } else {
@@ -232,7 +232,7 @@ StatusOr<ColumnPtr> StringFunctions::locate(FunctionContext* context, const Colu
 
     const ColumnPtr& haystack = columns[1];
     const ColumnPtr& needle = columns[0];
-    ColumnPtr start_pos = ColumnHelper::create_const_column<TYPE_INT>(1, columns[0]->size());
+    ColumnPtr start_pos = ColumnHelper::create_const_column<TYPE_INT>(context->get_allocator(), 1, columns[0]->size());
     if (!haystack->is_constant() && needle->is_constant()) {
         return haystack_vector_and_needle_const(context, haystack, needle, start_pos);
     } else {

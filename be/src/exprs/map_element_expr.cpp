@@ -55,14 +55,14 @@ public:
         }
 
         if (map_col->only_null()) {
-            return ColumnHelper::create_const_null_column(num_rows);
+            return ColumnHelper::create_const_null_column(context->get_allocator(), num_rows);
         }
 
         bool map_is_const = map_col->is_constant();
         bool key_is_const = key_col->is_constant();
 
         map_col = ColumnHelper::unpack_and_duplicate_const_column(1, map_col);
-        key_col = ColumnHelper::unfold_const_column(_children[1]->type(), 1, std::move(key_col)); // may only null
+        key_col = ColumnHelper::unfold_const_column(context->get_allocator(), _children[1]->type(), 1, std::move(key_col)); // may only null
         auto [map_column, map_nulls] = ColumnHelper::unpack_nullable_column(map_col);
         auto [key_column, key_nulls] = ColumnHelper::unpack_nullable_column(key_col);
 

@@ -118,7 +118,7 @@ private:
                 (*chunk)->append_column(src_column, slot->id());
             }
         } else {
-            MutableColumnPtr dest_column = ColumnHelper::create_column(slot->type(), to_nullable);
+            MutableColumnPtr dest_column = ColumnHelper::create_column(memory::get_default_allocator(), slot->type(), to_nullable);
             dest_column->append_selective(*src_column, _probe_state->probe_index.data(), 0, _probe_state->count);
             (*chunk)->append_column(std::move(dest_column), slot->id());
         }
@@ -128,7 +128,7 @@ private:
         if (_probe_state->match_flag == JoinMatchFlag::ALL_MATCH_ONE) {
             (*chunk)->append_column(src_column, slot->id());
         } else {
-            MutableColumnPtr dest_column = ColumnHelper::create_column(slot->type(), true);
+            MutableColumnPtr dest_column = ColumnHelper::create_column(memory::get_default_allocator(), slot->type(), true);
             dest_column->append_selective(*src_column, _probe_state->probe_index.data(), 0, _probe_state->count);
             (*chunk)->append_column(std::move(dest_column), slot->id());
         }
@@ -144,7 +144,7 @@ private:
 
             bool output = is_lazy ? hash_table_slot.need_lazy_materialize : hash_table_slot.need_output;
             if (output) {
-                MutableColumnPtr dest_column = ColumnHelper::create_column(slot->type(), true);
+                MutableColumnPtr dest_column = ColumnHelper::create_column(memory::get_default_allocator(), slot->type(), true);
                 dest_column->append_nulls(_probe_state->count);
                 (*chunk)->append_column(std::move(dest_column), slot->id());
             }

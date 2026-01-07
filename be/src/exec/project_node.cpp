@@ -36,6 +36,7 @@
 #include "glog/logging.h"
 #include "gutil/casts.h"
 #include "runtime/current_thread.h"
+#include "runtime/memory/allocator_v2.h"
 #include "runtime/runtime_state.h"
 #include "types/logical_type.h"
 
@@ -150,7 +151,7 @@ Status ProjectNode::get_next(RuntimeState* state, ChunkPtr* chunk, bool* eos) {
         for (size_t i = 0; i < _slot_ids.size(); ++i) {
             ASSIGN_OR_RETURN(result_columns[i], _expr_ctxs[i]->evaluate((*chunk).get()));
             result_columns[i] =
-                    ColumnHelper::align_return_type(std::move(result_columns[i]), _expr_ctxs[i]->root()->type(),
+                    ColumnHelper::align_return_type(memory::get_default_allocator(), std::move(result_columns[i]), _expr_ctxs[i]->root()->type(),
                                                     (*chunk)->num_rows(), _type_is_nullable[i]);
         }
         RETURN_IF_HAS_ERROR(_expr_ctxs);

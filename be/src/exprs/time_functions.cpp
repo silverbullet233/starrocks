@@ -87,7 +87,7 @@ ColumnPtr date_valid(FunctionContext* context, const ColumnPtr& v1) {
         if (value.is_valid_non_strict()) {
             return v1;
         } else {
-            return ColumnHelper::create_const_null_column(v1->size());
+            return ColumnHelper::create_const_null_column(context->get_allocator(), v1->size());
         }
     } else if (v1->is_nullable()) {
         auto v = ColumnHelper::as_column<NullableColumn>(v1);
@@ -278,7 +278,7 @@ StatusOr<ColumnPtr> TimeFunctions::convert_tz(FunctionContext* context, const Co
     }
 
     if (!ctc->is_valid) {
-        return ColumnHelper::create_const_null_column(columns[0]->size());
+        return ColumnHelper::create_const_null_column(context->get_allocator(), columns[0]->size());
     }
 
     return convert_tz_const(context, columns, ctc->from_tz, ctc->to_tz);
@@ -290,9 +290,9 @@ StatusOr<ColumnPtr> TimeFunctions::utc_timestamp(FunctionContext* context, const
     if (dtv.from_unixtime(state->timestamp_ms() / 1000, "+00:00")) {
         TimestampValue ts;
         ts.from_timestamp(dtv.year(), dtv.month(), dtv.day(), dtv.hour(), dtv.minute(), dtv.second(), 0);
-        return ColumnHelper::create_const_column<TYPE_DATETIME>(ts, 1);
+        return ColumnHelper::create_const_column<TYPE_DATETIME>(context->get_allocator(), ts, 1);
     } else {
-        return ColumnHelper::create_const_null_column(1);
+        return ColumnHelper::create_const_null_column(context->get_allocator(), 1);
     }
 }
 
@@ -301,9 +301,9 @@ StatusOr<ColumnPtr> TimeFunctions::utc_time(FunctionContext* context, const Colu
     DateTimeValue dtv;
     if (dtv.from_unixtime(state->timestamp_ms() / 1000, "+00:00")) {
         double seconds = dtv.hour() * 3600 + dtv.minute() * 60 + dtv.second();
-        return ColumnHelper::create_const_column<TYPE_TIME>(seconds, 1);
+        return ColumnHelper::create_const_column<TYPE_TIME>(context->get_allocator(), seconds, 1);
     } else {
-        return ColumnHelper::create_const_null_column(1);
+        return ColumnHelper::create_const_null_column(context->get_allocator(), 1);
     }
 }
 
@@ -316,7 +316,7 @@ static const std::vector<int> NOW_PRECISION_FACTORS = {1000000, 100000, 10000, 1
 StatusOr<ColumnPtr> TimeFunctions::current_timezone(FunctionContext* context, const Columns& columns) {
     starrocks::RuntimeState* state = context->state();
     const std::string& timezone = state->timezone();
-    return ColumnHelper::create_const_column<TYPE_VARCHAR>(timezone, 1);
+    return ColumnHelper::create_const_column<TYPE_VARCHAR>(context->get_allocator(), timezone, 1);
 }
 
 StatusOr<ColumnPtr> TimeFunctions::now(FunctionContext* context, const Columns& columns) {
@@ -324,12 +324,12 @@ StatusOr<ColumnPtr> TimeFunctions::now(FunctionContext* context, const Columns& 
     int64_t timestamp_us = state->timestamp_us();
     DateTimeValue dtv;
     if (!dtv.from_unixtime(timestamp_us / 1000000, state->timezone_obj())) {
-        return ColumnHelper::create_const_null_column(1);
+        return ColumnHelper::create_const_null_column(context->get_allocator(), 1);
     }
     if (columns.empty()) {
         TimestampValue ts;
         ts.from_timestamp(dtv.year(), dtv.month(), dtv.day(), dtv.hour(), dtv.minute(), dtv.second(), 0);
-        return ColumnHelper::create_const_column<TYPE_DATETIME>(ts, 1);
+        return ColumnHelper::create_const_column<TYPE_DATETIME>(context->get_allocator(), ts, 1);
     }
 
     if (context->is_constant_column(1)) {
@@ -344,7 +344,7 @@ StatusOr<ColumnPtr> TimeFunctions::now(FunctionContext* context, const Columns& 
         TimestampValue ts;
         ts.from_timestamp(dtv.year(), dtv.month(), dtv.day(), dtv.hour(), dtv.minute(), dtv.second(),
                           timestamp_us % 1000000 / NOW_PRECISION_FACTORS[precision] * NOW_PRECISION_FACTORS[precision]);
-        return ColumnHelper::create_const_column<TYPE_DATETIME>(ts, 1);
+        return ColumnHelper::create_const_column<TYPE_DATETIME>(context->get_allocator(), ts, 1);
     }
 
     auto size = columns[0]->size();
@@ -372,9 +372,9 @@ StatusOr<ColumnPtr> TimeFunctions::curtime(FunctionContext* context, const Colum
     DateTimeValue dtv;
     if (dtv.from_unixtime(state->timestamp_ms() / 1000, state->timezone())) {
         double seconds = dtv.hour() * 3600 + dtv.minute() * 60 + dtv.second();
-        return ColumnHelper::create_const_column<TYPE_TIME>(seconds, 1);
+        return ColumnHelper::create_const_column<TYPE_TIME>(context->get_allocator(), seconds, 1);
     } else {
-        return ColumnHelper::create_const_null_column(1);
+        return ColumnHelper::create_const_null_column(context->get_allocator(), 1);
     }
 }
 
@@ -384,9 +384,9 @@ StatusOr<ColumnPtr> TimeFunctions::curdate(FunctionContext* context, const Colum
     if (dtv.from_unixtime(state->timestamp_ms() / 1000, state->timezone())) {
         DateValue dv;
         dv.from_date(dtv.year(), dtv.month(), dtv.day());
-        return ColumnHelper::create_const_column<TYPE_DATE>(dv, 1);
+        return ColumnHelper::create_const_column<TYPE_DATE>(context->get_allocator(), dv, 1);
     } else {
-        return ColumnHelper::create_const_null_column(1);
+        return ColumnHelper::create_const_null_column(context->get_allocator(), 1);
     }
 }
 
@@ -2131,7 +2131,7 @@ StatusOr<ColumnPtr> TimeFunctions::_unixtime_to_datetime(FunctionContext* contex
 
     auto size = columns[0]->size();
     if (conv_ctx->result_is_null) {
-        return ColumnHelper::create_const_null_column(size);
+        return ColumnHelper::create_const_null_column(context->get_allocator(), size);
     }
 
     ColumnViewer<TIMESTAMP_TYPE> timestamp_viewer(columns[0]);
@@ -2700,7 +2700,7 @@ template <LogicalType Type>
 StatusOr<ColumnPtr> standard_format(FunctionContext* context, const std::string& fmt, int len,
                                     const starrocks::Columns& columns) {
     if (fmt.size() <= 0) {
-        return ColumnHelper::create_const_null_column(columns[0]->size());
+        return ColumnHelper::create_const_null_column(context->get_allocator(), columns[0]->size());
     }
 
     auto ts_viewer = ColumnViewer<Type>(columns[0]);
@@ -2894,7 +2894,7 @@ template <LogicalType Type>
 StatusOr<ColumnPtr> joda_standard_format(FunctionContext* context, const std::string& fmt, int len,
                                          const starrocks::Columns& columns) {
     if (fmt.size() <= 0) {
-        return ColumnHelper::create_const_null_column(columns[0]->size());
+        return ColumnHelper::create_const_null_column(context->get_allocator(), columns[0]->size());
     }
 
     auto ts_viewer = ColumnViewer<Type>(columns[0]);
@@ -3377,7 +3377,7 @@ StatusOr<ColumnPtr> TimeFunctions::next_day(FunctionContext* context, const Colu
 StatusOr<ColumnPtr> TimeFunctions::next_day_wdc(FunctionContext* context, const Columns& columns) {
     auto* wdc = reinterpret_cast<WeekDayCtx*>(context->get_function_state(FunctionContext::FRAGMENT_LOCAL));
     if (wdc->dow_weekday == -2) {
-        return ColumnHelper::create_const_null_column(columns[0]->size());
+        return ColumnHelper::create_const_null_column(context->get_allocator(), columns[0]->size());
     }
     auto time_viewer = ColumnViewer<TYPE_DATETIME>(columns[0]);
     auto size = columns[0]->size();
@@ -3468,7 +3468,7 @@ StatusOr<ColumnPtr> TimeFunctions::previous_day(FunctionContext* context, const 
 StatusOr<ColumnPtr> TimeFunctions::previous_day_wdc(FunctionContext* context, const Columns& columns) {
     auto* wdc = reinterpret_cast<WeekDayCtx*>(context->get_function_state(FunctionContext::FRAGMENT_LOCAL));
     if (wdc->dow_weekday == -2) {
-        return ColumnHelper::create_const_null_column(columns[0]->size());
+        return ColumnHelper::create_const_null_column(context->get_allocator(), columns[0]->size());
     }
     auto time_viewer = ColumnViewer<TYPE_DATETIME>(columns[0]);
     auto size = columns[0]->size();

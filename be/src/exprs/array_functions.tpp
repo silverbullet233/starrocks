@@ -349,12 +349,12 @@ public:
         if (state->left_is_notnull_const && state->right_is_notnull_const) {
             ColumnPtr result_column;
             if (state->has_overlapping) {
-                result_column = ColumnHelper::create_const_column<TYPE_BOOLEAN>(1, chunk_size);
+                result_column = ColumnHelper::create_const_column<TYPE_BOOLEAN>(ctx->get_allocator(), 1, chunk_size);
             } else {
-                result_column = ColumnHelper::create_const_column<TYPE_BOOLEAN>(0, chunk_size);
+                result_column = ColumnHelper::create_const_column<TYPE_BOOLEAN>(ctx->get_allocator(), 0, chunk_size);
             }
             if (is_nullable) {
-                result_column = ColumnHelper::cast_to_nullable_column(std::move(result_column));
+                result_column = ColumnHelper::cast_to_nullable_column(ctx->get_allocator(), std::move(result_column));
             }
             return result_column;
         } else if (state->left_is_notnull_const) {
@@ -821,7 +821,7 @@ public:
         size_t chunk_size = columns[0]->size();
 
         if (columns[0]->only_null()) {
-            return ColumnHelper::create_const_null_column(chunk_size);
+            return ColumnHelper::create_const_null_column(ctx->get_allocator(), chunk_size);
         }
 
         ColumnPtr src_column = ColumnHelper::unpack_and_duplicate_const_column(chunk_size, columns[0]);
@@ -1571,7 +1571,7 @@ public:
         } else {
             LOG(ERROR) << "array_avg doesn't support column type: " << ElementType;
             DCHECK(false) << "array_avg doesn't support column type: " << ElementType;
-            auto all_null = ColumnHelper::create_const_null_column(1);
+            auto all_null = ColumnHelper::create_const_null_column(context->get_allocator(), 1);
             return all_null;
         }
     }
@@ -1591,7 +1591,7 @@ public:
         } else {
             LOG(ERROR) << "array_sum doesn't support column type: " << ElementType;
             DCHECK(false) << "array_sum doesn't support column type: " << ElementType;
-            auto all_null = ColumnHelper::create_const_null_column(1);
+            auto all_null = ColumnHelper::create_const_null_column(context->get_allocator(), 1);
             return all_null;
         }
     }
@@ -1773,7 +1773,7 @@ inline size_t calculate_accurate_step_count(
         }                                                                                                          \
                                                                                                                    \
         auto array_offsets = UInt32Column::create(ctx->get_allocator());                                          \
-        auto array_elements = ColumnHelper::create_column(TypeDescriptor(ResultType), true, false, 0);             \
+        auto array_elements = ColumnHelper::create_column(ctx->get_allocator(), TypeDescriptor(ResultType), true, false, 0);             \
                                                                                                                    \
         auto offsets = array_offsets.get();                                                                        \
         auto elements = down_cast<NullableColumn*>(array_elements.get());                                          \
@@ -1859,7 +1859,7 @@ inline size_t calculate_accurate_step_count(
                                                                                                                    \
         if (all_const_cols) {                                                                                      \
             if (nulls && nulls->is_null(0)) {                                                                      \
-                return ColumnHelper::create_const_null_column(num_rows);                                           \
+                return ColumnHelper::create_const_null_column(ctx->get_allocator(), num_rows);                                           \
             } else {                                                                                               \
                 return ConstColumn::create(ctx->get_allocator(), std::move(dst), num_rows);                                              \
             }                                                                                                      \
@@ -2009,7 +2009,7 @@ public:
             }
 
             auto array_offsets = UInt32Column::create(ctx->get_allocator());
-            auto array_elements = ColumnHelper::create_column(TypeDescriptor(Type), true, false, 0);
+            auto array_elements = ColumnHelper::create_column(ctx->get_allocator(), TypeDescriptor(Type), true, false, 0);
 
             auto offsets = array_offsets.get();
             auto elements = down_cast<NullableColumn*>(array_elements.get());
@@ -2079,7 +2079,7 @@ public:
 
             if (all_const_cols) {
                 if (nulls->is_null(0)) {
-                    return ColumnHelper::create_const_null_column(num_rows);
+                    return ColumnHelper::create_const_null_column(ctx->get_allocator(), num_rows);
                 } else {
                     return ConstColumn::create(ctx->get_allocator(), std::move(dst), num_rows);
                 }

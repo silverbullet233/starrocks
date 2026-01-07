@@ -44,7 +44,7 @@ public:
         // handle nullable column
         const size_t num_rows = col->size();
         if (col->only_null()) {
-            return ColumnHelper::create_const_null_column(num_rows);
+            return ColumnHelper::create_const_null_column(context->get_allocator(), num_rows);
         }
 
         NullColumnPtr union_null_column = NullColumn::create(context->get_allocator(), num_rows, false);

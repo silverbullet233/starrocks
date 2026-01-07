@@ -103,7 +103,7 @@ public:
 
     MutableColumnPtr build(bool is_const) {
         if (is_const && _has_null) {
-            return ColumnHelper::create_const_null_column(_column->size());
+            return ColumnHelper::create_const_null_column(_allocator, _column->size());
         }
 
         if (is_const) {

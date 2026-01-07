@@ -149,7 +149,7 @@ StatusOr<ColumnPtr> BitmapFunctions::bitmap_count(FunctionContext* context, cons
 
 StatusOr<ColumnPtr> BitmapFunctions::bitmap_empty(FunctionContext* context, const starrocks::Columns& columns) {
     BitmapValue bitmap;
-    return ColumnHelper::create_const_column<TYPE_OBJECT>(&bitmap, 1);
+    return ColumnHelper::create_const_column<TYPE_OBJECT>(context->get_allocator(), &bitmap, 1);
 }
 
 StatusOr<ColumnPtr> BitmapFunctions::bitmap_or(FunctionContext* context, const starrocks::Columns& columns) {
@@ -406,7 +406,7 @@ StatusOr<ColumnPtr> BitmapFunctions::bitmap_to_array(FunctionContext* context, c
                                        NullColumn::create(context->get_allocator(), offset, 0)),
                 std::move(array_offsets));
     } else if (columns[0]->only_null()) {
-        return ColumnHelper::create_const_null_column(size);
+        return ColumnHelper::create_const_null_column(context->get_allocator(), size);
     } else {
         return NullableColumn::create(
                 context->get_allocator(),

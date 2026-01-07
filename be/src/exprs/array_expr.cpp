@@ -53,10 +53,10 @@ public:
         int cal_rows = all_const ? 1 : output_rows;
         for (size_t i = 0; i < num_elements; i++) {
             element_columns[i] =
-                    ColumnHelper::unfold_const_column(element_type, cal_rows, std::move(element_columns[i]));
+                    ColumnHelper::unfold_const_column(context->get_allocator(), element_type, cal_rows, std::move(element_columns[i]));
         }
 
-        auto array_elements = ColumnHelper::create_column(element_type, true);
+        auto array_elements = ColumnHelper::create_column(context->get_allocator(), element_type, true);
         auto array_offsets = UInt32Column::create(context->get_allocator());
 
         // fill array column.

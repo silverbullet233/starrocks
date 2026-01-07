@@ -28,7 +28,7 @@ CastColumnIterator::CastColumnIterator(std::unique_ptr<ColumnIterator> source_it
           _cast_expr(nullptr),
           _source_chunk() {
     auto slot_id = SlotId{0};
-    auto column = ColumnHelper::create_column(source_type, nullable_source);
+    auto column = ColumnHelper::create_column(memory::get_default_allocator(), source_type, nullable_source);
     auto slot_desc = SlotDescriptor(slot_id, "", source_type);
     auto column_ref = _obj_pool->add(new ColumnRef(&slot_desc));
     CHECK(column != nullptr) << "source type=" << source_type;
@@ -43,7 +43,7 @@ CastColumnIterator::~CastColumnIterator() = default;
 void CastColumnIterator::do_cast(Column* target) {
     auto cast_result = _cast_expr->evaluate(nullptr, &_source_chunk);
     cast_result =
-            ColumnHelper::unfold_const_column(_cast_expr->type(), _source_chunk.num_rows(), std::move(cast_result));
+            ColumnHelper::unfold_const_column(memory::get_default_allocator(), _cast_expr->type(), _source_chunk.num_rows(), std::move(cast_result));
     if ((target->is_nullable() == cast_result->is_nullable()) && (target->size() == 0)) {
         target->swap_column(*(cast_result->as_mutable_raw_ptr()));
     } else if (!target->is_nullable() && cast_result->is_nullable()) {

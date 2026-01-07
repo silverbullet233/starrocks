@@ -87,7 +87,7 @@ public:
 
         // needle is too small so we can not get even single Ngram, so they are not similar at all
         if (needle.get_size() < gram_num) {
-            return ColumnHelper::create_const_column<TYPE_DOUBLE>(0, haystack_column->size());
+            return ColumnHelper::create_const_column<TYPE_DOUBLE>(context->get_allocator(), 0, haystack_column->size());
         }
 
         auto state = reinterpret_cast<Ngramstate*>(context->get_function_state(FunctionContext::FRAGMENT_LOCAL));
@@ -96,12 +96,12 @@ public:
             if (context->is_constant_column(0)) {
                 // already calculated in prepare and cache result in state
                 DCHECK(state->result != -1);
-                return ColumnHelper::create_const_column<TYPE_DOUBLE>(state->result, haystack_column->size());
+                return ColumnHelper::create_const_column<TYPE_DOUBLE>(context->get_allocator(), state->result, haystack_column->size());
             } else {
                 // haystack is const column but not constant
                 float result = haystack_const_and_needle_const(
                         ColumnHelper::get_const_value<TYPE_VARCHAR>(haystack_column), *map, context, gram_num);
-                return ColumnHelper::create_const_column<TYPE_DOUBLE>(result, haystack_column->size());
+                return ColumnHelper::create_const_column<TYPE_DOUBLE>(context->get_allocator(), result, haystack_column->size());
             }
         } else {
             return haystack_vector_and_needle_const(haystack_column, *map, context, gram_num);

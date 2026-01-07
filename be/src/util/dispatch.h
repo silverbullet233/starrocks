@@ -19,17 +19,17 @@
 namespace starrocks {
 template <template <bool, bool, LogicalType Type, typename... Args> typename Function, LogicalType Type,
           typename... Args>
-ColumnPtr dispatch_nonull_template(ColumnPtr& col0, ColumnPtr& col1, Args&&... args) {
+ColumnPtr dispatch_nonull_template(memory::Allocator* allocator, ColumnPtr& col0, ColumnPtr& col1, Args&&... args) {
     bool a = col0->is_constant();
     bool b = col1->is_constant();
     if (a && b) {
-        return Function<true, true, Type>::eval(col0, col1, std::forward<Args>(args)...);
+        return Function<true, true, Type>::eval(allocator, col0, col1, std::forward<Args>(args)...);
     } else if (a && !b) {
-        return Function<true, false, Type>::eval(col0, col1, std::forward<Args>(args)...);
+        return Function<true, false, Type>::eval(allocator, col0, col1, std::forward<Args>(args)...);
     } else if (!a && b) {
-        return Function<false, true, Type>::eval(col0, col1, std::forward<Args>(args)...);
+        return Function<false, true, Type>::eval(allocator, col0, col1, std::forward<Args>(args)...);
     } else if (!a && !b) {
-        return Function<false, false, Type>::eval(col0, col1, std::forward<Args>(args)...);
+        return Function<false, false, Type>::eval(allocator, col0, col1, std::forward<Args>(args)...);
     }
     __builtin_unreachable();
 };

@@ -634,7 +634,7 @@ Status OlapTableSink::_send_chunk(RuntimeState* state, Chunk* chunk, bool nonblo
                     MutableColumnPtr output_column = nullptr;
                     if (tmp->only_null()) {
                         // Only null column maybe lost type info
-                        output_column = ColumnHelper::create_column(_output_tuple_desc->slots()[i]->type(), true);
+                        output_column = ColumnHelper::create_column(_output_expr_ctxs[i]->get_allocator(), _output_tuple_desc->slots()[i]->type(), true);
                         output_column->append_nulls(num_rows);
                     } else {
                         // Unpack normal const column

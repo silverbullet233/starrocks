@@ -187,10 +187,10 @@ struct RuntimeColumnPredicateBuilder {
         ColumnPtr min_const_column(const TypeDescriptor& col_type, ObjectPool* pool) {
             auto min_decode_value = min_value(pool);
             if constexpr (lt_is_decimal<Type>) {
-                return ColumnHelper::create_const_decimal_column<Type>(min_decode_value, col_type.precision,
+                return ColumnHelper::create_const_decimal_column<Type>(memory::get_default_allocator(), min_decode_value, col_type.precision,
                                                                        col_type.scale, 1);
             } else {
-                return ColumnHelper::create_const_column<Type>(min_decode_value, 1);
+                return ColumnHelper::create_const_column<Type>(memory::get_default_allocator(), min_decode_value, 1);
             }
         }
 
@@ -198,10 +198,10 @@ struct RuntimeColumnPredicateBuilder {
         ColumnPtr max_const_column(const TypeDescriptor& col_type, ObjectPool* pool) {
             auto max_decode_value = max_value(pool);
             if constexpr (lt_is_decimal<Type>) {
-                return ColumnHelper::create_const_decimal_column<Type>(max_decode_value, col_type.precision,
+                return ColumnHelper::create_const_decimal_column<Type>(memory::get_default_allocator(), max_decode_value, col_type.precision,
                                                                        col_type.scale, 1);
             } else {
-                return ColumnHelper::create_const_column<Type>(max_decode_value, 1);
+                return ColumnHelper::create_const_column<Type>(memory::get_default_allocator(), max_decode_value, 1);
             }
         }
 

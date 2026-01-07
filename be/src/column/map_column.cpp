@@ -687,8 +687,8 @@ Status MapColumn::unfold_const_children(const starrocks::TypeDescriptor& type) {
     DCHECK(type.children.size() == 2) << "Map schema does not match data's";
     size_t keys_size = _keys->size();
     size_t values_size = _values->size();
-    _keys = ColumnHelper::unfold_const_column(type.children[0], keys_size, std::move(_keys));
-    _values = ColumnHelper::unfold_const_column(type.children[1], values_size, std::move(_values));
+    _keys = ColumnHelper::unfold_const_column(_allocator, type.children[0], keys_size, std::move(_keys));
+    _values = ColumnHelper::unfold_const_column(_allocator, type.children[1], values_size, std::move(_values));
     return Status::OK();
 }
 

@@ -228,7 +228,7 @@ public:
     template <LogicalType LType, LogicalType RType, LogicalType ResultType>
     static ColumnPtr evaluate(memory::Allocator* allocator, const ColumnPtr& v1, const ColumnPtr& v2) {
         if (v1->only_null() || v2->only_null()) {
-            return ColumnHelper::create_const_null_column(v1->size());
+            return ColumnHelper::create_const_null_column(allocator, v1->size());
         }
 
         const ColumnPtr& data1 = FunctionHelper::get_data_column_of_nullable(v1);
@@ -327,7 +327,7 @@ public:
     template <LogicalType LType, LogicalType RType, LogicalType ResultType>
     static ColumnPtr evaluate(memory::Allocator* allocator, const ColumnPtr& v1, const ColumnPtr& v2) {
         if (v1->only_null() || v2->only_null()) {
-            return ColumnHelper::create_const_null_column(v1->size());
+            return ColumnHelper::create_const_null_column(allocator, v1->size());
         }
 
         // UnpackConstColumnBinaryFunction will return const column if v1 and v2 all const column,
@@ -340,7 +340,7 @@ public:
 
             // is null, return only null
             if (1 == null_result->immutable_data()[0]) {
-                return ColumnHelper::create_const_null_column(v1->size());
+                return ColumnHelper::create_const_null_column(allocator, v1->size());
             } else {
                 // not null return const column
                 return FN::template evaluate<LType, RType, ResultType>(allocator, v1, v2);

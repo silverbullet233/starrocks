@@ -778,11 +778,11 @@ JsonFlattener::JsonFlattener(JsonPathDeriver& deriver) {
         leaf->type = types[i];
         leaf->index = i;
 
-        _flat_columns.emplace_back(ColumnHelper::create_column(TypeDescriptor(types[i]), true));
+        _flat_columns.emplace_back(ColumnHelper::create_column(memory::get_default_allocator(), TypeDescriptor(types[i]), true));
     }
 
     if (_has_remain) {
-        _flat_columns.emplace_back(ColumnHelper::create_column(TypeDescriptor(LogicalType::TYPE_JSON), false));
+        _flat_columns.emplace_back(ColumnHelper::create_column(memory::get_default_allocator(), TypeDescriptor(LogicalType::TYPE_JSON), false));
         _remain = down_cast<JsonColumn*>(_flat_columns.back().get());
     }
 }
@@ -797,11 +797,11 @@ JsonFlattener::JsonFlattener(const std::vector<std::string>& paths, const std::v
         leaf->type = types[i];
         leaf->index = i;
 
-        _flat_columns.emplace_back(ColumnHelper::create_column(TypeDescriptor(types[i]), true));
+        _flat_columns.emplace_back(ColumnHelper::create_column(memory::get_default_allocator(), TypeDescriptor(types[i]), true));
     }
 
     if (_has_remain) {
-        _flat_columns.emplace_back(ColumnHelper::create_column(TypeDescriptor(LogicalType::TYPE_JSON), false));
+        _flat_columns.emplace_back(ColumnHelper::create_column(memory::get_default_allocator(), TypeDescriptor(LogicalType::TYPE_JSON), false));
         _remain = down_cast<JsonColumn*>(_flat_columns.back().get());
     }
 }
@@ -1265,7 +1265,7 @@ HyperJsonTransformer::HyperJsonTransformer(const std::vector<std::string>& paths
                                            bool has_remain)
         : _dst_remain(has_remain), _dst_paths(std::move(paths)), _dst_types(types) {
     for (size_t i = 0; i < _dst_paths.size(); i++) {
-        _dst_columns.emplace_back(ColumnHelper::create_column(TypeDescriptor(types[i]), true));
+        _dst_columns.emplace_back(ColumnHelper::create_column(memory::get_default_allocator(), TypeDescriptor(types[i]), true));
     }
 
     if (_dst_remain) {

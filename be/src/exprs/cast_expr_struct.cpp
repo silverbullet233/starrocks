@@ -40,7 +40,7 @@ namespace starrocks {
 StatusOr<ColumnPtr> CastJsonToStruct::evaluate_checked(ExprContext* context, Chunk* input_chunk) {
     ASSIGN_OR_RETURN(ColumnPtr column, _children[0]->evaluate_checked(context, input_chunk));
     if (column->only_null()) {
-        return ColumnHelper::create_const_null_column(column->size());
+        return ColumnHelper::create_const_null_column(context->get_allocator(), column->size());
     }
 
     ColumnViewer<TYPE_JSON> src(column);

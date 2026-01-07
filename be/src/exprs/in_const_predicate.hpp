@@ -295,7 +295,7 @@ public:
     StatusOr<ColumnPtr> evaluate_with_filter(ExprContext* context, Chunk* ptr, uint8_t* filter) override {
         ASSIGN_OR_RETURN(ColumnPtr lhs, _children[0]->evaluate_checked(context, ptr));
         if (!_eq_null && ColumnHelper::count_nulls(lhs) == lhs->size()) {
-            return ColumnHelper::create_const_null_column(lhs->size());
+            return ColumnHelper::create_const_null_column(context->get_allocator(), lhs->size());
         }
         bool use_array = is_use_array();
 
@@ -333,7 +333,7 @@ public:
     }
 
     ColumnPtr get_all_values() const {
-        MutableColumnPtr values = ColumnHelper::create_column(TypeDescriptor{Type}, true);
+        MutableColumnPtr values = ColumnHelper::create_column(memory::get_default_allocator(), TypeDescriptor{Type}, true);
         if constexpr (isSliceLT<Type>) {
             for (auto v : _hash_set) {
                 // v -> SliceWithHash
@@ -531,7 +531,7 @@ public:
         }
         if (all_const) {
             if (res_null_data[0]) { // return only_null column
-                return ColumnHelper::create_const_null_column(size);
+                return ColumnHelper::create_const_null_column(allocator, size);
             } else {
                 return ConstColumn::create(allocator, std::move(res), size);
             }

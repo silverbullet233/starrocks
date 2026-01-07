@@ -972,7 +972,8 @@ Status Aggregator::convert_to_chunk_no_groupby(ChunkPtr* chunk) {
     if (UNLIKELY(_num_input_rows == 0 && _group_by_expr_ctxs.empty() && !use_intermediate)) {
         for (size_t i = 0; i < _agg_fn_types.size(); i++) {
             if (_agg_fn_types[i].is_nullable) {
-                agg_result_column[i] = ColumnHelper::create_column(_agg_fn_types[i].result_type, true);
+                auto* allocator = !_agg_fn_ctxs.empty() ? _agg_fn_ctxs[i]->get_allocator() : memory::get_default_allocator();
+                agg_result_column[i] = ColumnHelper::create_column(allocator, _agg_fn_types[i].result_type, true);
                 agg_result_column[i]->append_default();
             }
         }
@@ -1033,8 +1034,9 @@ Status Aggregator::output_chunk_by_streaming(Chunk* input_chunk, ChunkPtr* chunk
         DCHECK_EQ(num_rows, _group_by_columns[i]->size());
         // materialize group by const columns
         if (_group_by_columns[i]->is_constant()) {
+            auto* allocator = !_group_by_expr_ctxs.empty() ? _group_by_expr_ctxs[0]->get_allocator() : memory::get_default_allocator();
             auto res =
-                    ColumnHelper::unfold_const_column(_group_by_types[i].result_type, num_rows, _group_by_columns[i]);
+                    ColumnHelper::unfold_const_column(allocator, _group_by_types[i].result_type, num_rows, _group_by_columns[i]);
             result_chunk->append_column(std::move(res), slots[i]->id());
         } else {
             result_chunk->append_column(_group_by_columns[i], slots[i]->id());
@@ -1071,7 +1073,7 @@ Status Aggregator::output_chunk_by_streaming(Chunk* input_chunk, ChunkPtr* chunk
                 if (force_use_intermediate_as_output) {
                     if (agg_result_column[i]->is_nullable()) {
                         _agg_input_columns[i][0] =
-                                ColumnHelper::cast_to_nullable_column(std::move(_agg_input_columns[i][0]));
+                                ColumnHelper::cast_to_nullable_column(memory::get_default_allocator(), std::move(_agg_input_columns[i][0]));
                     }
                 }
                 result_chunk->append_column(std::move(_agg_input_columns[i][0]), slot_id);
@@ -1106,8 +1108,9 @@ Status Aggregator::convert_to_spill_format(Chunk* input_chunk, ChunkPtr* chunk) 
         DCHECK_EQ(num_rows, _group_by_columns[i]->size());
         // materialize group by const columns
         if (_group_by_columns[i]->is_constant()) {
+            auto* allocator = !_group_by_expr_ctxs.empty() ? _group_by_expr_ctxs[0]->get_allocator() : memory::get_default_allocator();
             auto res =
-                    ColumnHelper::unfold_const_column(_group_by_types[i].result_type, num_rows, _group_by_columns[i]);
+                    ColumnHelper::unfold_const_column(allocator, _group_by_types[i].result_type, num_rows, _group_by_columns[i]);
             result_chunk->append_column(std::move(res), slots[i]->id());
         } else {
             result_chunk->append_column(_group_by_columns[i], slots[i]->id());
@@ -1197,13 +1200,15 @@ MutableColumns Aggregator::_create_agg_result_columns(size_t num_rows, bool use_
         for (size_t i = 0; i < _agg_fn_types.size(); ++i) {
             // For count, count distinct, bitmap_union_int such as never return null function,
             // we need to create a not-nullable column.
-            agg_result_columns[i] = ColumnHelper::create_column(_agg_fn_types[i].result_type,
+            auto* allocator = !_agg_fn_ctxs.empty() ? _agg_fn_ctxs[i]->get_allocator() : memory::get_default_allocator();
+            agg_result_columns[i] = ColumnHelper::create_column(allocator, _agg_fn_types[i].result_type,
                                                                 _agg_fn_types[i].is_result_nullable<false>());
             agg_result_columns[i]->reserve(num_rows);
         }
     } else {
         for (size_t i = 0; i < _agg_fn_types.size(); ++i) {
-            agg_result_columns[i] = ColumnHelper::create_column(_agg_fn_types[i].serde_type,
+            auto* allocator = !_agg_fn_ctxs.empty() ? _agg_fn_ctxs[i]->get_allocator() : memory::get_default_allocator();
+            agg_result_columns[i] = ColumnHelper::create_column(allocator, _agg_fn_types[i].serde_type,
                                                                 _agg_fn_types[i].is_result_nullable<true>());
             agg_result_columns[i]->reserve(num_rows);
         }
@@ -1214,8 +1219,9 @@ MutableColumns Aggregator::_create_agg_result_columns(size_t num_rows, bool use_
 MutableColumns Aggregator::_create_group_by_columns(size_t num_rows) const {
     MutableColumns group_by_columns(_group_by_types.size());
     for (size_t i = 0; i < _group_by_types.size(); ++i) {
+        auto* allocator = !_group_by_expr_ctxs.empty() ? _group_by_expr_ctxs[i]->get_allocator() : memory::get_default_allocator();
         group_by_columns[i] =
-                ColumnHelper::create_column(_group_by_types[i].result_type, _group_by_types[i].is_nullable);
+                ColumnHelper::create_column(allocator, _group_by_types[i].result_type, _group_by_types[i].is_nullable);
         group_by_columns[i]->reserve(num_rows);
     }
     return group_by_columns;

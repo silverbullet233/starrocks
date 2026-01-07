@@ -505,7 +505,7 @@ StatusOr<ColumnPtr> LikePredicate::regex_match_full(FunctionContext* context, co
             return _predicate_const_regex(context, &result, value_viewer, value_column);
         } else {
             // because pattern_column is constant, so if it is nullable means it is only_null.
-            return ColumnHelper::create_const_null_column(value_column->size());
+            return ColumnHelper::create_const_null_column(context->get_allocator(), value_column->size());
         }
     }
 
@@ -591,7 +591,7 @@ StatusOr<ColumnPtr> LikePredicate::regex_match_partial(FunctionContext* context,
             return _predicate_const_regex(context, &result, value_viewer, value_column);
         } else {
             // because pattern_column is constant, so if it is nullable means it is only_null.
-            return ColumnHelper::create_const_null_column(value_column->size());
+            return ColumnHelper::create_const_null_column(context->get_allocator(), value_column->size());
         }
     }
 

@@ -548,7 +548,7 @@ ChunkPtr OrcChunkReader::_create_chunk(const std::vector<SlotDescriptor*>& src_s
         if (indices != nullptr) {
             src_index = (*indices)[src_index];
         }
-        auto col = ColumnHelper::create_column(_src_types[src_index], slot_desc->is_nullable());
+        auto col = ColumnHelper::create_column(memory::get_default_allocator(), _src_types[src_index], slot_desc->is_nullable());
         chunk->append_column(std::move(col), slot_desc->id());
     }
     return chunk;
@@ -572,7 +572,7 @@ StatusOr<ChunkPtr> OrcChunkReader::_cast_chunk(ChunkPtr* chunk,
         }
         // TODO(murphy) check status
         ASSIGN_OR_RETURN(ColumnPtr col, _cast_exprs[src_index]->evaluate_checked(nullptr, src.get()));
-        col = ColumnHelper::unfold_const_column(slot->type(), chunk_size, std::move(col));
+        col = ColumnHelper::unfold_const_column(memory::get_default_allocator(), slot->type(), chunk_size, std::move(col));
 
         // If we feed nullable column to cast_expr, it may return non-nullable column if it really doesn't have null values
         if (slot->is_nullable()) {

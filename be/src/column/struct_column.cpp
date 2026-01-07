@@ -562,7 +562,7 @@ Status StructColumn::unfold_const_children(const starrocks::TypeDescriptor& type
     auto num_fields = type.children.size();
     auto num_rows = _fields[0]->size();
     for (int i = 0; i < num_fields; ++i) {
-        _fields[i] = ColumnHelper::unfold_const_column(type.children[i], num_rows, std::move(_fields[i]));
+        _fields[i] = ColumnHelper::unfold_const_column(_allocator, type.children[i], num_rows, std::move(_fields[i]));
     }
     return Status::OK();
 }

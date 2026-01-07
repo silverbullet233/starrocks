@@ -26,6 +26,7 @@
 #include "exprs/agg/aggregate_state_allocator.h"
 #include "exprs/function_context.h"
 #include "runtime/agg_state_desc.h"
+#include "runtime/memory/allocator_v2.h"
 #include "util/bit_util.h"
 
 namespace starrocks {
@@ -107,7 +108,7 @@ protected:
                     "AggStateBaseFunction input column is nullable but agg function is not nullable");
         }
         if (arg_nullable && !unpack_column->is_nullable()) {
-            return ColumnHelper::cast_to_nullable_column(std::move(unpack_column));
+            return ColumnHelper::cast_to_nullable_column(memory::get_default_allocator(), std::move(unpack_column));
         }
         return unpack_column;
     }

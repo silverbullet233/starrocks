@@ -86,7 +86,7 @@ StatusOr<ChunkPtr> ChunksSorter::materialize_chunk_before_sort(Chunk* chunk, Tup
             if (col->is_nullable()) {
                 // Constant null column doesn't have original column data type information,
                 // so replace it by a nullable column of original data type filled with all NULLs.
-                MutableColumnPtr new_col = ColumnHelper::create_column(order_by_types[i].type_desc, true);
+                MutableColumnPtr new_col = ColumnHelper::create_column(expr_ctx->get_allocator(), order_by_types[i].type_desc, true);
                 new_col->append_nulls(row_num);
                 materialize_chunk->append_column(std::move(new_col), slots_in_row_descriptor[i]->id());
             } else {

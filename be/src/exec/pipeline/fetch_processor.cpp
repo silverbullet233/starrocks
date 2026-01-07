@@ -430,7 +430,7 @@ Status FetchProcessor::_build_output_chunk(RuntimeState* state, const BatchUnitP
         }
 
         for (const auto& slot : slots) {
-            auto column = ColumnHelper::create_column(slot->type(), slot->is_nullable());
+            auto column = ColumnHelper::create_column(memory::get_default_allocator(), slot->type(), slot->is_nullable());
             chunk->append_column(std::move(column), slot->id());
         }
         if (all_fetch_tasks.contains(tuple_id)) {
@@ -497,7 +497,7 @@ Status FetchProcessor::_build_output_chunk(RuntimeState* state, const BatchUnitP
             auto slot_desc = state->desc_tbl().get_slot_descriptor(slot);
             for (const auto& input_chunk : input_chunks) {
                 size_t num_rows = input_chunk->num_rows();
-                auto dst_column = ColumnHelper::create_column(slot_desc->type(), slot_desc->is_nullable());
+                auto dst_column = ColumnHelper::create_column(memory::get_default_allocator(), slot_desc->type(), slot_desc->is_nullable());
                 dst_column->append_nulls(num_rows);
                 input_chunk->append_column(std::move(dst_column), slot);
                 input_chunk->check_or_die();

@@ -241,7 +241,7 @@ void JoinHashMap<LT, CT, MT>::_probe_null_output(ChunkPtr* chunk, size_t count) 
         SlotDescriptor* slot = hash_table_slot.slot;
         bool need_output = is_lazy ? hash_table_slot.need_lazy_materialize : hash_table_slot.need_output;
         if (need_output) {
-            MutableColumnPtr column = ColumnHelper::create_column(slot->type(), true);
+            MutableColumnPtr column = ColumnHelper::create_column(memory::get_default_allocator(), slot->type(), true);
             column->append_nulls(count);
             (*chunk)->append_column(std::move(column), slot->id());
         }
@@ -274,7 +274,7 @@ void JoinHashMap<LT, CT, MT>::_build_default_output(ChunkPtr* chunk, size_t coun
         auto hash_tablet_slot = _table_items->build_slots[i];
         SlotDescriptor* slot = hash_tablet_slot.slot;
         if (hash_tablet_slot.need_output) {
-            MutableColumnPtr column = ColumnHelper::create_column(slot->type(), true);
+            MutableColumnPtr column = ColumnHelper::create_column(memory::get_default_allocator(), slot->type(), true);
             column->append_nulls(count);
             (*chunk)->append_column(std::move(column), slot->id());
         }
@@ -305,7 +305,7 @@ void JoinHashMap<LT, CT, MT>::_copy_probe_column(ColumnPtr& src_column, ChunkPtr
             (*chunk)->append_column(src_column, slot->id());
         }
     } else {
-        MutableColumnPtr dest_column = ColumnHelper::create_column(slot->type(), to_nullable);
+        MutableColumnPtr dest_column = ColumnHelper::create_column(memory::get_default_allocator(), slot->type(), to_nullable);
         dest_column->append_selective(*src_column, _probe_state->probe_index.data(), 0, _probe_state->count);
         (*chunk)->append_column(std::move(dest_column), slot->id());
     }
@@ -320,7 +320,7 @@ void JoinHashMap<LT, CT, MT>::_copy_probe_nullable_column(ColumnPtr& src_column,
         src_column->as_mutable_raw_ptr()->filter(_probe_state->probe_match_filter, _probe_state->probe_row_count);
         (*chunk)->append_column(src_column, slot->id());
     } else {
-        MutableColumnPtr dest_column = ColumnHelper::create_column(slot->type(), true);
+        MutableColumnPtr dest_column = ColumnHelper::create_column(memory::get_default_allocator(), slot->type(), true);
         dest_column->append_selective(*src_column, _probe_state->probe_index.data(), 0, _probe_state->count);
         (*chunk)->append_column(std::move(dest_column), slot->id());
     }

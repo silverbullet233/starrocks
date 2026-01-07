@@ -366,7 +366,7 @@ Status OlapTablePartitionParam::_create_partition_keys(const std::vector<TExprNo
         const auto type = type_desc.type;
         bool is_nullable = _partition_slot_descs[i]->is_nullable();
         if (_partition_columns[i] == nullptr) {
-            _partition_columns[i] = ColumnHelper::create_column(type_desc, is_nullable);
+            _partition_columns[i] = ColumnHelper::create_column(memory::get_default_allocator(), type_desc, is_nullable);
         }
         if (is_nullable) {
             auto column = ColumnHelper::as_raw_column<NullableColumn>(_partition_columns[i]);
@@ -689,7 +689,7 @@ Status OlapTablePartitionParam::find_tablets(Chunk* chunk, std::vector<OlapTable
         if (!_partitions_expr_ctxs.empty()) {
             for (size_t i = 0; i < partition_columns.size(); ++i) {
                 ASSIGN_OR_RETURN(auto partition_column, _partitions_expr_ctxs[i]->evaluate(chunk));
-                partition_columns[i] = ColumnHelper::unfold_const_column(_partition_slot_descs[i]->type(), num_rows,
+                partition_columns[i] = ColumnHelper::unfold_const_column(_partitions_expr_ctxs[i]->get_allocator(), _partition_slot_descs[i]->type(), num_rows,
                                                                          std::move(partition_column));
             }
         } else {

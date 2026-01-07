@@ -559,13 +559,13 @@ void CrossJoinNode::_init_chunk(ChunkPtr* chunk) {
     for (size_t i = 0; i < _probe_column_count; ++i) {
         SlotDescriptor* slot = _col_types[i];
         ColumnPtr& src_col = _probe_chunk->get_column_by_slot_id(slot->id());
-        auto new_col = ColumnHelper::create_column(slot->type(), src_col->is_nullable());
+        auto new_col = ColumnHelper::create_column(memory::get_default_allocator(), slot->type(), src_col->is_nullable());
         new_chunk->append_column(std::move(new_col), slot->id());
     }
     for (size_t i = 0; i < _build_column_count; ++i) {
         SlotDescriptor* slot = _col_types[_probe_column_count + i];
         ColumnPtr& src_col = _build_chunk->get_column_by_slot_id(slot->id());
-        MutableColumnPtr new_col = ColumnHelper::create_column(slot->type(), src_col->is_nullable());
+        MutableColumnPtr new_col = ColumnHelper::create_column(memory::get_default_allocator(), slot->type(), src_col->is_nullable());
         new_chunk->append_column(std::move(new_col), slot->id());
     }
 

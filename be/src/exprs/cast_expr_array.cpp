@@ -144,14 +144,14 @@ StatusOr<ColumnPtr> CastStringToArray::evaluate_checked(ExprContext* context, Ch
         const auto* input = down_cast<const ConstColumn*>(_constant_res.get());
         size_t rows = input_chunk == nullptr ? 1 : input_chunk->num_rows();
         if (input->only_null()) {
-            return ColumnHelper::create_const_null_column(rows);
+            return ColumnHelper::create_const_null_column(context->get_allocator(), rows);
         } else {
             return ConstColumn::create(context->get_allocator(), input->data_column()->clone(), rows);
         }
     }
     ASSIGN_OR_RETURN(ColumnPtr column, _children[0]->evaluate_checked(context, input_chunk));
     if (column->only_null()) {
-        return ColumnHelper::create_const_null_column(column->size());
+        return ColumnHelper::create_const_null_column(context->get_allocator(), column->size());
     }
 
     LogicalType element_type = _cast_elements_expr->type().type;
@@ -217,7 +217,7 @@ StatusOr<ColumnPtr> CastStringToArray::evaluate_checked(ExprContext* context, Ch
         SlotId slot_id = down_cast<ColumnRef*>(_cast_elements_expr->get_child(0))->slot_id();
         chunk->append_column(elements, slot_id);
         ASSIGN_OR_RETURN(auto cast_res, _cast_elements_expr->evaluate_checked(context, chunk.get()));
-        elements = ColumnHelper::cast_to_nullable_column(std::move(cast_res));
+        elements = ColumnHelper::cast_to_nullable_column(context->get_allocator(), std::move(cast_res));
     }
 
     // 3. Assemble elements into array column
@@ -257,7 +257,7 @@ Slice CastStringToArray::_unquote(Slice slice) const {
 StatusOr<ColumnPtr> CastJsonToArray::evaluate_checked(ExprContext* context, Chunk* input_chunk) {
     ASSIGN_OR_RETURN(ColumnPtr column, _children[0]->evaluate_checked(context, input_chunk));
     if (column->only_null()) {
-        return ColumnHelper::create_const_null_column(column->size());
+        return ColumnHelper::create_const_null_column(context->get_allocator(), column->size());
     }
 
     LogicalType element_type = _cast_elements_expr->type().type;
@@ -297,7 +297,7 @@ StatusOr<ColumnPtr> CastJsonToArray::evaluate_checked(ExprContext* context, Chun
         SlotId slot_id = down_cast<ColumnRef*>(_cast_elements_expr->get_child(0))->slot_id();
         chunk->append_column(elements, slot_id);
         ASSIGN_OR_RETURN(auto cast_res, _cast_elements_expr->evaluate_checked(context, chunk.get()));
-        elements = ColumnHelper::cast_to_nullable_column(std::move(cast_res));
+        elements = ColumnHelper::cast_to_nullable_column(context->get_allocator(), std::move(cast_res));
     }
 
     // 3. Assemble elements into array column

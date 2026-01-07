@@ -46,7 +46,7 @@ StatusOr<ColumnPtr> PercentileFunctions::percentile_hash(FunctionContext* contex
 
 StatusOr<ColumnPtr> PercentileFunctions::percentile_empty(FunctionContext* context, const Columns& columns) {
     PercentileValue value;
-    return ColumnHelper::create_const_column<TYPE_PERCENTILE>(&value, 1);
+    return ColumnHelper::create_const_column<TYPE_PERCENTILE>(context->get_allocator(), &value, 1);
 }
 
 StatusOr<ColumnPtr> PercentileFunctions::percentile_approx_raw(FunctionContext* context, const Columns& columns) {

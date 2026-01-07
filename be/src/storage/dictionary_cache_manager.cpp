@@ -97,7 +97,7 @@ Status DictionaryCacheManager::refresh(const PProcessDictionaryCacheRequest* req
         }
         if (ori_key_column->is_nullable()) {
             ori_key_column =
-                    ColumnHelper::update_column_nullable(false, std::move(ori_key_column), ori_key_column->size());
+                    ColumnHelper::update_column_nullable(memory::get_default_allocator(), false, std::move(ori_key_column), ori_key_column->size());
         }
         key_chunk->get_column_by_index(i).swap(ori_key_column);
     }
@@ -110,7 +110,7 @@ Status DictionaryCacheManager::refresh(const PProcessDictionaryCacheRequest* req
         }
         if (ori_value_column->is_nullable()) {
             ori_value_column =
-                    ColumnHelper::update_column_nullable(false, std::move(ori_value_column), ori_value_column->size());
+                    ColumnHelper::update_column_nullable(memory::get_default_allocator(), false, std::move(ori_value_column), ori_value_column->size());
         }
         value_chunk->get_column_by_index(i).swap(ori_value_column);
     }

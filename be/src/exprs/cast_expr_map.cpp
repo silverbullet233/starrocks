@@ -23,7 +23,7 @@ namespace starrocks {
 StatusOr<ColumnPtr> CastJsonToMap::evaluate_checked(ExprContext* context, Chunk* ptr) {
     ASSIGN_OR_RETURN(ColumnPtr src_column, _children[0]->evaluate_checked(context, ptr));
     if (ColumnHelper::count_nulls(src_column) == src_column->size()) {
-        return ColumnHelper::create_const_null_column(src_column->size());
+        return ColumnHelper::create_const_null_column(context->get_allocator(), src_column->size());
     }
 
     ColumnViewer<TYPE_JSON> src_viewer(src_column);
@@ -65,14 +65,14 @@ StatusOr<ColumnPtr> CastJsonToMap::evaluate_checked(ExprContext* context, Chunk*
         SlotId slot_id = down_cast<ColumnRef*>(_key_cast_expr->get_child(0))->slot_id();
         chunk->append_column(keys_column, slot_id);
         ASSIGN_OR_RETURN(auto result, _key_cast_expr->evaluate_checked(context, chunk.get()));
-        keys_column = ColumnHelper::cast_to_nullable_column(std::move(result));
+        keys_column = ColumnHelper::cast_to_nullable_column(context->get_allocator(), std::move(result));
     }
     if (_value_cast_expr != nullptr) {
         ChunkPtr chunk = std::make_shared<Chunk>();
         SlotId slot_id = down_cast<ColumnRef*>(_value_cast_expr->get_child(0))->slot_id();
         chunk->append_column(values_column, slot_id);
         ASSIGN_OR_RETURN(auto result, _value_cast_expr->evaluate_checked(context, chunk.get()));
-        values_column = ColumnHelper::cast_to_nullable_column(std::move(result));
+        values_column = ColumnHelper::cast_to_nullable_column(context->get_allocator(), std::move(result));
     }
 
     auto map_column = MapColumn::create(context->get_allocator(), std::move(keys_column),

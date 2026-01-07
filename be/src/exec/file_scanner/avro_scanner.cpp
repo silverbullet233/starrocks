@@ -186,7 +186,7 @@ Status AvroScanner::_create_src_chunk(ChunkPtr* chunk) {
         if (slot_desc == nullptr) {
             continue;
         }
-        auto column = ColumnHelper::create_column(_avro_types[column_pos], true, false, 0, true);
+        auto column = ColumnHelper::create_column(memory::get_default_allocator(), _avro_types[column_pos], true, false, 0, true);
         (*chunk)->append_column(std::move(column), slot_desc->id());
     }
 
@@ -414,7 +414,7 @@ StatusOr<ChunkPtr> AvroScanner::_cast_chunk(const starrocks::ChunkPtr& src_chunk
         }
 
         ASSIGN_OR_RETURN(ColumnPtr col, _cast_exprs[column_pos]->evaluate_checked(nullptr, src_chunk.get()));
-        col = ColumnHelper::unfold_const_column(slot->type(), src_chunk->num_rows(), std::move(col));
+        col = ColumnHelper::unfold_const_column(memory::get_default_allocator(), slot->type(), src_chunk->num_rows(), std::move(col));
         cast_chunk->append_column(std::move(col), slot->id());
     }
 

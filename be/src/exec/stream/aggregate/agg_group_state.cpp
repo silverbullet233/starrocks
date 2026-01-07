@@ -243,7 +243,7 @@ Status AggGroupState::output_changes(size_t chunk_size, const Columns& group_by_
         if (!_detail_state_tables.empty() && agg_state->is_detail_agg_state()) {
             // detail table's output columns
             auto& agg_func_type = agg_state->agg_fn_type();
-            auto agg_col = ColumnHelper::create_column(agg_func_type.result_type,
+            auto agg_col = ColumnHelper::create_column(agg_state->agg_fn_ctx()->get_allocator(), agg_func_type.result_type,
                                                        agg_func_type.has_nullable_child & agg_func_type.is_nullable);
             auto count_col = Int64Column::create(memory::get_default_allocator());
             Columns detail_cols{std::move(agg_col), std::move(count_col)};
@@ -285,7 +285,7 @@ Status AggGroupState::output_changes(size_t chunk_size, const Columns& group_by_
         for (auto& agg_state : agg_intermediate_states) {
             auto& agg_fn_type = agg_state->agg_fn_type();
             auto* agg_func = agg_state->agg_function();
-            auto agg_col = ColumnHelper::create_column(agg_fn_type.serde_type, agg_fn_type.has_nullable_child);
+            auto agg_col = ColumnHelper::create_column(agg_state->agg_fn_ctx()->get_allocator(), agg_fn_type.serde_type, agg_fn_type.has_nullable_child);
             agg_col->reserve(chunk_size);
             agg_func->batch_serialize(agg_state->agg_fn_ctx(), chunk_size, agg_group_state,
                                       agg_state->agg_state_offset(), agg_col.get());

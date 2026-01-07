@@ -244,7 +244,7 @@ public:
         ASSIGN_OR_RETURN(auto r, _children[1]->evaluate_checked(context, ptr));
 
         if (l->only_null() || r->only_null()) {
-            return ColumnHelper::create_const_null_column(l->size());
+            return ColumnHelper::create_const_null_column(context->get_allocator(), l->size());
         }
 
         auto* data1 =
@@ -291,7 +291,7 @@ public:
         ASSIGN_OR_RETURN(auto r, _children[1]->evaluate_checked(context, chunk));
 
         if (l->only_null() || r->only_null()) {
-            return ColumnHelper::create_const_null_column(l->size());
+            return ColumnHelper::create_const_null_column(context->get_allocator(), l->size());
         }
         // a nullable column must not contain const columns
         size_t lstep = l->is_constant() ? 0 : 1;
@@ -344,12 +344,12 @@ public:
         ASSIGN_OR_RETURN(auto r, _children[1]->evaluate_checked(context, chunk));
 
         if (l->only_null() && r->only_null()) {
-            return ColumnHelper::create_const_column<TYPE_BOOLEAN>(true, l->size());
+            return ColumnHelper::create_const_column<TYPE_BOOLEAN>(context->get_allocator(), true, l->size());
         }
 
         auto is_null_predicate = [&](const ColumnPtr& column) -> ColumnPtr {
             if (!column->is_nullable() || !column->has_null()) {
-                return ColumnHelper::create_const_column<TYPE_BOOLEAN>(false, column->size());
+                return ColumnHelper::create_const_column<TYPE_BOOLEAN>(context->get_allocator(), false, column->size());
             }
             auto col = ColumnHelper::as_raw_column<NullableColumn>(column)->null_column();
             return VectorizedStrictUnaryFunction<isNullImpl>::evaluate<TYPE_NULL, TYPE_BOOLEAN>(context->get_allocator(), col);

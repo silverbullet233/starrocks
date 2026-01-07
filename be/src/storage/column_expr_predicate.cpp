@@ -157,7 +157,7 @@ bool ColumnExprPredicate::zone_map_filter(const ZoneMapDetail& detail) const {
     if (!_monotonic) return true;
     // construct column and chunk by zone map
     TypeDescriptor type_desc = TypeDescriptor::from_storage_type_info(_type_info.get());
-    MutableColumnPtr col = ColumnHelper::create_column(type_desc, detail.has_null());
+    MutableColumnPtr col = ColumnHelper::create_column(memory::get_default_allocator(), type_desc, detail.has_null());
     // null, min, max
     uint16_t size = 0;
     uint8_t selection[3];

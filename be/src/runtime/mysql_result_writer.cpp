@@ -116,7 +116,7 @@ StatusOr<TFetchDataResultPtr> MysqlResultWriter::_process_chunk(Chunk* chunk) {
     for (int i = 0; i < num_columns; ++i) {
         ASSIGN_OR_RETURN(ColumnPtr column, _output_expr_ctxs[i]->evaluate(chunk));
         column = _output_expr_ctxs[i]->root()->type().type == TYPE_TIME
-                         ? ColumnHelper::convert_time_column_from_double_to_str(column)
+                         ? ColumnHelper::convert_time_column_from_double_to_str(_output_expr_ctxs[i]->get_allocator(), column)
                          : column;
         result_columns.emplace_back(std::move(column));
     }
@@ -158,7 +158,7 @@ StatusOr<TFetchDataResultPtrs> MysqlResultWriter::process_chunk(Chunk* chunk) {
     for (int i = 0; i < num_columns; ++i) {
         ASSIGN_OR_RETURN(ColumnPtr column, _output_expr_ctxs[i]->evaluate(chunk));
         column = _output_expr_ctxs[i]->root()->type().type == TYPE_TIME
-                         ? ColumnHelper::convert_time_column_from_double_to_str(column)
+                         ? ColumnHelper::convert_time_column_from_double_to_str(_output_expr_ctxs[i]->get_allocator(), column)
                          : column;
         result_columns.emplace_back(std::move(column));
     }

@@ -402,7 +402,7 @@ ColumnPtr cast_int_from_string_fn(ExprContext* context, ColumnPtr column) {
     StringParser::ParseResult result;
     int sz = column.get()->size();
     if (column->only_null()) {
-        return ColumnHelper::create_const_null_column(sz);
+        return ColumnHelper::create_const_null_column(context->get_allocator(), sz);
     }
     if (column->is_constant()) {
         auto* input = ColumnHelper::get_binary_column(column.get());
@@ -412,9 +412,9 @@ ColumnPtr cast_int_from_string_fn(ExprContext* context, ColumnPtr column) {
             if constexpr (AllowThrowException) {
                 THROW_RUNTIME_ERROR_WITH_TYPES_AND_VALUE(FromType, ToType, slice.to_string());
             }
-            return ColumnHelper::create_const_null_column(sz);
+            return ColumnHelper::create_const_null_column(context->get_allocator(), sz);
         }
-        return ColumnHelper::create_const_column<ToType>(r, sz);
+        return ColumnHelper::create_const_column<ToType>(context->get_allocator(), r, sz);
     }
     auto res_data_column = RunTimeColumnType<ToType>::create(context->get_allocator());
     res_data_column->resize(sz);
@@ -862,7 +862,7 @@ static ColumnPtr cast_from_string_to_datetime_fn(ExprContext* context, ColumnPtr
     const int num_rows = column->size();
 
     if (column->only_null()) {
-        return ColumnHelper::create_const_null_column(num_rows);
+        return ColumnHelper::create_const_null_column(context->get_allocator(), num_rows);
     }
 
     if (column->is_constant()) {
@@ -876,9 +876,9 @@ static ColumnPtr cast_from_string_to_datetime_fn(ExprContext* context, ColumnPtr
             if constexpr (AllowThrowException) {
                 THROW_RUNTIME_ERROR_WITH_TYPES_AND_VALUE(FromType, ToType, slice_value.to_string());
             }
-            return ColumnHelper::create_const_null_column(num_rows);
+            return ColumnHelper::create_const_null_column(context->get_allocator(), num_rows);
         }
-        return ColumnHelper::create_const_column<ToType>(datetime_value, num_rows);
+        return ColumnHelper::create_const_column<ToType>(context->get_allocator(), datetime_value, num_rows);
     }
 
     auto res_data_column = RunTimeColumnType<ToType>::create(context->get_allocator());
@@ -1072,7 +1072,7 @@ public:
 
         size_t col_size = column->size();
         if (col_size != 0 && ColumnHelper::count_nulls(column) == col_size) {
-            return ColumnHelper::create_const_null_column(col_size);
+            return ColumnHelper::create_const_null_column(context->get_allocator(), col_size);
         }
         const TypeDescriptor& to_type = this->type();
 
@@ -1233,9 +1233,9 @@ DEFINE_BINARY_FUNCTION_WITH_IMPL(timeToDatetime, date, time) {
             if (dtv.from_unixtime(state->timestamp_ms() / 1000, state->timezone())) {                           \
                 DateValue dv;                                                                                   \
                 dv.from_date(dtv.year(), dtv.month(), dtv.day());                                               \
-                _now = ColumnHelper::create_const_column<TYPE_DATE>(dv, 1);                                     \
+                _now = ColumnHelper::create_const_column<TYPE_DATE>(context->get_allocator(), dv, 1);                                     \
             } else {                                                                                            \
-                _now = ColumnHelper::create_const_null_column(1);                                               \
+                _now = ColumnHelper::create_const_null_column(context->get_allocator(), 1);                                               \
             }                                                                                                   \
             return Status::OK();                                                                                \
         }                                                                                                       \
@@ -1243,7 +1243,7 @@ DEFINE_BINARY_FUNCTION_WITH_IMPL(timeToDatetime, date, time) {
         StatusOr<ColumnPtr> evaluate_checked(ExprContext* context, Chunk* ptr) override {                       \
             ASSIGN_OR_RETURN(ColumnPtr column, _children[0]->evaluate_checked(context, ptr));                   \
             if (ColumnHelper::count_nulls(column) == column->size() && column->size() != 0) {                   \
-                return ColumnHelper::create_const_null_column(column->size());                                  \
+                return ColumnHelper::create_const_null_column(context->get_allocator(), column->size());                                  \
             }                                                                                                   \
                                                                                                                 \
             return VectorizedStrictBinaryFunction<IMPL>::evaluate<TYPE_DATE, TYPE_TIME, TO_TYPE>(context->get_allocator(), _now, column); \
@@ -1341,7 +1341,7 @@ public:
     StatusOr<ColumnPtr> evaluate_checked(ExprContext* context, Chunk* ptr) override {
         ASSIGN_OR_RETURN(ColumnPtr column, _children[0]->evaluate_checked(context, ptr));
         if (ColumnHelper::count_nulls(column) == column->size() && column->size() != 0) {
-            return ColumnHelper::create_const_null_column(column->size());
+            return ColumnHelper::create_const_null_column(context->get_allocator(), column->size());
         }
 
         if constexpr (Type == TYPE_DATE || Type == TYPE_DATETIME || Type == TYPE_DECIMALV2 || Type == TYPE_BOOLEAN ||
@@ -1397,7 +1397,7 @@ private:
             }
         }
         if (type().len < 0) {
-            return ColumnHelper::create_const_null_column(column->size());
+            return ColumnHelper::create_const_null_column(context->get_allocator(), column->size());
         }
 
         // type.length > 0
@@ -1554,7 +1554,7 @@ static std::unique_ptr<Expr> create_slot_ref(const TypeDescriptor& type) {
 
 StatusOr<ColumnPtr> MustNullExpr::evaluate_checked(ExprContext* context, Chunk* ptr) {
     // only null
-    auto column = ColumnHelper::create_column(_type, true);
+    auto column = ColumnHelper::create_column(context->get_allocator(), _type, true);
     column->append_nulls(1);
     auto only_null = ConstColumn::create(context->get_allocator(), std::move(column), 1);
     if (ptr != nullptr) {

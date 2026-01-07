@@ -152,7 +152,7 @@ Status DictDecodeNode::get_next(RuntimeState* state, ChunkPtr* chunk, bool* eos)
         TypeDescriptor desc;
         desc.type = TYPE_VARCHAR;
 
-        decode_columns[i] = ColumnHelper::create_column(desc, encode_column->is_nullable());
+        decode_columns[i] = ColumnHelper::create_column(memory::get_default_allocator(), desc, encode_column->is_nullable());
         RETURN_IF_ERROR(_decoders[i]->decode_string(encode_column.get(), decode_columns[i].get()));
     }
 

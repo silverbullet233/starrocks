@@ -62,7 +62,7 @@ StatusOr<ColumnPtr> DictQueryExpr::evaluate_checked(ExprContext* context, Chunk*
             return Status::InternalError("invalid parameter : get NULL paramenter");
         }
         if (column->is_nullable()) {
-            column = ColumnHelper::update_column_nullable(false, std::move(column), column->size());
+            column = ColumnHelper::update_column_nullable(context->get_allocator(), false, std::move(column), column->size());
         }
     }
 

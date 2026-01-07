@@ -99,9 +99,9 @@ public:
         size_t num_rows = ptr->num_rows();
 
         if (_input_type == LogicalType::TYPE_VARCHAR) {
-            return _translate_string(input, num_rows);
+            return _translate_string(context, input, num_rows);
         } else {
-            return _translate_array(input, num_rows);
+            return _translate_array(context, input, num_rows);
         }
 
         return Status::InternalError(fmt::format("dictFuncExpr error on dict: {}", _dict_opt_ctx->slot_id));
@@ -110,7 +110,7 @@ public:
     Expr* clone(ObjectPool* pool) const override { return pool->add(new DictFuncExpr(_origin_expr, _dict_opt_ctx)); }
 
 private:
-    StatusOr<ColumnPtr> _translate_string(ColumnPtr& input, size_t num_rows) {
+    StatusOr<ColumnPtr> _translate_string(ExprContext* context, ColumnPtr& input, size_t num_rows) {
         if (_dict_opt_ctx->err_status.has_value()) {
             if (input->only_null()) {
                 RETURN_IF_ERROR((*_dict_opt_ctx->err_status)[_dict_opt_ctx->code_convert_map[0]]);
@@ -133,7 +133,7 @@ private:
         }
 
         if (_always_null) {
-            return ColumnHelper::create_const_null_column(num_rows);
+            return ColumnHelper::create_const_null_column(context->get_allocator(), num_rows);
         }
 
         if (_always_const) {
@@ -145,12 +145,12 @@ private:
         // is const column
         if (input->only_null() || input->is_constant()) {
             if (input->only_null() && _null_column_ptr && _null_column_ptr.get()->is_null(0)) {
-                return ColumnHelper::create_const_null_column(num_rows);
+                return ColumnHelper::create_const_null_column(context->get_allocator(), num_rows);
             } else {
                 auto idx = input->only_null() ? 0 : input->get(0).get_int32();
                 auto res = _data_column_ptr->clone_empty();
                 res->append_datum(_data_column_ptr->get(_dict_opt_ctx->code_convert_map[idx]));
-                return ConstColumn::create(memory::get_default_allocator(), std::move(res));
+                return ConstColumn::create(context->get_allocator(), std::move(res));
             }
         } else if (input->is_nullable()) {
             // is nullable
@@ -188,9 +188,9 @@ private:
         }
     }
 
-    StatusOr<ColumnPtr> _translate_array(ColumnPtr& array, size_t num_rows) {
+    StatusOr<ColumnPtr> _translate_array(ExprContext* context, ColumnPtr& array, size_t num_rows) {
         if ((array->only_null())) {
-            return ColumnHelper::create_const_null_column(num_rows);
+            return ColumnHelper::create_const_null_column(memory::get_default_allocator(), num_rows);
         }
 
         const ArrayColumn* array_col = nullptr;
@@ -201,30 +201,30 @@ private:
             array_col = down_cast<const ArrayColumn*>(const_column->data_column().get());
 
             auto element = array_col->elements_column();
-            auto offsets = UInt32Column::static_pointer_cast(array_col->offsets().clone(memory::get_default_allocator()));
+            auto offsets = UInt32Column::static_pointer_cast(array_col->offsets().clone(context->get_allocator()));
 
-            ASSIGN_OR_RETURN(ColumnPtr string_col, _translate_string(element, element->size()));
-            string_col = ColumnHelper::unfold_const_column(stringType, element->size(), std::move(string_col));
-            return ConstColumn::create(memory::get_default_allocator(), ArrayColumn::create(memory::get_default_allocator(), string_col, std::move(offsets)), num_rows);
+            ASSIGN_OR_RETURN(ColumnPtr string_col, _translate_string(context, element, element->size()));
+            string_col = ColumnHelper::unfold_const_column(context->get_allocator(), stringType, element->size(), std::move(string_col));
+            return ConstColumn::create(context->get_allocator(), ArrayColumn::create(context->get_allocator(), string_col, std::move(offsets)), num_rows);
         } else if (array->is_nullable()) {
             const auto* nullable = down_cast<const NullableColumn*>(array.get());
             array_col = down_cast<const ArrayColumn*>(nullable->data_column_raw_ptr());
             NullColumnPtr array_null = NullColumn::static_pointer_cast(nullable->null_column()->clone());
 
             auto element = array_col->elements_column();
-            auto offsets = UInt32Column::static_pointer_cast(array_col->offsets().clone(memory::get_default_allocator()));
+            auto offsets = UInt32Column::static_pointer_cast(array_col->offsets().clone(context->get_allocator()));
 
-            ASSIGN_OR_RETURN(ColumnPtr string_col, _translate_string(element, element->size()));
-            string_col = ColumnHelper::unfold_const_column(stringType, element->size(), std::move(string_col));
-            return NullableColumn::create(memory::get_default_allocator(), ArrayColumn::create(memory::get_default_allocator(), string_col, std::move(offsets)), array_null);
+            ASSIGN_OR_RETURN(ColumnPtr string_col, _translate_string(context, element, element->size()));
+            string_col = ColumnHelper::unfold_const_column(context->get_allocator(), stringType, element->size(), std::move(string_col));
+            return NullableColumn::create(context->get_allocator(), ArrayColumn::create(context->get_allocator(), string_col, std::move(offsets)), array_null);
         } else {
             array_col = down_cast<const ArrayColumn*>(array.get());
             auto element = array_col->elements_column();
-            auto offsets = UInt32Column::static_pointer_cast(array_col->offsets().clone(memory::get_default_allocator()));
+            auto offsets = UInt32Column::static_pointer_cast(array_col->offsets().clone(context->get_allocator()));
 
-            ASSIGN_OR_RETURN(ColumnPtr string_col, _translate_string(element, element->size()));
-            string_col = ColumnHelper::unfold_const_column(stringType, element->size(), std::move(string_col));
-            return ArrayColumn::create(memory::get_default_allocator(), string_col, std::move(offsets));
+            ASSIGN_OR_RETURN(ColumnPtr string_col, _translate_string(context, element, element->size()));
+            string_col = ColumnHelper::unfold_const_column(context->get_allocator(), stringType, element->size(), std::move(string_col));
+            return ArrayColumn::create(context->get_allocator(), string_col, std::move(offsets));
         }
     }
 
@@ -298,7 +298,7 @@ Status DictOptimizeParser::_eval_and_rewrite(ExprContext* ctx, Expr* expr, DictO
     auto result_column = ctx->evaluate(origin_expr, temp_chunk.get());
     if (UNLIKELY(!result_column.ok())) {
         // Certain string inputs cause the expression to generate an error status. This branch handles such cases.
-        auto result = ColumnHelper::create_column(origin_expr->type(), true);
+        auto result = ColumnHelper::create_column(ctx->get_allocator(), origin_expr->type(), true);
         size_t num_rows = codes.size();
         // slow path
         std::vector<Status> err_status;

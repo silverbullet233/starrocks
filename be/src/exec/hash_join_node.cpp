@@ -687,7 +687,7 @@ Status HashJoinNode::_evaluate_build_keys(const ChunkPtr& chunk) {
         const TypeDescriptor& data_type = ctx->root()->type();
         ASSIGN_OR_RETURN(ColumnPtr key_column, ctx->evaluate(chunk.get()));
         if (key_column->only_null()) {
-            MutableColumnPtr column = ColumnHelper::create_column(data_type, true);
+            MutableColumnPtr column = ColumnHelper::create_column(ctx->get_allocator(), data_type, true);
             column->append_nulls(num_rows);
             _key_columns.emplace_back(std::move(column));
         } else if (key_column->is_constant()) {
@@ -766,7 +766,7 @@ Status HashJoinNode::_probe(RuntimeState* state, ScopedTimer<MonotonicStopWatch>
                     for (auto& probe_expr_ctx : _probe_expr_ctxs) {
                         ASSIGN_OR_RETURN(ColumnPtr column_ptr, probe_expr_ctx->evaluate(_probing_chunk.get()));
                         if (column_ptr->is_nullable() && column_ptr->is_constant()) {
-                            MutableColumnPtr column = ColumnHelper::create_column(probe_expr_ctx->root()->type(), true);
+                            MutableColumnPtr column = ColumnHelper::create_column(probe_expr_ctx->get_allocator(), probe_expr_ctx->root()->type(), true);
                             column->append_nulls(_probing_chunk->num_rows());
                             _key_columns.emplace_back(std::move(column));
                         } else if (column_ptr->is_constant()) {

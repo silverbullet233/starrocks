@@ -305,7 +305,7 @@ bool ChunkChanger::change_chunk_v2(ChunkPtr& base_chunk, ChunkPtr& new_chunk, co
             }
 
             if (new_schema.field(i)->is_nullable()) {
-                new_col = ColumnHelper::cast_to_nullable_column(std::move(new_col));
+                new_col = ColumnHelper::cast_to_nullable_column(_schema_mapping[i].mv_expr_ctx->get_allocator(), std::move(new_col));
             }
 #ifdef BE_TEST
             VLOG(2) << "evaluate result:" << new_col->debug_string();

@@ -605,7 +605,7 @@ StatusOr<MutableColumnPtr> ArrayColumn::downgrade() {
 Status ArrayColumn::unfold_const_children(const starrocks::TypeDescriptor& type) {
     DCHECK(type.children.size() == 1) << "Array schema does not match data's";
     size_t col_size = _elements->size();
-    _elements = ColumnHelper::unfold_const_column(type.children[0], col_size, std::move(_elements));
+    _elements = ColumnHelper::unfold_const_column(_allocator, type.children[0], col_size, std::move(_elements));
     return Status::OK();
 }
 

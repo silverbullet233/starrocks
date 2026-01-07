@@ -162,11 +162,11 @@ DEFINE_UNARY_FN_WITH_IMPL(ZeroCheck, value) {
 
 // ============ math function impl ==========
 StatusOr<ColumnPtr> MathFunctions::pi(FunctionContext* context, const Columns& columns) {
-    return ColumnHelper::create_const_column<TYPE_DOUBLE>(M_PI, 1);
+    return ColumnHelper::create_const_column<TYPE_DOUBLE>(context->get_allocator(), M_PI, 1);
 }
 
 StatusOr<ColumnPtr> MathFunctions::e(FunctionContext* context, const Columns& columns) {
-    return ColumnHelper::create_const_column<TYPE_DOUBLE>(M_E, 1);
+    return ColumnHelper::create_const_column<TYPE_DOUBLE>(context->get_allocator(), M_E, 1);
 }
 
 // sign
@@ -852,7 +852,7 @@ StatusOr<ColumnPtr> MathFunctions::decimal_round(FunctionContext* context, const
     ColumnPtr c0 = columns[0];
     ColumnPtr c1 = columns[1];
     if (c0->only_null() || c1->only_null()) {
-        return ColumnHelper::create_const_null_column(c0->size());
+        return ColumnHelper::create_const_null_column(context->get_allocator(), c0->size());
     }
 
     NullColumn::MutablePtr null_flags;
@@ -900,7 +900,7 @@ StatusOr<ColumnPtr> MathFunctions::decimal_round(FunctionContext* context, const
         MathFunctions::decimal_round<rule, false>(raw_c0[0], original_scale, raw_c1[0], &raw_res[0], &is_over_flow);
         if (is_over_flow) {
             DCHECK(!has_null);
-            res = ColumnHelper::create_const_null_column(size);
+            res = ColumnHelper::create_const_null_column(context->get_allocator(), size);
         } else {
             res->resize(1);
             res = ConstColumn::create(context->get_allocator(), std::move(res), size);
@@ -949,7 +949,7 @@ StatusOr<ColumnPtr> MathFunctions::round_decimal128(FunctionContext* context, co
     DCHECK_EQ(columns.size(), 1);
     Columns new_columns;
     new_columns.push_back(columns[0]);
-    new_columns.push_back(ColumnHelper::create_const_column<LogicalType::TYPE_INT>(0, columns[0]->size()));
+    new_columns.push_back(ColumnHelper::create_const_column<LogicalType::TYPE_INT>(context->get_allocator(), 0, columns[0]->size()));
     return decimal_round<DecimalRoundRule::ROUND_HALF_UP>(context, new_columns);
 }
 
@@ -1100,7 +1100,7 @@ StatusOr<ColumnPtr> MathFunctions::rand_seed(FunctionContext* context, const Col
     DCHECK_EQ(columns.size(), 2);
 
     if (columns[0]->only_null()) {
-        return ColumnHelper::create_const_null_column(columns[0]->size());
+        return ColumnHelper::create_const_null_column(context->get_allocator(), columns[0]->size());
     }
 
     return rand(context, columns);
@@ -1183,7 +1183,7 @@ StatusOr<ColumnPtr> MathFunctions::cosine_similarity(FunctionContext* context, c
     const CppType* target_data_head = down_cast<const ColumnType*>(target_flat)->immutable_data().data();
 
     // prepare result with nullable value.
-    MutableColumnPtr result = ColumnHelper::create_column(TypeDescriptor{TYPE}, false, false, target_size);
+    MutableColumnPtr result = ColumnHelper::create_column(context->get_allocator(), TypeDescriptor{TYPE}, false, false, target_size);
     ColumnType* data_result = down_cast<ColumnType*>(result.get());
     CppType* result_data = data_result->get_data().data();
 
@@ -1328,7 +1328,7 @@ StatusOr<ColumnPtr> MathFunctions::l2_distance(FunctionContext* context, const C
     const CppType* target_data_head = down_cast<const ColumnType*>(target_flat)->immutable_data().data();
 
     // prepare result with nullable value.
-    MutableColumnPtr result = ColumnHelper::create_column(TypeDescriptor{TYPE}, false, false, target_size);
+    MutableColumnPtr result = ColumnHelper::create_column(context->get_allocator(), TypeDescriptor{TYPE}, false, false, target_size);
     ColumnType* data_result = down_cast<ColumnType*>(result.get());
     CppType* result_data = data_result->get_data().data();
 

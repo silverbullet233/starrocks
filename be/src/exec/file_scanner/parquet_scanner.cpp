@@ -23,6 +23,7 @@
 #include "exprs/column_ref.h"
 #include "fs/fs_broker.h"
 #include "runtime/exec_env.h"
+#include "runtime/memory/allocator_v2.h"
 #include "runtime/runtime_state.h"
 #include "runtime/stream_load/load_stream_mgr.h"
 #include "runtime/stream_load/stream_load_pipe.h"
@@ -88,7 +89,7 @@ Status ParquetScanner::initialize_src_chunk(ChunkPtr* chunk) {
         auto array_ptr = _batch->GetColumnByName(slot_desc->col_name());
         if (array_ptr == nullptr) {
             _cast_exprs[i] = _pool.add(new ColumnRef(slot_desc));
-            column = ColumnHelper::create_column(slot_desc->type(), slot_desc->is_nullable());
+            column = ColumnHelper::create_column(memory::get_default_allocator(), slot_desc->type(), slot_desc->is_nullable());
         } else {
             RETURN_IF_ERROR(new_column(array_ptr->type().get(), slot_desc, &column, _conv_funcs[i].get(),
                                        &_cast_exprs[i], _pool, _strict_mode));
@@ -141,7 +142,7 @@ Status ParquetScanner::finalize_src_chunk(ChunkPtr* chunk) {
             }
 
             ASSIGN_OR_RETURN(auto column, _cast_exprs[i]->evaluate_checked(nullptr, (*chunk).get()));
-            column = ColumnHelper::unfold_const_column(slot_desc->type(), (*chunk)->num_rows(), std::move(column));
+            column = ColumnHelper::unfold_const_column(memory::get_default_allocator(), slot_desc->type(), (*chunk)->num_rows(), std::move(column));
             cast_chunk->append_column(column, slot_desc->id());
         }
         auto range = _scan_range.ranges.at(_next_file - 1);
@@ -305,14 +306,14 @@ Status ParquetScanner::new_column(const arrow::DataType* arrow_type, const SlotD
                                strict_mode));
     if (!need_cast) {
         *expr = pool.add(new ColumnRef(slot_desc));
-        (*column) = ColumnHelper::create_column(type_desc, slot_desc->is_nullable());
+        (*column) = ColumnHelper::create_column(memory::get_default_allocator(), type_desc, slot_desc->is_nullable());
     } else {
         auto slot = pool.add(new ColumnRef(slot_desc));
         *expr = VectorizedCastExprFactory::from_type(*raw_type_desc, slot_desc->type(), slot, &pool);
         if ((*expr) == nullptr) {
             return illegal_converting_error(arrow_type->name(), type_desc.debug_string());
         }
-        *column = ColumnHelper::create_column(*raw_type_desc, slot_desc->is_nullable());
+        *column = ColumnHelper::create_column(memory::get_default_allocator(), *raw_type_desc, slot_desc->is_nullable());
     }
 
     return Status::OK();

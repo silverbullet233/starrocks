@@ -25,6 +25,7 @@
 #include "common/statusor.h"
 #include "exec/arrow_type_traits.h"
 #include "exprs/expr.h"
+#include "runtime/memory/allocator_v2.h"
 #include "runtime/time_types.h"
 #include "runtime/types.h"
 #include "types/large_int_value.h"
@@ -774,7 +775,7 @@ Status convert_chunk_to_arrow_batch(Chunk* chunk, std::vector<ExprContext*>& out
         const Expr* expr = output_expr_ctxs[i]->root();
         if (column->is_constant()) {
             // Don't modify the column of src chunk, otherwise the memory statistics of query is invalid.
-            column = ColumnHelper::copy_and_unfold_const_column(expr->type(), column->is_nullable(), std::move(column),
+            column = ColumnHelper::copy_and_unfold_const_column(output_expr_ctxs[i]->get_allocator(), expr->type(), column->is_nullable(), std::move(column),
                                                                 num_rows);
         }
 
@@ -822,7 +823,7 @@ Status convert_chunk_to_arrow_batch(Chunk* chunk, const std::vector<const TypeDe
         auto column = chunk->get_column_by_slot_id(slot_ids[i]);
         if (column->is_constant()) {
             // Don't modify the column of src chunk, otherwise the memory statistics of query is invalid.
-            column = ColumnHelper::copy_and_unfold_const_column(*slot_types[i], column->is_nullable(),
+            column = ColumnHelper::copy_and_unfold_const_column(memory::get_default_allocator(), *slot_types[i], column->is_nullable(),
                                                                 std::move(column), num_rows);
         }
         auto& array = arrays[i];

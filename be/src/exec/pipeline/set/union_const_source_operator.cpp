@@ -29,7 +29,7 @@ StatusOr<ChunkPtr> UnionConstSourceOperator::pull_chunk(starrocks::RuntimeState*
     for (size_t col_i = 0; col_i < columns_count; col_i++) {
         const auto* dst_slot = _dst_slots[col_i];
 
-        MutableColumnPtr dst_column = ColumnHelper::create_column(dst_slot->type(), dst_slot->is_nullable());
+        MutableColumnPtr dst_column = ColumnHelper::create_column(memory::get_default_allocator(), dst_slot->type(), dst_slot->is_nullable());
         dst_column->reserve(rows_count);
 
         for (size_t row_i = 0; row_i < rows_count; row_i++) {
@@ -41,7 +41,7 @@ StatusOr<ChunkPtr> UnionConstSourceOperator::pull_chunk(starrocks::RuntimeState*
 
             RETURN_IF_HAS_ERROR(_const_expr_lists[_next_processed_row_index + row_i]);
             auto cur_row_dst_column =
-                    ColumnHelper::move_column(dst_slot->type(), dst_slot->is_nullable(), std::move(src_column), 1);
+                    ColumnHelper::move_column(memory::get_default_allocator(), dst_slot->type(), dst_slot->is_nullable(), std::move(src_column), 1);
             dst_column->append(*cur_row_dst_column, 0, 1);
         }
 

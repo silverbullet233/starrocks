@@ -45,12 +45,12 @@ StatusOr<ColumnPtr> MapExpr::evaluate_checked(ExprContext* context, Chunk* chunk
     }
 
     for (size_t i = 0; i < num_pairs; i++) {
-        pairs_columns[i] = ColumnHelper::cast_to_nullable_column(
-                ColumnHelper::unfold_const_column(_type.children[i % 2], num_rows, std::move(pairs_columns[i])));
+        pairs_columns[i] = ColumnHelper::cast_to_nullable_column(context->get_allocator(),
+                ColumnHelper::unfold_const_column(context->get_allocator(), _type.children[i % 2], num_rows, std::move(pairs_columns[i])));
     }
 
-    auto key_col = ColumnHelper::create_column(_type.children[0], true);
-    auto value_col = ColumnHelper::create_column(_type.children[1], true);
+    auto key_col = ColumnHelper::create_column(context->get_allocator(), _type.children[0], true);
+    auto value_col = ColumnHelper::create_column(context->get_allocator(), _type.children[1], true);
     auto offsets = UInt32Column::create(context->get_allocator());
     uint32_t curr_offset = 0;
     offsets->append(curr_offset);

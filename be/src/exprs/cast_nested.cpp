@@ -25,7 +25,7 @@ namespace starrocks {
 StatusOr<ColumnPtr> CastMapExpr::evaluate_checked(ExprContext* context, Chunk* ptr) {
     ASSIGN_OR_RETURN(ColumnPtr orig_column, _children[0]->evaluate_checked(context, ptr));
     if (ColumnHelper::count_nulls(orig_column) == orig_column->size()) {
-        return ColumnHelper::create_const_null_column(orig_column->size());
+        return ColumnHelper::create_const_null_column(context->get_allocator(), orig_column->size());
     }
     // NOTE: const(nullable) case is handled by last if case
     const auto* map_column = down_cast<const MapColumn*>(ColumnHelper::get_data_column(orig_column.get()));
@@ -68,7 +68,7 @@ StatusOr<ColumnPtr> CastMapExpr::evaluate_checked(ExprContext* context, Chunk* p
 StatusOr<ColumnPtr> CastStructExpr::evaluate_checked(ExprContext* context, Chunk* ptr) {
     ASSIGN_OR_RETURN(ColumnPtr orig_column, _children[0]->evaluate_checked(context, ptr));
     if (ColumnHelper::count_nulls(orig_column) == orig_column->size()) {
-        return ColumnHelper::create_const_null_column(orig_column->size());
+        return ColumnHelper::create_const_null_column(context->get_allocator(), orig_column->size());
     }
     // NOTE: const(nullable) case is handled by last if case
     const auto* struct_column = down_cast<const StructColumn*>(ColumnHelper::get_data_column(orig_column.get()));
@@ -101,7 +101,7 @@ StatusOr<ColumnPtr> CastStructExpr::evaluate_checked(ExprContext* context, Chunk
 StatusOr<ColumnPtr> CastArrayExpr::evaluate_checked(ExprContext* context, Chunk* ptr) {
     ASSIGN_OR_RETURN(ColumnPtr orig_column, _children[0]->evaluate_checked(context, ptr));
     if (ColumnHelper::count_nulls(orig_column) == orig_column->size()) {
-        return ColumnHelper::create_const_null_column(orig_column->size());
+        return ColumnHelper::create_const_null_column(context->get_allocator(), orig_column->size());
     }
     // NOTE: const(nullable) case is handled by last if case
     const auto* array_column = down_cast<const ArrayColumn*>(ColumnHelper::get_data_column(orig_column.get()));

@@ -460,7 +460,7 @@ ChunkUniquePtr ChunkHelper::new_chunk(const TupleDescriptor& tuple_desc, size_t 
 ChunkUniquePtr ChunkHelper::new_chunk(const std::vector<SlotDescriptor*>& slots, size_t n) {
     auto chunk = std::make_unique<Chunk>();
     for (const auto slot : slots) {
-        auto column = ColumnHelper::create_column(slot->type(), slot->is_nullable());
+        auto column = ColumnHelper::create_column(memory::get_default_allocator(), slot->type(), slot->is_nullable());
         column->reserve(n);
         chunk->append_column(std::move(column), slot->id());
     }
@@ -512,7 +512,7 @@ void ChunkHelper::reorder_chunk(const std::vector<SlotDescriptor*>& slots, Chunk
 
 ChunkPtr ChunkHelper::createDummyChunk() {
     ChunkPtr dummyChunk = std::make_shared<Chunk>();
-    auto col = ColumnHelper::create_const_column<TYPE_INT>(1, 1);
+    auto col = ColumnHelper::create_const_column<TYPE_INT>(memory::get_default_allocator(), 1, 1);
     dummyChunk->append_column(std::move(col), 0);
     return dummyChunk;
 }

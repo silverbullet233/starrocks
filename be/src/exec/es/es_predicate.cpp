@@ -380,7 +380,7 @@ Status build_inpred_values(const Predicate* pred, bool& is_not_in, Func&& func) 
     case TYPE: {                                                                                         \
         RETURN_IF_ERROR(build_inpred_values<TYPE>(pred, is_not_in, [&](auto& v) {                        \
             in_pred_values.emplace_back(_pool->add(new VExtLiteral(                                      \
-                    slot_desc->type().type, ColumnHelper::create_const_column<TYPE>(v, 1), _timezone))); \
+                    slot_desc->type().type, ColumnHelper::create_const_column<TYPE>(memory::get_default_allocator(), v, 1), _timezone))); \
         }));                                                                                             \
         break;                                                                                           \
     }

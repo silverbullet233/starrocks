@@ -50,7 +50,7 @@ void ColumnOffsetIndexCtx::collect_io_range(std::vector<io::SharedBufferedInputS
 Status ColumnDictFilterContext::rewrite_conjunct_ctxs_to_predicate(StoredColumnReader* reader,
                                                                    bool* is_group_filtered) {
     // create dict value chunk for evaluation.
-    MutableColumnPtr dict_value_column = ColumnHelper::create_column(TypeDescriptor(TYPE_VARCHAR), true);
+    MutableColumnPtr dict_value_column = ColumnHelper::create_column(memory::get_default_allocator(), TypeDescriptor(TYPE_VARCHAR), true);
     RETURN_IF_ERROR(reader->get_dict_values(dict_value_column.get()));
     // append a null value to check if null is ok or not.
     dict_value_column->append_default();

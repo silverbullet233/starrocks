@@ -127,7 +127,7 @@ Status JsonFlatColumnIterator::init(const ColumnIteratorOptions& opts) {
             << ", source: " << JsonFlatPath::debug_flat_json(_source_paths, _source_types, has_remain);
 
     for (int i = 0; i < _source_paths.size(); i++) {
-        auto column = ColumnHelper::create_column(TypeDescriptor(_source_types[i]), true);
+        auto column = ColumnHelper::create_column(memory::get_default_allocator(), TypeDescriptor(_source_types[i]), true);
         _source_column_modules.emplace_back(std::move(column));
     }
 
@@ -511,7 +511,7 @@ Status JsonMergeIterator::init(const ColumnIteratorOptions& opts) {
     VLOG(2) << "JsonMergeIterator init, source: " << JsonFlatPath::debug_flat_json(_src_paths, _src_types, has_remain);
     DCHECK(_all_iter.size() == _src_paths.size() || _all_iter.size() == _src_paths.size() + 1);
     for (int i = 0; i < _src_paths.size(); i++) {
-        auto column = ColumnHelper::create_column(TypeDescriptor(_src_types[i]), true);
+        auto column = ColumnHelper::create_column(memory::get_default_allocator(), TypeDescriptor(_src_types[i]), true);
         _src_column_modules.emplace_back(std::move(column));
     }
 
@@ -673,16 +673,16 @@ public:
               _mem_pool(),
               _source_chunk() {
         // prepare the source chunk
-        auto column = ColumnHelper::create_column(TypeDescriptor::create_json_type(), source_nullable);
+        auto column = ColumnHelper::create_column(memory::get_default_allocator(), TypeDescriptor::create_json_type(), source_nullable);
         _source_chunk.append_column(std::move(column), SlotId(0));
-        auto path_column = ColumnHelper::create_const_column<TYPE_VARCHAR>(_path.to_string(), 1);
+        auto path_column = ColumnHelper::create_const_column<TYPE_VARCHAR>(memory::get_default_allocator(), _path.to_string(), 1);
         _source_chunk.append_column(std::move(path_column), SlotId(1));
 
         // prepare the function
         TypeDescriptor return_type(_type);
         std::vector<TypeDescriptor> arg_types = {TypeDescriptor::create_json_type(), TypeDescriptor(TYPE_VARCHAR)};
         _fn_context.reset(FunctionContext::create_context(&_state, &_mem_pool, return_type, arg_types));
-        auto const_path = ColumnHelper::create_const_column<TYPE_VARCHAR>(_path.to_string(), 1);
+        auto const_path = ColumnHelper::create_const_column<TYPE_VARCHAR>(memory::get_default_allocator(), _path.to_string(), 1);
         _fn_context->set_constant_columns(Columns{nullptr, const_path});
     }
 

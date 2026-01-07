@@ -374,7 +374,7 @@ StatusOr<int> RuntimeFilterHelper::deserialize_runtime_filter_for_skew_broadcast
 
     TypeDescriptor type_descriptor = TypeDescriptor::from_protobuf(ptype);
 
-    auto columnPtr = ColumnHelper::create_column(type_descriptor, is_null, is_const, num_rows);
+    auto columnPtr = ColumnHelper::create_column(memory::get_default_allocator(), type_descriptor, is_null, is_const, num_rows);
 
     const uint8_t* cur = data + offset;
     ASSIGN_OR_RETURN(cur, serde::ColumnArraySerde::deserialize(cur, columnPtr.get()));
@@ -489,7 +489,7 @@ StatusOr<ExprContext*> RuntimeFilterHelper::rewrite_runtime_filter_in_cross_join
         col = res;
     } else if (res->is_nullable()) {
         if (res->is_null(0)) {
-            col = ColumnHelper::create_const_null_column(1);
+            col = ColumnHelper::create_const_null_column(memory::get_default_allocator(), 1);
         } else {
             auto data_col = down_cast<NullableColumn*>(res->as_mutable_raw_ptr())->data_column();
             col = ConstColumn::create(memory::get_default_allocator(), std::move(data_col), 1);

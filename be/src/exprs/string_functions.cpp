@@ -679,7 +679,7 @@ static inline ColumnPtr substr_not_const(FunctionContext* context, const starroc
     if (columns.size() > 2) {
         len_column = columns[2];
     } else {
-        len_column = ColumnHelper::create_const_column<TYPE_INT>(INT32_MAX, columns[0]->size());
+        len_column = ColumnHelper::create_const_column<TYPE_INT>(context->get_allocator(), INT32_MAX, columns[0]->size());
     }
 
     ColumnViewer<TYPE_INT> len_viewer(len_column);
@@ -743,7 +743,7 @@ StatusOr<ColumnPtr> StringFunctions::left(FunctionContext* context, const Column
     RETURN_IF_COLUMNS_ONLY_NULL(columns);
     Columns values;
     values.emplace_back(columns[0]);
-    values.emplace_back(ColumnHelper::create_const_column<TYPE_INT>(1, columns[0]->size()));
+    values.emplace_back(ColumnHelper::create_const_column<TYPE_INT>(context->get_allocator(), 1, columns[0]->size()));
     values.emplace_back(columns[1]);
 
     return substring(context, values);
@@ -1598,11 +1598,11 @@ static inline ColumnPtr pad_const_not_null(FunctionContext* context, const Colum
 
     // illegal length  or too-big length, return NULL
     if (len < 0 || len > get_olap_string_max_length()) {
-        return ColumnHelper::create_const_null_column(columns[1]->size());
+        return ColumnHelper::create_const_null_column(context->get_allocator(), columns[1]->size());
     }
     // len == 0, return empty string
     if (len == 0) {
-        return ColumnHelper::create_const_column<TYPE_VARCHAR>(Slice(), columns[1]->size());
+        return ColumnHelper::create_const_column<TYPE_VARCHAR>(context->get_allocator(), Slice(), columns[1]->size());
     }
     // pad.size == 0, return substr(s, 1, len) according to Snowflake
     if (fill.size == 0) {
@@ -1813,11 +1813,11 @@ StatusOr<ColumnPtr> StringFunctions::append_trailing_char_if_absent(FunctionCont
     bool is_tailing_col_nullable = columns[1]->is_nullable();
     if (is_src_col_nullable) {
         if (columns[0]->size() == ColumnHelper::count_nulls(columns[0])) {
-            return ColumnHelper::create_const_null_column(columns[0]->size());
+            return ColumnHelper::create_const_null_column(context->get_allocator(), columns[0]->size());
         }
     } else if (is_tailing_col_nullable) {
         if (columns[1]->size() == ColumnHelper::count_nulls(columns[1])) {
-            return ColumnHelper::create_const_null_column(columns[0]->size());
+            return ColumnHelper::create_const_null_column(context->get_allocator(), columns[0]->size());
         }
     }
 
@@ -1836,7 +1836,7 @@ StatusOr<ColumnPtr> StringFunctions::append_trailing_char_if_absent(FunctionCont
         auto tailing_col = ColumnHelper::cast_to<TYPE_VARCHAR>(const_tailing->data_column());
         const Slice& slice = tailing_col->get_slice(0);
         if (slice.size != 1) {
-            return ColumnHelper::create_const_null_column(columns[0]->size());
+            return ColumnHelper::create_const_null_column(context->get_allocator(), columns[0]->size());
         }
 
         const BinaryColumn* src = nullptr;
@@ -2819,7 +2819,7 @@ StatusOr<ColumnPtr> StringFunctions::strpos(FunctionContext* context, const Colu
 
     const ColumnPtr& haystack = columns[0];
     const ColumnPtr& needle = columns[1];
-    ColumnPtr instance = ColumnHelper::create_const_column<TYPE_INT>(1, columns[0]->size());
+    ColumnPtr instance = ColumnHelper::create_const_column<TYPE_INT>(context->get_allocator(), 1, columns[0]->size());
     return strpos_instance(context, {haystack, needle, instance});
 }
 
@@ -3078,7 +3078,7 @@ StatusOr<ColumnPtr> StringFunctions::concat(FunctionContext* context, const Colu
     auto state = reinterpret_cast<ConcatState*>(context->get_function_state(FunctionContext::FRAGMENT_LOCAL));
     if (state != nullptr && state->is_const) {
         if (state->is_oversize) {
-            return ColumnHelper::create_const_null_column(columns[0]->size());
+            return ColumnHelper::create_const_null_column(context->get_allocator(), columns[0]->size());
         } else {
             return concat_const(context, columns, state);
         }
@@ -3154,7 +3154,7 @@ ColumnPtr concat_ws_small(FunctionContext* context, ColumnViewer<TYPE_VARCHAR>& 
 StatusOr<ColumnPtr> StringFunctions::concat_ws(FunctionContext* context, const Columns& columns) {
     const auto column_num = columns.size();
     if (column_num <= 1 || columns[0]->only_null()) {
-        return ColumnHelper::create_const_null_column(columns[0]->size());
+        return ColumnHelper::create_const_null_column(context->get_allocator(), columns[0]->size());
     }
 
     if (columns.size() == 2) {
@@ -3986,7 +3986,7 @@ StatusOr<ColumnPtr> StringFunctions::regexp_replace_use_hyperscan_vec(FunctionCo
                                                                       const Columns& columns) {
     RETURN_IF_COLUMNS_ONLY_NULL(columns);
     if (columns[0]->size() == 0) {
-        return ColumnHelper::create_const_null_column(0);
+        return ColumnHelper::create_const_null_column(context->get_allocator(), 0);
     }
     const auto binary = ColumnHelper::get_binary_column(columns[0].get());
     auto rpl_viewer = ColumnViewer<TYPE_VARCHAR>(columns[2]);
@@ -4166,7 +4166,7 @@ static StatusOr<ColumnPtr> regexp_split_const_pattern(FunctionContext* context, 
     if (columns.size() > 2) {
         max_split_column = columns[2];
     } else {
-        max_split_column = ColumnHelper::create_const_column<TYPE_INT>(-1, columns[0]->size());
+        max_split_column = ColumnHelper::create_const_column<TYPE_INT>(context->get_allocator(), -1, columns[0]->size());
     }
     ColumnViewer<TYPE_INT> max_split_viewer(max_split_column);
 
@@ -4228,7 +4228,7 @@ static StatusOr<ColumnPtr> regexp_split_general(FunctionContext* context, re2::R
     if (columns.size() > 2) {
         max_split_column = columns[2];
     } else {
-        max_split_column = ColumnHelper::create_const_column<TYPE_INT>(-1, columns[0]->size());
+        max_split_column = ColumnHelper::create_const_column<TYPE_INT>(context->get_allocator(), -1, columns[0]->size());
     }
     ColumnViewer<TYPE_INT> max_split_viewer(max_split_column);
     auto size = columns[0]->size();
@@ -4346,7 +4346,7 @@ static ColumnPtr regexp_count_const_pattern(FunctionContext* context, re2::RE2* 
 
     // return NULL if patern empty
     if (const_re->pattern().empty()) {
-        return ColumnHelper::create_const_null_column(size);
+        return ColumnHelper::create_const_null_column(context->get_allocator(), size);
     }
 
     ColumnBuilder<TYPE_BIGINT> result(context->get_allocator(), size);
@@ -4399,7 +4399,7 @@ static ColumnPtr regexp_count_general(FunctionContext* context, re2::RE2::Option
     }
 
     if (all_patterns_empty) {
-        return ColumnHelper::create_const_null_column(size);
+        return ColumnHelper::create_const_null_column(context->get_allocator(), size);
     }
 
     for (int row = 0; row < size; ++row) {
@@ -4550,7 +4550,7 @@ StatusOr<ColumnPtr> StringFunctions::replace(FunctionContext* context, const Col
     const auto num_rows = arg0->size();
     const auto str_viewer = ColumnViewer<TYPE_VARCHAR>(arg0);
     if (state->only_null) {
-        return ColumnHelper::create_const_null_column(num_rows);
+        return ColumnHelper::create_const_null_column(context->get_allocator(), num_rows);
     }
 
     const auto ptn_viewer = ColumnViewer<TYPE_VARCHAR>(columns[1]);
@@ -4980,9 +4980,9 @@ StatusOr<ColumnPtr> StringFunctions::url_extract_parameter(starrocks::FunctionCo
     auto num_rows = columns[0]->size();
     if (state->opt_const_result.has_value()) {
         if (state->result_is_null) {
-            return ColumnHelper::create_const_null_column(num_rows);
+            return ColumnHelper::create_const_null_column(context->get_allocator(), num_rows);
         } else {
-            return ColumnHelper::create_const_column<TYPE_VARCHAR>(state->opt_const_result.value(), num_rows);
+            return ColumnHelper::create_const_column<TYPE_VARCHAR>(context->get_allocator(), state->opt_const_result.value(), num_rows);
         }
     } else if (state->opt_const_param_key.has_value()) {
         return url_extract_parameter_const_param_key(context, columns, state->opt_const_param_key.value());
