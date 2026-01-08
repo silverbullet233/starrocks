@@ -54,8 +54,9 @@ void ConstColumn::append_value_multiple_times(const Column& src, uint32_t index,
     append(src, index, size);
 }
 
-StatusOr<MutableColumnPtr> ConstColumn::replicate(const Buffer<uint32_t>& offsets) {
-    return ConstColumn::create(this->_allocator, this->_data->clone(), offsets.back());
+StatusOr<MutableColumnPtr> ConstColumn::replicate(const Buffer<uint32_t>& offsets, memory::Allocator* allocator) {
+    auto* alloc = allocator != nullptr ? allocator : this->_allocator;
+    return ConstColumn::create(alloc, this->_data->clone(alloc), offsets.back());
 }
 
 void ConstColumn::fill_default(const Filter& filter) {

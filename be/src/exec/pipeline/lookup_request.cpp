@@ -608,7 +608,7 @@ Status IcebergV3LookUpTask::process(RuntimeState* state, const ChunkPtr& request
             // Replicate data for duplicate row_ids
             for (const auto& [slot_id, _] : result_chunk->get_slot_id_to_index_map()) {
                 auto old_column = result_chunk->get_column_by_slot_id(slot_id)->as_mutable_raw_ptr();
-                ASSIGN_OR_RETURN(auto new_column, old_column->replicate(replicated_offsets));
+                ASSIGN_OR_RETURN(auto new_column, old_column->replicate(replicated_offsets, old_column->get_allocator()));
                 result_chunk->append_or_update_column(std::move(new_column), slot_id);
             }
             result_chunk->check_or_die();

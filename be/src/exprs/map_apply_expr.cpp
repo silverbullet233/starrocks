@@ -124,7 +124,7 @@ StatusOr<ColumnPtr> MapApplyExpr::evaluate_checked(ExprContext* context, Chunk* 
                                                          captured->get_name()));
             }
 
-            ASSIGN_OR_RETURN(auto replicated_col, captured->replicate(input_map->offsets_column_raw_ptr()->get_data()));
+            ASSIGN_OR_RETURN(auto replicated_col, captured->replicate(input_map->offsets_column_raw_ptr()->get_data(), context->get_allocator()));
             cur_chunk->append_column(replicated_col, id);
         }
         // evaluate the lambda expression

@@ -180,8 +180,9 @@ void BinaryColumnBase<T>::append_value_multiple_times(const Column& src, uint32_
 
 //TODO(fzh): optimize copy using SIMD
 template <typename T>
-StatusOr<MutableColumnPtr> BinaryColumnBase<T>::replicate(const Buffer<uint32_t>& offsets) {
-    auto dest = BinaryColumnBase<T>::create(this->_allocator);
+StatusOr<MutableColumnPtr> BinaryColumnBase<T>::replicate(const Buffer<uint32_t>& offsets, memory::Allocator* allocator) {
+    auto* alloc = allocator != nullptr ? allocator : this->_allocator;
+    auto dest = BinaryColumnBase<T>::create(alloc);
     auto& dest_offsets = dest->get_offset();
     auto& dest_bytes = dest->get_bytes();
     auto src_size = offsets.size() - 1; // this->size() may be large than offsets->size() -1

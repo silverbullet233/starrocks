@@ -48,6 +48,7 @@ struct MetaReaderParams {
     int32_t low_card_threshold;
 
     int chunk_size = config::vector_chunk_size;
+    memory::Allocator* allocator = memory::get_default_allocator();
 
     void check_validation() const { LOG_IF(FATAL, version.first == -1) << "version is not set. tablet=" << tablet_id; }
 };

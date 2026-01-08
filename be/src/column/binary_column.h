@@ -221,7 +221,7 @@ public:
         _slices_cache = false;
     }
 
-    StatusOr<MutableColumnPtr> replicate(const Buffer<uint32_t>& offsets) override;
+    StatusOr<MutableColumnPtr> replicate(const Buffer<uint32_t>& offsets, memory::Allocator* allocator = nullptr) override;
 
     void fill_default(const Filter& filter) override;
 

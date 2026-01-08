@@ -26,10 +26,11 @@
 
 namespace starrocks {
 
-StatusOr<MutableColumnPtr> ArrayViewColumn::replicate(const Buffer<uint32_t>& offsets) {
+StatusOr<MutableColumnPtr> ArrayViewColumn::replicate(const Buffer<uint32_t>& offsets, memory::Allocator* allocator) {
+    auto* alloc = allocator != nullptr ? allocator : this->get_allocator();
     auto dest_size = offsets.size() - 1;
-    auto new_offsets = UInt32Column::create(memory::get_default_allocator());
-    auto new_lengths = UInt32Column::create(memory::get_default_allocator());
+    auto new_offsets = UInt32Column::create(alloc);
+    auto new_lengths = UInt32Column::create(alloc);
     new_offsets->reserve(offsets.back());
     new_lengths->reserve(offsets.back());
 
@@ -38,7 +39,7 @@ StatusOr<MutableColumnPtr> ArrayViewColumn::replicate(const Buffer<uint32_t>& of
         new_offsets->append_value_multiple_times(*_offsets, i, repeat_times);
         new_lengths->append_value_multiple_times(*_lengths, i, repeat_times);
     }
-    return ArrayViewColumn::create(memory::get_default_allocator(), _elements->as_mutable_ptr(), std::move(new_offsets), std::move(new_lengths));
+    return ArrayViewColumn::create(alloc, _elements->as_mutable_ptr(), std::move(new_offsets), std::move(new_lengths));
 }
 
 void ArrayViewColumn::assign(size_t n, size_t idx) {

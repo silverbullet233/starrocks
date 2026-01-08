@@ -183,8 +183,9 @@ public:
     // for example: column(1,2)->replicate({0,2,5}) = column(1,1,2,2,2)
     // FixedLengthColumn, BinaryColumn and ConstColumn override this function for better performance.
     // TODO(fzh): optimize replicate() for ArrayColumn, ObjectColumn and others.
-    virtual StatusOr<MutablePtr> replicate(const Buffer<uint32_t>& offsets) {
-        auto dest = this->clone_empty(_allocator);
+    virtual StatusOr<MutablePtr> replicate(const Buffer<uint32_t>& offsets, memory::Allocator* allocator = nullptr) {
+        auto* alloc = allocator != nullptr ? allocator : _allocator;
+        auto dest = this->clone_empty(alloc);
         auto dest_size = offsets.size() - 1;
         DCHECK(this->size() >= dest_size) << "The size of the source column is less when duplicating it.";
         dest->reserve(offsets.back());

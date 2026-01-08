@@ -110,8 +110,9 @@ void FixedLengthColumnBase<T>::append_default(size_t count) {
 
 //TODO(fzh): optimize copy using SIMD
 template <typename T>
-StatusOr<MutableColumnPtr> FixedLengthColumnBase<T>::replicate(const Buffer<uint32_t>& offsets) {
-    auto dest = this->clone_empty();
+StatusOr<MutableColumnPtr> FixedLengthColumnBase<T>::replicate(const Buffer<uint32_t>& offsets, memory::Allocator* allocator) {
+    auto* alloc = allocator != nullptr ? allocator : this->_allocator;
+    auto dest = this->clone_empty(alloc);
     auto& dest_data = down_cast<FixedLengthColumnBase<T>&>(*dest);
     auto& dest_datas = dest_data.get_data();
 

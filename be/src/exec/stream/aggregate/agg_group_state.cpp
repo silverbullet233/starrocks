@@ -266,7 +266,7 @@ Status AggGroupState::output_changes(size_t chunk_size, const Columns& group_by_
             SlotId slot_id = 0;
             for (size_t j = 0; j < group_by_columns.size(); j++) {
                 ASSIGN_OR_RETURN(auto replicated_col,
-                                 group_by_columns[j]->as_mutable_raw_ptr()->replicate(replicate_offsets))
+                                 group_by_columns[j]->as_mutable_raw_ptr()->replicate(replicate_offsets, agg_state->agg_fn_ctx()->get_allocator()))
                 detail_result_chunk->append_column(replicated_col, slot_id++);
             }
             // TODO: take care slot_ids.

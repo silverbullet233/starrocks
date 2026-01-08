@@ -187,12 +187,12 @@ StatusOr<ColumnPtr> ArrayMapExpr::evaluate_lambda_expr(ExprContext* context, Chu
         } else {
             if (!captured_column->is_constant() && captured_column->is_array()) {
                 auto view_column = ArrayViewColumn::from_array_column(captured_column);
-                ASSIGN_OR_RETURN(auto replicated_view_column, view_column->replicate(aligned_offsets_data));
+                ASSIGN_OR_RETURN(auto replicated_view_column, view_column->replicate(aligned_offsets_data, context->get_allocator()));
                 cur_chunk->append_column(replicated_view_column, slot_id);
                 RETURN_IF_ERROR(view_column->capacity_limit_reached());
             } else {
                 ASSIGN_OR_RETURN(auto replicated_column,
-                                 captured_column->as_mutable_raw_ptr()->replicate(aligned_offsets_data));
+                                 captured_column->as_mutable_raw_ptr()->replicate(aligned_offsets_data, context->get_allocator()));
                 cur_chunk->append_column(replicated_column, slot_id);
                 RETURN_IF_ERROR(replicated_column->capacity_limit_reached());
             }
@@ -218,7 +218,7 @@ StatusOr<ColumnPtr> ArrayMapExpr::evaluate_lambda_expr(ExprContext* context, Chu
             ASSIGN_OR_RETURN(tmp_col, context->evaluate(_children[0], cur_chunk.get()));
         }
         tmp_col->check_or_die();
-        ASSIGN_OR_RETURN(column, tmp_col->as_mutable_raw_ptr()->replicate(aligned_offsets_data));
+        ASSIGN_OR_RETURN(column, tmp_col->as_mutable_raw_ptr()->replicate(aligned_offsets_data, context->get_allocator()));
         column = ColumnHelper::align_return_type(context->get_allocator(), std::move(column), type().children[0], column->size(), true);
 
         RETURN_IF_ERROR(column->capacity_limit_reached());

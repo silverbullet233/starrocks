@@ -551,9 +551,9 @@ public:
         }
     }
 
-    StatusOr<MutableColumnPtr> replicate(const Buffer<uint32_t>& offsets) override {
+    StatusOr<MutableColumnPtr> replicate(const Buffer<uint32_t>& offsets, memory::Allocator* allocator = nullptr) override {
         materialized_nullable();
-        return NullableColumn::replicate(offsets);
+        return NullableColumn::replicate(offsets, allocator);
     }
 
     size_t memory_usage() const override {
