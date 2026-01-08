@@ -120,7 +120,7 @@ inline void FunctionHelper::get_data_of_column<BinaryColumn, Slice>(const Column
         }                                    \
     } while (false)
 
-#define PREPARE_COLUMN_WITH_CONST_AND_NULL_FOR_ICEBERG_FUNC(c0, c1)     \
+#define PREPARE_COLUMN_WITH_CONST_AND_NULL_FOR_ICEBERG_FUNC(contex, c0, c1)     \
     do {                                                                \
         if (c0->only_null() || c1->only_null()) {                       \
             return ColumnHelper::create_const_null_column(context->get_allocator(), c0->size());  \
@@ -129,7 +129,7 @@ inline void FunctionHelper::get_data_of_column<BinaryColumn, Slice>(const Column
             has_null = true;                                            \
             null_flags = FunctionHelper::union_nullable_column(c0, c1); \
         } else {                                                        \
-            auto null_flags_mut = NullColumn::create(memory::get_default_allocator());                 \
+            auto null_flags_mut = NullColumn::create(context->get_allocator());                 \
             null_flags_mut->reserve(c0->size());                        \
             null_flags_mut->append_default(c0->size());                 \
             null_flags = std::move(null_flags_mut);                     \

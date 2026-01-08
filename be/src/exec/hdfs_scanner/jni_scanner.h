@@ -34,7 +34,7 @@ public:
     };
 
     JniScanner(std::string factory_class, std::map<std::string, std::string> params)
-            : _jni_scanner_params(std::move(params)), _jni_scanner_factory_class(std::move(factory_class)) {}
+            : _chunk_filter(_scanner_ctx.allocator), _jni_scanner_params(std::move(params)), _jni_scanner_factory_class(std::move(factory_class)) {}
 
     ~JniScanner() override { close(); }
 
@@ -49,7 +49,7 @@ public:
 protected:
     StatusOr<size_t> fill_empty_chunk(ChunkPtr* chunk);
 
-    Filter _chunk_filter{memory::get_default_allocator()};
+    Filter _chunk_filter;
 
 private:
     struct FillColumnArgs {

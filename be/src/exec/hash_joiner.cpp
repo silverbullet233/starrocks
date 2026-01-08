@@ -204,6 +204,8 @@ void HashJoiner::_init_hash_table_param(HashTableParam* param, RuntimeState* sta
             param->join_keys.emplace_back(JoinKeyDesc{&expr->type(), _is_null_safes[i], nullptr});
         }
     }
+
+    param->allocator = memory::get_default_allocator();
 }
 
 Status HashJoiner::append_chunk_to_ht(RuntimeState* state, const ChunkPtr& chunk) {

@@ -342,6 +342,7 @@ protected:
     std::atomic_int64_t _last_growth_cpu_time_ns = 0;
 
     PipelineObserver* _observer = nullptr;
+    // @TODO add allocator?
 
 private:
     void _init_conjuct_counters();

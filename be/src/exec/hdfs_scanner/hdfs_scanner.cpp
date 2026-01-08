@@ -641,12 +641,12 @@ Status HdfsScannerContext::append_or_update_not_existed_columns_to_chunk(ChunkPt
             continue;
         }
 
-        auto col = ColumnHelper::create_column(memory::get_default_allocator(), slot_desc->type(), slot_desc->is_nullable());
+        auto col = ColumnHelper::create_column(allocator, slot_desc->type(), slot_desc->is_nullable());
         if (row_count > 0) {
             if (slot_desc->col_name() == kCountOptColumnName) {
                 TypeDescriptor desc;
                 desc.type = TYPE_BIGINT;
-                col = ColumnHelper::create_column(memory::get_default_allocator(), desc, slot_desc->is_nullable());
+                col = ColumnHelper::create_column(allocator, desc, slot_desc->is_nullable());
                 col->append_datum(int64_t(1));
                 col->assign(row_count, 0);
             } else {
@@ -665,7 +665,7 @@ void HdfsScannerContext::append_or_update_count_column_to_chunk(ChunkPtr* chunk,
     auto* slot_desc = not_existed_slots[0];
     TypeDescriptor desc;
     desc.type = TYPE_BIGINT;
-    auto col = ColumnHelper::create_column(memory::get_default_allocator(), desc, slot_desc->is_nullable());
+    auto col = ColumnHelper::create_column(allocator, desc, slot_desc->is_nullable());
     col->append_datum(int64_t(row_count));
     ck->append_or_update_column(std::move(col), slot_desc->id());
     ck->set_num_rows(1);
@@ -685,7 +685,7 @@ void HdfsScannerContext::append_or_update_min_max_column_to_chunk(ChunkPtr* chun
 
 MutableColumnPtr HdfsScannerContext::create_min_max_value_column(SlotDescriptor* slot_desc,
                                                                  const TExprMinMaxValue& value, size_t row_count) {
-    auto col = ColumnHelper::create_column(memory::get_default_allocator(), slot_desc->type(), slot_desc->is_nullable());
+    auto col = ColumnHelper::create_column(allocator, slot_desc->type(), slot_desc->is_nullable());
     std::vector<Datum> data;
     if (value.has_null) {
         data.emplace_back(kNullDatum);
@@ -745,7 +745,7 @@ MutableColumnPtr HdfsScannerContext::create_min_max_value_column(SlotDescriptor*
         if (!value.all_null) {
             // the rest values does not matter, so we just copy the first value.
             // it's noted that we can not use `append_default` here, we can only put null(maybe)/min/max
-            auto col_tail = ColumnHelper::create_column(memory::get_default_allocator(), slot_desc->type(), slot_desc->is_nullable());
+            auto col_tail = ColumnHelper::create_column(allocator, slot_desc->type(), slot_desc->is_nullable());
             // if not all null values, then data[1] is the non-null value for sure.
             col_tail->append_datum(data[1]);
             col_tail->assign(row_count, 0);
@@ -808,7 +808,7 @@ void HdfsScannerContext::append_or_update_column_to_chunk(ChunkPtr* chunk, size_
         DCHECK(values[i]->is_constant());
         auto* const_column = ColumnHelper::as_raw_column<ConstColumn>(values[i]);
         ColumnPtr data_column = const_column->data_column();
-        auto chunk_column = ColumnHelper::create_column(memory::get_default_allocator(), slot_desc->type(), slot_desc->is_nullable());
+        auto chunk_column = ColumnHelper::create_column(allocator, slot_desc->type(), slot_desc->is_nullable());
 
         if (row_count > 0) {
             if (data_column->is_nullable()) {

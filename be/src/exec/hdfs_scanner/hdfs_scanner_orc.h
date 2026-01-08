@@ -28,7 +28,7 @@ class OrcRowReaderFilter;
 
 class HdfsOrcScanner final : public HdfsScanner {
 public:
-    HdfsOrcScanner() : _skip_rows_ctx(std::make_shared<SkipRowsContext>()){};
+    HdfsOrcScanner() : _dict_filter(_scanner_ctx.allocator), _chunk_filter(_scanner_ctx.allocator), _skip_rows_ctx(std::make_shared<SkipRowsContext>()) {};
     ~HdfsOrcScanner() override = default;
 
     Status do_open(RuntimeState* runtime_state) override;
@@ -66,8 +66,8 @@ private:
     OrcChunkReader::LazyLoadContext _lazy_load_ctx;
     std::unique_ptr<OrcChunkReader> _orc_reader;
     std::shared_ptr<OrcRowReaderFilter> _orc_row_reader_filter;
-    Filter _dict_filter{memory::get_default_allocator()};
-    Filter _chunk_filter{memory::get_default_allocator()};
+    Filter _dict_filter;
+    Filter _chunk_filter;
     SkipRowsContextPtr _skip_rows_ctx;
     std::unique_ptr<ORCHdfsFileStream> _input_stream;
 };

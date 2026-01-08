@@ -119,7 +119,7 @@ StatusOr<ColumnPtr> BinaryFunctions::iceberg_truncate_binary(FunctionContext* co
     ColumnPtr c1 = columns[1];
     NullColumn::MutablePtr null_flags;
     bool has_null = false;
-    PREPARE_COLUMN_WITH_CONST_AND_NULL_FOR_ICEBERG_FUNC(c0, c1);
+    PREPARE_COLUMN_WITH_CONST_AND_NULL_FOR_ICEBERG_FUNC(context, c0, c1);
     (void)has_null;
     const int size = c0->size();
     int32_t width = c1->get(0).get_int32();

@@ -41,7 +41,7 @@ ParquetScanner::ParquetScanner(RuntimeState* state, RuntimeProfile* profile, con
           _max_chunk_size(state->chunk_size() ? state->chunk_size() : 4096),
           _batch_start_idx(0),
           _chunk_start_idx(0),
-          _chunk_filter(memory::get_default_allocator()) {
+          _chunk_filter(_allocator) {
     _chunk_filter.reserve(_max_chunk_size);
     _conv_ctx.state = state;
 }
@@ -89,10 +89,10 @@ Status ParquetScanner::initialize_src_chunk(ChunkPtr* chunk) {
         auto array_ptr = _batch->GetColumnByName(slot_desc->col_name());
         if (array_ptr == nullptr) {
             _cast_exprs[i] = _pool.add(new ColumnRef(slot_desc));
-            column = ColumnHelper::create_column(memory::get_default_allocator(), slot_desc->type(), slot_desc->is_nullable());
+            column = ColumnHelper::create_column(_allocator, slot_desc->type(), slot_desc->is_nullable());
         } else {
             RETURN_IF_ERROR(new_column(array_ptr->type().get(), slot_desc, &column, _conv_funcs[i].get(),
-                                       &_cast_exprs[i], _pool, _strict_mode));
+                                       &_cast_exprs[i], _pool, _strict_mode, _allocator));
         }
         column->reserve(_max_chunk_size);
         (*chunk)->append_column(std::move(column), slot_desc->id());
@@ -142,7 +142,7 @@ Status ParquetScanner::finalize_src_chunk(ChunkPtr* chunk) {
             }
 
             ASSIGN_OR_RETURN(auto column, _cast_exprs[i]->evaluate_checked(nullptr, (*chunk).get()));
-            column = ColumnHelper::unfold_const_column(memory::get_default_allocator(), slot_desc->type(), (*chunk)->num_rows(), std::move(column));
+            column = ColumnHelper::unfold_const_column(_allocator, slot_desc->type(), (*chunk)->num_rows(), std::move(column));
             cast_chunk->append_column(column, slot_desc->id());
         }
         auto range = _scan_range.ranges.at(_next_file - 1);
@@ -298,7 +298,7 @@ Status ParquetScanner::build_dest(const arrow::DataType* arrow_type, const TypeD
 
 Status ParquetScanner::new_column(const arrow::DataType* arrow_type, const SlotDescriptor* slot_desc,
                                   MutableColumnPtr* column, ConvertFuncTree* conv_func, Expr** expr, ObjectPool& pool,
-                                  bool strict_mode) {
+                                  bool strict_mode, memory::Allocator* allocator) {
     auto& type_desc = slot_desc->type();
     auto* raw_type_desc = pool.add(new TypeDescriptor());
     bool need_cast = false;
@@ -306,14 +306,14 @@ Status ParquetScanner::new_column(const arrow::DataType* arrow_type, const SlotD
                                strict_mode));
     if (!need_cast) {
         *expr = pool.add(new ColumnRef(slot_desc));
-        (*column) = ColumnHelper::create_column(memory::get_default_allocator(), type_desc, slot_desc->is_nullable());
+        (*column) = ColumnHelper::create_column(allocator, type_desc, slot_desc->is_nullable());
     } else {
         auto slot = pool.add(new ColumnRef(slot_desc));
         *expr = VectorizedCastExprFactory::from_type(*raw_type_desc, slot_desc->type(), slot, &pool);
         if ((*expr) == nullptr) {
             return illegal_converting_error(arrow_type->name(), type_desc.debug_string());
         }
-        *column = ColumnHelper::create_column(memory::get_default_allocator(), *raw_type_desc, slot_desc->is_nullable());
+        *column = ColumnHelper::create_column(allocator, *raw_type_desc, slot_desc->is_nullable());
     }
 
     return Status::OK();

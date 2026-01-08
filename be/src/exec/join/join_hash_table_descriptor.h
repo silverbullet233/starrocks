@@ -90,9 +90,9 @@ private:
 };
 
 #define ASOF_INDEX_BUFFER_TYPES(T)                                                                                  \
-    Buffer<std::unique_ptr<AsofIndex<T, TExprOpcode::LT>>>, Buffer<std::unique_ptr<AsofIndex<T, TExprOpcode::LE>>>, \
-            Buffer<std::unique_ptr<AsofIndex<T, TExprOpcode::GT>>>,                                                 \
-            Buffer<std::unique_ptr<AsofIndex<T, TExprOpcode::GE>>>
+    std::vector<std::unique_ptr<AsofIndex<T, TExprOpcode::LT>>>, std::vector<std::unique_ptr<AsofIndex<T, TExprOpcode::LE>>>, \
+            std::vector<std::unique_ptr<AsofIndex<T, TExprOpcode::GT>>>,                                                 \
+            std::vector<std::unique_ptr<AsofIndex<T, TExprOpcode::GE>>>
 
 using AsofIndexBufferVariant =
         std::variant<ASOF_INDEX_BUFFER_TYPES(int64_t),       // 0-3: Buffer<AsofIndex<int64_t, OP>*>
@@ -105,15 +105,19 @@ using AsofIndexBufferVariant =
 inline AsofIndexBufferVariant create_asof_index_vector(size_t variant_index);
 
 struct JoinHashTableItems {
-    JoinHashTableItems()
-            : first(memory::get_default_allocator()),
-              next(memory::get_default_allocator()),
-              fps(memory::get_default_allocator()),
-              key_bitset(memory::get_default_allocator()),
-              dense_groups(memory::get_default_allocator()),
-              build_slice(memory::get_default_allocator()),
-              build_key_nulls(memory::get_default_allocator()),
-              asof_index_vector(create_asof_index_vector(0)) {}
+    JoinHashTableItems() : _allocator(memory::get_default_allocator()), asof_index_vector(create_asof_index_vector(0)) {}
+    ~JoinHashTableItems() { release_buffers(); }
+
+    void release_buffers() {
+        first.release(_allocator);
+        next.release(_allocator);
+        fps.release(_allocator);
+        key_bitset.release(_allocator);
+        dense_groups.release(_allocator);
+        build_slice.release(_allocator);
+        build_key_nulls.release(_allocator);
+    }
+
     //TODO: memory continues problem?
     ChunkPtr build_chunk = nullptr;
     Columns key_columns;
@@ -126,20 +130,22 @@ struct JoinHashTableItems {
     // the list of keys in a bucket.
     // A paper (https://dare.uva.nl/search?identifier=5ccbb60a-38b8-4eeb-858a-e7735dd37487) talks
     // about the bucket-chained hash table of this kind.
-    Buffer<uint32_t> first;
-    Buffer<uint32_t> next;
-    Buffer<uint8_t> fps;
+    RawBuffer<uint32_t> first;
+    RawBuffer<uint32_t> next;
+    RawBuffer<uint8_t> fps;
 
-    Buffer<uint8_t> key_bitset;
+    RawBuffer<uint8_t> key_bitset;
     struct DenseGroup {
         uint32_t start_index = 0;
         uint32_t bitset = 0;
     };
-    Buffer<DenseGroup> dense_groups;
+    RawBuffer<DenseGroup> dense_groups;
 
-    Buffer<Slice> build_slice;
+    RawBuffer<Slice> build_slice;
     ColumnPtr build_key_column = nullptr;
-    Buffer<uint8_t> build_key_nulls;
+    RawBuffer<uint8_t> build_key_nulls;
+
+    memory::Allocator* _allocator = nullptr;
 
     uint32_t bucket_size = 0;
     uint32_t log_bucket_size = 0;
@@ -172,7 +178,13 @@ struct JoinHashTableItems {
     bool ht_cache_miss_serious() const { return cache_miss_serious; }
 
     void resize_asof_index_vector(size_t size) {
-        std::visit([size](auto& buffer) { buffer.resize(size); }, asof_index_vector);
+        std::visit(
+                [size](auto& buffer) {
+                    // For std::vector<unique_ptr<T>>, resize(size) will default-construct
+                    // empty unique_ptr objects, which is what we want
+                    buffer.resize(size);
+                },
+                asof_index_vector);
     }
 
     void finalize_asof_index_vector() {
@@ -378,6 +390,8 @@ struct HashTableParam {
     RuntimeProfile::Counter* output_build_column_timer = nullptr;
     RuntimeProfile::Counter* output_probe_column_timer = nullptr;
     RuntimeProfile::Counter* probe_counter = nullptr;
+
+    memory::Allocator* allocator = nullptr;
 };
 
 inline bool is_asof_join(TJoinOp::type join_type) {
@@ -393,17 +407,13 @@ constexpr size_t get_asof_variant_index(LogicalType logical_type, TExprOpcode::t
 
 #define CREATE_ASOF_VECTOR_CASE(TYPE, BASE_INDEX)                                     \
     case BASE_INDEX + 0:                                                              \
-        return Buffer<std::unique_ptr<AsofIndex<TYPE, TExprOpcode::LT>>>{             \
-                memory::get_default_allocator()};                                     \
+        return std::vector<std::unique_ptr<AsofIndex<TYPE, TExprOpcode::LT>>>{};        \
     case BASE_INDEX + 1:                                                              \
-        return Buffer<std::unique_ptr<AsofIndex<TYPE, TExprOpcode::LE>>>{             \
-                memory::get_default_allocator()};                                     \
+        return std::vector<std::unique_ptr<AsofIndex<TYPE, TExprOpcode::LE>>>{};        \
     case BASE_INDEX + 2:                                                              \
-        return Buffer<std::unique_ptr<AsofIndex<TYPE, TExprOpcode::GT>>>{             \
-                memory::get_default_allocator()};                                     \
+        return std::vector<std::unique_ptr<AsofIndex<TYPE, TExprOpcode::GT>>>{};        \
     case BASE_INDEX + 3:                                                              \
-        return Buffer<std::unique_ptr<AsofIndex<TYPE, TExprOpcode::GE>>>{             \
-                memory::get_default_allocator()};
+        return std::vector<std::unique_ptr<AsofIndex<TYPE, TExprOpcode::GE>>>{};
 
 inline AsofIndexBufferVariant create_asof_index_vector(size_t variant_index) {
     switch (variant_index) {

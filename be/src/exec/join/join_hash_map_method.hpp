@@ -29,8 +29,8 @@ template <LogicalType LT>
 void BucketChainedJoinHashMap<LT>::build_prepare(RuntimeState* state, JoinHashTableItems* table_items) {
     table_items->bucket_size = JoinHashMapHelper::calc_bucket_size(table_items->row_count + 1);
     table_items->log_bucket_size = __builtin_ctz(table_items->bucket_size);
-    table_items->first.resize(table_items->bucket_size, 0);
-    table_items->next.resize(table_items->row_count + 1, 0);
+    table_items->first.resize(table_items->_allocator, table_items->bucket_size, 0);
+    table_items->next.resize(table_items->_allocator, table_items->row_count + 1, 0);
 }
 
 template <LogicalType LT>
@@ -128,8 +128,8 @@ void TLinearChainedJoinHashMap<LT, NeedBuildChained>::build_prepare(RuntimeState
                                                                     JoinHashTableItems* table_items) {
     table_items->bucket_size = JoinHashMapHelper::calc_bucket_size(table_items->row_count + 1);
     table_items->log_bucket_size = __builtin_ctz(table_items->bucket_size);
-    table_items->first.resize(table_items->bucket_size, 0);
-    table_items->next.resize(table_items->row_count + 1, 0);
+    table_items->first.resize(table_items->_allocator, table_items->bucket_size, 0);
+    table_items->next.resize(table_items->_allocator, table_items->row_count + 1, 0);
     if (is_asof_join(table_items->join_type)) {
         table_items->resize_asof_index_vector(table_items->row_count + 1);
     }
@@ -375,9 +375,9 @@ template <LogicalType LT>
 void LinearChainedAsofJoinHashMap<LT>::build_prepare(RuntimeState* state, JoinHashTableItems* table_items) {
     table_items->bucket_size = JoinHashMapHelper::calc_bucket_size(table_items->row_count + 1);
     table_items->log_bucket_size = __builtin_ctz(table_items->bucket_size);
-    table_items->first.resize(table_items->bucket_size, 0);
-    table_items->fps.resize(table_items->bucket_size, 0);
-    table_items->next.resize(table_items->row_count + 1, 0);
+    table_items->first.resize(table_items->_allocator, table_items->bucket_size, 0);
+    table_items->fps.resize(table_items->_allocator, table_items->bucket_size, 0);
+    table_items->next.resize(table_items->_allocator, table_items->row_count + 1, 0);
     table_items->resize_asof_index_vector(table_items->row_count + 1);
 }
 
@@ -544,8 +544,8 @@ void DirectMappingJoinHashMap<LT>::build_prepare(RuntimeState* state, JoinHashTa
                                           static_cast<int64_t>(RunTimeTypeLimits<LT>::min_value()) + 1L;
     table_items->bucket_size = BUCKET_SIZE;
     table_items->log_bucket_size = __builtin_ctz(table_items->bucket_size);
-    table_items->first.resize(table_items->bucket_size, 0);
-    table_items->next.resize(table_items->row_count + 1, 0);
+    table_items->first.resize(table_items->_allocator, table_items->bucket_size, 0);
+    table_items->next.resize(table_items->_allocator, table_items->row_count + 1, 0);
     if (is_asof_join(table_items->join_type)) {
         table_items->resize_asof_index_vector(table_items->row_count + 1);
     }
@@ -625,8 +625,8 @@ template <LogicalType LT>
 void RangeDirectMappingJoinHashMap<LT>::build_prepare(RuntimeState* state, JoinHashTableItems* table_items) {
     const uint64_t value_interval = static_cast<uint64_t>(table_items->max_value) - table_items->min_value + 1L;
     table_items->bucket_size = value_interval;
-    table_items->first.resize(table_items->bucket_size, 0);
-    table_items->next.resize(table_items->row_count + 1, 0);
+    table_items->first.resize(table_items->_allocator, table_items->bucket_size, 0);
+    table_items->next.resize(table_items->_allocator, table_items->row_count + 1, 0);
     if (is_asof_join(table_items->join_type)) {
         table_items->resize_asof_index_vector(table_items->row_count + 1);
     }
@@ -713,7 +713,7 @@ template <LogicalType LT>
 void RangeDirectMappingJoinHashSet<LT>::build_prepare(RuntimeState* state, JoinHashTableItems* table_items) {
     const uint64_t value_interval = static_cast<uint64_t>(table_items->max_value) - table_items->min_value + 1L;
     table_items->bucket_size = (value_interval + 7) / 8;
-    table_items->key_bitset.resize(table_items->bucket_size, 0);
+    table_items->key_bitset.resize(table_items->_allocator, table_items->bucket_size, 0);
 }
 
 template <LogicalType LT>
@@ -785,9 +785,9 @@ template <LogicalType LT>
 void DenseRangeDirectMappingJoinHashMap<LT>::build_prepare(RuntimeState* state, JoinHashTableItems* table_items) {
     const uint64_t value_interval = static_cast<uint64_t>(table_items->max_value) - table_items->min_value + 1L;
     table_items->bucket_size = table_items->row_count + 1;
-    table_items->dense_groups.resize((value_interval + 31) / 32);
-    table_items->first.resize(table_items->row_count + 1, 0);
-    table_items->next.resize(table_items->row_count + 1, 0);
+    table_items->dense_groups.resize(table_items->_allocator, (value_interval + 31) / 32, {});
+    table_items->first.resize(table_items->_allocator, table_items->row_count + 1, 0);
+    table_items->next.resize(table_items->_allocator, table_items->row_count + 1, 0);
     if (is_asof_join(table_items->join_type)) {
         table_items->resize_asof_index_vector(table_items->row_count + 1);
     }

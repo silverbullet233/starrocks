@@ -65,18 +65,6 @@ public:
               _concat_rows_limit(concat_rows_limit),
               _concat_bytes_limit(concat_bytes_limit) {}
 
-    ColumnViewBase(memory::Allocator* allocator, const ColumnViewBase& that)
-            : Column(allocator),
-              _default_column(that._default_column->clone(allocator)),
-              _concat_rows_limit(that._concat_rows_limit),
-              _concat_bytes_limit(that._concat_bytes_limit),
-              _habitats(that._habitats),
-              _num_rows(that._num_rows),
-              _tasks(that._tasks),
-              _habitat_idx(that._habitat_idx),
-              _row_idx(that._row_idx),
-              _concat_column(that._concat_column) {}
-
     ColumnViewBase(ColumnViewBase&&) = delete;
     void append_default() override;
 

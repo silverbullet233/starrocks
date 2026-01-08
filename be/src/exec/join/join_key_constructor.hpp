@@ -116,7 +116,7 @@ void BuildKeyConstructorForSerializedFixedSize<LT>::build_key(RuntimeState* stat
                                                            table_items->serialized_fixed_size_key_bytes, 1, row_count);
     // Build key is_nulls.
     if (!null_columns.empty()) {
-        table_items->build_key_nulls.resize(row_count + 1);
+        table_items->build_key_nulls.resize(table_items->_allocator, row_count + 1);
         auto* dest_is_nulls = table_items->build_key_nulls.data();
         const auto& null_data_0 = null_columns[0]->immutable_data();
         std::memcpy(dest_is_nulls, null_data_0.data(), (row_count + 1) * sizeof(NullColumn::ValueType));

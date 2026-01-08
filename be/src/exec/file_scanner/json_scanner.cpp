@@ -212,7 +212,7 @@ Status JsonScanner::_create_src_chunk(ChunkPtr* chunk) {
         }
 
         // The columns in source chunk are all in AdaptiveNullableColumn type;
-        auto col = ColumnHelper::create_column(memory::get_default_allocator(), _json_types[column_pos], true, false, 0, true);
+        auto col = ColumnHelper::create_column(_allocator, _json_types[column_pos], true, false, 0, true);
         (*chunk)->append_column(std::move(col), slot_desc->id());
     }
 
@@ -224,7 +224,7 @@ void JsonScanner::_materialize_src_chunk_adaptive_nullable_column(ChunkPtr& chun
     for (int i = 0; i < chunk->num_columns(); i++) {
         AdaptiveNullableColumn* adaptive_column =
                 down_cast<AdaptiveNullableColumn*>(chunk->get_column_raw_ptr_by_index(i));
-        chunk->update_column_by_index(NullableColumn::create(memory::get_default_allocator(), adaptive_column->materialized_raw_data_column(),
+        chunk->update_column_by_index(NullableColumn::create(_allocator, adaptive_column->materialized_raw_data_column(),
                                                              adaptive_column->materialized_raw_null_column()),
                                       i);
     }
@@ -266,7 +266,7 @@ StatusOr<ChunkPtr> JsonScanner::_cast_chunk(const starrocks::ChunkPtr& src_chunk
         }
 
         ASSIGN_OR_RETURN(ColumnPtr col, _cast_exprs[column_pos]->evaluate_checked(nullptr, src_chunk.get()));
-        col = ColumnHelper::unfold_const_column(memory::get_default_allocator(), slot->type(), src_chunk->num_rows(), std::move(col));
+        col = ColumnHelper::unfold_const_column(_allocator, slot->type(), src_chunk->num_rows(), std::move(col));
         cast_chunk->append_column(std::move(col), slot->id());
     }
 

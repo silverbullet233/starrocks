@@ -376,6 +376,7 @@ struct HdfsScannerContext {
     int64_t connector_max_split_size = 0;
 
     RuntimeScanRangePruner* rf_scan_range_pruner = nullptr;
+    memory::Allocator* allocator = memory::get_default_allocator();
 
     bool can_use_count_optimization() const;
 

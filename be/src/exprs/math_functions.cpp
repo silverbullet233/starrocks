@@ -331,7 +331,7 @@ StatusOr<ColumnPtr> MathFunctions::iceberg_truncate_decimal(FunctionContext* con
     NullColumn::MutablePtr null_flags;
     bool has_null = false;
     bool c0_is_const = false;
-    PREPARE_COLUMN_WITH_CONST_AND_NULL_FOR_ICEBERG_FUNC(c0, c1);
+    PREPARE_COLUMN_WITH_CONST_AND_NULL_FOR_ICEBERG_FUNC(context, c0, c1);
     const int size = c0->size();
     int64_t width = c1->get(0).get_int32();
     auto decimalv3_col = ColumnHelper::cast_to_raw<Type>(c0);
@@ -390,7 +390,7 @@ StatusOr<ColumnPtr> MathFunctions::iceberg_truncate_int(FunctionContext* context
     NullColumn::MutablePtr null_flags;
     bool has_null = false;
     bool c0_is_const = false;
-    PREPARE_COLUMN_WITH_CONST_AND_NULL_FOR_ICEBERG_FUNC(c0, c1);
+    PREPARE_COLUMN_WITH_CONST_AND_NULL_FOR_ICEBERG_FUNC(context, c0, c1);
     const int size = c0->size();
     int64_t width = c1->get(0).get_int32();
 
@@ -437,7 +437,7 @@ StatusOr<ColumnPtr> MathFunctions::iceberg_bucket_int(FunctionContext* context, 
     NullColumn::MutablePtr null_flags;
     bool has_null = false;
     bool c0_is_const = false;
-    PREPARE_COLUMN_WITH_CONST_AND_NULL_FOR_ICEBERG_FUNC(c0, c1);
+    PREPARE_COLUMN_WITH_CONST_AND_NULL_FOR_ICEBERG_FUNC(context, c0, c1);
     const int size = c0->size();
     int64_t width = c1->get(0).get_int32();
 
@@ -479,7 +479,7 @@ StatusOr<ColumnPtr> MathFunctions::iceberg_bucket_string(FunctionContext* contex
     NullColumn::MutablePtr null_flags;
     bool has_null = false;
     bool c0_is_const = false;
-    PREPARE_COLUMN_WITH_CONST_AND_NULL_FOR_ICEBERG_FUNC(c0, c1);
+    PREPARE_COLUMN_WITH_CONST_AND_NULL_FOR_ICEBERG_FUNC(context, c0, c1);
     const int size = c0->size();
     int64_t width = c1->get(0).get_int32();
 
@@ -516,7 +516,7 @@ StatusOr<ColumnPtr> MathFunctions::iceberg_bucket_date(FunctionContext* context,
     NullColumn::MutablePtr null_flags;
     bool has_null = false;
     bool c0_is_const = false;
-    PREPARE_COLUMN_WITH_CONST_AND_NULL_FOR_ICEBERG_FUNC(c0, c1);
+    PREPARE_COLUMN_WITH_CONST_AND_NULL_FOR_ICEBERG_FUNC(context, c0, c1);
     const int size = c0->size();
     int64_t width = c1->get(0).get_int32();
 
@@ -555,7 +555,7 @@ StatusOr<ColumnPtr> MathFunctions::iceberg_bucket_datetime(FunctionContext* cont
     NullColumn::MutablePtr null_flags;
     bool has_null = false;
     bool c0_is_const = false;
-    PREPARE_COLUMN_WITH_CONST_AND_NULL_FOR_ICEBERG_FUNC(c0, c1);
+    PREPARE_COLUMN_WITH_CONST_AND_NULL_FOR_ICEBERG_FUNC(context, c0, c1);
     const int size = c0->size();
     int64_t width = c1->get(0).get_int32();
 
@@ -625,7 +625,7 @@ StatusOr<ColumnPtr> MathFunctions::iceberg_bucket_decimal(FunctionContext* conte
     NullColumn::MutablePtr null_flags;
     bool has_null = false;
     bool c0_is_const = false;
-    PREPARE_COLUMN_WITH_CONST_AND_NULL_FOR_ICEBERG_FUNC(c0, c1);
+    PREPARE_COLUMN_WITH_CONST_AND_NULL_FOR_ICEBERG_FUNC(context, c0, c1);
     const int size = c0->size();
     int64_t width = c1->get(0).get_int32();
     auto decimalv3_col = ColumnHelper::cast_to_raw<Type>(c0);

@@ -238,6 +238,7 @@ void HashJoinNode::_init_hash_table_param(HashTableParam* param, RuntimeState* r
     param->enable_partition_hash_join = _enable_partition_hash_join;
     param->column_view_concat_rows_limit = runtime_state->column_view_concat_rows_limit();
     param->column_view_concat_bytes_limit = runtime_state->column_view_concat_bytes_limit();
+    param->allocator = memory::get_default_allocator();
 
     std::set<SlotId> predicate_slots;
     for (ExprContext* expr_context : _conjunct_ctxs) {

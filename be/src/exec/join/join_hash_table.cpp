@@ -414,6 +414,7 @@ void JoinHashTable::close() {
 // may be called more than once if spill
 void JoinHashTable::create(const HashTableParam& param) {
     _table_items = std::make_shared<JoinHashTableItems>();
+    _table_items->_allocator = param.allocator != nullptr ? param.allocator : memory::get_default_allocator();
     if (_probe_state == nullptr) {
         _probe_state = std::make_unique<HashTableProbeState>();
         _probe_state->search_ht_timer = param.search_ht_timer;

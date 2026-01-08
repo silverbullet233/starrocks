@@ -67,6 +67,12 @@ QueryContext::~QueryContext() noexcept {
                     print_id(query_id()), lifetime(), cpu_cost(), mem_cost_bytes(), get_scan_bytes(), get_spill_bytes(),
                     cache_hit_ratio);
         }
+        {
+            auto total_allocation = _mem_tracker->allocation();
+            auto allocator_allocation = _mem_tracker->allocation_by_allocator();
+            LOG(INFO) << fmt::format("total allocation:{} allocator allocation:{}, percentile: {:.2f}%",
+                total_allocation, allocator_allocation, allocator_allocation* 1.0 / total_allocation * 100);
+        }
     }
 
     {

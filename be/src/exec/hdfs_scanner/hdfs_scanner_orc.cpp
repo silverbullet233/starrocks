@@ -234,7 +234,7 @@ bool OrcRowReaderFilter::filterOnPickStringDictionary(
         ChunkPtr dict_value_chunk = std::make_shared<Chunk>();
         // always assume there is a possibility of null value in ORC column.
         // and we evaluate with null always.
-        ColumnPtr column_ptr = ColumnHelper::create_column(memory::get_default_allocator(), slot_desc->type(), true);
+        ColumnPtr column_ptr = ColumnHelper::create_column(_scanner_ctx.allocator, slot_desc->type(), true);
         dict_value_chunk->append_column(column_ptr, slot_id);
 
         auto* nullable_column = down_cast<NullableColumn*>(column_ptr->as_mutable_raw_ptr());
@@ -613,7 +613,7 @@ StatusOr<size_t> HdfsOrcScanner::_do_get_next(ChunkPtr* chunk) {
         orc::RowReader::ReadPosition position;
         size_t read_num_values = 0;
         bool has_used_dict_filter = false;
-        auto* allocator = memory::get_default_allocator();
+        auto* allocator = _scanner_ctx.allocator;
         MutableColumnPtr row_delete_filter = BooleanColumn::create(allocator);
         {
             SCOPED_RAW_TIMER(&_app_stats.column_read_ns);

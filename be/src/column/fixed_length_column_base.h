@@ -100,7 +100,7 @@ public:
 
     void reserve(size_t n) override { _data.reserve(n); }
 
-    void resize(size_t n) override { get_data().resize(n); }
+    void resize(size_t n) override { get_data().resize(n, T{}); }
 
     void resize_uninitialized(size_t n) override {
         auto& data = get_data();

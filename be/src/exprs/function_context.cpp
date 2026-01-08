@@ -80,7 +80,9 @@ FunctionContext* FunctionContext::create_test_context(std::vector<TypeDesc>&& ar
     return context;
 }
 
-FunctionContext::FunctionContext() = default;
+FunctionContext::FunctionContext() {
+    _allocator = memory::get_default_allocator();
+}
 FunctionContext::~FunctionContext() = default;
 
 FunctionContext* FunctionContext::clone(MemPool* pool) {
