@@ -41,7 +41,8 @@ namespace starrocks::parquet {
 Status StatisticsHelper::decode_value_into_column(const MutableColumnPtr& column,
                                                   const std::vector<std::string>& values,
                                                   const std::vector<bool>& null_pages, const TypeDescriptor& type,
-                                                  const ParquetField* field, const std::string& timezone) {
+                                                  const ParquetField* field, const std::string& timezone,
+                                                  memory::Allocator* allocator) {
     std::unique_ptr<ColumnConverter> converter;
     RETURN_IF_ERROR(ColumnConverterFactory::create_converter(*field, type, timezone, &converter));
     bool ret = true;
@@ -58,7 +59,7 @@ Status StatisticsHelper::decode_value_into_column(const MutableColumnPtr& column
                 }
             }
         } else {
-            MutableColumnPtr src_column = converter->create_src_column();
+            MutableColumnPtr src_column = converter->create_src_column(allocator);
             for (size_t i = 0; i < values.size(); i++) {
                 if (null_pages[i]) {
                     ret &= src_column->append_nulls(1);
@@ -83,7 +84,7 @@ Status StatisticsHelper::decode_value_into_column(const MutableColumnPtr& column
                 }
             }
         } else {
-            MutableColumnPtr src_column = converter->create_src_column();
+            MutableColumnPtr src_column = converter->create_src_column(allocator);
             for (size_t i = 0; i < values.size(); i++) {
                 if (null_pages[i]) {
                     ret &= src_column->append_nulls(1);
@@ -110,7 +111,7 @@ Status StatisticsHelper::decode_value_into_column(const MutableColumnPtr& column
                 }
             }
         } else {
-            MutableColumnPtr src_column = converter->create_src_column();
+            MutableColumnPtr src_column = converter->create_src_column(allocator);
             for (size_t i = 0; i < values.size(); i++) {
                 if (null_pages[i]) {
                     ret &= src_column->append_nulls(1);

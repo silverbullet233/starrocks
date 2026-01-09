@@ -196,7 +196,7 @@ Status MapColumnIterator::fetch_values_by_rowid(const rowid_t* rowids, size_t si
     }
 
     // 2. Read offset column
-    UInt32Column array_size(memory::get_default_allocator());
+    UInt32Column array_size(_opts.allocator);
     array_size.reserve(size);
     RETURN_IF_ERROR(_offsets->fetch_values_by_rowid(rowids, size, &array_size));
 

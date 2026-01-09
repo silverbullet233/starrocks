@@ -94,7 +94,7 @@ public:
     }
 
     static Status build_code_convert_map(ColumnIterator* file_column_iter, GlobalDictMap* global_dict,
-                                         std::vector<int16_t>* code_convert_map);
+                                         std::vector<int16_t>* code_convert_map, memory::Allocator* allocator);
 
     std::string name() const override { return "GlobalDictCodeColumnIterator"; }
 

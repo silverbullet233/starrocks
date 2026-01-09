@@ -87,7 +87,7 @@ auto ProbeKeyConstructorForOneKey<LT>::get_key_data(const HashTableProbeState& p
 
 template <LogicalType LT>
 void BuildKeyConstructorForSerializedFixedSize<LT>::prepare(RuntimeState* state, JoinHashTableItems* table_items) {
-    table_items->build_key_column = ColumnType::create(memory::get_default_allocator(), table_items->row_count + 1);
+    table_items->build_key_column = ColumnType::create(table_items->_allocator, table_items->row_count + 1);
 }
 
 template <LogicalType LT>
@@ -141,8 +141,8 @@ void ProbeKeyConstructorForSerializedFixedSize<LT>::build_key(const JoinHashTabl
             if ((*probe_state->key_columns)[i]->is_nullable()) {
                 data_columns.emplace_back((*probe_state->key_columns)[i]);
             } else {
-                auto tmp_column = NullableColumn::create(memory::get_default_allocator(), (*probe_state->key_columns)[i],
-                                                         NullColumn::create(memory::get_default_allocator(), probe_state->probe_row_count, 0));
+                auto tmp_column = NullableColumn::create(probe_state->allocator, (*probe_state->key_columns)[i],
+                                                         NullColumn::create(probe_state->allocator, probe_state->probe_row_count, 0));
                 data_columns.emplace_back(tmp_column);
             }
         } else if ((*probe_state->key_columns)[i]->is_nullable()) {

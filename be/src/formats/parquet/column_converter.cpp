@@ -555,39 +555,39 @@ Status ColumnConverterFactory::create_converter(const ParquetField& field, const
     return Status::OK();
 }
 
-MutableColumnPtr ColumnConverter::create_src_column() {
+MutableColumnPtr ColumnConverter::create_src_column(memory::Allocator* allocator) {
     MutableColumnPtr data_column = nullptr;
     switch (parquet_type) {
     case tparquet::Type::type::BOOLEAN:
-        data_column = FixedLengthColumn<uint8_t>::create(memory::get_default_allocator());
+        data_column = FixedLengthColumn<uint8_t>::create(allocator);
         break;
     case tparquet::Type::type::INT32:
         data_column =
-                FixedLengthColumn<PhysicalTypeTraits<tparquet::Type::INT32>::CppType>::create(memory::get_default_allocator());
+                FixedLengthColumn<PhysicalTypeTraits<tparquet::Type::INT32>::CppType>::create(allocator);
         break;
     case tparquet::Type::type::INT64:
         data_column =
-                FixedLengthColumn<PhysicalTypeTraits<tparquet::Type::INT64>::CppType>::create(memory::get_default_allocator());
+                FixedLengthColumn<PhysicalTypeTraits<tparquet::Type::INT64>::CppType>::create(allocator);
         break;
     case tparquet::Type::type::INT96:
         data_column =
-                FixedLengthColumn<PhysicalTypeTraits<tparquet::Type::INT96>::CppType>::create(memory::get_default_allocator());
+                FixedLengthColumn<PhysicalTypeTraits<tparquet::Type::INT96>::CppType>::create(allocator);
         break;
     case tparquet::Type::type::FLOAT:
         data_column =
-                FixedLengthColumn<PhysicalTypeTraits<tparquet::Type::FLOAT>::CppType>::create(memory::get_default_allocator());
+                FixedLengthColumn<PhysicalTypeTraits<tparquet::Type::FLOAT>::CppType>::create(allocator);
         break;
     case tparquet::Type::type::DOUBLE:
         data_column =
-                FixedLengthColumn<PhysicalTypeTraits<tparquet::Type::DOUBLE>::CppType>::create(memory::get_default_allocator());
+                FixedLengthColumn<PhysicalTypeTraits<tparquet::Type::DOUBLE>::CppType>::create(allocator);
         break;
     case tparquet::Type::type::BYTE_ARRAY:
     case tparquet::Type::type::FIXED_LEN_BYTE_ARRAY:
-        data_column = BinaryColumn::create(memory::get_default_allocator());
+        data_column = BinaryColumn::create(allocator);
         break;
     }
-    return NullableColumn::create(memory::get_default_allocator(), std::move(data_column),
-                                  NullColumn::create(memory::get_default_allocator()));
+    return NullableColumn::create(allocator, std::move(data_column),
+                                  NullColumn::create(allocator));
 }
 
 Status parquet::Int32ToDateConverter::convert(const Column* src, Column* dst) {

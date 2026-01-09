@@ -247,10 +247,10 @@ StatusOr<bool> RawColumnReader::_row_group_zone_map_filter(const std::vector<con
                                                     get_column_parquet_field(), min_values, max_values);
         if (st.ok()) {
             st = StatisticsHelper::decode_value_into_column(min_column, min_values, null_pages, col_type,
-                                                            get_column_parquet_field(), _opts.timezone);
+                                                            get_column_parquet_field(), _opts.timezone, _opts.allocator);
             RETURN_IF(!st.ok(), filtered);
             st = StatisticsHelper::decode_value_into_column(max_column, max_values, null_pages, col_type,
-                                                            get_column_parquet_field(), _opts.timezone);
+                                                            get_column_parquet_field(), _opts.timezone, _opts.allocator);
             RETURN_IF(!st.ok(), filtered);
 
             zone_map_detail = ZoneMapDetail{min_column->get(0), max_column->get(0), has_null};
@@ -299,7 +299,7 @@ StatusOr<bool> RawColumnReader::_page_index_zone_map_filter(const std::vector<co
     MutableColumnPtr max_column = ColumnHelper::create_column(memory::get_default_allocator(), col_type, true);
     // deal with min_values
     auto st = StatisticsHelper::decode_value_into_column(min_column, column_index.min_values, null_pages, col_type,
-                                                         get_column_parquet_field(), _opts.timezone);
+                                                         get_column_parquet_field(), _opts.timezone, _opts.allocator);
     if (!st.ok()) {
         // swallow error status
         LOG(INFO) << "Error when decode min/max statistics, type " << col_type.debug_string();
@@ -307,7 +307,7 @@ StatusOr<bool> RawColumnReader::_page_index_zone_map_filter(const std::vector<co
     }
     // deal with max_values
     st = StatisticsHelper::decode_value_into_column(max_column, column_index.max_values, null_pages, col_type,
-                                                    get_column_parquet_field(), _opts.timezone);
+                                                    get_column_parquet_field(), _opts.timezone, _opts.allocator);
     if (!st.ok()) {
         // swallow error status
         LOG(INFO) << "Error when decode min/max statistics, type " << col_type.debug_string();
@@ -520,7 +520,7 @@ Status ScalarColumnReader::_read_range_impl(const Range<uint64_t>& range, const 
             return _reader->read_range(range, filter, content_type, dst->as_mutable_raw_ptr());
         } else {
             if (_tmp_intermediate_column == nullptr) {
-                _tmp_intermediate_column = _converter->create_src_column();
+                _tmp_intermediate_column = _converter->create_src_column(_opts.allocator);
             }
             _tmp_intermediate_column->as_mutable_raw_ptr()->reserve(range.span_size());
             {

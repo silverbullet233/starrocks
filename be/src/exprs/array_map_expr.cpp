@@ -186,7 +186,7 @@ StatusOr<ColumnPtr> ArrayMapExpr::evaluate_lambda_expr(ExprContext* context, Chu
             cur_chunk->append_column(captured_column, slot_id);
         } else {
             if (!captured_column->is_constant() && captured_column->is_array()) {
-                auto view_column = ArrayViewColumn::from_array_column(captured_column);
+                auto view_column = ArrayViewColumn::from_array_column(captured_column, context->get_allocator());
                 ASSIGN_OR_RETURN(auto replicated_view_column, view_column->replicate(aligned_offsets_data, context->get_allocator()));
                 cur_chunk->append_column(replicated_view_column, slot_id);
                 RETURN_IF_ERROR(view_column->capacity_limit_reached());
@@ -241,7 +241,7 @@ StatusOr<ColumnPtr> ArrayMapExpr::evaluate_lambda_expr(ExprContext* context, Chu
                     // because not all functions can handle ArrayViewColumn correctly, we need to convert it back to ArrayColumn first.
                     // in the future, this copy can be removed when we solve this problem.
                     if (column->is_array_view()) {
-                        column = ArrayViewColumn::to_array_column(column);
+                        column = ArrayViewColumn::to_array_column(column, context->get_allocator());
                     }
                 }
                 ASSIGN_OR_RETURN(auto tmp_col, context->evaluate(_children[0], tmp_chunk.get()));

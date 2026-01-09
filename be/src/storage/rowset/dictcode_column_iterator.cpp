@@ -94,12 +94,13 @@ Status GlobalDictCodeColumnIterator::decode_string_dict_codes(const Column& code
 
 Status GlobalDictCodeColumnIterator::build_code_convert_map(ColumnIterator* file_column_iter,
                                                             GlobalDictMap* global_dict,
-                                                            std::vector<int16_t>* code_convert_map) {
+                                                            std::vector<int16_t>* code_convert_map,
+                                                            memory::Allocator* allocator) {
     DCHECK(file_column_iter->all_page_dict_encoded());
 
     int dict_size = file_column_iter->dict_size();
 
-    auto column = BinaryColumn::create(memory::get_default_allocator());
+    auto column = BinaryColumn::create(allocator);
 
     int dict_codes[dict_size];
     for (int i = 0; i < dict_size; ++i) {
@@ -127,18 +128,18 @@ Status GlobalDictCodeColumnIterator::build_code_convert_map(ColumnIterator* file
 }
 
 MutableColumnPtr GlobalDictCodeColumnIterator::_new_local_dict_col(Column* src) {
-    MutableColumnPtr res = Int32Column::create(memory::get_default_allocator());
+    MutableColumnPtr res = Int32Column::create(_opts.allocator);
     auto code_data = ColumnHelper::get_data_column(src);
     if (code_data->is_array()) {
-        res = ArrayColumn::create(memory::get_default_allocator(),
-                                  NullableColumn::create(memory::get_default_allocator(), std::move(res),
-                                                         NullColumn::create(memory::get_default_allocator())),
-                                  UInt32Column::create(memory::get_default_allocator()));
+        res = ArrayColumn::create(_opts.allocator,
+                                  NullableColumn::create(_opts.allocator, std::move(res),
+                                                         NullColumn::create(_opts.allocator)),
+                                  UInt32Column::create(_opts.allocator));
     }
 
     if (src->is_nullable()) {
-        res = NullableColumn::create(memory::get_default_allocator(), std::move(res),
-                                     NullColumn::create(memory::get_default_allocator()));
+        res = NullableColumn::create(_opts.allocator, std::move(res),
+                                     NullColumn::create(_opts.allocator));
     }
     return res;
 }

@@ -52,6 +52,10 @@ class NullableColumn;
 class TIcebergSchemaField;
 struct TypeDescriptor;
 
+namespace memory {
+class Allocator;
+} // namespace memory
+
 namespace parquet {
 struct ParquetField;
 } // namespace parquet
@@ -86,6 +90,7 @@ struct ColumnReaderOptions {
     int64_t modification_time = 0;
     uint64_t file_size = 0;
     const DataCacheOptions* datacache_options;
+    memory::Allocator* allocator = nullptr;
 };
 
 class StoredColumnReader;

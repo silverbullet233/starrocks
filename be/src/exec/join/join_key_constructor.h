@@ -96,8 +96,8 @@ public:
     using ColumnType = typename RunTimeTypeTraits<LT>::ColumnType;
 
     static void prepare(RuntimeState* state, HashTableProbeState* probe_state) {
-        probe_state->is_nulls.resize(state->chunk_size());
-        probe_state->probe_key_column = ColumnType::create(memory::get_default_allocator(), state->chunk_size());
+        probe_state->is_nulls.resize(probe_state->allocator, state->chunk_size());
+        probe_state->probe_key_column = ColumnType::create(probe_state->allocator, state->chunk_size());
     }
 
     static void build_key(const JoinHashTableItems& table_items, HashTableProbeState* probe_state);
@@ -133,9 +133,9 @@ public:
 class ProbeKeyConstructorForSerialized {
 public:
     static void prepare(RuntimeState* state, HashTableProbeState* probe_state) {
-        probe_state->is_nulls.resize(state->chunk_size());
+        probe_state->is_nulls.resize(probe_state->allocator, state->chunk_size());
         probe_state->probe_pool = std::make_unique<MemPool>();
-        probe_state->probe_slice.resize(state->chunk_size());
+        probe_state->probe_slice.resize(probe_state->allocator, state->chunk_size());
     }
 
     static void build_key(const JoinHashTableItems& table_items, HashTableProbeState* probe_state);

@@ -515,8 +515,8 @@ SegmentIterator::SegmentIterator(std::shared_ptr<Segment> segment, Schema schema
           _segment(std::move(segment)),
           _opts(std::move(options)),
           _bitmap_index_evaluator(_schema, _opts.pred_tree),
-          _selection(memory::get_default_allocator()),
-          _selected_idx(memory::get_default_allocator()),
+          _selection(_opts.allocator),
+          _selected_idx(_opts.allocator),
           _predicate_columns(_opts.pred_tree.num_columns()) {
     // Initialize vector index context only when needed
     if (_opts.use_vector_index) {
@@ -929,6 +929,7 @@ Status SegmentIterator::_init_column_iterator_by_cid(const ColumnId cid, const C
     iter_opts.reader_type = _opts.reader_type;
     iter_opts.lake_io_opts = _opts.lake_io_opts;
     iter_opts.has_preaggregation = _opts.has_preaggregation;
+    iter_opts.allocator = _opts.allocator;
 
     RandomAccessFileOptions opts{.skip_fill_local_cache = !_opts.lake_io_opts.fill_data_cache,
                                  .buffer_size = _opts.lake_io_opts.buffer_size,
@@ -1711,7 +1712,7 @@ Status SegmentIterator::_do_get_next(Chunk* result, vector<rowid_t>* rowid) {
 
     if (_vector_index_ctx && _vector_index_ctx->use_vector_index && !_vector_index_ctx->use_ivfpq) {
         DCHECK(rowid != nullptr);
-        FloatColumn::MutablePtr distance_column = FloatColumn::create(memory::get_default_allocator());
+        FloatColumn::MutablePtr distance_column = FloatColumn::create(_opts.allocator);
         vector<rowid_t> rowids;
         for (const auto& rid : *rowid) {
             auto it = _vector_index_ctx->id2distance_map.find(rid);

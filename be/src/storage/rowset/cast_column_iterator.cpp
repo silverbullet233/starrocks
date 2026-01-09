@@ -26,24 +26,32 @@ CastColumnIterator::CastColumnIterator(std::unique_ptr<ColumnIterator> source_it
         : ColumnIteratorDecorator(source_iter.release(), kTakesOwnership),
           _obj_pool(new ObjectPool()),
           _cast_expr(nullptr),
-          _source_chunk() {
-    auto slot_id = SlotId{0};
-    auto column = ColumnHelper::create_column(memory::get_default_allocator(), source_type, nullable_source);
-    auto slot_desc = SlotDescriptor(slot_id, "", source_type);
-    auto column_ref = _obj_pool->add(new ColumnRef(&slot_desc));
-    CHECK(column != nullptr) << "source type=" << source_type;
-    _source_chunk.append_column(std::move(column), slot_id);
-    _cast_expr = VectorizedCastExprFactory::from_type(source_type, target_type, column_ref, _obj_pool.get(), false);
-    CHECK(_cast_expr != nullptr) << "Fail to create cast expr for source type=" << source_type
-                                 << " target type=" << target_type;
+          _source_chunk(),
+          _source_type(source_type),
+          _target_type(target_type),
+          _nullable_source(nullable_source) {
 }
 
 CastColumnIterator::~CastColumnIterator() = default;
 
+Status CastColumnIterator::init(const ColumnIteratorOptions& opts) {
+    RETURN_IF_ERROR(ColumnIteratorDecorator::init(opts));
+    auto slot_id = SlotId{0};
+    auto column = ColumnHelper::create_column(_opts.allocator, _source_type, _nullable_source);
+    auto slot_desc = SlotDescriptor(slot_id, "", _source_type);
+    auto column_ref = _obj_pool->add(new ColumnRef(&slot_desc));
+    CHECK(column != nullptr) << "source type=" << _source_type;
+    _source_chunk.append_column(std::move(column), slot_id);
+    _cast_expr = VectorizedCastExprFactory::from_type(_source_type, _target_type, column_ref, _obj_pool.get(), false);
+    CHECK(_cast_expr != nullptr) << "Fail to create cast expr for source type=" << _source_type
+                                 << " target type=" << _target_type;
+    return Status::OK();
+}
+
 void CastColumnIterator::do_cast(Column* target) {
     auto cast_result = _cast_expr->evaluate(nullptr, &_source_chunk);
     cast_result =
-            ColumnHelper::unfold_const_column(memory::get_default_allocator(), _cast_expr->type(), _source_chunk.num_rows(), std::move(cast_result));
+            ColumnHelper::unfold_const_column(_opts.allocator, _cast_expr->type(), _source_chunk.num_rows(), std::move(cast_result));
     if ((target->is_nullable() == cast_result->is_nullable()) && (target->size() == 0)) {
         target->swap_column(*(cast_result->as_mutable_raw_ptr()));
     } else if (!target->is_nullable() && cast_result->is_nullable()) {

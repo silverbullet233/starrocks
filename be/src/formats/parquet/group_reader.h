@@ -43,6 +43,10 @@ struct HdfsScanStats;
 class ExprContext;
 class TIcebergSchemaField;
 
+namespace memory {
+class Allocator;
+} // namespace memory
+
 namespace parquet {
 class FileMetaData;
 } // namespace parquet
@@ -113,6 +117,8 @@ struct GroupReaderParam {
     ColumnIdToGlobalDictMap* global_dictmaps = &EMPTY_GLOBAL_DICTMAPS;
 
     int32_t scan_range_id = -1;
+
+    memory::Allocator* allocator = nullptr;
 };
 
 class GroupReader {

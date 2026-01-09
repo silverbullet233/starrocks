@@ -30,6 +30,9 @@
 namespace starrocks {
 class Column;
 struct TypeDescriptor;
+namespace memory {
+class Allocator;
+} // namespace memory
 } // namespace starrocks
 
 namespace starrocks::parquet {
@@ -47,7 +50,7 @@ public:
     }
 
     // create column according parquet data type
-    MutableColumnPtr create_src_column();
+    MutableColumnPtr create_src_column(memory::Allocator* allocator);
 
     virtual Status convert(const Column* src, Column* dst) { return Status::OK(); };
 

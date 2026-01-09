@@ -228,11 +228,11 @@ struct JoinHashTableItems {
 };
 
 struct HashTableProbeState {
-    //TODO: memory release
-    Buffer<uint8_t> is_nulls;
-    Buffer<uint32_t> buckets;
-    Buffer<uint32_t> next;
-    Buffer<Slice> probe_slice;
+    memory::Allocator* allocator = nullptr;
+    RawBuffer<uint8_t> is_nulls;
+    RawBuffer<uint32_t> buckets;
+    RawBuffer<uint32_t> next;
+    RawBuffer<Slice> probe_slice;
 
     std::optional<ImmBuffer<uint8_t>> null_array;
     ColumnPtr probe_key_column;
@@ -245,9 +245,10 @@ struct HashTableProbeState {
     // when exec right join
     // record the build items is matched or not
     // 0: not matched, 1: matched
-    Buffer<uint8_t> build_match_index;
-    Buffer<uint32_t> probe_match_index;
-    Buffer<uint8_t> probe_match_filter;
+    RawBuffer<uint8_t> build_match_index;
+    RawBuffer<uint32_t> probe_match_index;
+    RawBuffer<uint8_t> probe_match_filter;
+
     uint32_t count = 0; // current return values count
     // the rows of src probe chunk
     size_t probe_row_count = 0;
@@ -276,17 +277,11 @@ struct HashTableProbeState {
     ColumnPtr asof_temporal_condition_column = nullptr;
 
     HashTableProbeState()
-            : is_nulls(memory::get_default_allocator()),
-              buckets(memory::get_default_allocator()),
-              next(memory::get_default_allocator()),
-              probe_slice(memory::get_default_allocator()),
+            : allocator(memory::get_default_allocator()),
               build_index_column(UInt32Column::create(memory::get_default_allocator())),
               probe_index_column(UInt32Column::create(memory::get_default_allocator())),
               build_index(down_cast<UInt32Column*>(build_index_column.get())->get_data()),
-              probe_index(down_cast<UInt32Column*>(probe_index_column.get())->get_data()),
-              build_match_index(memory::get_default_allocator()),
-              probe_match_index(memory::get_default_allocator()),
-              probe_match_filter(memory::get_default_allocator()) {}
+              probe_index(down_cast<UInt32Column*>(probe_index_column.get())->get_data()) {}
 
     struct ProbeCoroutine {
         struct ProbePromise {
@@ -315,24 +310,18 @@ struct HashTableProbeState {
     std::set<std::coroutine_handle<ProbeCoroutine::ProbePromise>> handles;
 
     HashTableProbeState(const HashTableProbeState& rhs)
-            : is_nulls(memory::get_default_allocator()),
-              buckets(memory::get_default_allocator()),
-              next(memory::get_default_allocator()),
-              probe_slice(memory::get_default_allocator()),
+            : allocator(rhs.allocator != nullptr ? rhs.allocator : memory::get_default_allocator()),
               null_array(rhs.null_array),
               probe_key_column(rhs.probe_key_column == nullptr ? nullptr : rhs.probe_key_column->clone()),
               key_columns(rhs.key_columns),
               build_index_column(rhs.build_index_column == nullptr
-                                         ? UInt32Column::create(memory::get_default_allocator())->as_mutable_ptr() // to MutableColumnPtr
+                                         ? UInt32Column::create(allocator)->as_mutable_ptr() // to MutableColumnPtr
                                          : rhs.build_index_column->clone()),
               probe_index_column(rhs.probe_index_column == nullptr
-                                         ? UInt32Column::create(memory::get_default_allocator())->as_mutable_ptr() // to MutableColumnPtr
+                                         ? UInt32Column::create(allocator)->as_mutable_ptr() // to MutableColumnPtr
                                          : rhs.probe_index_column->clone()),
               build_index(down_cast<UInt32Column*>(build_index_column.get())->get_data()),
               probe_index(down_cast<UInt32Column*>(probe_index_column.get())->get_data()),
-              build_match_index(memory::get_default_allocator()),
-              probe_match_index(memory::get_default_allocator()),
-              probe_match_filter(memory::get_default_allocator()),
               count(rhs.count),
               probe_row_count(rhs.probe_row_count),
               match_flag(rhs.match_flag),
@@ -344,13 +333,13 @@ struct HashTableProbeState {
               search_ht_timer(rhs.search_ht_timer),
               output_probe_column_timer(rhs.output_probe_column_timer),
               probe_counter(rhs.probe_counter) {
-        is_nulls.assign(rhs.is_nulls.begin(), rhs.is_nulls.end());
-        buckets.assign(rhs.buckets.begin(), rhs.buckets.end());
-        next.assign(rhs.next.begin(), rhs.next.end());
-        probe_slice.assign(rhs.probe_slice.begin(), rhs.probe_slice.end());
-        build_match_index.assign(rhs.build_match_index.begin(), rhs.build_match_index.end());
-        probe_match_index.assign(rhs.probe_match_index.begin(), rhs.probe_match_index.end());
-        probe_match_filter.assign(rhs.probe_match_filter.begin(), rhs.probe_match_filter.end());
+        is_nulls.assign(allocator, rhs.is_nulls.begin(), rhs.is_nulls.end());
+        buckets.assign(allocator, rhs.buckets.begin(), rhs.buckets.end());
+        next.assign(allocator, rhs.next.begin(), rhs.next.end());
+        probe_slice.assign(allocator, rhs.probe_slice.begin(), rhs.probe_slice.end());
+        build_match_index.assign(allocator, rhs.build_match_index.begin(), rhs.build_match_index.end());
+        probe_match_index.assign(allocator, rhs.probe_match_index.begin(), rhs.probe_match_index.end());
+        probe_match_filter.assign(allocator, rhs.probe_match_filter.begin(), rhs.probe_match_filter.end());
     }
 
     // Disable copy assignment.
@@ -361,11 +350,24 @@ struct HashTableProbeState {
 
     void consider_probe_time_locality();
 
+    void release_buffers() {
+        if (allocator != nullptr) {
+            is_nulls.release(allocator);
+            buckets.release(allocator);
+            next.release(allocator);
+            probe_slice.release(allocator);
+            build_match_index.release(allocator);
+            probe_match_index.release(allocator);
+            probe_match_filter.release(allocator);
+        }
+    }
+
     ~HashTableProbeState() {
         for (auto it = handles.begin(); it != handles.end(); it++) {
             it->destroy();
         }
         handles.clear();
+        release_buffers();
     }
 };
 

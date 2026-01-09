@@ -21,6 +21,10 @@
 #include "formats/parquet/schema.h"
 #include "runtime/types.h"
 
+namespace starrocks::memory {
+class Allocator;
+} // namespace memory
+
 namespace starrocks::parquet {
 
 class StatisticsHelper {
@@ -29,7 +33,8 @@ public:
 
     static Status decode_value_into_column(const MutableColumnPtr& column, const std::vector<std::string>& values,
                                            const std::vector<bool>& null_pages, const TypeDescriptor& type,
-                                           const ParquetField* field, const std::string& timezone);
+                                           const ParquetField* field, const std::string& timezone,
+                                           memory::Allocator* allocator);
 
     // get min/max value from row group stats
     static Status get_min_max_value(const FileMetaData* file_meta_data, const TypeDescriptor& type,

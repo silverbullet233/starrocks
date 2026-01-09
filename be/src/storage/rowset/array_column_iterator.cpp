@@ -205,7 +205,7 @@ Status ArrayColumnIterator::fetch_values_by_rowid(const rowid_t* rowids, size_t 
     }
 
     // 2. Read offset column
-    UInt32Column array_size(memory::get_default_allocator());
+    UInt32Column array_size(_opts.allocator);
     array_size.reserve(size);
     RETURN_IF_ERROR(_array_size_iterator->fetch_values_by_rowid(rowids, size, &array_size));
 
@@ -322,7 +322,7 @@ Status ArrayColumnIterator::fetch_dict_codes_by_rowid(const rowid_t* rowids, siz
     }
 
     // 2. Read offset column
-    UInt32Column array_size(memory::get_default_allocator());
+    UInt32Column array_size(_opts.allocator);
     array_size.reserve(size);
     RETURN_IF_ERROR(_array_size_iterator->fetch_values_by_rowid(rowids, size, &array_size));
 
