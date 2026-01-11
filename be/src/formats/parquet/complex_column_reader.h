@@ -22,8 +22,9 @@ namespace starrocks::parquet {
 
 class ListColumnReader final : public ColumnReader {
 public:
-    explicit ListColumnReader(const ParquetField* parquet_field, std::unique_ptr<ColumnReader>&& element_reader)
-            : ColumnReader(parquet_field), _element_reader(std::move(element_reader)) {}
+    explicit ListColumnReader(const ParquetField* parquet_field, std::unique_ptr<ColumnReader>&& element_reader,
+                              memory::Allocator* allocator = nullptr)
+            : ColumnReader(parquet_field, allocator), _element_reader(std::move(element_reader)) {}
     ~ListColumnReader() override = default;
 
     Status prepare() override { return _element_reader->prepare(); }
@@ -58,8 +59,8 @@ private:
 class MapColumnReader final : public ColumnReader {
 public:
     explicit MapColumnReader(const ParquetField* parquet_field, std::unique_ptr<ColumnReader>&& key_reader,
-                             std::unique_ptr<ColumnReader>&& value_reader)
-            : ColumnReader(parquet_field), _key_reader(std::move(key_reader)), _value_reader(std::move(value_reader)) {}
+                             std::unique_ptr<ColumnReader>&& value_reader, memory::Allocator* allocator = nullptr)
+            : ColumnReader(parquet_field, allocator), _key_reader(std::move(key_reader)), _value_reader(std::move(value_reader)) {}
     ~MapColumnReader() override = default;
 
     Status prepare() override {
@@ -128,8 +129,9 @@ private:
 class StructColumnReader final : public ColumnReader {
 public:
     explicit StructColumnReader(const ParquetField* parquet_field,
-                                std::map<std::string, std::unique_ptr<ColumnReader>>&& child_readers)
-            : ColumnReader(parquet_field), _child_readers(std::move(child_readers)) {}
+                                std::map<std::string, std::unique_ptr<ColumnReader>>&& child_readers,
+                                memory::Allocator* allocator = nullptr)
+            : ColumnReader(parquet_field, allocator), _child_readers(std::move(child_readers)) {}
     ~StructColumnReader() override = default;
 
     Status prepare() override {
@@ -256,8 +258,9 @@ public:
     // Constructor that accepts pre-built ScalarColumnReader objects
     explicit VariantColumnReader(const ParquetField* parquet_field,
                                  std::unique_ptr<ScalarColumnReader>&& metadata_reader,
-                                 std::unique_ptr<ScalarColumnReader>&& value_reader)
-            : ColumnReader(parquet_field),
+                                 std::unique_ptr<ScalarColumnReader>&& value_reader,
+                                 memory::Allocator* allocator = nullptr)
+            : ColumnReader(parquet_field, allocator),
               _metadata_reader(std::move(metadata_reader)),
               _value_reader(std::move(value_reader)) {
         // Both readers must be non-null for VariantColumnReader to function correctly

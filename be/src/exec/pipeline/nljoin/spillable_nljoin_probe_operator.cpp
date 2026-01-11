@@ -22,6 +22,7 @@
 #include "exec/spill/common.h"
 #include "exec/spill/options.h"
 #include "exec/spill/spiller_factory.h"
+#include "runtime/memory/allocator_v2.h"
 
 namespace starrocks::pipeline {
 

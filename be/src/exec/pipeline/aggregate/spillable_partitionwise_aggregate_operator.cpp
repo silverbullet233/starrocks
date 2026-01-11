@@ -265,7 +265,7 @@ Status SpillablePartitionWiseAggregateSinkOperator::_try_to_spill_by_auto(Runtim
 ChunkPtr& SpillablePartitionWiseAggregateSinkOperator::_append_hash_column(ChunkPtr& chunk) {
     const auto& group_by_exprs = _agg_op->aggregator()->group_by_expr_ctxs();
     size_t num_rows = chunk->num_rows();
-    auto hash_column = spill::SpillHashColumn::create(memory::get_default_allocator(), num_rows, HashUtil::FNV_SEED);
+    auto hash_column = spill::SpillHashColumn::create(_allocator, num_rows, HashUtil::FNV_SEED);
     auto& hash_values = hash_column->get_data();
     // TODO: use different hash method
     for (auto* expr : group_by_exprs) {

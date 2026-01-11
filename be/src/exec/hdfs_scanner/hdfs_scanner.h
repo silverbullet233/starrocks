@@ -284,6 +284,8 @@ struct HdfsScannerParams {
     int64_t connector_max_split_size = 0;
 
     ColumnIdToGlobalDictMap* global_dictmaps = &EMPTY_GLOBAL_DICTMAPS;
+
+    memory::Allocator* allocator = nullptr;
 };
 
 struct HdfsScannerContext {

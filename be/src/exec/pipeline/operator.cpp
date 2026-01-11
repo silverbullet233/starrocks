@@ -81,6 +81,8 @@ Status Operator::prepare(RuntimeState* state) {
 }
 
 Status Operator::prepare_local_state(RuntimeState* state) {
+    // @TODO use operator-level allocator
+    _allocator = memory::get_default_allocator();
     _mem_tracker = std::make_shared<MemTracker>();
 
     _total_timer = ADD_TIMER(_common_metrics, "OperatorTotalTime");

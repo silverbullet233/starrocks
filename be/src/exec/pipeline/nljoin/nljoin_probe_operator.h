@@ -14,6 +14,7 @@
 
 #pragma once
 
+#include <memory>
 #include <utility>
 
 #include "column/vectorized_fwd.h"
@@ -44,6 +45,7 @@ public:
     ~NLJoinProbeOperator() override = default;
 
     Status prepare(RuntimeState* state) override;
+    Status prepare_local_state(RuntimeState* state) override;
     void close(RuntimeState* state) override;
 
     // Control flow
@@ -129,7 +131,7 @@ private:
     size_t _prev_chunk_start = 0;
     size_t _prev_chunk_size = 0;
     size_t _build_row_current = 0;
-    mutable Filter _self_build_match_flag;
+    mutable std::unique_ptr<Filter> _self_build_match_flag;
 
     // Probe states
     ChunkPtr _probe_chunk = nullptr;

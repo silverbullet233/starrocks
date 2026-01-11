@@ -118,9 +118,9 @@ public:
     void SetUp() {}
     void TearDown() {}
 
-    COWBench(int mode, int chunk_size) : _mode(mode), _rand(_rd()), _chunk_size(chunk_size) {}
+    COWBench(int mode, int chunk_size) : _mode(mode), _rand(_rd()), _chunk_size(chunk_size), _allocator(memory::get_default_allocator()) {}
     COWBench(int mode, int chunk_size, int length)
-            : _mode(mode), _rand(_rd()), _chunk_size(chunk_size), _length(length) {}
+            : _mode(mode), _rand(_rd()), _chunk_size(chunk_size), _length(length), _allocator(memory::get_default_allocator()) {}
 
     void do_bench(benchmark::State& state, LogicalType type);
 
@@ -138,6 +138,7 @@ private:
     std::default_random_engine _rand;
     int _chunk_size = 4096;
     int _length = 32;
+    memory::Allocator* _allocator;
 };
 
 void COWBench::do_bench(benchmark::State& state, LogicalType type) {
@@ -209,7 +210,7 @@ ColumnPtr COWBench::_gen_decimal_column() {
 }
 
 ColumnPtr COWBench::_gen_bigint_column() {
-    auto column = Int64Column::create(memory::get_default_allocator());
+    auto column = Int64Column::create(_allocator);
     for (size_t i = 0; i < _chunk_size; i++) {
         column->append(_rand());
     }
@@ -217,7 +218,7 @@ ColumnPtr COWBench::_gen_bigint_column() {
 }
 
 ColumnPtr COWBench::_gen_json_column() {
-    auto col = JsonColumn::create(memory::get_default_allocator());
+    auto col = JsonColumn::create(_allocator);
     for (size_t i = 0; i < _chunk_size; i++) {
         col->append(JsonValue::parse(R"( {"a": "a"} )").value());
     }
@@ -226,14 +227,14 @@ ColumnPtr COWBench::_gen_json_column() {
 
 ColumnPtr COWBench::_gen_map_column() {
     auto column =
-            MapColumn::create(memory::get_default_allocator(),
-                              NullableColumn::create(memory::get_default_allocator(),
-                                                     Int32Column::create(memory::get_default_allocator()),
-                                                     NullColumn::create(memory::get_default_allocator())),
-                              NullableColumn::create(memory::get_default_allocator(),
-                                                     Int32Column::create(memory::get_default_allocator()),
-                                                     NullColumn::create(memory::get_default_allocator())),
-                              UInt32Column::create(memory::get_default_allocator()));
+            MapColumn::create(_allocator,
+                              NullableColumn::create(_allocator,
+                                                     Int32Column::create(_allocator),
+                                                     NullColumn::create(_allocator)),
+                              NullableColumn::create(_allocator,
+                                                     Int32Column::create(_allocator),
+                                                     NullColumn::create(_allocator)),
+                              UInt32Column::create(_allocator));
     for (int32_t i = 0; i < 10; i++) {
         column->append_datum(DatumMap{{i, i + 1}});
     }
@@ -241,20 +242,20 @@ ColumnPtr COWBench::_gen_map_column() {
 }
 
 ColumnPtr COWBench::_gen_struct_column() {
-    auto binary_col = BinaryColumn::create(memory::get_default_allocator());
-    auto int_col = UInt64Column::create(memory::get_default_allocator());
+    auto binary_col = BinaryColumn::create(_allocator);
+    auto int_col = UInt64Column::create(_allocator);
     for (size_t i = 0; i < _chunk_size; i++) {
         std::string str = _rand_str(_length);
         binary_col->append(Slice(str));
         int_col->append(i);
     }
-    auto c0 = NullableColumn::create(memory::get_default_allocator(), std::move(binary_col),
-                                     NullColumn::create(memory::get_default_allocator()));
-    auto c1 = NullableColumn::create(memory::get_default_allocator(), std::move(int_col),
-                                     NullColumn::create(memory::get_default_allocator()));
+    auto c0 = NullableColumn::create(_allocator, std::move(binary_col),
+                                     NullColumn::create(_allocator));
+    auto c1 = NullableColumn::create(_allocator, std::move(int_col),
+                                     NullColumn::create(_allocator));
     Columns fields{std::move(c0), std::move(c1)};
     std::vector<std::string> field_name{"c0", "c1"};
-    return StructColumn::create(memory::get_default_allocator(), std::move(fields), std::move(field_name));
+    return StructColumn::create(_allocator, std::move(fields), std::move(field_name));
 }
 
 static void bench_func_str_10(benchmark::State& state) {

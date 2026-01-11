@@ -22,13 +22,18 @@ using namespace starrocks;
 namespace starrocks::pipeline {
 Status AssertNumRowsOperator::prepare(RuntimeState* state) {
     RETURN_IF_ERROR(Operator::prepare(state));
+    return Status::OK();
+}
+
+Status AssertNumRowsOperator::prepare_local_state(RuntimeState* state) {
+    RETURN_IF_ERROR(Operator::prepare_local_state(state));
 
     // AssertNumRows should return exactly one row, report error if more than one row, return null if empty input
     ChunkPtr chunk = std::make_shared<Chunk>();
 
     for (const auto& desc : _factory->row_desc()->tuple_descriptors()) {
         for (const auto& slot : desc->slots()) {
-            MutableColumnPtr column = ColumnHelper::create_column(memory::get_default_allocator(), slot->type(), true);
+            MutableColumnPtr column = ColumnHelper::create_column(_allocator, slot->type(), true);
             column->append_nulls(1);
             chunk->append_column(std::move(column), slot->id());
         }

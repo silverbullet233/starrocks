@@ -36,7 +36,7 @@ StatusOr<ColumnReaderPtr> ColumnReaderFactory::create(const ColumnReaderOptions&
         ASSIGN_OR_RETURN(ColumnReaderPtr child_reader,
                          ColumnReaderFactory::create(opts, &field->children[0], col_type.children[0]));
         if (child_reader != nullptr) {
-            return std::make_unique<ListColumnReader>(field, std::move(child_reader));
+            return std::make_unique<ListColumnReader>(field, std::move(child_reader), opts.allocator);
         } else {
             return nullptr;
         }
@@ -54,7 +54,8 @@ StatusOr<ColumnReaderPtr> ColumnReaderFactory::create(const ColumnReaderOptions&
         }
 
         if (key_reader != nullptr || value_reader != nullptr) {
-            return std::make_unique<MapColumnReader>(field, std::move(key_reader), std::move(value_reader));
+            return std::make_unique<MapColumnReader>(field, std::move(key_reader), std::move(value_reader),
+                                                      opts.allocator);
         } else {
             return nullptr;
         }
@@ -81,7 +82,7 @@ StatusOr<ColumnReaderPtr> ColumnReaderFactory::create(const ColumnReaderOptions&
 
         // maybe struct subfield ColumnReader is null
         if (_has_valid_subfield_column_reader(children_readers)) {
-            return std::make_unique<StructColumnReader>(field, std::move(children_readers));
+            return std::make_unique<StructColumnReader>(field, std::move(children_readers), opts.allocator);
         } else {
             return nullptr;
         }
@@ -127,7 +128,8 @@ StatusOr<ColumnReaderPtr> ColumnReaderFactory::create(const ColumnReaderOptions&
         }
 
         if (key_reader != nullptr || value_reader != nullptr) {
-            return std::make_unique<MapColumnReader>(field, std::move(key_reader), std::move(value_reader));
+            return std::make_unique<MapColumnReader>(field, std::move(key_reader), std::move(value_reader),
+                                                      opts.allocator);
         } else {
             return nullptr;
         }
@@ -157,7 +159,7 @@ StatusOr<ColumnReaderPtr> ColumnReaderFactory::create(const ColumnReaderOptions&
 
         // maybe struct subfield ColumnReader is null
         if (_has_valid_subfield_column_reader(children_readers)) {
-            return std::make_unique<StructColumnReader>(field, std::move(children_readers));
+            return std::make_unique<StructColumnReader>(field, std::move(children_readers), opts.allocator);
         } else {
             return nullptr;
         }
@@ -194,7 +196,8 @@ StatusOr<ColumnReaderPtr> ColumnReaderFactory::create_variant_column_reader(cons
             metadata_field, &(column_chunks[metadata_field->physical_column_index]), &TYPE_VARBINARY_DESC, opts);
     auto _value_reader = std::make_unique<ScalarColumnReader>(
             value_field, &(column_chunks[value_field->physical_column_index]), &TYPE_VARBINARY_DESC, opts);
-    return std::make_unique<VariantColumnReader>(variant_field, std::move(_metadata_reader), std::move(_value_reader));
+    return std::make_unique<VariantColumnReader>(variant_field, std::move(_metadata_reader), std::move(_value_reader),
+                                                  opts.allocator);
 }
 
 StatusOr<ColumnReaderPtr> ColumnReaderFactory::create(ColumnReaderPtr ori_reader, const GlobalDictMap* dict,
@@ -209,7 +212,8 @@ StatusOr<ColumnReaderPtr> ColumnReaderFactory::create(ColumnReaderPtr ori_reader
                          ColumnReaderFactory::create(
                                  std::move((down_cast<ListColumnReader*>(ori_reader.get()))->get_element_reader()),
                                  dict, slot_id, num_rows));
-        return std::make_unique<ListColumnReader>(ori_reader->get_column_parquet_field(), std::move(child_reader));
+        return std::make_unique<ListColumnReader>(ori_reader->get_column_parquet_field(), std::move(child_reader),
+                                                  ori_reader->allocator());
     } else {
         RawColumnReader* raw_reader = dynamic_cast<RawColumnReader*>(ori_reader.get());
         if (raw_reader == nullptr) {

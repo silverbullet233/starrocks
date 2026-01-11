@@ -93,7 +93,7 @@ Status ListColumnReader::read_range(const Range<uint64_t>& range, const Filter* 
 
     auto& offsets = array_column->offsets_column_raw_ptr()->get_data();
     offsets.resize(num_levels + 1);
-    NullColumn null_column(memory::get_default_allocator(), num_levels);
+    NullColumn null_column(allocator(), num_levels);
     auto& is_nulls = null_column.get_data();
     size_t num_offsets = 0;
     bool has_null = false;
@@ -180,7 +180,7 @@ Status MapColumnReader::read_range(const Range<uint64_t>& range, const Filter* f
 
     auto& offsets = map_column->offsets_column_raw_ptr()->get_data();
     offsets.resize(num_levels + 1);
-    NullColumn null_column(memory::get_default_allocator(), num_levels);
+    NullColumn null_column(allocator(), num_levels);
     auto& is_nulls = null_column.get_data();
     size_t num_offsets = 0;
     bool has_null = false;
@@ -258,7 +258,7 @@ Status StructColumnReader::read_range(const Range<uint64_t>& range, const Filter
     if (dst->is_nullable()) {
         DCHECK(nullable_column != nullptr);
         size_t row_nums = struct_column->fields()[0]->size();
-        NullColumn null_column(memory::get_default_allocator(), row_nums, 0);
+        NullColumn null_column(allocator(), row_nums, 0);
         auto& is_nulls = null_column.get_data();
         bool has_null = false;
         _handle_null_rows(is_nulls.data(), &has_null, row_nums);
@@ -675,12 +675,13 @@ Status VariantColumnReader::read_range(const Range<uint64_t>& range, const Filte
         variant_column = down_cast<VariantColumn*>(dst_mut);
     }
 
+    memory::Allocator* alloc = allocator();
     ColumnPtr metadata_col = NullableColumn::create(
-            memory::get_default_allocator(), BinaryColumn::create(memory::get_default_allocator()),
-            NullColumn::create(memory::get_default_allocator()));
-    ColumnPtr value_col = NullableColumn::create(memory::get_default_allocator(),
-                                                 BinaryColumn::create(memory::get_default_allocator()),
-                                                 NullColumn::create(memory::get_default_allocator()));
+            alloc, BinaryColumn::create(alloc),
+            NullColumn::create(alloc));
+    ColumnPtr value_col = NullableColumn::create(alloc,
+                                                 BinaryColumn::create(alloc),
+                                                 NullColumn::create(alloc));
     RETURN_IF_ERROR(_metadata_reader->read_range(range, filter, metadata_col));
     RETURN_IF_ERROR(_value_reader->read_range(range, filter, value_col));
 
@@ -751,7 +752,7 @@ Status VariantColumnReader::read_range(const Range<uint64_t>& range, const Filte
         if (dst->is_nullable()) {
             DCHECK(nullable_column != nullptr);
             if (def_levels != nullptr && num_levels > 0) {
-                NullColumn null_column(memory::get_default_allocator(), expected_size);
+                NullColumn null_column(allocator(), expected_size);
                 auto& is_nulls = null_column.get_data();
                 bool has_null = false;
                 for (size_t i = 0; i < expected_size && i < num_levels; ++i) {
@@ -771,7 +772,7 @@ Status VariantColumnReader::read_range(const Range<uint64_t>& range, const Filte
                 nullable_column->null_column_raw_ptr()->swap_column(null_column);
                 nullable_column->set_has_null(has_null);
             } else {
-                NullColumn null_column(memory::get_default_allocator(), expected_size, 0);
+                NullColumn null_column(allocator(), expected_size, 0);
                 nullable_column->null_column_raw_ptr()->swap_column(null_column);
                 nullable_column->set_has_null(false);
             }

@@ -1067,9 +1067,8 @@ void Analytor::_init_window_result_columns() {
     const auto chunk_size = _current_chunk_size();
     _result_window_columns.resize(_agg_fn_types.size());
     for (size_t i = 0; i < _agg_fn_types.size(); ++i) {
-        auto* allocator = i < _agg_fn_ctxs.size() ? _agg_fn_ctxs[i]->get_allocator() : memory::get_default_allocator();
         _result_window_columns[i] =
-                ColumnHelper::create_column(allocator, _agg_fn_types[i].result_type, _agg_fn_types[i].has_nullable_child);
+                ColumnHelper::create_column(_agg_fn_ctxs[i]->get_allocator(), _agg_fn_types[i].result_type, _agg_fn_types[i].has_nullable_child);
         // Binary column cound't call resize method like Numeric Column,
         // so we only reserve it.
         if (_agg_functions[i]->get_name().ends_with("fused_multi_distinct")) {

@@ -343,6 +343,7 @@ protected:
 
     PipelineObserver* _observer = nullptr;
     // @TODO add allocator?
+    memory::Allocator* _allocator = nullptr;
 
 private:
     void _init_conjuct_counters();
