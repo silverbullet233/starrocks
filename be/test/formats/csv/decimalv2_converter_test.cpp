@@ -18,8 +18,13 @@
 #include "formats/csv/converter.h"
 #include "formats/csv/output_stream_string.h"
 #include "runtime/types.h"
+#include "runtime/memory/allocator_v2.h"
 
 namespace starrocks::csv {
+
+namespace {
+static memory::Allocator* kAllocator = memory::get_default_allocator();
+}
 
 class DecimalV2ConverterTest : public ::testing::Test {
 public:
@@ -36,7 +41,7 @@ protected:
 // NOLINTNEXTLINE
 TEST_F(DecimalV2ConverterTest, test_read_string) {
     auto conv = csv::get_converter(_type, false);
-    auto col = ColumnHelper::create_column(_type, false);
+    auto col = ColumnHelper::create_column(kAllocator, _type, false);
 
     EXPECT_TRUE(conv->read_string(col.get(), "999999999999.000000001", Converter::Options()));
     EXPECT_TRUE(conv->read_string(col.get(), "-999999999999.000000001", Converter::Options()));
@@ -49,7 +54,7 @@ TEST_F(DecimalV2ConverterTest, test_read_string) {
 // NOLINTNEXTLINE
 TEST_F(DecimalV2ConverterTest, test_read_quoted_string) {
     auto conv = csv::get_converter(_type, false);
-    auto col = ColumnHelper::create_column(_type, false);
+    auto col = ColumnHelper::create_column(kAllocator, _type, false);
 
     EXPECT_TRUE(conv->read_quoted_string(col.get(), "999999999999.000000001", Converter::Options()));
     EXPECT_TRUE(conv->read_quoted_string(col.get(), "-999999999999.000000001", Converter::Options()));
@@ -62,7 +67,7 @@ TEST_F(DecimalV2ConverterTest, test_read_quoted_string) {
 // NOLINTNEXTLINE
 TEST_F(DecimalV2ConverterTest, test_read_string_invalid_value) {
     auto conv = csv::get_converter(_type, false);
-    auto col = ColumnHelper::create_column(_type, false);
+    auto col = ColumnHelper::create_column(kAllocator, _type, false);
 
     EXPECT_FALSE(conv->read_string(col.get(), "", Converter::Options()));
     EXPECT_FALSE(conv->read_string(col.get(), "abc", Converter::Options()));
@@ -77,7 +82,7 @@ TEST_F(DecimalV2ConverterTest, test_read_string_invalid_value) {
 // NOLINTNEXTLINE
 TEST_F(DecimalV2ConverterTest, test_write_string) {
     auto conv = csv::get_converter(_type, false);
-    auto col = ColumnHelper::create_column(_type, false);
+    auto col = ColumnHelper::create_column(kAllocator, _type, false);
     col->append_datum(DecimalV2Value("0.00000001"));
     col->append_datum(DecimalV2Value("-0.00000001"));
     col->append_datum(DecimalV2Value("99999999999999999.00000001"));

@@ -19,8 +19,13 @@
 
 #include "column/array_column.h"
 #include "exprs/mock_vectorized_expr.h"
+#include "runtime/memory/allocator_v2.h"
 
 namespace starrocks {
+
+namespace {
+static memory::Allocator* kAllocator = memory::get_default_allocator();
+}
 class HashFunctionsTest : public ::testing::Test {
 public:
     void SetUp() override {}
@@ -29,7 +34,7 @@ public:
 TEST_F(HashFunctionsTest, hashTest) {
     {
         Columns columns;
-        auto tc1 = BinaryColumn::create();
+        auto tc1 = BinaryColumn::create(kAllocator);
         tc1->append("test1234567");
 
         columns.emplace_back(std::move(tc1));
@@ -44,10 +49,10 @@ TEST_F(HashFunctionsTest, hashTest) {
 
     {
         Columns columns;
-        auto tc1 = BinaryColumn::create();
+        auto tc1 = BinaryColumn::create(kAllocator);
         tc1->append("test1234567");
 
-        auto tc2 = BinaryColumn::create();
+        auto tc2 = BinaryColumn::create(kAllocator);
         tc2->append("asdf213");
 
         columns.emplace_back(std::move(tc1));
@@ -63,10 +68,10 @@ TEST_F(HashFunctionsTest, hashTest) {
 
     {
         Columns columns;
-        auto tc1 = BinaryColumn::create();
+        auto tc1 = BinaryColumn::create(kAllocator);
         tc1->append("test1234567");
 
-        auto tc2 = BinaryColumn::create();
+        auto tc2 = BinaryColumn::create(kAllocator);
         tc2->append("asdf213");
 
         auto tc3 = ColumnHelper::create_const_null_column(1);
@@ -85,7 +90,7 @@ TEST_F(HashFunctionsTest, hashTest) {
 TEST_F(HashFunctionsTest, test_xx_hash3_64) {
     {
         Columns columns;
-        auto tc1 = BinaryColumn::create();
+        auto tc1 = BinaryColumn::create(kAllocator);
         tc1->append("hello");
         tc1->append("starrocks");
         columns.emplace_back(std::move(tc1));
@@ -100,11 +105,11 @@ TEST_F(HashFunctionsTest, test_xx_hash3_64) {
 
     {
         Columns columns;
-        auto tc1 = BinaryColumn::create();
+        auto tc1 = BinaryColumn::create(kAllocator);
         tc1->append("hello");
         tc1->append("hello");
 
-        auto tc2 = BinaryColumn::create();
+        auto tc2 = BinaryColumn::create(kAllocator);
         tc2->append("world");
         tc2->append("starrocks");
 
@@ -121,7 +126,7 @@ TEST_F(HashFunctionsTest, test_xx_hash3_64) {
 
     {
         Columns columns;
-        auto tc1 = BinaryColumn::create();
+        auto tc1 = BinaryColumn::create(kAllocator);
         tc1->append("hello");
 
         auto tc2 = ColumnHelper::create_const_null_column(1);
@@ -145,7 +150,7 @@ TEST_F(HashFunctionsTest, test_xx_hash3_64) {
 TEST_F(HashFunctionsTest, test_xx_hash3_128) {
     {
         Columns columns;
-        auto tc1 = BinaryColumn::create();
+        auto tc1 = BinaryColumn::create(kAllocator);
         tc1->append("hello");
         tc1->append("starrocks");
         columns.emplace_back(std::move(tc1));
@@ -160,11 +165,11 @@ TEST_F(HashFunctionsTest, test_xx_hash3_128) {
 
     {
         Columns columns;
-        auto tc1 = BinaryColumn::create();
+        auto tc1 = BinaryColumn::create(kAllocator);
         tc1->append("hello");
         tc1->append("hello");
 
-        auto tc2 = BinaryColumn::create();
+        auto tc2 = BinaryColumn::create(kAllocator);
         tc2->append("world");
         tc2->append("starrocks");
 
@@ -181,7 +186,7 @@ TEST_F(HashFunctionsTest, test_xx_hash3_128) {
 
     {
         Columns columns;
-        auto tc1 = BinaryColumn::create();
+        auto tc1 = BinaryColumn::create(kAllocator);
         tc1->append("hello");
 
         auto tc2 = ColumnHelper::create_const_null_column(1);
@@ -203,7 +208,7 @@ TEST_F(HashFunctionsTest, test_xx_hash3_128) {
 TEST_F(HashFunctionsTest, emptyTest) {
     uint32_t h3 = 123456;
 
-    BinaryColumn b;
+    BinaryColumn b{kAllocator};
     b.crc32_hash(&h3, 0, 1);
     ASSERT_EQ(123456, h3);
 }
@@ -211,10 +216,10 @@ TEST_F(HashFunctionsTest, emptyTest) {
 TEST_F(HashFunctionsTest, test_crc32_hash_array) {
     {
         Columns columns;
-        auto data_column = Int32Column::create();
-        auto offsets = UInt32Column::create();
-        auto elements = NullableColumn::create(data_column, NullColumn::create());
-        auto arr = ArrayColumn::create(elements, offsets);
+        auto data_column = Int32Column::create(kAllocator);
+        auto offsets = UInt32Column::create(kAllocator);
+        auto elements = NullableColumn::create(kAllocator, data_column, NullColumn::create(kAllocator));
+        auto arr = ArrayColumn::create(kAllocator, elements, offsets);
 
         data_column->append(1);
         data_column->append(2);

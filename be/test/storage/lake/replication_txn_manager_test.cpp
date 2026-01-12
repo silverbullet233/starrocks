@@ -44,8 +44,13 @@
 #include "testutil/assert.h"
 #include "testutil/id_generator.h"
 #include "util/filesystem_util.h"
+#include "runtime/memory/allocator_v2.h"
 
 namespace starrocks {
+
+namespace {
+static memory::Allocator* kAllocator = memory::get_default_allocator();
+}
 
 class LakeReplicationTxnManagerTest : public testing::TestWithParam<TKeysType::type> {
 public:
@@ -75,7 +80,7 @@ public:
             auto src_tablet = create_tablet(_src_tablet_id, 1, _schema_hash);
 
             std::vector<int64_t> keys{0, 1, 2, 3, 4, 5, 6, 7, 8, 9};
-            Int64Column deletes;
+            Int64Column deletes{kAllocator};
             int64_t deletes_array[2] = {10, 11};
             deletes.append_numbers(deletes_array, sizeof(int64_t) * 2);
             for (int i = 2; i <= _src_version; i++) {

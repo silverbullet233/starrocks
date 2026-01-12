@@ -17,9 +17,14 @@
 #include "column/column_helper.h"
 #include "formats/csv/converter.h"
 #include "formats/csv/output_stream_string.h"
+#include "runtime/memory/allocator_v2.h"
 #include "runtime/types.h"
 
 namespace starrocks::csv {
+
+namespace {
+static memory::Allocator* kAllocator = memory::get_default_allocator();
+}
 
 class StringConverterTest : public ::testing::Test {
 public:
@@ -35,7 +40,7 @@ protected:
 // NOLINTNEXTLINE
 TEST_F(StringConverterTest, test_read_string) {
     auto conv = csv::get_converter(_type, false);
-    auto col = ColumnHelper::create_column(_type, false);
+    auto col = ColumnHelper::create_column(kAllocator, _type, false);
 
     EXPECT_TRUE(conv->read_string(col.get(), "Foo", Converter::Options()));
     EXPECT_TRUE(conv->read_string(col.get(), "Bar", Converter::Options()));
@@ -57,7 +62,7 @@ TEST_F(StringConverterTest, test_read_hive_string) {
     options.type_desc = &type;
 
     {
-        auto col = ColumnHelper::create_column(type, true);
+        auto col = ColumnHelper::create_column(kAllocator, type, true);
         EXPECT_TRUE(conv->read_string(col.get(), "abcde", options));
         EXPECT_TRUE(conv->read_string(col.get(), "abcdefg", options));
 
@@ -68,7 +73,7 @@ TEST_F(StringConverterTest, test_read_hive_string) {
 
     // test for hive
     {
-        auto col = ColumnHelper::create_column(type, true);
+        auto col = ColumnHelper::create_column(kAllocator, type, true);
         options.is_hive = true;
         EXPECT_TRUE(conv->read_string(col.get(), "abcde", options));
         EXPECT_TRUE(conv->read_string(col.get(), "abcdefg", options));
@@ -89,7 +94,7 @@ TEST_F(StringConverterTest, test_read_hive_string) {
 // NOLINTNEXTLINE
 TEST_F(StringConverterTest, test_read_large_string01) {
     auto conv = csv::get_converter(_type, false);
-    auto col = ColumnHelper::create_column(_type, false);
+    auto col = ColumnHelper::create_column(kAllocator, _type, false);
 
     std::string large_string(TypeDescriptor::MAX_VARCHAR_LENGTH + 1, 'x');
     EXPECT_FALSE(conv->read_string(col.get(), large_string, Converter::Options()));
@@ -102,7 +107,7 @@ TEST_F(StringConverterTest, test_read_large_string02) {
     varchar_type.len = 10;
 
     auto conv = csv::get_converter(varchar_type, false);
-    auto col = ColumnHelper::create_column(varchar_type, false);
+    auto col = ColumnHelper::create_column(kAllocator, varchar_type, false);
 
     std::string large_string("helloworldx");
     Converter::Options options;
@@ -113,7 +118,7 @@ TEST_F(StringConverterTest, test_read_large_string02) {
 // NOLINTNEXTLINE
 TEST_F(StringConverterTest, test_read_quoted_string) {
     auto conv = csv::get_converter(_type, false);
-    auto col = ColumnHelper::create_column(_type, false);
+    auto col = ColumnHelper::create_column(kAllocator, _type, false);
 
     EXPECT_TRUE(conv->read_quoted_string(col.get(), "\"Foo\"", Converter::Options()));
     EXPECT_TRUE(
@@ -131,7 +136,7 @@ TEST_F(StringConverterTest, test_read_quoted_string) {
 // NOLINTNEXTLINE
 TEST_F(StringConverterTest, test_read_large_quoted_string01) {
     auto conv = csv::get_converter(_type, false);
-    auto col = ColumnHelper::create_column(_type, false);
+    auto col = ColumnHelper::create_column(kAllocator, _type, false);
 
     std::string large_string(TypeDescriptor::MAX_VARCHAR_LENGTH, 'x');
     std::string quoted_string;
@@ -145,7 +150,7 @@ TEST_F(StringConverterTest, test_read_large_quoted_string01) {
 // NOLINTNEXTLINE
 TEST_F(StringConverterTest, test_read_large_quoted_string02) {
     auto conv = csv::get_converter(_type, false);
-    auto col = ColumnHelper::create_column(_type, false);
+    auto col = ColumnHelper::create_column(kAllocator, _type, false);
 
     std::string large_string(TypeDescriptor::MAX_VARCHAR_LENGTH + 1, 'x');
     std::string quoted_string;
@@ -159,7 +164,7 @@ TEST_F(StringConverterTest, test_read_large_quoted_string02) {
 // NOLINTNEXTLINE
 TEST_F(StringConverterTest, test_read_large_quoted_string03) {
     auto conv = csv::get_converter(_type, false);
-    auto col = ColumnHelper::create_column(_type, false);
+    auto col = ColumnHelper::create_column(kAllocator, _type, false);
 
     std::string large_string(TypeDescriptor::MAX_VARCHAR_LENGTH + 1, 'x');
     // Two double quotas represent a single double quota, so the actual length of large_string
@@ -181,7 +186,7 @@ TEST_F(StringConverterTest, test_read_large_quoted_string04) {
     varchar_type.len = 10;
 
     auto conv = csv::get_converter(varchar_type, false);
-    auto col = ColumnHelper::create_column(varchar_type, false);
+    auto col = ColumnHelper::create_column(kAllocator, varchar_type, false);
 
     std::string large_string("helloworldx");
     std::string quoted_string;
@@ -198,7 +203,7 @@ TEST_F(StringConverterTest, test_read_large_quoted_string04) {
 // NOLINTNEXTLINE
 TEST_F(StringConverterTest, test_write_string) {
     auto conv = csv::get_converter(_type, false);
-    auto col = ColumnHelper::create_column(_type, false);
+    auto col = ColumnHelper::create_column(kAllocator, _type, false);
     std::vector<Slice> strings = {"aaaaaaaaaaaa", "bbbbbbbb", "\"\"", "ccccc"};
     (void)col->append_strings(strings.data(), strings.size());
 

@@ -18,17 +18,22 @@
 
 #include "column/column_helper.h"
 #include "runtime/types.h"
+#include "runtime/memory/allocator_v2.h"
 #include "simdjson.h"
 #include "testutil/assert.h"
 #include "util/json_converter.h"
 
 namespace starrocks {
 
+namespace {
+static memory::Allocator* kAllocator = memory::get_default_allocator();
+}
+
 class AddNullableColumnTest : public ::testing::Test {};
 
 TEST_F(AddNullableColumnTest, test_add_numeric) {
     TypeDescriptor t(TYPE_FLOAT);
-    auto column = ColumnHelper::create_column(t, true);
+    auto column = ColumnHelper::create_column(kAllocator, t, true);
 
     simdjson::ondemand::parser parser;
     auto json = R"(  { "f_float": 3.14}  )"_padded;
@@ -43,7 +48,7 @@ TEST_F(AddNullableColumnTest, test_add_numeric) {
 
 TEST_F(AddNullableColumnTest, test_add_binary) {
     TypeDescriptor t = TypeDescriptor::create_char_type(20);
-    auto column = ColumnHelper::create_column(t, true);
+    auto column = ColumnHelper::create_column(kAllocator, t, true);
 
     simdjson::ondemand::parser parser;
     auto json = R"(  { "f_float": "3.14"}  )"_padded;
@@ -58,7 +63,7 @@ TEST_F(AddNullableColumnTest, test_add_binary) {
 
 TEST_F(AddNullableColumnTest, test_add_boolean) {
     TypeDescriptor t(TYPE_BOOLEAN);
-    auto column = ColumnHelper::create_column(t, true);
+    auto column = ColumnHelper::create_column(kAllocator, t, true);
 
     // boolean
     simdjson::ondemand::parser parser;
@@ -200,7 +205,7 @@ TEST_F(AddNullableColumnTest, test_add_boolean) {
 
 TEST_F(AddNullableColumnTest, test_add_invalid_as_null) {
     TypeDescriptor t{TYPE_INT};
-    auto column = ColumnHelper::create_column(t, true);
+    auto column = ColumnHelper::create_column(kAllocator, t, true);
 
     simdjson::ondemand::parser parser;
     auto json = R"(  { "f_object": {"f_int": 1}}  )"_padded;
@@ -215,7 +220,7 @@ TEST_F(AddNullableColumnTest, test_add_invalid_as_null) {
 
 TEST_F(AddNullableColumnTest, test_add_invalid) {
     TypeDescriptor t{TYPE_INT};
-    auto column = ColumnHelper::create_column(t, true);
+    auto column = ColumnHelper::create_column(kAllocator, t, true);
 
     simdjson::ondemand::parser parser;
     auto json = R"(  { "f_object": {"f_int": 1}}  )"_padded;
@@ -228,7 +233,7 @@ TEST_F(AddNullableColumnTest, test_add_invalid) {
 
 TEST_F(AddNullableColumnTest, add_null_numeric_array) {
     auto desc = TypeDescriptor::create_array_type(TypeDescriptor::from_logical_type(TYPE_INT));
-    auto column = ColumnHelper::create_column(desc, true);
+    auto column = ColumnHelper::create_column(kAllocator, desc, true);
 
     simdjson::ondemand::parser parser;
     auto json = R"(  { "f_array": [null]}  )"_padded;
@@ -242,7 +247,7 @@ TEST_F(AddNullableColumnTest, add_null_numeric_array) {
 
 TEST_F(AddNullableColumnTest, add_boolean_array) {
     auto desc = TypeDescriptor::create_array_type(TypeDescriptor::from_logical_type(TYPE_BOOLEAN));
-    auto column = ColumnHelper::create_column(desc, true);
+    auto column = ColumnHelper::create_column(kAllocator, desc, true);
 
     simdjson::ondemand::parser parser;
     auto json = R"(  { "f_array": [null, 0.1, -0.1, 1, -1, 0, "TRUE", "false", "1"]}  )"_padded;
@@ -257,7 +262,7 @@ TEST_F(AddNullableColumnTest, add_boolean_array) {
 TEST_F(AddNullableColumnTest, test_add_struct) {
     TypeDescriptor type_desc = TypeDescriptor::create_struct_type(
             {"key1", "key2"}, {TypeDescriptor::create_varchar_type(10), TypeDescriptor::create_varchar_type(10)});
-    auto column = ColumnHelper::create_column(type_desc, true);
+    auto column = ColumnHelper::create_column(kAllocator, type_desc, true);
 
     simdjson::ondemand::parser parser;
     auto json = R"(  { "key0": {"key1": "foo", "key2": "bar", "key3": "baz" }}  )"_padded;
@@ -272,7 +277,7 @@ TEST_F(AddNullableColumnTest, test_add_struct) {
 TEST_F(AddNullableColumnTest, test_add_struct_null) {
     TypeDescriptor type_desc = TypeDescriptor::create_struct_type(
             {"key1", "key2"}, {TypeDescriptor::create_varchar_type(10), TypeDescriptor::create_varchar_type(10)});
-    auto column = ColumnHelper::create_column(type_desc, true);
+    auto column = ColumnHelper::create_column(kAllocator, type_desc, true);
 
     simdjson::ondemand::parser parser;
     auto json = R"(  { "key0": null}  )"_padded;
@@ -288,7 +293,7 @@ TEST_F(AddNullableColumnTest, test_add_map) {
     TypeDescriptor type_desc = TypeDescriptor::create_map_type(TypeDescriptor::create_varchar_type(10),
                                                                TypeDescriptor::create_varchar_type(10));
 
-    auto column = ColumnHelper::create_column(type_desc, true);
+    auto column = ColumnHelper::create_column(kAllocator, type_desc, true);
 
     simdjson::ondemand::parser parser;
     auto json = R"(  { "key0": {"key1": "foo", "key2": "bar", "key3": "baz" }}  )"_padded;
@@ -304,7 +309,7 @@ TEST_F(AddNullableColumnTest, test_add_map_null) {
     TypeDescriptor type_desc = TypeDescriptor::create_map_type(TypeDescriptor::create_varchar_type(10),
                                                                TypeDescriptor::create_varchar_type(10));
 
-    auto column = ColumnHelper::create_column(type_desc, true);
+    auto column = ColumnHelper::create_column(kAllocator, type_desc, true);
 
     simdjson::ondemand::parser parser;
     auto json = R"(  { "key0": null}  )"_padded;

@@ -24,8 +24,13 @@
 #include "column/nullable_column.h"
 #include "exprs/mock_vectorized_expr.h"
 #include "util/json.h"
+#include "runtime/memory/allocator_v2.h"
 
 namespace starrocks {
+
+namespace {
+static memory::Allocator* kAllocator = memory::get_default_allocator();
+}
 
 class AiFunctionsTest : public ::testing::Test {
 public:
@@ -74,14 +79,14 @@ protected:
     // Helper method to create columns for ai_query tests
     void createAiQueryColumns(Columns& columns, const std::vector<std::string>& prompts, const JsonValue& config) {
         // Create prompt column
-        auto prompt_col = BinaryColumn::create();
+        auto prompt_col = BinaryColumn::create(kAllocator);
         for (const auto& prompt : prompts) {
             prompt_col->append(prompt);
         }
         columns.emplace_back(prompt_col);
 
         // Create JSON config column
-        auto json_col = JsonColumn::create();
+        auto json_col = JsonColumn::create(kAllocator);
         for (size_t i = 0; i < prompts.size(); ++i) {
             json_col->append(&config);
         }
@@ -116,7 +121,7 @@ TEST_F(AiFunctionsTest, ValidConfigParsing) {
     auto config_result = AiFunctions::parse_model_config(config);
     ASSERT_TRUE(config_result.ok());
 
-    ModelConfig parsed_config = config_result.value();
+    const auto& parsed_config = config_result.value();
     ASSERT_EQ("https://api.openai.com/v1/chat/completions", parsed_config.endpoint);
     ASSERT_EQ("gpt-3.5-turbo", parsed_config.model);
     ASSERT_EQ("test-api-key", parsed_config.api_key);
@@ -130,7 +135,7 @@ TEST_F(AiFunctionsTest, ConfigParsingWithDefaults) {
     auto config_result = AiFunctions::parse_model_config(config);
     ASSERT_TRUE(config_result.ok());
 
-    ModelConfig parsed_config = config_result.value();
+    const auto& parsed_config = config_result.value();
     ASSERT_EQ("https://api.openai.com/v1/chat/completions", parsed_config.endpoint);
     ASSERT_EQ("gpt-3.5-turbo", parsed_config.model);
     ASSERT_EQ("test-api-key", parsed_config.api_key);
@@ -212,7 +217,7 @@ TEST_F(AiFunctionsTest, AiQueryWrongArgumentCount) {
     std::unique_ptr<FunctionContext> ctx(FunctionContext::create_test_context());
     Columns columns;
 
-    auto prompt_col = BinaryColumn::create();
+    auto prompt_col = BinaryColumn::create(kAllocator);
     prompt_col->append("Hello, how are you?");
     columns.emplace_back(prompt_col);
 
@@ -227,25 +232,25 @@ TEST_F(AiFunctionsTest, AiQueryWithNullValues) {
     Columns columns;
 
     // Create nullable prompt column
-    auto prompt_data = BinaryColumn::create();
-    auto prompt_null = NullColumn::create();
+    auto prompt_data = BinaryColumn::create(kAllocator);
+    auto prompt_null = NullColumn::create(kAllocator);
     prompt_data->append("Hello");
     prompt_data->append("World");
     prompt_null->append(0); // not null
     prompt_null->append(1); // null
-    auto prompt_col = NullableColumn::create(prompt_data, prompt_null);
+    auto prompt_col = NullableColumn::create(kAllocator, prompt_data, prompt_null);
     columns.emplace_back(prompt_col);
 
     // Create nullable JSON config column
-    auto json_data = JsonColumn::create();
-    auto json_null = NullColumn::create();
+    auto json_data = JsonColumn::create(kAllocator);
+    auto json_null = NullColumn::create(kAllocator);
     auto config = createMinimalTestConfig(DEEPSEEK_MODEL, TEST_API_KEY);
 
     json_data->append(&config);
     json_data->append(&config);
     json_null->append(1); // null
     json_null->append(0); // not null
-    auto json_col = NullableColumn::create(json_data, json_null);
+    auto json_col = NullableColumn::create(kAllocator, json_data, json_null);
     columns.emplace_back(json_col);
 
     // Test ai_query with null values

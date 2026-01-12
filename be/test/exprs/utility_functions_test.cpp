@@ -23,12 +23,17 @@
 #include "common/statusor.h"
 #include "exprs/function_context.h"
 #include "runtime/runtime_state.h"
+#include "runtime/memory/allocator_v2.h"
 #include "testutil/assert.h"
 #include "types/logical_type.h"
 #include "util/random.h"
 #include "util/time.h"
 
 namespace starrocks {
+
+namespace {
+static memory::Allocator* kAllocator = memory::get_default_allocator();
+}
 
 class UtilityFunctionsTest : public ::testing::Test {
 public:
@@ -41,7 +46,7 @@ TEST_F(UtilityFunctionsTest, versionTest) {
 
     // test version
     {
-        auto var1_col = ColumnHelper::create_const_column<TYPE_INT>(2, 1);
+        auto var1_col = ColumnHelper::create_const_column<TYPE_INT>(kAllocator, 2, 1);
 
         Columns columns;
         columns.emplace_back(std::move(var1_col));
@@ -64,7 +69,7 @@ TEST_F(UtilityFunctionsTest, sleepTest) {
 
     // test sleep
     {
-        auto var1_col = ColumnHelper::create_const_column<TYPE_INT>(1, 1);
+        auto var1_col = ColumnHelper::create_const_column<TYPE_INT>(kAllocator, 1, 1);
 
         Columns columns;
         columns.emplace_back(std::move(var1_col));
@@ -85,7 +90,7 @@ TEST_F(UtilityFunctionsTest, uuidTest) {
     // test uuid
     {
         int column_size = static_cast<int>(Random(GetCurrentTimeNanos()).Uniform(10) + 1);
-        auto var1_col = ColumnHelper::create_const_column<TYPE_INT>(column_size, column_size);
+        auto var1_col = ColumnHelper::create_const_column<TYPE_INT>(kAllocator, column_size, column_size);
 
         Columns columns;
         columns.emplace_back(std::move(var1_col));
@@ -111,7 +116,7 @@ TEST_F(UtilityFunctionsTest, uuidTest) {
 
     {
         int32_t chunk_size = 4096;
-        auto var1_col = ColumnHelper::create_const_column<TYPE_INT>(chunk_size, 1);
+        auto var1_col = ColumnHelper::create_const_column<TYPE_INT>(kAllocator, chunk_size, 1);
         Columns columns;
         columns.emplace_back(std::move(var1_col));
         ColumnPtr result = UtilityFunctions::uuid_numeric(ctx, columns).value();
@@ -135,37 +140,37 @@ TEST_F(UtilityFunctionsTest, encodeSortKeyBasicOrdering) {
 
     // Prepare columns of different types
     // int32
-    auto c_int = Int32Column::create();
+    auto c_int = Int32Column::create(kAllocator);
     c_int->append(1);
     c_int->append(2);
     c_int->append(10);
 
     // binary
-    auto c_str = BinaryColumn::create();
+    auto c_str = BinaryColumn::create(kAllocator);
     c_str->append(Slice("a"));
     c_str->append(Slice("b"));
     c_str->append(Slice("c"));
 
     // date
-    auto c_date = DateColumn::create();
+    auto c_date = DateColumn::create(kAllocator);
     c_date->append(DateValue::create(2021, 1, 1));
     c_date->append(DateValue::create(2021, 1, 2));
     c_date->append(DateValue::create(2021, 1, 10));
 
     // timestamp
-    auto c_timestamp = TimestampColumn::create();
+    auto c_timestamp = TimestampColumn::create(kAllocator);
     c_timestamp->append(TimestampValue::create(2021, 1, 1, 0, 0, 0, 0));
     c_timestamp->append(TimestampValue::create(2021, 1, 2, 0, 0, 0, 0));
     c_timestamp->append(TimestampValue::create(2021, 1, 10, 0, 0, 0, 0));
 
     // float32
-    auto c_float32 = FloatColumn::create();
+    auto c_float32 = FloatColumn::create(kAllocator);
     c_float32->append(1.0f);
     c_float32->append(2.0f);
     c_float32->append(10.0f);
 
     // float64
-    auto c_float64 = DoubleColumn::create();
+    auto c_float64 = DoubleColumn::create(kAllocator);
     c_float64->append(1.0);
     c_float64->append(2.0);
     c_float64->append(10.0);
@@ -205,13 +210,13 @@ TEST_F(UtilityFunctionsTest, encodeSortKeyNullHandling) {
     auto ptr = std::unique_ptr<FunctionContext>(ctx);
 
     // Create nullable columns with mixed null and non-null values
-    auto c_int = NullableColumn::create(Int32Column::create(), NullColumn::create());
+    auto c_int = NullableColumn::create(kAllocator, Int32Column::create(kAllocator), NullColumn::create(kAllocator));
     c_int->append_datum(Datum(int32_t(1))); // non-null
     c_int->append_nulls(1);                 // null
     c_int->append_datum(Datum(int32_t(2))); // non-null
     c_int->append_nulls(1);                 // null
 
-    auto c_str = NullableColumn::create(BinaryColumn::create(), NullColumn::create());
+    auto c_str = NullableColumn::create(kAllocator, BinaryColumn::create(kAllocator), NullColumn::create(kAllocator));
     c_str->append_nulls(1);                 // null
     c_str->append_datum(Datum(Slice("z"))); // non-null
     c_str->append_nulls(1);                 // null
@@ -273,8 +278,8 @@ TEST_F(UtilityFunctionsTest, encodeSortKeyStringEscaping) {
     FunctionContext* ctx = FunctionContext::create_test_context();
     auto ptr = std::unique_ptr<FunctionContext>(ctx);
 
-    auto c1 = BinaryColumn::create();
-    auto c2 = BinaryColumn::create();
+    auto c1 = BinaryColumn::create(kAllocator);
+    auto c2 = BinaryColumn::create(kAllocator);
     c1->append(Slice("a\0b", 3));
     c1->append(Slice("a", 1));
     c2->append(Slice("x", 1));

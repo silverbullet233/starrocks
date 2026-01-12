@@ -20,8 +20,13 @@
 #include "butil/time.h"
 #include "exprs/mock_vectorized_expr.h"
 #include "exprs/string_functions.h"
+#include "runtime/memory/allocator_v2.h"
 
 namespace starrocks {
+
+namespace {
+static memory::Allocator* kAllocator = memory::get_default_allocator();
+}
 
 class StringFunctionSubstrTest : public ::testing::Test {
 public:
@@ -43,9 +48,9 @@ TEST_F(StringFunctionSubstrTest, substringNormalTest) {
     std::unique_ptr<FunctionContext> ctx(FunctionContext::create_test_context());
     Columns columns;
 
-    auto str = BinaryColumn::create();
-    auto pos = Int32Column::create();
-    auto len = Int32Column::create();
+    auto str = BinaryColumn::create(kAllocator);
+    auto pos = Int32Column::create(kAllocator);
+    auto len = Int32Column::create(kAllocator);
     for (int j = 0; j < 20; ++j) {
         str->append("test" + std::to_string(j));
         pos->append(5);
@@ -71,9 +76,9 @@ TEST_F(StringFunctionSubstrTest, substringChineseTest) {
     std::unique_ptr<FunctionContext> ctx(FunctionContext::create_test_context());
     Columns columns;
 
-    auto str = BinaryColumn::create();
-    auto pos = Int32Column::create();
-    auto len = Int32Column::create();
+    auto str = BinaryColumn::create(kAllocator);
+    auto pos = Int32Column::create(kAllocator);
+    auto len = Int32Column::create(kAllocator);
     for (int j = 0; j < 20; ++j) {
         str->append("我是中文字符串！！！" + std::to_string(j));
         pos->append(3);
@@ -99,9 +104,9 @@ TEST_F(StringFunctionSubstrTest, substringleftTest) {
     std::unique_ptr<FunctionContext> ctx(FunctionContext::create_test_context());
     Columns columns;
 
-    auto str = BinaryColumn::create();
-    auto pos = Int32Column::create();
-    auto len = Int32Column::create();
+    auto str = BinaryColumn::create(kAllocator);
+    auto pos = Int32Column::create(kAllocator);
+    auto len = Int32Column::create(kAllocator);
     for (int j = 0; j < 10; ++j) {
         str->append("我是中文字符串" + std::to_string(j));
         pos->append(-2);
@@ -287,9 +292,9 @@ TEST_F(StringFunctionSubstrTest, substringOverleftTest) {
     std::unique_ptr<FunctionContext> ctx(FunctionContext::create_test_context());
     Columns columns;
 
-    auto str = BinaryColumn::create();
-    auto pos = Int32Column::create();
-    auto len = Int32Column::create();
+    auto str = BinaryColumn::create(kAllocator);
+    auto pos = Int32Column::create(kAllocator);
+    auto len = Int32Column::create(kAllocator);
     for (int j = 0; j < 20; ++j) {
         str->append("我是中文字符串" + std::to_string(j));
         pos->append(-100);
@@ -315,9 +320,9 @@ TEST_F(StringFunctionSubstrTest, substringConstTest) {
     std::unique_ptr<FunctionContext> ctx(FunctionContext::create_test_context());
     Columns columns;
 
-    auto str = BinaryColumn::create();
-    auto pos = Int32Column::create();
-    auto len = Int32Column::create();
+    auto str = BinaryColumn::create(kAllocator);
+    auto pos = Int32Column::create(kAllocator);
+    auto len = Int32Column::create(kAllocator);
     pos->append(5);
     len->append(2);
 
@@ -349,7 +354,7 @@ TEST_F(StringFunctionSubstrTest, substringNullTest) {
     pos->append(5);
     len->append(2);
 
-    ColumnBuilder<TYPE_VARCHAR> b(config::vector_chunk_size);
+    ColumnBuilder<TYPE_VARCHAR> b(kAllocator, config::vector_chunk_size);
 
     for (int j = 0; j < 20; ++j) {
         b.append("test" + std::to_string(j), j % 2 == 0);

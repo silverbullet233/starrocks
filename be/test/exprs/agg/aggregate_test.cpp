@@ -19,8 +19,13 @@
 #include <memory>
 
 #include "exprs/agg/base_aggregate_test.h"
+#include "runtime/memory/allocator_v2.h"
 
 namespace starrocks {
+namespace {
+static memory::Allocator* kAllocator = memory::get_default_allocator();
+}
+
 // adaptor to TypeDescriptor
 class AggregateTest : public testing::Test {
 public:
@@ -397,13 +402,13 @@ TEST_F(AggregateTest, test_stddev_samp) {
 
 void test_max_by_helper(FunctionContext* ctx, const char* max_by_name) {
     const AggregateFunction* func = get_aggregate_function(max_by_name, TYPE_VARCHAR, TYPE_INT, false);
-    auto result_column = Int32Column::create();
+    auto result_column = Int32Column::create(kAllocator);
     auto aggr_state = ManagedAggrState::create(ctx, func);
-    auto int_column = Int32Column::create();
+    auto int_column = Int32Column::create(kAllocator);
     for (int i = 0; i < 10; i++) {
         int_column->append(i);
     }
-    auto varchar_column = BinaryColumn::create();
+    auto varchar_column = BinaryColumn::create(kAllocator);
     std::vector<Slice> strings{{"aaa"}, {"ddd"}, {"zzzz"}, {"ff"}, {"ff"}, {"ddd"}, {"ddd"}, {"ddd"}, {"ddd"}, {""}};
     varchar_column->append_strings(strings.data(), strings.size());
     Columns columns;
@@ -421,23 +426,23 @@ void test_max_by_helper(FunctionContext* ctx, const char* max_by_name) {
     //test nullable column
     func = get_aggregate_function(max_by_name, TYPE_DECIMALV2, TYPE_DOUBLE, false);
     aggr_state = ManagedAggrState::create(ctx, func);
-    auto data_column1 = DoubleColumn::create();
-    auto null_column1 = NullColumn::create();
+    auto data_column1 = DoubleColumn::create(kAllocator);
+    auto null_column1 = NullColumn::create(kAllocator);
     for (int i = 0; i < 100; i++) {
         data_column1->append(i + 0.11);
         null_column1->append(i % 13 ? false : true);
     }
-    auto doubleColumn = NullableColumn::create(std::move(data_column1), std::move(null_column1));
-    auto data_column2 = DecimalColumn::create();
-    auto null_column2 = NullColumn::create();
+    auto doubleColumn = NullableColumn::create(kAllocator, std::move(data_column1), std::move(null_column1));
+    auto data_column2 = DecimalColumn::create(kAllocator);
+    auto null_column2 = NullColumn::create(kAllocator);
     for (int i = 0; i < 100; i++) {
         data_column2->append(DecimalV2Value(i));
         null_column2->append(i % 11 ? false : true);
     }
-    auto decimalColumn = NullableColumn::create(std::move(data_column2), std::move(null_column2));
-    auto data_column3 = DoubleColumn::create();
-    auto null_column3 = NullColumn::create();
-    auto nullable_result_column = NullableColumn::create(std::move(data_column3), std::move(null_column3));
+    auto decimalColumn = NullableColumn::create(kAllocator, std::move(data_column2), std::move(null_column2));
+    auto data_column3 = DoubleColumn::create(kAllocator);
+    auto null_column3 = NullColumn::create(kAllocator);
+    auto nullable_result_column = NullableColumn::create(kAllocator, std::move(data_column3), std::move(null_column3));
     Columns nullColumns;
     nullColumns.emplace_back(doubleColumn);
     nullColumns.emplace_back(decimalColumn);
@@ -461,13 +466,13 @@ TEST_F(AggregateTest, test_max_by_v2) {
 
 void test_min_by_helper(FunctionContext* ctx, const char* min_by_name) {
     const AggregateFunction* func = get_aggregate_function(min_by_name, TYPE_VARCHAR, TYPE_INT, false);
-    auto result_column = Int32Column::create();
+    auto result_column = Int32Column::create(kAllocator);
     auto aggr_state = ManagedAggrState::create(ctx, func);
-    auto int_column = Int32Column::create();
+    auto int_column = Int32Column::create(kAllocator);
     for (int i = 0; i < 10; i++) {
         int_column->append(i);
     }
-    auto varchar_column = BinaryColumn::create();
+    auto varchar_column = BinaryColumn::create(kAllocator);
     std::vector<Slice> strings{{"ccc"}, {"aaa"}, {"ddd"}, {"zzzz"}, {"ff"}, {"ff"}, {"ddd"}, {"ddd"}, {"ddd"}, {"ddd"}};
     varchar_column->append_strings(strings.data(), strings.size());
     Columns columns;
@@ -485,23 +490,23 @@ void test_min_by_helper(FunctionContext* ctx, const char* min_by_name) {
     //test nullable column
     func = get_aggregate_function(min_by_name, TYPE_DECIMALV2, TYPE_DOUBLE, false);
     aggr_state = ManagedAggrState::create(ctx, func);
-    auto data_column1 = DoubleColumn::create();
-    auto null_column1 = NullColumn::create();
+    auto data_column1 = DoubleColumn::create(kAllocator);
+    auto null_column1 = NullColumn::create(kAllocator);
     for (int i = 0; i < 100; i++) {
         data_column1->append(i + 0.11);
         null_column1->append(i % 13 ? false : true);
     }
-    auto doubleColumn = NullableColumn::create(std::move(data_column1), std::move(null_column1));
-    auto data_column2 = DecimalColumn::create();
-    auto null_column2 = NullColumn::create();
+    auto doubleColumn = NullableColumn::create(kAllocator, std::move(data_column1), std::move(null_column1));
+    auto data_column2 = DecimalColumn::create(kAllocator);
+    auto null_column2 = NullColumn::create(kAllocator);
     for (int i = 0; i < 100; i++) {
         data_column2->append(DecimalV2Value(i));
         null_column2->append(i % 11 ? false : true);
     }
-    auto decimalColumn = NullableColumn::create(std::move(data_column2), std::move(null_column2));
-    auto data_column3 = DoubleColumn::create();
-    auto null_column3 = NullColumn::create();
-    auto nullable_result_column = NullableColumn::create(std::move(data_column3), std::move(null_column3));
+    auto decimalColumn = NullableColumn::create(kAllocator, std::move(data_column2), std::move(null_column2));
+    auto data_column3 = DoubleColumn::create(kAllocator);
+    auto null_column3 = NullColumn::create(kAllocator);
+    auto nullable_result_column = NullableColumn::create(kAllocator, std::move(data_column3), std::move(null_column3));
     Columns nullColumns;
     nullColumns.emplace_back(doubleColumn);
     nullColumns.emplace_back(decimalColumn);
@@ -529,13 +534,13 @@ void test_max_by_with_nullable_aggregator_helper(FunctionContext* ctx, const cha
             {UTRawType{.type = TYPE_INT}, UTRawType{.type = TYPE_VARCHAR}}, UTRawType{.type = TYPE_INT});
     std::unique_ptr<FunctionContext> gc_ctx0(ctx_with_args0);
 
-    auto result_column = Int32Column::create();
+    auto result_column = Int32Column::create(kAllocator);
     auto aggr_state = ManagedAggrState::create(ctx_with_args0, func);
-    auto int_column = Int32Column::create();
+    auto int_column = Int32Column::create(kAllocator);
     for (int i = 0; i < 10; i++) {
         int_column->append(i);
     }
-    auto varchar_column = BinaryColumn::create();
+    auto varchar_column = BinaryColumn::create(kAllocator);
     std::vector<Slice> strings{{"aaa"}, {"ddd"}, {"zzzz"}, {"ff"}, {"ff"}, {"ddd"}, {"ddd"}, {"ddd"}, {"ddd"}, {""}};
     varchar_column->append_strings(strings.data(), strings.size());
     Columns columns;
@@ -558,23 +563,23 @@ void test_max_by_with_nullable_aggregator_helper(FunctionContext* ctx, const cha
     std::unique_ptr<FunctionContext> gc_ctx1(ctx_with_args1);
 
     aggr_state = ManagedAggrState::create(ctx_with_args1, func);
-    auto data_column1 = DoubleColumn::create();
-    auto null_column1 = NullColumn::create();
+    auto data_column1 = DoubleColumn::create(kAllocator);
+    auto null_column1 = NullColumn::create(kAllocator);
     for (int i = 0; i < 100; i++) {
         data_column1->append(i + 0.11);
         null_column1->append(i % 13 ? false : true);
     }
-    auto doubleColumn = NullableColumn::create(std::move(data_column1), std::move(null_column1));
-    auto data_column2 = DecimalColumn::create();
-    auto null_column2 = NullColumn::create();
+    auto doubleColumn = NullableColumn::create(kAllocator, std::move(data_column1), std::move(null_column1));
+    auto data_column2 = DecimalColumn::create(kAllocator);
+    auto null_column2 = NullColumn::create(kAllocator);
     for (int i = 0; i < 100; i++) {
         data_column2->append(DecimalV2Value(i));
         null_column2->append(i % 11 ? false : true);
     }
-    auto decimalColumn = NullableColumn::create(std::move(data_column2), std::move(null_column2));
-    auto data_column3 = DoubleColumn::create();
-    auto null_column3 = NullColumn::create();
-    auto nullable_result_column = NullableColumn::create(std::move(data_column3), std::move(null_column3));
+    auto decimalColumn = NullableColumn::create(kAllocator, std::move(data_column2), std::move(null_column2));
+    auto data_column3 = DoubleColumn::create(kAllocator);
+    auto null_column3 = NullColumn::create(kAllocator);
+    auto nullable_result_column = NullableColumn::create(kAllocator, std::move(data_column3), std::move(null_column3));
     Columns nullColumns;
     nullColumns.emplace_back(doubleColumn);
     nullColumns.emplace_back(decimalColumn);
@@ -600,13 +605,13 @@ void test_min_by_with_nullable_aggregator_helper(FunctionContext* ctx, const cha
             {UTRawType{.type = TYPE_INT}, UTRawType{.type = TYPE_VARCHAR}}, UTRawType{.type = TYPE_INT});
     std::unique_ptr<FunctionContext> gc_ctx0(ctx_with_args0);
 
-    auto result_column = Int32Column::create();
+    auto result_column = Int32Column::create(kAllocator);
     auto aggr_state = ManagedAggrState::create(ctx_with_args0, func);
-    auto int_column = Int32Column::create();
+    auto int_column = Int32Column::create(kAllocator);
     for (int i = 0; i < 10; i++) {
         int_column->append(i);
     }
-    auto varchar_column = BinaryColumn::create();
+    auto varchar_column = BinaryColumn::create(kAllocator);
     std::vector<Slice> strings{{"xxx"}, {"aaa"}, {"ddd"}, {"zzzz"}, {"ff"}, {"ff"}, {"ddd"}, {"ddd"}, {"ddd"}, {"ddd"}};
     varchar_column->append_strings(strings.data(), strings.size());
     Columns columns;
@@ -629,23 +634,23 @@ void test_min_by_with_nullable_aggregator_helper(FunctionContext* ctx, const cha
     std::unique_ptr<FunctionContext> gc_ctx1(ctx_with_args1);
 
     aggr_state = ManagedAggrState::create(ctx_with_args1, func);
-    auto data_column1 = DoubleColumn::create();
-    auto null_column1 = NullColumn::create();
+    auto data_column1 = DoubleColumn::create(kAllocator);
+    auto null_column1 = NullColumn::create(kAllocator);
     for (int i = 0; i < 100; i++) {
         data_column1->append(i + 0.11);
         null_column1->append(i % 13 ? false : true);
     }
-    auto doubleColumn = NullableColumn::create(std::move(data_column1), std::move(null_column1));
-    auto data_column2 = DecimalColumn::create();
-    auto null_column2 = NullColumn::create();
+    auto doubleColumn = NullableColumn::create(kAllocator, std::move(data_column1), std::move(null_column1));
+    auto data_column2 = DecimalColumn::create(kAllocator);
+    auto null_column2 = NullColumn::create(kAllocator);
     for (int i = 0; i < 100; i++) {
         data_column2->append(DecimalV2Value(i));
         null_column2->append(i % 11 ? false : true);
     }
-    auto decimalColumn = NullableColumn::create(std::move(data_column2), std::move(null_column2));
-    auto data_column3 = DoubleColumn::create();
-    auto null_column3 = NullColumn::create();
-    auto nullable_result_column = NullableColumn::create(std::move(data_column3), std::move(null_column3));
+    auto decimalColumn = NullableColumn::create(kAllocator, std::move(data_column2), std::move(null_column2));
+    auto data_column3 = DoubleColumn::create(kAllocator);
+    auto null_column3 = NullColumn::create(kAllocator);
+    auto nullable_result_column = NullableColumn::create(kAllocator, std::move(data_column3), std::move(null_column3));
     Columns nullColumns;
     nullColumns.emplace_back(doubleColumn);
     nullColumns.emplace_back(decimalColumn);
@@ -858,19 +863,19 @@ TEST_F(AggregateTest, test_window_funnel) {
     builder.append(true);
     builder.append(true);
     builder.append(true);
-    auto data_col = NullableColumn::create(builder.build(false), NullColumn::create(6, 0));
+    auto data_col = NullableColumn::create(kAllocator, builder.build(false), NullColumn::create(kAllocator, 6, 0));
 
-    auto offsets = UInt32Column::create();
+    auto offsets = UInt32Column::create(kAllocator);
     offsets->append(2);                                    // [true, true]
     offsets->append(4);                                    // [true, true]
     offsets->append(6);                                    // [true, true]
-    auto column4 = ArrayColumn::create(data_col, offsets); // array_column, 4th column
+    auto column4 = ArrayColumn::create(kAllocator, data_col, offsets); // array_column, 4th column
 
-    auto column1 = Int64Column::create(); // first column, but there use const.
+    auto column1 = Int64Column::create(kAllocator); // first column, but there use const.
     column1->append(1800);
     // column1->append(1800);
 
-    auto column2 = TimestampColumn::create();
+    auto column2 = TimestampColumn::create(kAllocator);
     column2->append(TimestampValue::create(2022, 6, 10, 12, 30, 30)); // 2nd column.
 
     auto const_column1 = ColumnHelper::create_const_column<TYPE_BIGINT>(1800, 1);
@@ -890,7 +895,7 @@ TEST_F(AggregateTest, test_window_funnel) {
 
     using ResultColumn = typename ColumnTraits<int32_t>::ColumnType;
     using ResultColumnPtr = typename ResultColumn::MutablePtr;
-    ResultColumnPtr result_column = ResultColumn::create();
+    ResultColumnPtr result_column = ResultColumn::create(kAllocator);
     auto state = ManagedAggrState::create(ctx, func);
     func->update(local_ctx.get(), raw_column.data(), state->state(), 0);
     func->finalize_to_column(local_ctx.get(), state->state(), result_column.get());
@@ -907,9 +912,9 @@ TEST_F(AggregateTest, test_dict_merge) {
     builder.append(Slice("starrocks-1"));
     builder.append(Slice("starrocks-starrocks"));
     builder.append(Slice("starrocks-starrocks"));
-    auto data_col = NullableColumn::create(builder.build(false), NullColumn::create(5, 0));
+    auto data_col = NullableColumn::create(kAllocator, builder.build(false), NullColumn::create(kAllocator, 5, 0));
 
-    auto offsets = UInt32Column::create();
+    auto offsets = UInt32Column::create(kAllocator);
     offsets->append(0);
     offsets->append(0);
     offsets->append(2);
@@ -917,12 +922,12 @@ TEST_F(AggregateTest, test_dict_merge) {
     // []
     // [key1, key2]
     // [sr-1, sr-2, sr-3]
-    auto col = ArrayColumn::create(data_col, offsets);
+    auto col = ArrayColumn::create(kAllocator, data_col, offsets);
     const Column* column = col.get();
     auto state = ManagedAggrState::create(ctx, func);
     func->update_batch_single_state(ctx, col->size(), &column, state->state());
 
-    auto res = BinaryColumn::create();
+    auto res = BinaryColumn::create(kAllocator);
     func->finalize_to_column(ctx, state->state(), res.get());
 
     ASSERT_EQ(res->size(), 1);
@@ -963,14 +968,14 @@ TEST_F(AggregateTest, test_sum_nullable) {
     const AggregateFunction* sum_null = get_aggregate_function("sum", TYPE_INT, TYPE_BIGINT, true);
     auto state = ManagedAggrState::create(ctx, sum_null);
 
-    auto data_column = Int32Column::create();
-    auto null_column = NullColumn::create();
+    auto data_column = Int32Column::create(kAllocator);
+    auto null_column = NullColumn::create(kAllocator);
     for (int i = 0; i < 100; i++) {
         data_column->append(i);
         null_column->append(i % 2 ? 1 : 0);
     }
 
-    auto column = NullableColumn::create(std::move(data_column), std::move(null_column));
+    auto column = NullableColumn::create(kAllocator, std::move(data_column), std::move(null_column));
     const Column* row_column = column.get();
 
     // test update
@@ -980,26 +985,26 @@ TEST_F(AggregateTest, test_sum_nullable) {
     ASSERT_EQ(2450, result);
 
     // test serialize
-    auto serde_column2 = NullableColumn::create(Int64Column::create(), NullColumn::create());
+    auto serde_column2 = NullableColumn::create(kAllocator, Int64Column::create(kAllocator), NullColumn::create(kAllocator));
     sum_null->serialize_to_column(ctx, state->state(), serde_column2.get());
 
     // test merge
     auto state2 = ManagedAggrState::create(ctx, sum_null);
 
-    auto data_column2 = Int32Column::create();
-    auto null_column2 = NullColumn::create();
+    auto data_column2 = Int32Column::create(kAllocator);
+    auto null_column2 = NullColumn::create(kAllocator);
     for (int i = 0; i < 100; i++) {
         data_column2->append(i);
         null_column2->append(i % 2 ? 0 : 1);
     }
-    auto column2 = NullableColumn::create(std::move(data_column2), std::move(null_column2));
+    auto column2 = NullableColumn::create(kAllocator, std::move(data_column2), std::move(null_column2));
     const Column* row_column2 = column2.get();
 
     sum_null->update_batch_single_state(ctx, column2->size(), &row_column2, state2->state());
 
     sum_null->merge(ctx, serde_column2.get(), state2->state(), 0);
 
-    auto result_column = NullableColumn::create(Int64Column::create(), NullColumn::create());
+    auto result_column = NullableColumn::create(kAllocator, Int64Column::create(kAllocator), NullColumn::create(kAllocator));
     sum_null->finalize_to_column(ctx, state2->state(), result_column.get());
 
     const Column& result_data_column = result_column->data_column_ref();
@@ -1011,15 +1016,15 @@ TEST_F(AggregateTest, test_count_nullable) {
     const AggregateFunction* func = get_aggregate_function("count", TYPE_BIGINT, TYPE_BIGINT, true);
     auto state = ManagedAggrState::create(ctx, func);
 
-    auto data_column = Int32Column::create();
-    auto null_column = NullColumn::create();
+    auto data_column = Int32Column::create(kAllocator);
+    auto null_column = NullColumn::create(kAllocator);
 
     for (int i = 0; i < 1024; i++) {
         data_column->append(i);
         null_column->append(i % 2 ? 1 : 0);
     }
 
-    auto column = NullableColumn::create(std::move(data_column), std::move(null_column));
+    auto column = NullableColumn::create(kAllocator, std::move(data_column), std::move(null_column));
 
     const Column* row_column = column.get();
     func->update_batch_single_state(ctx, column->size(), &row_column, state->state());
@@ -1032,21 +1037,21 @@ TEST_F(AggregateTest, test_bitmap_nullable) {
     const AggregateFunction* bitmap_null = get_aggregate_function("bitmap_union_int", TYPE_INT, TYPE_BIGINT, true);
     auto state = ManagedAggrState::create(ctx, bitmap_null);
 
-    auto data_column = Int32Column::create();
-    auto null_column = NullColumn::create();
+    auto data_column = Int32Column::create(kAllocator);
+    auto null_column = NullColumn::create(kAllocator);
 
     for (int i = 0; i < 100; i++) {
         data_column->append(i);
         null_column->append(i % 2 ? 1 : 0);
     }
 
-    auto column = NullableColumn::create(std::move(data_column), std::move(null_column));
+    auto column = NullableColumn::create(kAllocator, std::move(data_column), std::move(null_column));
     const Column* row_column = column.get();
 
     // test update
     bitmap_null->update_batch_single_state(ctx, column->size(), &row_column, state->state());
 
-    auto result_column = NullableColumn::create(Int64Column::create(), NullColumn::create());
+    auto result_column = NullableColumn::create(kAllocator, Int64Column::create(kAllocator), NullColumn::create(kAllocator));
     bitmap_null->finalize_to_column(ctx, state->state(), result_column.get());
 
     const Column& result_data_column = result_column->data_column_ref();
@@ -1060,7 +1065,7 @@ TEST_F(AggregateTest, test_group_concat) {
             get_aggregate_function("group_concat", TYPE_VARCHAR, TYPE_VARCHAR, false);
     auto state = ManagedAggrState::create(ctx, group_concat_function);
 
-    auto data_column = BinaryColumn::create();
+    auto data_column = BinaryColumn::create(kAllocator);
 
     for (int i = 0; i < 6; i++) {
         std::string val("starrocks");
@@ -1073,7 +1078,7 @@ TEST_F(AggregateTest, test_group_concat) {
     // test update
     group_concat_function->update_batch_single_state(ctx, data_column->size(), &row_column, state->state());
 
-    auto result_column = BinaryColumn::create();
+    auto result_column = BinaryColumn::create(kAllocator);
     group_concat_function->finalize_to_column(ctx, state->state(), result_column.get());
 
     ASSERT_EQ("starrocks0, starrocks1, starrocks2, starrocks3, starrocks4, starrocks5", result_column->get_data()[0]);
@@ -1090,7 +1095,7 @@ TEST_F(AggregateTest, test_group_concat_const_seperator) {
             get_aggregate_function("group_concat", TYPE_VARCHAR, TYPE_VARCHAR, false);
     auto state = ManagedAggrState::create(ctx, group_concat_function);
 
-    auto data_column = BinaryColumn::create();
+    auto data_column = BinaryColumn::create(kAllocator);
 
     data_column->append("abc");
     data_column->append("bcd");
@@ -1118,7 +1123,7 @@ TEST_F(AggregateTest, test_group_concat_const_seperator) {
     group_concat_function->update_batch_single_state(local_ctx.get(), data_column->size(), raw_columns.data(),
                                                      state->state());
 
-    auto result_column = BinaryColumn::create();
+    auto result_column = BinaryColumn::create(kAllocator);
     group_concat_function->finalize_to_column(local_ctx.get(), state->state(), result_column.get());
 
     ASSERT_EQ("abcbcdcdedefefgfghghihijijk", result_column->get_data()[0]);
@@ -1132,12 +1137,12 @@ TEST_F(AggregateTest, test_percentile_cont) {
 
     const AggregateFunction* func = get_aggregate_function("percentile_cont", TYPE_DOUBLE, TYPE_DOUBLE, false);
 
-    auto data_column1 = DoubleColumn::create();
+    auto data_column1 = DoubleColumn::create(kAllocator);
     data_column1->append(2.0);
     data_column1->append(3.0);
     data_column1->append(4.0);
 
-    auto data_column2 = DoubleColumn::create();
+    auto data_column2 = DoubleColumn::create(kAllocator);
     data_column2->append(5.0);
     data_column2->append(6.0);
 
@@ -1163,10 +1168,10 @@ TEST_F(AggregateTest, test_percentile_cont) {
     auto state3 = ManagedAggrState::create(ctx, func);
 
     // merge column 1 and column 2
-    auto result_column = DoubleColumn::create();
-    MutableColumnPtr serde_column1 = BinaryColumn::create();
+    auto result_column = DoubleColumn::create(kAllocator);
+    MutableColumnPtr serde_column1 = BinaryColumn::create(kAllocator);
     func->serialize_to_column(local_ctx.get(), state1->state(), serde_column1.get());
-    MutableColumnPtr serde_column2 = BinaryColumn::create();
+    MutableColumnPtr serde_column2 = BinaryColumn::create(kAllocator);
     func->serialize_to_column(local_ctx.get(), state2->state(), serde_column2.get());
 
     func->merge(local_ctx.get(), serde_column1.get(), state3->state(), 0);
@@ -1186,12 +1191,12 @@ TEST_F(AggregateTest, test_percentile_cont_1) {
 
     const AggregateFunction* func = get_aggregate_function("percentile_cont", TYPE_DOUBLE, TYPE_DOUBLE, false);
 
-    auto data_column1 = DoubleColumn::create();
+    auto data_column1 = DoubleColumn::create(kAllocator);
     data_column1->append(2.0);
     data_column1->append(3.0);
     data_column1->append(4.0);
 
-    auto data_column2 = DoubleColumn::create();
+    auto data_column2 = DoubleColumn::create(kAllocator);
     data_column2->append(5.0);
     data_column2->append(6.0);
 
@@ -1217,10 +1222,10 @@ TEST_F(AggregateTest, test_percentile_cont_1) {
     auto state3 = ManagedAggrState::create(ctx, func);
 
     // merge column 1 and column 2
-    auto result_column = DoubleColumn::create();
-    MutableColumnPtr serde_column1 = BinaryColumn::create();
+    auto result_column = DoubleColumn::create(kAllocator);
+    MutableColumnPtr serde_column1 = BinaryColumn::create(kAllocator);
     func->serialize_to_column(local_ctx.get(), state1->state(), serde_column1.get());
-    MutableColumnPtr serde_column2 = BinaryColumn::create();
+    MutableColumnPtr serde_column2 = BinaryColumn::create(kAllocator);
     func->serialize_to_column(local_ctx.get(), state2->state(), serde_column2.get());
 
     func->merge(local_ctx.get(), serde_column1.get(), state3->state(), 0);
@@ -1240,7 +1245,7 @@ TEST_F(AggregateTest, test_percentile_cont_2) {
 
     const AggregateFunction* func = get_aggregate_function("percentile_cont", TYPE_DOUBLE, TYPE_DOUBLE, false);
 
-    auto data_column1 = DoubleColumn::create();
+    auto data_column1 = DoubleColumn::create(kAllocator);
     data_column1->append(2.0);
     data_column1->append(3.0);
     data_column1->append(4.0);
@@ -1257,7 +1262,7 @@ TEST_F(AggregateTest, test_percentile_cont_2) {
     func->update_batch_single_state(local_ctx.get(), data_column1->size(), raw_columns1.data(), state1->state());
 
     // merge column 1 and column 2
-    auto result_column = DoubleColumn::create();
+    auto result_column = DoubleColumn::create(kAllocator);
     func->finalize_to_column(local_ctx.get(), state1->state(), result_column.get());
 
     // [2,3,4,5,6], rate = 0.25 -> 3
@@ -1275,7 +1280,7 @@ TEST_F(AggregateTest, test_percentile_disc) {
     // update input column 1
     auto state1 = ManagedAggrState::create(ctx, func);
 
-    auto data_column1 = DoubleColumn::create();
+    auto data_column1 = DoubleColumn::create(kAllocator);
     auto const_colunm1 = ColumnHelper::create_const_column<TYPE_DOUBLE>(0.1, 1);
     data_column1->append(3.0);
     data_column1->append(4.0);
@@ -1290,7 +1295,7 @@ TEST_F(AggregateTest, test_percentile_disc) {
     // update input column 2
     auto state2 = ManagedAggrState::create(ctx, func);
 
-    auto data_column2 = DoubleColumn::create();
+    auto data_column2 = DoubleColumn::create(kAllocator);
     auto const_colunm2 = ColumnHelper::create_const_column<TYPE_DOUBLE>(0.1, 1);
     data_column2->append(6.0);
 
@@ -1302,8 +1307,8 @@ TEST_F(AggregateTest, test_percentile_disc) {
     func->update_batch_single_state(local_ctx.get(), data_column2->size(), raw_columns2.data(), state2->state());
 
     // merge column 1 and column 2
-    MutableColumnPtr serde_column = BinaryColumn::create();
-    auto result_column = DoubleColumn::create();
+    MutableColumnPtr serde_column = BinaryColumn::create(kAllocator);
+    auto result_column = DoubleColumn::create(kAllocator);
     func->serialize_to_column(local_ctx.get(), state1->state(), serde_column.get());
     func->merge(local_ctx.get(), serde_column.get(), state2->state(), 0);
     func->finalize_to_column(local_ctx.get(), state2->state(), result_column.get());
@@ -1317,8 +1322,8 @@ TEST_F(AggregateTest, test_intersect_count) {
             get_aggregate_function("intersect_count", TYPE_INT, TYPE_BIGINT, false);
     auto state = ManagedAggrState::create(ctx, group_concat_function);
 
-    auto data_column = BitmapColumn::create();
-    auto int_column = Int32Column::create();
+    auto data_column = BitmapColumn::create(kAllocator);
+    auto int_column = Int32Column::create(kAllocator);
     auto int_const1 = ColumnHelper::create_const_column<TYPE_INT>(1, 1);
     auto int_const2 = ColumnHelper::create_const_column<TYPE_INT>(2, 1);
 
@@ -1361,7 +1366,7 @@ TEST_F(AggregateTest, test_intersect_count) {
     // test update
     group_concat_function->update_batch_single_state(ctx, data_column->size(), raw_columns.data(), state->state());
 
-    auto result_column = Int64Column::create();
+    auto result_column = Int64Column::create(kAllocator);
     group_concat_function->finalize_to_column(ctx, state->state(), result_column.get());
 
     ASSERT_EQ(1, result_column->get_data()[0]);
@@ -1372,7 +1377,7 @@ TEST_F(AggregateTest, test_bitmap_intersect) {
             get_aggregate_function("bitmap_intersect", TYPE_OBJECT, TYPE_OBJECT, false);
     auto state = ManagedAggrState::create(ctx, group_concat_function);
 
-    auto data_column = BitmapColumn::create();
+    auto data_column = BitmapColumn::create(kAllocator);
 
     BitmapValue b1;
     b1.add(1);
@@ -1393,7 +1398,7 @@ TEST_F(AggregateTest, test_bitmap_intersect) {
     // test update
     group_concat_function->update_batch_single_state(ctx, data_column->size(), &row_column, state->state());
 
-    auto result_column = BitmapColumn::create();
+    auto result_column = BitmapColumn::create(kAllocator);
     group_concat_function->finalize_to_column(ctx, state->state(), result_column.get());
 
     ASSERT_EQ("1", result_column->get_pool()[0].to_string());
@@ -1402,7 +1407,7 @@ TEST_F(AggregateTest, test_bitmap_intersect) {
 template <typename T>
 MutableColumnPtr gen_histogram_column() {
     using DataColumn = typename ColumnTraits<T>::ColumnType;
-    auto column = DataColumn::create();
+    auto column = DataColumn::create(kAllocator);
     for (int i = 0; i < 1024; i++) {
         if (i == 100) {
             column->append(100);
@@ -1443,7 +1448,7 @@ TEST_F(AggregateTest, test_histogram_none) {
     histogram_function->update_batch_single_state(local_ctx.get(), data_column->size(), raw_columns.data(),
                                                   state->state());
 
-    auto result_column = NullableColumn::create(BinaryColumn::create(), NullColumn::create());
+    auto result_column = NullableColumn::create(kAllocator, BinaryColumn::create(kAllocator), NullColumn::create(kAllocator));
     histogram_function->finalize_to_column(local_ctx.get(), state->state(), result_column.get());
     ASSERT_EQ(
             "['[[\"0\",\"100\",\"102\",\"2\"],[\"101\",\"201\",\"204\",\"1\"],[\"202\",\"303\",\"306\",\"1\"],[\"304\","
@@ -1488,7 +1493,7 @@ TEST_F(AggregateTest, test_histogram_sample) {
         histogram_function->update_batch_single_state(local_ctx.get(), data_column->size(), raw_columns.data(),
                                                       state->state());
 
-        auto result_column = NullableColumn::create(BinaryColumn::create(), NullColumn::create());
+        auto result_column = NullableColumn::create(kAllocator, BinaryColumn::create(kAllocator), NullColumn::create(kAllocator));
         histogram_function->finalize_to_column(local_ctx.get(), state->state(), result_column.get());
         ASSERT_EQ(
                 "['[[\"0\",\"100\",\"102\",\"2\",\"101\"],[\"101\",\"201\",\"204\",\"1\",\"101\"],[\"202\",\"303\""
@@ -1530,7 +1535,7 @@ TEST_F(AggregateTest, test_histogram_hll_ndv) {
     histogram_hll_ndv_function->update_batch_single_state(local_ctx.get(), data_column->size(), raw_columns.data(),
                                                           state->state());
 
-    auto result_column = NullableColumn::create(BinaryColumn::create(), NullColumn::create());
+    auto result_column = NullableColumn::create(kAllocator, BinaryColumn::create(kAllocator), NullColumn::create(kAllocator));
     histogram_hll_ndv_function->finalize_to_column(local_ctx.get(), state->state(), result_column.get());
 
     ASSERT_EQ(
@@ -1555,14 +1560,14 @@ TEST_F(AggregateTest, test_histogram_hll_ndv) {
     histogram_hll_ndv_function->update_batch_single_state(local_ctx.get(), data_column->size(), raw_columns.data(),
                                                           state->state());
 
-    result_column = NullableColumn::create(BinaryColumn::create(), NullColumn::create());
+    result_column = NullableColumn::create(kAllocator, BinaryColumn::create(kAllocator), NullColumn::create(kAllocator));
     histogram_hll_ndv_function->finalize_to_column(local_ctx.get(), state->state(), result_column.get());
 
     ASSERT_EQ("['[[\"0\",\"1023\",\"1026\",\"1\",\"1011\"]]']", result_column->debug_string());
 }
 
 MutableColumnPtr gen_histogram_string_column() {
-    auto column = BinaryColumn::create();
+    auto column = BinaryColumn::create(kAllocator);
     for (int i = 0; i < 1024; i++) {
         if (i == 100) {
             column->append("100");
@@ -1605,7 +1610,7 @@ TEST_F(AggregateTest, test_histogram_hll_ndv_with_strings) {
     histogram_hll_ndv_function->update_batch_single_state(local_ctx.get(), data_column->size(), raw_columns.data(),
                                                           state->state());
 
-    auto result_column = NullableColumn::create(BinaryColumn::create(), NullColumn::create());
+    auto result_column = NullableColumn::create(kAllocator, BinaryColumn::create(kAllocator), NullColumn::create(kAllocator));
     histogram_hll_ndv_function->finalize_to_column(local_ctx.get(), state->state(), result_column.get());
 
     ASSERT_EQ(
@@ -1622,8 +1627,8 @@ TEST_F(AggregateTest, test_bitmap_intersect_nullable) {
             get_aggregate_function("bitmap_intersect", TYPE_OBJECT, TYPE_OBJECT, true);
     auto state = ManagedAggrState::create(ctx, group_concat_function);
 
-    auto data_column = BitmapColumn::create();
-    auto null_column = NullColumn::create();
+    auto data_column = BitmapColumn::create(kAllocator);
+    auto null_column = NullColumn::create(kAllocator);
 
     BitmapValue b1;
     b1.add(1);
@@ -1642,13 +1647,13 @@ TEST_F(AggregateTest, test_bitmap_intersect_nullable) {
     data_column->append(&b3);
     null_column->append(false);
 
-    auto column = NullableColumn::create(std::move(data_column), std::move(null_column));
+    auto column = NullableColumn::create(kAllocator, std::move(data_column), std::move(null_column));
     const Column* row_column = column.get();
 
     // test update
     group_concat_function->update_batch_single_state(ctx, column->size(), &row_column, state->state());
 
-    auto result_column = NullableColumn::create(BitmapColumn::create(), NullColumn::create());
+    auto result_column = NullableColumn::create(kAllocator, BitmapColumn::create(kAllocator), NullColumn::create(kAllocator));
     group_concat_function->finalize_to_column(ctx, state->state(), result_column.get());
 
     const Column& result_data_column = result_column->data_column_ref();
@@ -1664,7 +1669,7 @@ void test_non_deterministic_agg_function(FunctionContext* ctx, const AggregateFu
     using ExpeactedResultColumnType = typename ColumnTraits<T>::ColumnType;
     auto state = ManagedAggrState::create(ctx, func);
     // update input column 1
-    auto result_column1 = ResultColumn::create();
+    auto result_column1 = ResultColumn::create(kAllocator);
     auto column = gen_input_column1<T>();
     const Column* row_column = column.get();
     func->update_batch_single_state(ctx, row_column->size(), &row_column, state->state());
@@ -1674,7 +1679,7 @@ void test_non_deterministic_agg_function(FunctionContext* ctx, const AggregateFu
     ASSERT_EQ(expected_column1.get_data()[0], result_column1->get_data()[0]);
 
     // update input column 2
-    ResultColumnPtr result_column2 = ResultColumn::create();
+    ResultColumnPtr result_column2 = ResultColumn::create(kAllocator);
     auto state2 = ManagedAggrState::create(ctx, func);
     MutableColumnPtr column2 = gen_input_column2<T>();
     row_column = column2.get();
@@ -1685,7 +1690,7 @@ void test_non_deterministic_agg_function(FunctionContext* ctx, const AggregateFu
     ASSERT_EQ(expected_column2.get_data()[0], result_column2->get_data()[0]);
 
     // merge column 1 and column 2
-    auto final_result_column = ResultColumn::create();
+    auto final_result_column = ResultColumn::create(kAllocator);
     func->serialize_to_column(ctx, state->state(), final_result_column.get());
     func->merge(ctx, final_result_column.get(), state2->state(), 0);
     func->finalize_to_column(ctx, state2->state(), final_result_column.get());
@@ -1736,13 +1741,13 @@ TEST_F(AggregateTest, test_exchange_bytes) {
             get_aggregate_function("exchange_bytes", TYPE_BIGINT, TYPE_BIGINT, false);
     auto state = ManagedAggrState::create(ctx, exchange_bytes_function);
 
-    auto data_column = BinaryColumn::create();
+    auto data_column = BinaryColumn::create(kAllocator);
 
     data_column->append("abc");
     data_column->append("bcd");
     data_column->append("cde");
 
-    auto data_column_bigint = Int64Column::create();
+    auto data_column_bigint = Int64Column::create(kAllocator);
     data_column_bigint->append(21023);
     data_column_bigint->append(410223);
     data_column_bigint->append(710233);
@@ -1756,7 +1761,7 @@ TEST_F(AggregateTest, test_exchange_bytes) {
     exchange_bytes_function->update_batch_single_state(local_ctx.get(), data_column->size(), raw_columns.data(),
                                                        state->state());
 
-    auto result_column = Int64Column::create();
+    auto result_column = Int64Column::create(kAllocator);
     exchange_bytes_function->finalize_to_column(local_ctx.get(), state->state(), result_column.get());
 
     ASSERT_EQ(data_column_bigint->byte_size() + data_column->byte_size(), result_column->get_data()[0]);
@@ -2480,7 +2485,7 @@ TEST_F(AggregateTest, test_array_agg) {
     const AggregateFunction* agg_function = get_aggregate_function("array_agg", TYPE_VARCHAR, TYPE_ARRAY, false);
     auto state = ManagedAggrState::create(ctx, agg_function);
 
-    auto data_column = BinaryColumn::create();
+    auto data_column = BinaryColumn::create(kAllocator);
 
     for (int i = 0; i < 6; i++) {
         std::string val("starrocks");
@@ -2492,9 +2497,9 @@ TEST_F(AggregateTest, test_array_agg) {
     // test update
     agg_function->update_batch_single_state(ctx, data_column->size(), &row_column, state->state());
 
-    auto elem = BinaryColumn::create();
-    auto offsets = UInt32Column::create(0);
-    auto result_column = ArrayColumn::create(ColumnHelper::cast_to_nullable_column(elem), offsets);
+    auto elem = BinaryColumn::create(kAllocator);
+    auto offsets = UInt32Column::create(kAllocator, 0);
+    auto result_column = ArrayColumn::create(kAllocator, ColumnHelper::cast_to_nullable_column(elem), offsets);
     agg_function->finalize_to_column(ctx, state->state(), result_column->as_mutable_raw_ptr());
 
     // Access the element column through the ArrayColumn's elements, which is a NullableColumn
@@ -2513,7 +2518,7 @@ TEST_F(AggregateTest, test_array_agg_distinct) {
             get_aggregate_function("array_agg_distinct", TYPE_VARCHAR, TYPE_ARRAY, false);
     auto state = ManagedAggrState::create(ctx, agg_function);
 
-    auto data_column = BinaryColumn::create();
+    auto data_column = BinaryColumn::create(kAllocator);
 
     for (int i = 0; i < 6; i++) {
         std::string val("starrocks");
@@ -2527,9 +2532,9 @@ TEST_F(AggregateTest, test_array_agg_distinct) {
     // test update
     agg_function->update_batch_single_state(ctx, data_column->size(), &row_column, state->state());
 
-    auto elem = BinaryColumn::create();
-    auto offsets = UInt32Column::create(0);
-    auto result_column = ArrayColumn::create(ColumnHelper::cast_to_nullable_column(elem), offsets);
+    auto elem = BinaryColumn::create(kAllocator);
+    auto offsets = UInt32Column::create(kAllocator, 0);
+    auto result_column = ArrayColumn::create(kAllocator, ColumnHelper::cast_to_nullable_column(elem), offsets);
     agg_function->finalize_to_column(ctx, state->state(), result_column->as_mutable_raw_ptr());
 
     // Access the element column through the ArrayColumn's elements, which is a NullableColumn
@@ -2544,21 +2549,21 @@ TEST_F(AggregateTest, test_array_agg_nullable) {
     const AggregateFunction* func = get_aggregate_function("array_agg", TYPE_INT, TYPE_ARRAY, true);
     auto state = ManagedAggrState::create(ctx, func);
 
-    auto data_column = Int32Column::create();
-    auto null_column = NullColumn::create();
+    auto data_column = Int32Column::create(kAllocator);
+    auto null_column = NullColumn::create(kAllocator);
 
     for (int i = 0; i < 1024; i++) {
         data_column->append(i % 2 ? 0 : i);
         null_column->append(i % 2 ? 1 : 0);
     }
 
-    auto column = NullableColumn::create(std::move(data_column), std::move(null_column));
+    auto column = NullableColumn::create(kAllocator, std::move(data_column), std::move(null_column));
 
     const Column* row_column = column.get();
     func->update_batch_single_state(ctx, column->size(), &row_column, state->state());
-    auto elem = Int32Column::create();
-    auto offsets = UInt32Column::create(0);
-    auto result_column = ArrayColumn::create(ColumnHelper::cast_to_nullable_column(elem), offsets);
+    auto elem = Int32Column::create(kAllocator);
+    auto offsets = UInt32Column::create(kAllocator, 0);
+    auto result_column = ArrayColumn::create(kAllocator, ColumnHelper::cast_to_nullable_column(elem), offsets);
     func->finalize_to_column(ctx, state->state(), result_column->as_mutable_raw_ptr());
 
     ASSERT_EQ(1024, offsets->get_data().back());
@@ -2568,21 +2573,21 @@ TEST_F(AggregateTest, test_array_agg_nullable_distinct) {
     const AggregateFunction* func = get_aggregate_function("array_agg_distinct", TYPE_INT, TYPE_ARRAY, true);
     auto state = ManagedAggrState::create(ctx, func);
 
-    auto data_column = Int32Column::create();
-    auto null_column = NullColumn::create();
+    auto data_column = Int32Column::create(kAllocator);
+    auto null_column = NullColumn::create(kAllocator);
 
     for (int i = 0; i < 1024; i++) {
         data_column->append(i % 100);
         null_column->append(i % 4 ? 1 : 0);
     }
 
-    auto column = NullableColumn::create(std::move(data_column), std::move(null_column));
+    auto column = NullableColumn::create(kAllocator, std::move(data_column), std::move(null_column));
     const Column* row_column = column.get();
     func->update_batch_single_state(ctx, column->size(), &row_column, state->state());
 
-    auto elem = Int32Column::create();
-    auto offsets = UInt32Column::create(0);
-    auto result_column = ArrayColumn::create(ColumnHelper::cast_to_nullable_column(elem), offsets);
+    auto elem = Int32Column::create(kAllocator);
+    auto offsets = UInt32Column::create(kAllocator, 0);
+    auto result_column = ArrayColumn::create(kAllocator, ColumnHelper::cast_to_nullable_column(elem), offsets);
 
     func->finalize_to_column(ctx, state->state(), result_column->as_mutable_raw_ptr());
 
@@ -2622,10 +2627,10 @@ TEST_F(AggregateTest, test_ds_theta_count_distinct) {
     ASSERT_EQ("ds_theta_count_distinct", func->get_name());
     auto reset_state = ManagedAggrState::create(ctx, func);
     func->reset(local_ctx.get(), Columns{}, reset_state->state());
-    auto convert_data_column = DoubleColumn::create();
+    auto convert_data_column = DoubleColumn::create(kAllocator);
     convert_data_column->append(1.0);
     convert_data_column->append(2.0);
-    MutableColumnPtr convert_result_column = BinaryColumn::create();
+    MutableColumnPtr convert_result_column = BinaryColumn::create(kAllocator);
     func->convert_to_serialize_format(local_ctx.get(), Columns{convert_data_column}, 2, convert_result_column);
     const AggregateFunction* str_arg_func =
             get_aggregate_function("ds_theta_count_distinct", TYPE_VARCHAR, TYPE_BIGINT, false);
@@ -2633,7 +2638,7 @@ TEST_F(AggregateTest, test_ds_theta_count_distinct) {
     std::vector<TypeDescriptor> str_arg_types = {TypeDescriptor::from_logical_type(TYPE_VARCHAR)};
     std::unique_ptr<FunctionContext> str_local_ctx(
             FunctionContext::create_test_context(std::move(str_arg_types), return_type));
-    auto ubswf_data_column = BinaryColumn::create();
+    auto ubswf_data_column = BinaryColumn::create(kAllocator);
     ubswf_data_column->append("abc");
     ubswf_data_column->append("bcd");
     std::vector<const Column*> ubswf_raw_columns;
@@ -2641,12 +2646,12 @@ TEST_F(AggregateTest, test_ds_theta_count_distinct) {
     ubswf_raw_columns[0] = ubswf_data_column.get();
     str_arg_func->update_batch_single_state_with_frame(str_local_ctx.get(), ubswf_state->state(),
                                                        ubswf_raw_columns.data(), 0, 0, 0, 2);
-    auto data_column1 = DoubleColumn::create();
+    auto data_column1 = DoubleColumn::create(kAllocator);
     data_column1->append(2.0);
     data_column1->append(3.0);
     data_column1->append(4.0);
 
-    auto data_column2 = DoubleColumn::create();
+    auto data_column2 = DoubleColumn::create(kAllocator);
     data_column2->append(5.0);
     data_column2->append(6.0);
 
@@ -2663,10 +2668,10 @@ TEST_F(AggregateTest, test_ds_theta_count_distinct) {
     func->update_batch_single_state(local_ctx.get(), data_column2->size(), raw_columns2.data(), state2->state());
 
     auto state3 = ManagedAggrState::create(ctx, func);
-    auto result_column = Int64Column::create();
-    MutableColumnPtr serde_column1 = BinaryColumn::create();
+    auto result_column = Int64Column::create(kAllocator);
+    MutableColumnPtr serde_column1 = BinaryColumn::create(kAllocator);
     func->serialize_to_column(local_ctx.get(), state1->state(), serde_column1.get());
-    MutableColumnPtr serde_column2 = BinaryColumn::create();
+    MutableColumnPtr serde_column2 = BinaryColumn::create(kAllocator);
     func->serialize_to_column(local_ctx.get(), state2->state(), serde_column2.get());
 
     func->merge(local_ctx.get(), serde_column1.get(), state3->state(), 0);

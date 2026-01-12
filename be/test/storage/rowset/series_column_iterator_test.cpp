@@ -17,16 +17,21 @@
 #include <gtest/gtest.h>
 
 #include "column/fixed_length_column.h"
+#include "runtime/memory/allocator_v2.h"
 #include "testutil/assert.h"
 
 namespace starrocks {
+
+namespace {
+static memory::Allocator* kAllocator = memory::get_default_allocator();
+}
 
 TEST(SeriesColumnIteratorTest, test_step_1) {
     auto iter = SeriesColumnIterator<int>{0, 10};
     ASSERT_OK(iter.init(ColumnIteratorOptions{}));
     ASSERT_EQ(0, iter.get_current_ordinal());
     auto n = size_t{20};
-    auto column = Int32Column{};
+    auto column = Int32Column{kAllocator};
     ASSERT_OK(iter.next_batch(&n, &column));
     ASSERT_EQ(11, n);
     ASSERT_EQ(n, column.size());
@@ -70,7 +75,7 @@ TEST(SeriesColumnIteratorTest, test_step_1) {
 TEST(SeriesColumnIteratorTest, test_step_2) {
     auto iter = SeriesColumnIterator<int>{0, 10, 2};
     auto n = size_t{20};
-    auto column = Int32Column{};
+    auto column = Int32Column{kAllocator};
     ASSERT_OK(iter.next_batch(&n, &column));
     ASSERT_EQ(6, n);
     ASSERT_EQ(n, column.size());
@@ -95,7 +100,7 @@ TEST(SeriesColumnIteratorTest, test_decrement) {
     auto iter = SeriesColumnIterator<int>{0, -9, -1};
     ASSERT_OK(iter.init(ColumnIteratorOptions{}));
     auto n = size_t{4};
-    auto column = Int32Column{};
+    auto column = Int32Column{kAllocator};
     ASSERT_OK(iter.next_batch(&n, &column));
     ASSERT_EQ(4, n);
     ASSERT_EQ(n, column.size());
@@ -109,7 +114,7 @@ TEST(SeriesColumnIteratorTest, test_decrement_step_3) {
     auto iter = SeriesColumnIterator<int>{0, -9, -3};
     ASSERT_OK(iter.init(ColumnIteratorOptions{}));
     auto n = size_t{4};
-    auto column = Int32Column{};
+    auto column = Int32Column{kAllocator};
     ASSERT_OK(iter.next_batch(&n, &column));
     ASSERT_EQ(4, n);
     ASSERT_EQ(n, column.size());
@@ -135,7 +140,7 @@ TEST(SeriesColumnIteratorTest, test_invalid_argument) {
     auto iter5 = SeriesColumnIterator<int>{1, 2, 2};
     ASSERT_OK(iter5.init(ColumnIteratorOptions{}));
     auto n = size_t{2};
-    auto column = Int32Column{};
+    auto column = Int32Column{kAllocator};
     ASSERT_OK(iter5.next_batch(&n, &column));
     ASSERT_EQ(1, n);
     ASSERT_EQ(n, column.size());
@@ -157,7 +162,7 @@ TEST(SeriesColumnIteratorTest, test_overflow) {
     auto iter = SeriesColumnIterator<uint8_t>{250, 255, 2};
     ASSERT_OK(iter.init(ColumnIteratorOptions{}));
     auto n = size_t{10};
-    auto column = Int8Column{};
+    auto column = Int8Column{kAllocator};
     ASSERT_OK(iter.next_batch(&n, &column));
     ASSERT_EQ(3, n);
     ASSERT_EQ(n, column.size());
@@ -174,7 +179,7 @@ TEST(SeriesColumnIteratorTest, test_underflow) {
     auto iter = SeriesColumnIterator<int8_t>{-124, -128, -2};
     ASSERT_OK(iter.init(ColumnIteratorOptions{}));
     auto n = size_t{10};
-    auto column = Int8Column{};
+    auto column = Int8Column{kAllocator};
     ASSERT_OK(iter.next_batch(&n, &column));
     ASSERT_EQ(3, n);
     ASSERT_EQ(n, column.size());
@@ -194,7 +199,7 @@ TEST(SeriesColumnIteratorTest, test_get_by_ranges) {
     ranges.add({0, 2});
     ranges.add({5, 7});
     ranges.add({41, 45});
-    auto column = Int8Column{};
+    auto column = Int8Column{kAllocator};
     ASSERT_OK(iter.next_batch(ranges, &column));
     ASSERT_EQ(ranges.span_size(), column.size());
     auto rng_iter = ranges.new_iterator();
@@ -212,7 +217,7 @@ TEST(SeriesColumnIteratorTest, test_get_by_rowids) {
     auto iter = SeriesColumnIterator<int8_t>{0, 100, step};
     ASSERT_OK(iter.init(ColumnIteratorOptions{}));
     auto rowids = std::vector<rowid_t>{0, 1, 5, 6, 41, 42, 43, 44};
-    auto column = Int8Column{};
+    auto column = Int8Column{kAllocator};
     ASSERT_OK(iter.fetch_values_by_rowid(rowids.data(), rowids.size(), &column));
     ASSERT_EQ(rowids.size(), column.size());
     for (auto i = 0; i < rowids.size(); i++) {
