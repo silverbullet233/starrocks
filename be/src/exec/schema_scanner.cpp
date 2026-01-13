@@ -371,6 +371,7 @@ bool SchemaScanner::_parse_expr_predicate(Expr* conjunct, const std::string& col
     Expr* string_literal_expr = (result_child_idx == 0) ? child0 : child1;
     auto* eq_target = dynamic_cast<VectorizedLiteral*>(string_literal_expr);
     DCHECK(eq_target != nullptr);
+    // @TODO set ExprContext
     auto literal_col_status = eq_target->evaluate_checked(nullptr, nullptr);
     if (!literal_col_status.ok()) {
         return false;

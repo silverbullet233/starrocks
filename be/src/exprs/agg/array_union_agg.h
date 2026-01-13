@@ -113,6 +113,7 @@ public:
 
     void create(FunctionContext* ctx, AggDataPtr __restrict ptr) const override {
         auto* state = new (ptr) ArrayUnionAggAggregateState<LT, is_distinct, MyHashSet>;
+        LOG(INFO) << "create ArrayUnionAggAggregateState";
         state->data_column = InputColumnType::create(ctx->get_allocator());
     }
 

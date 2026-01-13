@@ -281,6 +281,8 @@ public:
     void set_observer(PipelineObserver* observer) { _observer = observer; }
     PipelineObserver* observer() const { return _observer; }
 
+    memory::Allocator* allocator() const { return _allocator; }
+
     void _init_rf_counters(bool init_bloom);
 
 protected:

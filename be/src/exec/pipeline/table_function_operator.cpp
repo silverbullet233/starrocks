@@ -102,6 +102,7 @@ Status TableFunctionOperator::prepare(RuntimeState* state) {
     }
     RETURN_IF_ERROR(_table_function->init(table_fn, &_table_function_state));
     _table_function_state->set_is_required(_fn_result_required);
+    _table_function_state->set_allocator(_allocator);
     _table_function_exec_timer = ADD_TIMER(_unique_metrics, "TableFunctionExecTime");
     _table_function_exec_counter = ADD_COUNTER(_unique_metrics, "TableFunctionExecCount", TUnit::UNIT);
     RETURN_IF_ERROR(_table_function->prepare(_table_function_state));

@@ -120,7 +120,16 @@ public:
     explicit NullableAggregateFunctionBase(NestedAggregateFunctionPtr nested_function_,
                                            AggNullPred null_pred = AggNullPred())
             : nested_function(std::move(nested_function_)), null_pred(std::move(null_pred)) {}
-    // as array_agg is not nullable, so it needn't create() here.
+
+    void create(FunctionContext* ctx, AggDataPtr __restrict ptr) const override {
+        auto* state = new (ptr) State;
+        nested_function->create(ctx, state->mutable_nest_state());
+    }
+
+    void destroy(FunctionContext* ctx, AggDataPtr __restrict ptr) const override {
+        auto* state = &this->data(ptr);
+        nested_function->destroy(ctx, state->mutable_nest_state());
+    }
 
     std::string get_name() const override { return "nullable " + nested_function->get_name(); }
 

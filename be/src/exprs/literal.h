@@ -13,9 +13,6 @@
 // limitations under the License.
 
 #pragma once
-#include <string>
-
-#include "column/datum.h"
 #include "column/vectorized_fwd.h"
 #include "common/object_pool.h"
 #include "exprs/expr.h"
@@ -26,13 +23,10 @@ class VectorizedLiteral final : public Expr {
 public:
     VectorizedLiteral(const TExprNode& node);
     VectorizedLiteral(ColumnPtr&& value, const TypeDescriptor& type);
-    VectorizedLiteral(const VectorizedLiteral& other);
 
     ~VectorizedLiteral() override;
 
     Expr* clone(ObjectPool* pool) const override { return pool->add(new VectorizedLiteral(*this)); }
-
-    Status prepare(RuntimeState* state, ExprContext* context) override;
 
     StatusOr<ColumnPtr> evaluate_checked(ExprContext* context, Chunk* ptr) override;
 
@@ -53,7 +47,5 @@ public:
 private:
     // @IMPORTANT: BinaryColumnPtr's build_slice will cause multi-thread(OLAP_SCANNER) crash
     ColumnPtr _value;
-    Datum _datum;
-    std::string _string_value;
 };
 } // namespace starrocks

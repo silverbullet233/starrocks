@@ -145,11 +145,13 @@ void calculate_metrics(void* arg_this) {
         LOG(INFO) << dump_memory_tracker();
         {
             auto process_mem_tracker = GlobalEnv::GetInstance()->process_mem_tracker();
-            auto total_allocation = process_mem_tracker->allocation();
-            auto allocation_by_allocator = process_mem_tracker->allocation_by_allocator();
-            LOG(INFO) << "Process total allocation: " << total_allocation
-                << ", allocation by allocator: " << allocation_by_allocator
-                << ", " << ((allocation_by_allocator * 1.0) / total_allocation) * 100 << "%";
+            if (process_mem_tracker != nullptr) {
+                auto total_allocation = process_mem_tracker->allocation();
+                auto allocation_by_allocator = process_mem_tracker->allocation_by_allocator();
+                LOG(INFO) << "Process total allocation: " << total_allocation
+                    << ", allocation by allocator: " << allocation_by_allocator
+                    << ", " << ((allocation_by_allocator * 1.0) / total_allocation) * 100 << "%";
+            }
         }
 
 

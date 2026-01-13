@@ -66,6 +66,7 @@ inline AggDataPtr AllocateState<HashMapWithKey>::operator()(const typename HashM
     size_t aggregate_function_sz = aggregator->_agg_fn_ctxs.size();
     try {
         for (int i = 0; i < aggregate_function_sz; i++) {
+            LOG(INFO) << "AllocateState create " << aggregator->_agg_functions[i]->get_name();
             aggregator->_agg_functions[i]->create(aggregator->_agg_fn_ctxs[i],
                                                   agg_state + aggregator->_agg_states_offsets[i]);
             created++;
@@ -1697,6 +1698,8 @@ Status Aggregator::convert_hash_map_to_chunk(int32_t chunk_size, ChunkPtr* chunk
                         TRY_CATCH_BAD_ALLOC(_agg_functions[i]->batch_serialize(_agg_fn_ctxs[i], read_index,
                                                                                _tmp_agg_states, _agg_states_offsets[i],
                                                                                agg_result_columns[i].get()));
+                        LOG(INFO) << "batch_serialize " << i << " " << read_index;
+
                     }
                 }
             }
