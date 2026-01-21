@@ -21,6 +21,7 @@
 #include "column/vectorized_fwd.h"
 #include "exprs/cast_expr.h"
 #include "exprs/column_ref.h"
+#include "exprs/expr_context.h"
 #include "fs/fs_broker.h"
 #include "runtime/exec_env.h"
 #include "runtime/memory/allocator_v2.h"
@@ -141,7 +142,9 @@ Status ParquetScanner::finalize_src_chunk(ChunkPtr* chunk) {
                 continue;
             }
 
-            ASSIGN_OR_RETURN(auto column, _cast_exprs[i]->evaluate_checked(nullptr, (*chunk).get()));
+            ExprContext tmp_ctx(_cast_exprs[i]);
+            tmp_ctx.set_allocator(memory::get_default_allocator());
+            ASSIGN_OR_RETURN(auto column, _cast_exprs[i]->evaluate_checked(&tmp_ctx, (*chunk).get()));
             column = ColumnHelper::unfold_const_column(_allocator, slot_desc->type(), (*chunk)->num_rows(), std::move(column));
             cast_chunk->append_column(column, slot_desc->id());
         }

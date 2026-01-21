@@ -164,7 +164,9 @@ VectorizedLiteral::VectorizedLiteral(ColumnPtr&& value, const TypeDescriptor& ty
 #undef CASE_TYPE_COLUMN
 
 StatusOr<ColumnPtr> VectorizedLiteral::evaluate_checked(ExprContext* context, Chunk* ptr) {
-    MutableColumnPtr column = _value->clone_empty(context->get_allocator());
+    // @TODO pass context allocator
+    auto allocator = context == nullptr ? memory::get_default_allocator() : context->get_allocator();
+    MutableColumnPtr column = _value->clone_empty(allocator);
     column->append(*_value, 0, 1);
     if (ptr != nullptr) {
         column->resize(ptr->num_rows());

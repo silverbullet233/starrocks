@@ -691,7 +691,9 @@ StatusOr<ColumnPtr> JsonFunctions::_flat_json_query_impl(FunctionContext* contex
             DCHECK(state->cast_expr != nullptr);
             Chunk chunk;
             chunk.append_column(flat_column, 0);
-            ret = state->cast_expr->evaluate_checked(nullptr, &chunk);
+            ExprContext tmp_ctx(state->cast_expr);
+            tmp_ctx.set_allocator(memory::get_default_allocator());
+            ret = state->cast_expr->evaluate_checked(&tmp_ctx, &chunk);
         } else {
             ret = std::move(flat_column->clone());
         }

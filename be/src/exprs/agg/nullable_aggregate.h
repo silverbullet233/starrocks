@@ -230,7 +230,7 @@ public:
         if (src[0]->is_nullable()) {
             const auto* nullable_column = down_cast<const NullableColumn*>(src[0].get());
             if constexpr (IsNeverNullFunctionState<State>) {
-                dst_nullable_column->null_column_data().resize(chunk_size);
+                dst_nullable_column->null_column_data().resize(chunk_size, 0);
                 nested_function->convert_to_serialize_format(ctx, src, chunk_size, dst_data_column);
             } else if (nullable_column->has_null()) {
                 dst_nullable_column->set_has_null(true);
@@ -251,14 +251,14 @@ public:
                     }
                 }
             } else {
-                dst_nullable_column->null_column_data().resize(chunk_size);
+                dst_nullable_column->null_column_data().resize(chunk_size, 0);
 
                 Columns src_data_columns(1);
                 src_data_columns[0] = nullable_column->data_column();
                 nested_function->convert_to_serialize_format(ctx, src_data_columns, chunk_size, dst_data_column);
             }
         } else {
-            dst_nullable_column->null_column_data().resize(chunk_size);
+            dst_nullable_column->null_column_data().resize(chunk_size, 0);
             nested_function->convert_to_serialize_format(ctx, src, chunk_size, dst_data_column);
         }
         dst_nullable_column->data_column() = std::move(dst_data_column);
@@ -1089,7 +1089,7 @@ public:
         auto* dst_nullable_column = down_cast<NullableColumn*>(dst.get());
 
         // dst's null_column, initial with false.
-        dst_nullable_column->null_column_data().resize(chunk_size);
+        dst_nullable_column->null_column_data().resize(chunk_size, 0);
 
         // dst's null_column, used to | with src's null columns to indicate result chunk's null column.
         NullData& dst_null_data = dst_nullable_column->null_column_data();

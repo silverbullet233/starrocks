@@ -60,7 +60,9 @@ public:
             : Base(rhs._allocator),
               _data_column(std::move(rhs._data_column)),
               _null_column(std::move(rhs._null_column)),
-              _has_null(rhs._has_null) {}
+              _has_null(rhs._has_null) {
+                LOG(INFO) << "NullableColumn move constructor";
+              }
 
     NullableColumn& operator=(NullableColumn&& rhs) noexcept {
         NullableColumn tmp(std::move(rhs));

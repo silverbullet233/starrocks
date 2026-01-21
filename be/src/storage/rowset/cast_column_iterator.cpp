@@ -18,6 +18,8 @@
 #include "common/object_pool.h"
 #include "exprs/cast_expr.h"
 #include "exprs/column_ref.h"
+#include "exprs/expr_context.h"
+#include "runtime/memory/allocator_v2.h"
 
 namespace starrocks {
 
@@ -49,7 +51,9 @@ Status CastColumnIterator::init(const ColumnIteratorOptions& opts) {
 }
 
 void CastColumnIterator::do_cast(Column* target) {
-    auto cast_result = _cast_expr->evaluate(nullptr, &_source_chunk);
+    ExprContext tmp_ctx(_cast_expr);
+    tmp_ctx.set_allocator(memory::get_default_allocator());
+    auto cast_result = _cast_expr->evaluate(&tmp_ctx, &_source_chunk);
     cast_result =
             ColumnHelper::unfold_const_column(_opts.allocator, _cast_expr->type(), _source_chunk.num_rows(), std::move(cast_result));
     if ((target->is_nullable() == cast_result->is_nullable()) && (target->size() == 0)) {

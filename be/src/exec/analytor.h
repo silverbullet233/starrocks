@@ -355,7 +355,9 @@ private:
     Segment _peer_group;
     SegmentStatistics _peer_group_statistics;
     std::queue<int64_t> _candidate_peer_group_ends;
+    // @TODO pending remove
     std::unique_ptr<Allocator> _allocator = std::make_unique<MemHookAllocator>();
+    memory::Allocator* _memory_allocator = nullptr;
 
     bool _is_merge_funcs;
 

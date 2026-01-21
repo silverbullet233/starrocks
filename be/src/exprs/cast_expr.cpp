@@ -1298,6 +1298,7 @@ DEFINE_STRING_UNARY_FN_WITH_IMPL(DoubleCastToString, v) {
         auto result = RunTimeColumnType<TO_TYPE>::create(allocator);                                                 \
         auto& offset = result->get_offset();                                                                \
         offset.resize(v1->size() + 1);                                                                      \
+        offset[0] = 0;                                                                                      \
         auto& bytes = result->get_bytes();                                                                  \
         bytes.reserve(sizeof(RunTimeColumnType<FROM_TYPE>) * v1->size());                                   \
         int size = v1->size();                                                                              \

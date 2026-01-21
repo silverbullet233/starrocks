@@ -102,6 +102,7 @@ public:
     }
 
     MutableColumnPtr build(bool is_const) {
+        LOG(INFO) << "build size: " << _column->size() << ", has_null: " << _has_null << ", is_const: " << is_const;
         if (is_const && _has_null) {
             return ColumnHelper::create_const_null_column(_allocator, _column->size());
         }
@@ -164,7 +165,7 @@ public:
         auto& offsets = _column->get_offset();
         offsets.resize(num_rows + 1);
         offsets[0] = 0;
-        _null_column->get_data().resize(num_rows);
+        _null_column->get_data().resize(num_rows, 0);
     }
 
     // mark i-th resulting element is null

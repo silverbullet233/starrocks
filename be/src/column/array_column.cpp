@@ -80,7 +80,8 @@ void ArrayColumn::reserve(size_t n) {
 }
 
 void ArrayColumn::resize(size_t n) {
-    _offsets->get_data().resize(n + 1, _offsets->get_data().back());
+    size_t val = _offsets->get_data().back();
+    _offsets->get_data().resize(n + 1, val);
     size_t array_size = _offsets->get_data().back();
     _elements->resize(array_size);
 }

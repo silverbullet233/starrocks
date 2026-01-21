@@ -66,7 +66,7 @@ inline AggDataPtr AllocateState<HashMapWithKey>::operator()(const typename HashM
     size_t aggregate_function_sz = aggregator->_agg_fn_ctxs.size();
     try {
         for (int i = 0; i < aggregate_function_sz; i++) {
-            LOG(INFO) << "AllocateState create " << aggregator->_agg_functions[i]->get_name();
+            // LOG(INFO) << "AllocateState create " << aggregator->_agg_functions[i]->get_name();
             aggregator->_agg_functions[i]->create(aggregator->_agg_fn_ctxs[i],
                                                   agg_state + aggregator->_agg_states_offsets[i]);
             created++;
@@ -779,6 +779,7 @@ void Aggregator::close(RuntimeState* state) {
         (void)agg_close();
     }
 #endif
+    // LOG(INFO) << "reset _spiller: " << (void*)_spiller.get();
     _spiller.reset();
 }
 

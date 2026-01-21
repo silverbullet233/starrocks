@@ -83,7 +83,7 @@ struct Bucket {
         return AggDataTypeTraits<LT>::is_less_equal(value, AggDataTypeTraits<LT>::get_ref(upper));
     }
 
-    void update_upper(RefType value, [[maybe_unused]] memory::Allocator* allocator = nullptr) {
+    void update_upper(RefType value, [[maybe_unused]] memory::Allocator* allocator) {
         if constexpr (lt_is_string<LT>) {
             AggDataTypeTraits<LT>::assign_value(upper, value, allocator);
         } else {
@@ -209,7 +209,7 @@ private:
                     if (last_bucket->count_in_bucket >= bucket_size) {
                         buckets.emplace_back(v, v, last_bucket->count + 1, 1, ctx->get_allocator());
                     } else {
-                        last_bucket->update_upper(v);
+                        last_bucket->update_upper(v, ctx->get_allocator());
                         last_bucket->count++;
                         last_bucket->count_in_bucket++;
                         last_bucket->upper_repeats = 1;
@@ -289,7 +289,7 @@ private:
                         sample_distinct = 1;
                         count_once = 1;
                     } else {
-                        last_bucket->update_upper(v);
+                        last_bucket->update_upper(v, ctx->get_allocator());
                         last_bucket->count++;
                         last_bucket->count_in_bucket++;
                         last_bucket->upper_repeats = 1;

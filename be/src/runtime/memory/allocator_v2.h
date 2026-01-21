@@ -101,10 +101,22 @@ public:
     }
 
     static constexpr bool throw_bad_alloc_on_failure() {return false;}
-    
-// #ifndef BE_TEST
-// protected:
-// #endif
+};
+
+template <bool clear_memory>
+class MallocAllocator: public AllocatorFactory<Allocator, MallocAllocator<clear_memory>> {
+public:
+    MallocAllocator() = default;
+    ~MallocAllocator() override = default;
+    void* alloc(size_t size, size_t alignment = 0) override;
+    void* realloc(void* ptr, size_t old_size, size_t new_size, size_t alignment = 0) override;
+    void free(void* ptr, size_t size) override;
+    int64_t nallox(size_t size, int flags = 0) const override;
+    Allocator::MemoryKind memory_kind() const override {
+        return Allocator::MemoryKind::kMalloc;
+    }
+
+    static constexpr bool throw_bad_alloc_on_failure() {return false;}
 };
 
 template <class BaseAllocator>
@@ -189,7 +201,11 @@ using ThreadSafeCountingAllocator = CountingAllocator<BaseAllocator, AtomicIntCo
 template <class BaseAllocator>
 using NonThreadSafeCountingAllocator = CountingAllocator<BaseAllocator, IntCounter>;
 
+#if !defined(ADDRESS_SANITIZER) && !defined(LEAK_SANITIZER) && !defined(THREAD_SANITIZER)
 static TrackedAllocator<JemallocAllocator<false>> kDefaultAllocator;
+#else
+static TrackedAllocator<MallocAllocator<false>> kDefaultAllocator;
+#endif
 
 Allocator* get_default_allocator();
 

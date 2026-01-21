@@ -26,6 +26,7 @@
 #include "column/array_column.h"
 #include "column/vectorized_fwd.h"
 #include "exprs/cast_expr.h"
+#include "exprs/expr_context.h"
 #include "exprs/literal.h"
 #include "exprs/runtime_filter.h"
 #include "runtime/memory/allocator_v2.h"
@@ -571,7 +572,9 @@ StatusOr<ChunkPtr> OrcChunkReader::_cast_chunk(ChunkPtr* chunk,
             src_index = (*indices)[src_index];
         }
         // TODO(murphy) check status
-        ASSIGN_OR_RETURN(ColumnPtr col, _cast_exprs[src_index]->evaluate_checked(nullptr, src.get()));
+        ExprContext tmp_ctx(_cast_exprs[src_index]);
+        tmp_ctx.set_allocator(memory::get_default_allocator());
+        ASSIGN_OR_RETURN(ColumnPtr col, _cast_exprs[src_index]->evaluate_checked(&tmp_ctx, src.get()));
         col = ColumnHelper::unfold_const_column(memory::get_default_allocator(), slot->type(), chunk_size, std::move(col));
 
         // If we feed nullable column to cast_expr, it may return non-nullable column if it really doesn't have null values
@@ -849,7 +852,9 @@ static StatusOr<orc::Literal> translate_to_orc_literal(Expr* lit, orc::Predicate
     }
 
     auto* vlit = down_cast<VectorizedLiteral*>(lit);
-    ASSIGN_OR_RETURN(auto ptr, vlit->evaluate_checked(nullptr, nullptr));
+    ExprContext tmp_ctx(vlit);
+    tmp_ctx.set_allocator(memory::get_default_allocator());
+    ASSIGN_OR_RETURN(auto ptr, vlit->evaluate_checked(&tmp_ctx, nullptr));
     if (ptr->only_null()) {
         return {pred_type};
     }
@@ -942,7 +947,9 @@ Status OrcChunkReader::_add_conjunct(const Expr* conjunct,
         orc::TruthValue val = orc::TruthValue::NO;
         if (node_type == TExprNodeType::BOOL_LITERAL) {
             Expr* literal = const_cast<Expr*>(conjunct);
-            auto ptr = literal->evaluate_checked(nullptr, nullptr).value();
+            ExprContext tmp_ctx(literal);
+            tmp_ctx.set_allocator(memory::get_default_allocator());
+            auto ptr = literal->evaluate_checked(&tmp_ctx, nullptr).value();
             const Datum& datum = ptr->get(0);
             if (datum.get_int8()) {
                 val = orc::TruthValue::YES;

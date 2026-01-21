@@ -931,6 +931,7 @@ public:
         size_t chunk_size = columns[0]->size();
 
         RETURN_IF_COLUMNS_ONLY_NULL(columns);
+        LOG(INFO) << "ArrayJoin: columns.size() = " << columns.size();
 
         ColumnPtr src_column = ColumnHelper::unpack_and_duplicate_const_column(chunk_size, columns[0]);
         if (columns.size() <= 2) {
@@ -1026,7 +1027,7 @@ public:
     static ColumnPtr process(FunctionContext* ctx, const Columns& columns) {
         return _array_match(ctx, columns);
     }
-
+    
 private:
     static ColumnPtr _array_match(FunctionContext* context, const Columns& columns) {
         DCHECK(columns.size() == 1);

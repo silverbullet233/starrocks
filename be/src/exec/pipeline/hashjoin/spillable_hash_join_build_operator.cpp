@@ -54,8 +54,8 @@ Status SpillableHashJoinBuildOperator::prepare(RuntimeState* state) {
 
 void SpillableHashJoinBuildOperator::close(RuntimeState* state) {
     HashJoinBuildOperator::close(state);
-    DCHECK(is_finished());
-    DCHECK(!need_input());
+    DCHECK(state->is_cancelled() ||is_finished());
+    DCHECK(state->is_cancelled() || !need_input());
 }
 
 size_t SpillableHashJoinBuildOperator::estimated_memory_reserved(const ChunkPtr& chunk) {

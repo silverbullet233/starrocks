@@ -253,7 +253,7 @@ public:
                                                                             IsWindowFunc>(sum);
             } else if (name == "decimal_multi_distinct_sum") {
                 auto distinct_sum = AggregateFactory::MakeDecimalSumDistinctAggregateFunction<ArgLT>();
-                return AggregateFactory::MakeNullableAggregateFunctionUnary<DistinctAggregateState<ArgLT, ResultLT>,
+                return AggregateFactory::MakeNullableAggregateFunctionUnary<DistinctAggregateStateV2<ArgLT, ResultLT>,
                                                                             IsWindowFunc>(distinct_sum);
             }
         } else {

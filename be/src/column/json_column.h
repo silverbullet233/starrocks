@@ -40,6 +40,7 @@ public:
     JsonColumn(memory::Allocator* allocator, size_t size) : SuperClass(allocator, size) {}
 
     JsonColumn(JsonColumn&& rhs) noexcept : SuperClass(std::move(rhs)) {
+        LOG(INFO) << "JsonColumn move constructor";
         _flat_columns = std::move(rhs._flat_columns);
         _flat_column_paths = std::move(rhs._flat_column_paths);
         _flat_column_types = std::move(rhs._flat_column_types);

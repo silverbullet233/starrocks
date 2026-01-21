@@ -16,8 +16,10 @@
 #include <algorithm>
 #include <cstddef>
 #include <cstdint>
+#include <cstring>
 #include <initializer_list>
 #include <iterator>
+#include <memory>
 #include <stdexcept>
 #include <type_traits>
 #include <utility>
@@ -39,7 +41,7 @@ namespace starrocks::util {
 #endif
 
 static constexpr size_t empty_raw_buffer_size = 1024;
-alignas(std::max_align_t) extern const uint8_t empty_raw_buffer[empty_raw_buffer_size];
+alignas(std::max_align_t) extern uint8_t empty_raw_buffer[empty_raw_buffer_size];
 
 // Helper functions for element size calculations
 inline size_t element_bytes(size_t element_size, size_t element_num) {
@@ -67,7 +69,7 @@ class RawBuffer {
 public:
     static constexpr size_t kElementSize = sizeof(T);
     static constexpr size_t kPadding = ((padding + kElementSize - 1) / kElementSize) * kElementSize;
-    static constexpr uint8_t* null = const_cast<uint8_t*>(empty_raw_buffer);
+    static constexpr uint8_t* null = empty_raw_buffer;
 
     using value_type = T;
     using iterator = T*;
@@ -116,7 +118,14 @@ public:
         return _start != null;
     }
 
-    void clear() { _end = _start; }
+    void clear() {
+        if constexpr (!std::is_trivially_destructible_v<T>) {
+            for (T* ptr = begin(); ptr != end(); ptr++) {
+                ptr->~T();
+            }
+        }
+        _end = _start;
+    }
     void release(memory::Allocator* allocator);
     void reserve(memory::Allocator* allocator, size_t new_cap);
     void shrink_to_fit(memory::Allocator* allocator);
@@ -125,7 +134,7 @@ public:
 
     void assign(memory::Allocator* allocator, size_t count, const T& value);
     template <class InputIt,
-                std::enable_if_t<std::is_base_of_v<std::input_iterator_tag, typename std::iterator_traits<InputIt>::iterator_category>, bool> = true>
+              std::enable_if_t<std::is_base_of_v<std::forward_iterator_tag, typename std::iterator_traits<InputIt>::iterator_category>, bool> = true>
     void assign(memory::Allocator* allocator, InputIt first, InputIt last);
     void assign(memory::Allocator* allocator, std::initializer_list<T> ilist);
 
@@ -142,6 +151,9 @@ public:
     iterator insert(memory::Allocator* allocator, size_t count, const T& value);
 
     void swap(RawBuffer& other) noexcept;
+
+private:
+    void relocate(memory::Allocator* allocator, size_t new_size, size_t new_allocated_bytes);
 
 protected:
     uint8_t* _start = null;
@@ -175,7 +187,7 @@ public:
     void resize(size_t count);
     void resize(size_t count, const T& value);
     void assign(size_t count, const T& value);
-    template <class InputIt, std::enable_if_t<std::is_base_of_v<std::input_iterator_tag, typename std::iterator_traits<InputIt>::iterator_category>, bool> = true>
+    template <class InputIt, std::enable_if_t<std::is_base_of_v<std::forward_iterator_tag, typename std::iterator_traits<InputIt>::iterator_category>, bool> = true>
     void assign(InputIt first, InputIt last);
     void assign(std::initializer_list<T> ilist);
 
@@ -199,22 +211,18 @@ private:
 };
 
 template <class T, size_t padding>
-RawBuffer<T, padding>::RawBuffer(RawBuffer&& rhs) noexcept
-        : _start(rhs._start), _end(rhs._end), _end_of_storage(rhs._end_of_storage) {
-    rhs._start = null;
-    rhs._end = null;
-    rhs._end_of_storage = null;
+RawBuffer<T, padding>::RawBuffer(RawBuffer&& rhs) noexcept {
+    std::swap(_start, rhs._start);
+    std::swap(_end, rhs._end);
+    std::swap(_end_of_storage, rhs._end_of_storage);
 }
 
 template <class T, size_t padding>
 RawBuffer<T, padding>& RawBuffer<T, padding>::operator=(RawBuffer&& rhs) noexcept {
     if (this != &rhs) {
-        _start = rhs._start;
-        _end = rhs._end;
-        _end_of_storage = rhs._end_of_storage;
-        rhs._start = null;
-        rhs._end = null;
-        rhs._end_of_storage = null;
+        std::swap(_start, rhs._start);
+        std::swap(_end, rhs._end);
+        std::swap(_end_of_storage, rhs._end_of_storage);
     }
     return *this;
 }
@@ -224,11 +232,53 @@ void RawBuffer<T, padding>::release(memory::Allocator* allocator) {
     if (_start == null) {
         return;
     }
+
+    if constexpr (!std::is_trivially_destructible_v<T>) {
+        for (T* ptr = begin(); ptr != end(); ptr++) {
+            ptr->~T();
+        }
+    }
     allocator->free(reinterpret_cast<void*>(_start), allocated_bytes());
 
     _start = null;
     _end = null;
     _end_of_storage = null;
+}
+
+template <class T, size_t padding>
+void RawBuffer<T, padding>::relocate(memory::Allocator* allocator, size_t new_size, size_t new_allocated_bytes) {
+    size_t old_allocated_bytes = allocated_bytes();
+    size_t old_used_bytes = used_bytes();
+
+    if constexpr (std::is_trivially_copyable_v<T>) {
+        _start = reinterpret_cast<uint8_t*>(allocator->realloc(reinterpret_cast<void*>(_start), old_allocated_bytes, new_allocated_bytes));
+        _end = _start + old_used_bytes;
+        _end_of_storage = _start + new_allocated_bytes - kPadding;
+    } else {
+        uint8_t* new_start = reinterpret_cast<uint8_t*>(allocator->alloc(new_allocated_bytes));
+        T* new_data = reinterpret_cast<T*>(new_start);
+        T* old_data = reinterpret_cast<T*>(_start);
+        size_t old_size = size();
+        size_t i = 0;
+        try {
+            for (; i < old_size; ++i) {
+                new (new_data + i) T(std::move_if_noexcept(old_data[i]));
+            }
+        } catch (...) {
+            for (size_t j = 0; j < i; ++j) {
+                new_data[j].~T();
+            }
+            allocator->free(reinterpret_cast<void*>(new_start), new_allocated_bytes);
+            throw;
+        }
+        for (size_t j = 0; j < old_size; ++j) {
+            old_data[j].~T();
+        }
+        allocator->free(reinterpret_cast<void*>(_start), old_allocated_bytes);
+        _start = new_start;
+        _end = _start + old_used_bytes;
+        _end_of_storage = _start + new_allocated_bytes - kPadding;
+    }
 }
 
 template <class T, size_t padding>
@@ -249,47 +299,71 @@ void RawBuffer<T, padding>::reserve(memory::Allocator* allocator, size_t new_cap
         _end_of_storage = _start + new_allocated_bytes - kPadding;
         return;
     }
-    size_t old_allocated_bytes = allocated_bytes();
-    size_t old_used_bytes = used_bytes();
-    _start = reinterpret_cast<uint8_t*>(allocator->realloc(reinterpret_cast<void*>(_start), old_allocated_bytes, new_allocated_bytes));
-    _end = _start + old_used_bytes;
-    _end_of_storage = _start + new_allocated_bytes - kPadding;
+    // @TODO
+    relocate(allocator, new_cap, new_allocated_bytes);
 }
 
 template <class T, size_t padding>
 void RawBuffer<T, padding>::shrink_to_fit(memory::Allocator* allocator) {
-    if (_start == _end) {
+    if (_end == _end_of_storage) {
         return;
     }
+
     size_t new_size = size();
-    if (new_size == 0) {
-        release(allocator);
-        return;
+    size_t new_allocated_bytes;
+    if constexpr (padding > 0) {
+        new_allocated_bytes = element_bytes_with_padding(new_size, kElementSize, kPadding);
+    } else {
+        new_allocated_bytes = element_bytes(kElementSize, new_size);
     }
-    size_t new_allocated_bytes = element_bytes_with_padding(new_size, kElementSize, kPadding);
-    size_t old_allocated_bytes = allocated_bytes();
-    size_t old_used_bytes = used_bytes();
-    uint8_t* new_start = reinterpret_cast<uint8_t*>(allocator->realloc(reinterpret_cast<void*>(_start), old_allocated_bytes, new_allocated_bytes));
-    _start = new_start;
-    _end = _start + old_used_bytes;
-    _end_of_storage = _start + new_allocated_bytes - kPadding;
+    relocate(allocator, new_size, new_allocated_bytes);
 }
 
 template <class T, size_t padding>
 void RawBuffer<T, padding>::resize(memory::Allocator* allocator, size_t new_size) {
+    size_t old_size = size();
     if (new_size > capacity()) {
         reserve(allocator, new_size);
     }
+
+    if constexpr (!std::is_trivially_destructible_v<T>) {
+        T* ptr = data();
+        for (size_t i = new_size; i < old_size; ++i) {
+            ptr[i].~T();
+        }
+    }
+    if constexpr (!std::is_trivially_copyable_v<T>) {
+        T* ptr = data();
+        for (size_t i = old_size; i < new_size; ++i) {
+            new (ptr + i) T();
+        }
+    }
+
     _end = _start + new_size * kElementSize;
 }
 
 template <class T, size_t padding>
 void RawBuffer<T, padding>::resize(memory::Allocator* allocator, size_t new_size, const T& value) {
     size_t old_size = size();
-    resize(allocator, new_size);
-    for (size_t i = old_size; i < new_size; ++i) {
-        new (data() + i) T(value);
+    if (new_size > capacity()) {
+        reserve(allocator, new_size);
     }
+    if constexpr (!std::is_trivially_destructible_v<T>) {
+        T* ptr = data();
+        for (size_t i = new_size; i < old_size; ++i) {
+            ptr[i].~T();
+        }
+    }
+
+    if (new_size > old_size) {
+        size_t grow = new_size - old_size;
+        if constexpr (std::is_trivially_copyable_v<T>) {
+            std::fill(end(), end() + grow, value);
+        } else {
+            std::uninitialized_fill_n(end(), grow, value);
+        }
+    }
+    _end = _start + new_size * kElementSize;
 }
 
 template <class T, size_t padding>
@@ -297,56 +371,45 @@ void RawBuffer<T, padding>::assign(memory::Allocator* allocator, size_t count, c
     if (count > capacity()) {
         reserve(allocator, count);
     }
-    // Destroy existing elements
-    T* ptr = data();
-    for (size_t i = 0; i < size(); ++i) {
-        ptr[i].~T();
-    }
-    // Construct new elements
-    for (size_t i = 0; i < count; ++i) {
-        new (ptr + i) T(value);
+    if constexpr (std::is_trivially_copyable_v<T>) {
+        std::fill(begin(), begin() + count, value);
+    } else {
+        if constexpr (!std::is_trivially_destructible_v<T>) {
+            for (T* ptr = begin(); ptr != end(); ptr++) {
+                ptr->~T();
+            }
+        }
+        std::uninitialized_fill_n(begin(), count, value);
     }
     _end = _start + count * kElementSize;
 }
 
 template <class T, size_t padding>
-template <class InputIt, std::enable_if_t<std::is_base_of_v<std::input_iterator_tag, typename std::iterator_traits<InputIt>::iterator_category>, bool>>
+template <class InputIt, std::enable_if_t<std::is_base_of_v<std::forward_iterator_tag, typename std::iterator_traits<InputIt>::iterator_category>, bool>>
 void RawBuffer<T, padding>::assign(memory::Allocator* allocator, InputIt first, InputIt last) {
     size_t count = std::distance(first, last);
     if (count > capacity()) {
         reserve(allocator, count);
     }
-    // Destroy existing elements
-    T* ptr = data();
-    for (size_t i = 0; i < size(); ++i) {
-        ptr[i].~T();
+
+    if constexpr (!std::is_trivially_destructible_v<T>) {
+        for (T* ptr = begin(); ptr != end(); ptr++) {
+            ptr->~T();
+        }
     }
-    // Construct new elements from iterator range
-    size_t idx = 0;
-    for (InputIt it = first; it != last; ++it, ++idx) {
-        new (ptr + idx) T(*it);
+
+    T* ptr = data();
+    if constexpr (std::is_trivially_copyable_v<T> && std::is_pointer_v<InputIt>) {
+        memcpy(ptr, reinterpret_cast<const void*>(first), count * kElementSize);
+    } else {
+        std::uninitialized_copy(first, last, ptr);
     }
     _end = _start + count * kElementSize;
 }
 
 template <class T, size_t padding>
 void RawBuffer<T, padding>::assign(memory::Allocator* allocator, std::initializer_list<T> ilist) {
-    size_t count = ilist.size();
-    if (count > capacity()) {
-        reserve(allocator, count);
-    }
-    // Destroy existing elements
-    T* ptr = data();
-    for (size_t i = 0; i < size(); ++i) {
-        ptr[i].~T();
-    }
-    // Construct new elements from initializer_list
-    size_t idx = 0;
-    for (const T& value : ilist) {
-        new (ptr + idx) T(value);
-        ++idx;
-    }
-    _end = _start + count * kElementSize;
+    assign(allocator, ilist.begin(), ilist.end());
 }
 
 template <class T, size_t padding>
@@ -355,28 +418,28 @@ void RawBuffer<T, padding>::push_back(memory::Allocator* allocator, const T& val
         size_t new_cap = empty() ? 1 : capacity() * 2;
         reserve(allocator, new_cap);
     }
-    new (reinterpret_cast<T*>(_end)) T(value);
+    new (end()) T(value);
     _end += kElementSize;
 }
 
 template <class T, size_t padding>
 void RawBuffer<T, padding>::push_back(memory::Allocator* allocator, T&& value) {
-    if (UNLIKELY(_end + sizeof(T) > _end_of_storage)) {
+    if (UNLIKELY(_end + kElementSize > _end_of_storage)) {
         size_t new_cap = empty() ? 1 : capacity() * 2;
         reserve(allocator, new_cap);
     }
-    new (reinterpret_cast<T*>(_end)) T(std::move(value));
+    new (end()) T(std::move(value));
     _end += kElementSize;
 }
 
 template <class T, size_t padding>
 template <class... Args>
 T& RawBuffer<T, padding>::emplace_back(memory::Allocator* allocator, Args&&... args) {
-    if (UNLIKELY(_end + sizeof(T) > _end_of_storage)) {
-        size_t new_cap = (capacity() == 0) ? 1 : capacity() * 2;
+    if (UNLIKELY(_end + kElementSize > _end_of_storage)) {
+        size_t new_cap = empty() ? 1 : capacity() * 2;
         reserve(allocator, new_cap);
     }
-    T* ptr = reinterpret_cast<T*>(_end);
+    T* ptr = end();
     new (ptr) T(std::forward<Args>(args)...);
     _end += kElementSize;
     return *ptr;
@@ -388,26 +451,32 @@ void RawBuffer<T, padding>::pop_back() {
         return;
     }
     _end -= kElementSize;
-    reinterpret_cast<T*>(_end)->~T();
+    if constexpr (!std::is_trivially_destructible_v<T>) {
+        end()->~T();
+    }
 }
 
 template <class T, size_t padding>
 template <class InputIt, std::enable_if_t<std::is_base_of_v<std::input_iterator_tag, typename std::iterator_traits<InputIt>::iterator_category>, bool>>
 typename RawBuffer<T, padding>::iterator RawBuffer<T, padding>::insert(memory::Allocator* allocator, InputIt first, InputIt last) {
     size_t count = std::distance(first, last);
-    if (count == 0) {
+    if (UNLIKELY(count == 0)) {
         return end();
     }
     size_t old_size = size();
     if (old_size + count > capacity()) {
-        size_t new_cap = (capacity() == 0) ? count : std::max(capacity() * 2, old_size + count);
+        size_t new_cap = empty() ? count : std::max(capacity() * 2, old_size + count);
         reserve(allocator, new_cap);
     }
     T* insert_pos = reinterpret_cast<T*>(_end);
     // Insert new elements at the end
-    size_t idx = 0;
-    for (InputIt it = first; it != last; ++it, ++idx) {
-        new (insert_pos + idx) T(*it);
+    if constexpr (std::is_trivially_copyable_v<T> && std::is_pointer_v<InputIt>) {
+        memcpy(insert_pos, reinterpret_cast<const void*>(first), count * kElementSize);
+    } else {
+        size_t idx = 0;
+        for (InputIt it = first; it != last; ++it, ++idx) {
+            new (insert_pos + idx) T(*it);
+        }
     }
     _end += count * kElementSize;
     return insert_pos;
@@ -415,24 +484,7 @@ typename RawBuffer<T, padding>::iterator RawBuffer<T, padding>::insert(memory::A
 
 template <class T, size_t padding>
 typename RawBuffer<T, padding>::iterator RawBuffer<T, padding>::insert(memory::Allocator* allocator, std::initializer_list<T> ilist) {
-    size_t count = ilist.size();
-    if (UNLIKELY(count == 0)) {
-        return end();
-    }
-    size_t old_size = size();
-    if (old_size + count > capacity()) {
-        size_t new_cap = (capacity() == 0) ? count : std::max(capacity() * 2, old_size + count);
-        reserve(allocator, new_cap);
-    }
-    T* insert_pos = reinterpret_cast<T*>(_end);
-    // Insert new elements from initializer_list at the end
-    size_t idx = 0;
-    for (const T& value : ilist) {
-        new (insert_pos + idx) T(value);
-        ++idx;
-    }
-    _end += count * kElementSize;
-    return insert_pos;
+    return insert(allocator, ilist.begin(), ilist.end());
 }
 
 template <class T, size_t padding>
@@ -445,7 +497,7 @@ typename RawBuffer<T, padding>::iterator RawBuffer<T, padding>::insert(memory::A
         size_t new_cap = (capacity() == 0) ? count : std::max(capacity() * 2, old_size + count);
         reserve(allocator, new_cap);
     }
-    T* insert_pos = reinterpret_cast<T*>(_end);
+    T* insert_pos = end();
     // Insert new elements at the end
     for (size_t i = 0; i < count; ++i) {
         new (insert_pos + i) T(value);
@@ -468,7 +520,7 @@ Buffer<T, padding>::Buffer(Buffer&& other) noexcept {
 }
 
 template <class T, size_t padding>
-Buffer<T, padding>::~Buffer<T, padding>() {
+Buffer<T, padding>::~Buffer() {
     release();
     _allocator = nullptr;
 }
@@ -510,7 +562,7 @@ void Buffer<T, padding>::assign(size_t count, const T& value) {
 }
 
 template <class T, size_t padding>
-template <class InputIt, std::enable_if_t<std::is_base_of_v<std::input_iterator_tag, typename std::iterator_traits<InputIt>::iterator_category>, bool>>
+template <class InputIt, std::enable_if_t<std::is_base_of_v<std::forward_iterator_tag, typename std::iterator_traits<InputIt>::iterator_category>, bool>>
 void Buffer<T, padding>::assign(InputIt first, InputIt last) {
     RawBuffer<T, padding>::assign(this->_allocator, first, last);
 }

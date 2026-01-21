@@ -506,6 +506,7 @@ public:
         for (auto i = 0; i < dest_size; ++i) {
             auto id_0 = is_const[0] ? 0 : i;
             if (input_null[0] == nullptr || !input_null[0]->immutable_data()[id_0]) {
+                bool matched = false;
                 bool has_null = false;
                 for (auto j = 1; j < child_size; ++j) {
                     auto id = is_const[j] ? 0 : i;
@@ -517,15 +518,20 @@ public:
                     // input[j] is not null
                     auto is_equal = input_data[0]->equals(id_0, *input_data[j], id, false);
                     if (is_equal == 1) {
-                        res_null_data[i] = false;
-                        res_data[i] = !_is_not_in;
+                        matched = true;
                         break;
                     } else if (is_equal == -1) {
                         has_null = true;
                     }
                 }
-                if (_is_not_in == res_data[i]) {
-                    res_null_data[i] = has_null;
+                if (matched) {
+                    res_data[i] = !_is_not_in;
+                    res_null_data[i] = false;
+                } else if (has_null) {
+                    res_null_data[i] = true;
+                } else {
+                    res_data[i] = _is_not_in;
+                    res_null_data[i] = false;
                 }
             }
         }

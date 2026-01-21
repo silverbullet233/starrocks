@@ -29,6 +29,7 @@
 #include "exec/json_parser.h"
 #include "exprs/cast_expr.h"
 #include "exprs/column_ref.h"
+#include "exprs/expr_context.h"
 #include "exprs/json_functions.h"
 #include "formats/avro/nullable_column.h"
 #include "fs/fs.h"
@@ -413,7 +414,9 @@ StatusOr<ChunkPtr> AvroScanner::_cast_chunk(const starrocks::ChunkPtr& src_chunk
             continue;
         }
 
-        ASSIGN_OR_RETURN(ColumnPtr col, _cast_exprs[column_pos]->evaluate_checked(nullptr, src_chunk.get()));
+        ExprContext tmp_ctx(_cast_exprs[column_pos]);
+        tmp_ctx.set_allocator(memory::get_default_allocator());
+        ASSIGN_OR_RETURN(ColumnPtr col, _cast_exprs[column_pos]->evaluate_checked(&tmp_ctx, src_chunk.get()));
         col = ColumnHelper::unfold_const_column(_allocator, slot->type(), src_chunk->num_rows(), std::move(col));
         cast_chunk->append_column(std::move(col), slot->id());
     }

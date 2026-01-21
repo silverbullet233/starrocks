@@ -713,6 +713,7 @@ Status JoinHashTable::probe_remain(RuntimeState* state, ChunkPtr* chunk, bool* e
 }
 
 void JoinHashTable::append_chunk(const ChunkPtr& chunk, const Columns& key_columns) {
+    chunk->check_or_die();
     auto& columns = _table_items->build_chunk->columns();
 
     CancelableDefer defer = CancelableDefer([&]() {

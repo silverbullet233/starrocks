@@ -109,6 +109,8 @@ Analytor::Analytor(const TPlanNode& tnode, const RowDescriptor& child_row_desc,
         }
         _is_unbounded_preceding = !window.__isset.window_start;
     }
+    // @TODO pending fix
+    _memory_allocator = memory::get_default_allocator();
 }
 
 Status Analytor::prepare(RuntimeState* state, ObjectPool* pool, RuntimeProfile* runtime_profile) {
@@ -266,9 +268,9 @@ Status Analytor::prepare(RuntimeState* state, ObjectPool* pool, RuntimeProfile* 
             // and can't handler const column within the function.
             if (j == 0) {
                 _agg_intput_columns[i][j] =
-                        ColumnHelper::create_column(_agg_expr_ctxs[i][j]->get_allocator(), _agg_expr_ctxs[i][j]->root()->type(), is_input_nullable);
+                        ColumnHelper::create_column(_memory_allocator, _agg_expr_ctxs[i][j]->root()->type(), is_input_nullable);
             } else {
-                _agg_intput_columns[i][j] = ColumnHelper::create_column(_agg_expr_ctxs[i][j]->get_allocator(), _agg_expr_ctxs[i][j]->root()->type(),
+                _agg_intput_columns[i][j] = ColumnHelper::create_column(_memory_allocator, _agg_expr_ctxs[i][j]->root()->type(),
                                                                         _agg_expr_ctxs[i][j]->root()->is_nullable(),
                                                                         _agg_expr_ctxs[i][j]->root()->is_constant(), 0);
             }
@@ -298,14 +300,14 @@ Status Analytor::prepare(RuntimeState* state, ObjectPool* pool, RuntimeProfile* 
     _partition_columns.resize(_partition_ctxs.size());
     for (size_t i = 0; i < _partition_ctxs.size(); i++) {
         _partition_columns[i] = ColumnHelper::create_column(
-                _partition_ctxs[i]->get_allocator(), _partition_ctxs[i]->root()->type(), _partition_ctxs[i]->root()->is_nullable() | has_outer_join_child,
+                _memory_allocator, _partition_ctxs[i]->root()->type(), _partition_ctxs[i]->root()->is_nullable() | has_outer_join_child,
                 _partition_ctxs[i]->root()->is_constant(), 0);
     }
 
     RETURN_IF_ERROR(Expr::create_expr_trees(_pool, analytic_node.order_by_exprs, &_order_ctxs, state));
     _order_columns.resize(_order_ctxs.size());
     for (size_t i = 0; i < _order_ctxs.size(); i++) {
-        _order_columns[i] = ColumnHelper::create_column(_order_ctxs[i]->get_allocator(), _order_ctxs[i]->root()->type(),
+        _order_columns[i] = ColumnHelper::create_column(_memory_allocator, _order_ctxs[i]->root()->type(),
                                                         _order_ctxs[i]->root()->is_nullable() | has_outer_join_child,
                                                         _order_ctxs[i]->root()->is_constant(), 0);
     }
@@ -1020,7 +1022,13 @@ void Analytor::_update_window_batch_removable_cumulatively() {
 }
 
 Status Analytor::_output_result_chunk(ChunkPtr* chunk) {
-    ChunkPtr output_chunk = std::move(_input_chunks[_output_chunk_index]);
+    // @TODO OrderedPartitionExchanger may cache input chunk, if we modify it here, it will cause undefined behavior.
+    // ChunkPtr output_chunk = std::move(_input_chunks[_output_chunk_index]);
+    ChunkPtr output_chunk = std::make_shared<Chunk>();
+    for (const auto& [slot_id, index] : _input_chunks[_output_chunk_index]->get_slot_id_to_index_map()) {
+        output_chunk->append_column(_input_chunks[_output_chunk_index]->get_column_by_index(index), slot_id);
+    }
+    
     for (size_t i = 0; i < _result_window_columns.size(); i++) {
         output_chunk->append_column(_result_window_columns[i], _result_tuple_desc->slots()[i]->id());
     }
@@ -1068,7 +1076,7 @@ void Analytor::_init_window_result_columns() {
     _result_window_columns.resize(_agg_fn_types.size());
     for (size_t i = 0; i < _agg_fn_types.size(); ++i) {
         _result_window_columns[i] =
-                ColumnHelper::create_column(_agg_fn_ctxs[i]->get_allocator(), _agg_fn_types[i].result_type, _agg_fn_types[i].has_nullable_child);
+                ColumnHelper::create_column(_memory_allocator, _agg_fn_types[i].result_type, _agg_fn_types[i].has_nullable_child);
         // Binary column cound't call resize method like Numeric Column,
         // so we only reserve it.
         if (_agg_functions[i]->get_name().ends_with("fused_multi_distinct")) {

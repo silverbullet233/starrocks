@@ -13,14 +13,15 @@
 // limitations under the License.
 
 #include "runtime/global_variables.h"
+#include "column/nullable_column.h"
 
 namespace starrocks {
 
 bool GlobalVariables::_is_init = false;
 
 GlobalVariables::GlobalVariables() {
-    _one_size_not_null_column = NullColumn::create(memory::get_default_allocator(), 1, 0);
-    _one_size_null_column = NullColumn::create(memory::get_default_allocator(), 1, 1);
+    _one_size_not_null_column = NullColumn::create(memory::get_default_allocator(), 1, DATUM_NOT_NULL);
+    _one_size_null_column = NullColumn::create(memory::get_default_allocator(), 1, DATUM_NULL);
     _is_init = true;
 }
 

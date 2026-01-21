@@ -55,9 +55,7 @@ public:
 
     explicit FixedLengthColumnBase(memory::Allocator* allocator) : Column(allocator), _data(allocator) {}
 
-    FixedLengthColumnBase(memory::Allocator* allocator, const size_t n) : Column(allocator), _data(allocator, n) {}
-
-    FixedLengthColumnBase(memory::Allocator* allocator, const size_t n, const ValueType x)
+    FixedLengthColumnBase(memory::Allocator* allocator, const size_t n, const ValueType x = ValueType{})
             : Column(allocator), _data(allocator, n, x) {}
 
     // Only used as a underlying type for other column type(i.e. DecimalV3Column), C++

@@ -66,7 +66,9 @@ public:
     SpillProcessChannelPtr spill_channel() { return _aggregator->spill_channel(); }
 
 private:
-    bool spilled() const { return _aggregator->spiller()->spilled(); }
+    bool spilled() const { return 
+        _aggregator->spiller() != nullptr &&
+        _aggregator->spiller()->spilled(); }
 
 private:
     Status _try_to_spill_by_force(RuntimeState* state, const ChunkPtr& chunk);

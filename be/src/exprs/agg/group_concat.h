@@ -558,7 +558,7 @@ public:
             arrays[j] = down_cast<ArrayColumn*>(nullable_arrays[j]->data_column_raw_ptr());
             arrays[j]->reserve(old_size + chunk_size);
             array_nulls[j] = &(nullable_arrays[j]->null_column_data());
-            array_nulls[j]->resize(old_size + chunk_size);
+            array_nulls[j]->resize(old_size + chunk_size, 0);
             array_offsets[j] = &(arrays[j]->offsets_column_raw_ptr()->get_data());
             array_elements[j] = arrays[j]->elements_column_raw_ptr();
         }

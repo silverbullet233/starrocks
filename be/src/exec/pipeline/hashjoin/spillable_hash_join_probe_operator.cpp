@@ -490,7 +490,8 @@ StatusOr<ChunkPtr> SpillableHashJoinProbeOperator::pull_chunk(RuntimeState* stat
 }
 
 bool SpillableHashJoinProbeOperator::spilled() const {
-    return _join_builder->spiller() && _join_builder->spiller()->spilled();
+    auto spiller = _join_builder->spiller();
+    return spiller && spiller->spilled();
 }
 
 void SpillableHashJoinProbeOperator::_acquire_next_partitions() {

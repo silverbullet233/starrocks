@@ -485,7 +485,7 @@ ColumnPtr right_const_not_null(FunctionContext* context, const Columns& columns,
     const size_t size = src->size();
 
     if (len <= 0) {
-        offsets.resize(size + 1);
+        offsets.resize(size + 1, 0);
         return result;
     }
 
@@ -796,7 +796,7 @@ StatusOr<ColumnPtr> StringFunctions::space(FunctionContext* context, const Colum
 
     dst_offsets.resize(num_rows + 1);
     dst_offsets[0] = 0;
-    nulls.resize(num_rows);
+    nulls.resize(num_rows, 0);
     bool has_null = false;
     size_t dst_off = 0;
     for (size_t i = 0; i < num_rows; ++i) {
@@ -888,11 +888,11 @@ static inline ColumnPtr repeat_const_not_null(FunctionContext* context, const Co
     auto& dst_offsets = builder.data_column()->get_offset();
     auto& dst_bytes = builder.data_column()->get_bytes();
 
-    dst_nulls.resize(num_rows);
+    dst_nulls.resize(num_rows, 0);
     bool has_null = false;
 
     if (times <= 0) {
-        dst_offsets.resize(num_rows + 1);
+        dst_offsets.resize(num_rows + 1, 0);
         return builder.build(ColumnHelper::is_all_const(columns));
     } else {
         dst_offsets.resize(num_rows + 1);
@@ -951,7 +951,7 @@ static inline ColumnPtr repeat_not_const(FunctionContext* context, const Columns
     auto& dst_nulls = builder.get_null_data();
     auto& dst_offsets = builder.data_column()->get_offset();
     auto& dst_bytes = builder.data_column()->get_bytes();
-    dst_nulls.resize(num_rows);
+    dst_nulls.resize(num_rows, 0);
     dst_offsets.resize(num_rows + 1);
     dst_offsets[0] = 0;
 
@@ -1264,7 +1264,7 @@ static inline ColumnPtr translate_with_utf8_const_nonnull_from_and_to(FunctionCo
     dst_bytes.reserve(std::min<size_t>(16ULL, num_src_bytes * 4));
     dst_offsets.resize(num_rows + 1);
     dst_offsets[0] = 0;
-    dst_nulls.resize(num_rows);
+    dst_nulls.resize(num_rows, 0);
 
     bool has_null = false;
     size_t dst_offset = 0;
@@ -1331,7 +1331,7 @@ ColumnPtr translate_with_non_const_from_or_to(FunctionContext* context, const Co
     dst_bytes.reserve(std::min<size_t>(16ULL, num_src_bytes * 4));
     dst_offsets.resize(num_rows + 1);
     dst_offsets[0] = 0;
-    dst_nulls.resize(num_rows);
+    dst_nulls.resize(num_rows, 0);
 
     bool has_null = false;
     size_t dst_offset = 0;
@@ -2915,7 +2915,7 @@ static inline ColumnPtr concat_const_not_null(FunctionContext* context, Columns 
     const auto num_rows = src->size();
     dst_offsets.resize(num_rows + 1);
     dst_offsets[0] = 0;
-    nulls.resize(num_rows);
+    nulls.resize(num_rows, 0);
 
     auto& tail = state->tail;
     const auto tail_begin = (uint8_t*)tail.data();
@@ -2966,7 +2966,7 @@ static inline ColumnPtr concat_not_const_small(FunctionContext* context,
     auto& dst_nulls = builder.get_null_data();
     auto& dst_offsets = builder.data_column()->get_offset();
     auto& dst_bytes = builder.data_column()->get_bytes();
-    dst_nulls.resize(num_rows);
+    dst_nulls.resize(num_rows, 0);
     dst_offsets.resize(num_rows + 1);
     dst_offsets[0] = 0;
     dst_bytes.resize(dst_bytes_max_size);
@@ -3094,7 +3094,7 @@ ColumnPtr concat_ws_small(FunctionContext* context, ColumnViewer<TYPE_VARCHAR>& 
     auto& dst_nulls = builder.get_null_data();
     auto& dst_offsets = builder.data_column()->get_offset();
     auto& dst_bytes = builder.data_column()->get_bytes();
-    dst_nulls.resize(num_rows);
+    dst_nulls.resize(num_rows, 0);
     dst_offsets.resize(num_rows + 1);
     dst_offsets[0] = 0;
     dst_bytes.resize(dst_bytes_max_size);

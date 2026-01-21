@@ -529,12 +529,27 @@ Status JsonMergeIterator::init(const ColumnIteratorOptions& opts) {
 
 template <typename FUNC>
 Status JsonMergeIterator::_merge(JsonColumn* dst, FUNC func) {
+    // LOG(INFO) << "JsonMergeIterator::_merge";
     Columns all_columns;
     for (size_t i = 0; i < _all_iter.size(); i++) {
         auto iter = _all_iter[i].get();
         auto c = _src_column_modules[i]->clone_empty();
         RETURN_IF_ERROR(func(iter, c.get()));
+        // LOG(INFO) << "get column from iter[" << i << "]: " << (void*)iter << ", " << (void*)c.get();
+        // c->check_or_die();
+        // LOG(INFO) << "column: " << c->get_name();
+        // for (size_t idx = 0;idx < c->size();idx++) {
+        //     LOG(INFO) << c->debug_item(idx) << ",";
+        // }
+        // LOG(INFO) << std::endl;
         all_columns.emplace_back(std::move(c));
+        // LOG(INFO) << "after move";
+        // auto x = all_columns.back();
+        // LOG(INFO) << "column: " << x->get_name() << ", " << (void*)x.get();
+        // for (size_t idx = 0;idx < x->size();idx++) {
+        //     LOG(INFO) << x->debug_item(idx) << ",";
+        // }
+        // LOG(INFO) << std::endl;
     }
 
     SCOPED_RAW_TIMER(&_opts.stats->json_merge_ns);
@@ -570,6 +585,7 @@ Status JsonMergeIterator::next_batch(size_t* n, Column* dst) {
 }
 
 Status JsonMergeIterator::next_batch(const SparseRange<>& range, Column* dst) {
+    LOG(INFO) << "JsonMergeIterator::next_batch, range: " << range.to_string();
     JsonColumn* json_column = nullptr;
     NullColumn* null_column = nullptr;
     if (dst->is_nullable()) {

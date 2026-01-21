@@ -78,18 +78,23 @@ const static int DEFAULT_DATE_FORMAT_LIMIT = 100;
 
 template <LogicalType Type>
 ColumnPtr date_valid(FunctionContext* context, const ColumnPtr& v1) {
+    LOG(INFO) << "date_valid size: " << v1->size() << ", v1: " << v1->get_name();
     if (v1->only_null()) {
+        LOG(INFO) << "date_valid only_null";
         return v1;
     }
 
     if (v1->is_constant()) {
         auto value = ColumnHelper::get_const_value<Type>(v1);
         if (value.is_valid_non_strict()) {
+            LOG(INFO) << "date_valid return v1";
             return v1;
         } else {
+            LOG(INFO) << "date_valid create_const_null_column";
             return ColumnHelper::create_const_null_column(context->get_allocator(), v1->size());
         }
     } else if (v1->is_nullable()) {
+        LOG(INFO) << "date_valid is_nullable";
         auto v = ColumnHelper::as_column<NullableColumn>(v1);
         auto& nulls = v->immutable_null_column_data();
         auto& values = ColumnHelper::cast_to_raw<Type>(v->data_column())->get_data();
@@ -1059,9 +1064,17 @@ Status TimeFunctions::time_slice_prepare(FunctionContext* context, FunctionConte
         auto period_viewer = ColumnViewer<RType>(columns[1]);                                          \
         auto size = columns[0]->size();                                                                \
         ColumnBuilder<ResultType> results(context->get_allocator(), size);                             \
+        LOG(INFO) << "time_slice_function_" << #UNIT << " size: " << size << ", period col: " << columns[1]->get_name(); \
+        LOG(INFO) << "col0 name: " << columns[0]->get_name() \
+          << ", is_const: " << columns[0]->is_constant(); \
+        if (columns[0]->is_constant()) { \
+            auto v = ColumnHelper::as_raw_column<ConstColumn>(columns[0]); \
+            LOG(INFO) << "col0 data name: " << v->data_column()->get_name(); \
+        } \
         for (int row = 0; row < size; row++) {                                                         \
             if (time_viewer.is_null(row) || period_viewer.is_null(row)) {                              \
                 results.append_null();                                                                 \
+                LOG(INFO) << "append null, row: " << row; \
                 continue;                                                                              \
             }                                                                                          \
             TimestampValue time_value = time_viewer.value(row);                                        \
@@ -1069,8 +1082,10 @@ Status TimeFunctions::time_slice_prepare(FunctionContext* context, FunctionConte
             if (time_value.diff_microsecond(TimeFunctions::start_of_time_slice) < 0) {                 \
                 return Status::InvalidArgument(TimeFunctions::info_reported_by_time_slice);            \
             }                                                                                          \
+            LOG(INFO) << "time value: " << time_value.to_string(); \
             time_value.template floor_to_##UNIT##_period<!is_start>(period_value);                     \
             results.append(time_value);                                                                \
+            LOG(INFO) << "append time_value, row: " << row << ", value: " << time_value.to_string(); \
         }                                                                                              \
         return date_valid<ResultType>(context, results.build(ColumnHelper::is_all_const(columns)));             \
     }                                                                                                  \

@@ -162,7 +162,8 @@ public:
     }
 
     void resize(size_t n) override {
-        _offsets.resize(n + 1, _offsets.back());
+        auto val = _offsets.back();
+        _offsets.resize(n + 1, val);
         _bytes.resize(_offsets.back());
         _slices_cache = false;
     }

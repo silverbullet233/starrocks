@@ -36,13 +36,13 @@ void JoinHashMap<LT, CT, MT>::build_prepare(RuntimeState* state) {
 template <LogicalType LT, JoinKeyConstructorType CT, JoinHashMapMethodType MT>
 void JoinHashMap<LT, CT, MT>::probe_prepare(RuntimeState* state) {
     size_t chunk_size = state->chunk_size();
-    _probe_state->build_index.resize(chunk_size + 8);
-    _probe_state->probe_index.resize(chunk_size + 8);
+    _probe_state->build_index.resize(chunk_size + 8, 0);
+    _probe_state->probe_index.resize(chunk_size + 8, 0);
     auto* alloc = _probe_state->allocator;
-    _probe_state->next.resize(alloc, chunk_size);
-    _probe_state->probe_match_index.resize(alloc, chunk_size);
-    _probe_state->probe_match_filter.resize(alloc, chunk_size);
-    _probe_state->buckets.resize(alloc, chunk_size);
+    _probe_state->next.resize(alloc, chunk_size, 0);
+    _probe_state->probe_match_index.resize(alloc, chunk_size, 0);
+    _probe_state->probe_match_filter.resize(alloc, chunk_size, 0);
+    _probe_state->buckets.resize(alloc, chunk_size, 0);
 
     if (_table_items->join_type == TJoinOp::RIGHT_OUTER_JOIN || _table_items->join_type == TJoinOp::FULL_OUTER_JOIN ||
         _table_items->join_type == TJoinOp::RIGHT_SEMI_JOIN || _table_items->join_type == TJoinOp::RIGHT_ANTI_JOIN) {

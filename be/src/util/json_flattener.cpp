@@ -1024,6 +1024,7 @@ void JsonMerger::set_root_path(const std::string& base_path) {
 }
 
 ColumnPtr JsonMerger::merge(const Columns& columns) {
+    // LOG(INFO) << "JsonMerger::merge";
     DCHECK_GE(columns.size(), 1);
     DCHECK(_src_columns.empty());
 
@@ -1035,9 +1036,24 @@ ColumnPtr JsonMerger::merge(const Columns& columns) {
     size_t rows = columns[0]->size();
     _result->reserve(rows);
 
+    // LOG(INFO) << "before put";
     for (auto& col : columns) {
+        // LOG(INFO) << "col: " << col->get_name() << "," << (void*)col.get() << ",  [";
+        // for (size_t i = 0;i < col->size();i++) {
+        //     LOG(INFO) << col->debug_item(i) << ",";
+        // }
+        // LOG(INFO) << "]" << std::endl;
         _src_columns.emplace_back(col.get());
     }
+    // LOG(INFO) << "JsonMerger::merge, columns: " << columns.size();
+    // for (size_t i = 0;i < _src_columns.size();i++) {
+    //     auto col = _src_columns[i];
+    //     LOG(INFO) << "col[" << i << "]: " << _src_columns[i]->get_name() << "," << (void*)col << ",  [";
+    //     for (size_t i = 0;i < col->size();i++) {
+    //         LOG(INFO) << col->debug_item(i) << ",";
+    //     }
+    //     LOG(INFO) << "]" << std::endl;
+    // }
 
     if (_src_root->op == JsonFlatPath::OP_INCLUDE) {
         _merge_impl<true>(rows);
@@ -1182,6 +1198,7 @@ void JsonMerger::_merge_json_with_remain(const JsonFlatPath* root, const vpack::
         if (child->children.empty() && child->op != JsonFlatPath::OP_NEW_LEVEL) {
             DCHECK(child->op == JsonFlatPath::OP_INCLUDE);
             auto col = _src_columns[child->index];
+            col->check_or_die();
             if (!col->is_null(index)) {
                 DCHECK(flat_json::JSON_MERGE_FUNC.contains(child->type));
                 auto func = flat_json::JSON_MERGE_FUNC.at(child->type);
@@ -1564,7 +1581,9 @@ Status HyperJsonTransformer::_cast(const MergeTask& task, const ColumnPtr& col) 
     DCHECK(task.need_cast);
     Chunk chunk;
     chunk.append_column(col, task.dst_index);
-    ASSIGN_OR_RETURN(auto res_col, task.cast_expr->evaluate_checked(nullptr, &chunk));
+    ExprContext tmp_ctx(task.cast_expr);
+    tmp_ctx.set_allocator(memory::get_default_allocator());
+    ASSIGN_OR_RETURN(auto res_col, task.cast_expr->evaluate_checked(&tmp_ctx, &chunk));
     auto res = res_col->as_mutable_ptr();
     res->set_delete_state(col->delete_state());
 

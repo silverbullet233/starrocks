@@ -1712,7 +1712,7 @@ StatusOr<ColumnPtr> ArrayFunctions::repeat(FunctionContext* ctx, const Columns& 
     } else {
         dest_column_elements = src_column->clone_empty();
     }
-    auto dest_offsets = UInt32Column::create(ctx->get_allocator(), 1);
+    auto dest_offsets = UInt32Column::create(ctx->get_allocator(), 1, 0);
     size_t total_repeated_rows = 0;
     for (int cur_row = 0; cur_row < num_rows; cur_row++) {
         if (repeat_count_viewer.is_null(cur_row)) {
@@ -1744,6 +1744,7 @@ StatusOr<ColumnPtr> ArrayFunctions::repeat(FunctionContext* ctx, const Columns& 
                 ArrayColumn::create(ctx->get_allocator(), std::move(nullable_dest_column_elements),
                                     std::move(dest_offsets));
     }
+    dest_column->check_or_die();
 
     NullColumnPtr null_result = nullptr;
     if (repeat_count_column->is_nullable()) {
@@ -1826,7 +1827,8 @@ StatusOr<ColumnPtr> ArrayFunctions::array_top_n(FunctionContext* ctx, const Colu
         if (n <= 0) {
             // If count is 0 or negative, return empty array
             auto& dest_offsets = dest_data_column->offsets_column_raw_ptr()->get_data();
-            dest_offsets.emplace_back(dest_offsets.back());
+            const auto last_offset = dest_offsets.back();
+            dest_offsets.emplace_back(last_offset);
             continue;
         }
 
@@ -1838,7 +1840,8 @@ StatusOr<ColumnPtr> ArrayFunctions::array_top_n(FunctionContext* ctx, const Colu
         if (array_size == 0) {
             // Empty input array, return empty array
             auto& dest_offsets = dest_data_column->offsets_column_raw_ptr()->get_data();
-            dest_offsets.emplace_back(dest_offsets.back());
+            const auto last_offset = dest_offsets.back();
+            dest_offsets.emplace_back(last_offset);
             continue;
         }
 

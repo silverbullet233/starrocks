@@ -129,6 +129,7 @@ public:
     }
     bool build_from_only_in_filter() const { return _build_from_only_in_filter; }
 
+    void set_allocator(memory::Allocator* allocator) { _allocator = allocator; }
     memory::Allocator* get_allocator() const { return _allocator; }
 
 private:
