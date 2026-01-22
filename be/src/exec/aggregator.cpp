@@ -1699,7 +1699,6 @@ Status Aggregator::convert_hash_map_to_chunk(int32_t chunk_size, ChunkPtr* chunk
                         TRY_CATCH_BAD_ALLOC(_agg_functions[i]->batch_serialize(_agg_fn_ctxs[i], read_index,
                                                                                _tmp_agg_states, _agg_states_offsets[i],
                                                                                agg_result_columns[i].get()));
-                        LOG(INFO) << "batch_serialize " << i << " " << read_index;
 
                     }
                 }

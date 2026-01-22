@@ -55,9 +55,6 @@ void* JemallocAllocator<clear_memory>::alloc(size_t size, size_t alignment) {
         } else {
             ret = je_malloc(size);
         }
-        if (LIKELY(ret != nullptr)) {
-            SR_ASAN_UNPOISON_MEMORY_REGION(ret, size);
-        }
     } else {
         int res = je_posix_memalign(&ret, alignment, size);
         if (UNLIKELY(res != 0)) {
@@ -66,7 +63,6 @@ void* JemallocAllocator<clear_memory>::alloc(size_t size, size_t alignment) {
         if constexpr (clear_memory) {
             memset(ret, 0, size);
         }
-        SR_ASAN_UNPOISON_MEMORY_REGION(ret, size);
     }
     return ret;
 }
@@ -80,19 +76,12 @@ void* JemallocAllocator<clear_memory>::realloc(void* ptr, size_t old_size, size_
     void* ret = nullptr;
     if (alignment <= MALLOC_MIN_ALIGNMENT) {
         // Poison old memory before realloc to detect use-after-realloc
-        if (LIKELY(ptr != nullptr)) {
-            SR_ASAN_POISON_MEMORY_REGION(ptr, old_size);
-        }
         ret = je_realloc(ptr, new_size);
         if (UNLIKELY(ret == nullptr)) {
             // If realloc failed, unpoison the old memory
-            if (LIKELY(ptr != nullptr)) {
-                SR_ASAN_UNPOISON_MEMORY_REGION(ptr, old_size);
-            }
             return nullptr;
         }
         // Mark new memory as accessible
-        SR_ASAN_UNPOISON_MEMORY_REGION(ret, new_size);
         if constexpr (clear_memory) {
             if (new_size > old_size) {
                 memset(static_cast<char*>(ret) + old_size, 0, new_size - old_size);
@@ -106,9 +95,6 @@ void* JemallocAllocator<clear_memory>::realloc(void* ptr, size_t old_size, size_
         }
         strings::memcpy_inlined(ret, ptr, old_size);
         // Poison old memory before freeing to detect use-after-free
-        if (LIKELY(ptr != nullptr)) {
-            SR_ASAN_POISON_MEMORY_REGION(ptr, old_size);
-        }
         je_free(ptr);
     }
 
@@ -121,7 +107,6 @@ void JemallocAllocator<clear_memory>::free(void* ptr, size_t size) {
         return;
     }
     // Poison memory before freeing to detect use-after-free
-    SR_ASAN_POISON_MEMORY_REGION(ptr, size);
     je_free(ptr);
 }
 

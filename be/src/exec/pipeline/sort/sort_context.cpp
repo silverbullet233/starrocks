@@ -86,7 +86,6 @@ StatusOr<ChunkPtr> SortContext::pull_chunk() {
         size_t required_rows = std::min<size_t>(_required_rows, _state->chunk_size());
         ChunkPtr res = _current_chunk.cutoff(required_rows);
         _required_rows -= res->num_rows();
-        LOG(INFO) << "SortContext::pull_chunk, res: " << (void*)res.get() << ", num_rows: " << res->debug_columns();
         return res;
     }
     return nullptr;

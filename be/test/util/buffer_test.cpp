@@ -29,6 +29,12 @@ public:
 protected:
     memory::JemallocAllocator<false> _allocator;
 };
+template <class T, size_t padding>
+using RawBuffer = util::RawBuffer<T, padding>;
+template <class T, size_t padding>
+using Buffer = util::Buffer<T, padding>;
+
+
 
 // Test RawBuffer basic operations
 TEST_F(BufferTest, RawBufferBasic) {
@@ -133,7 +139,7 @@ TEST_F(BufferTest, RawBufferInsert) {
     // Insert at end
     buf.push_back(&_allocator, 1);
     buf.push_back(&_allocator, 3);
-    auto it = buf.insert(&_allocator, 0);
+    auto it = buf.insert(&_allocator, 1, 0);
     ASSERT_EQ(0, *it);
     ASSERT_EQ(3, buf.size());
     ASSERT_EQ(1, buf[0]);
@@ -141,7 +147,7 @@ TEST_F(BufferTest, RawBufferInsert) {
     ASSERT_EQ(0, buf[2]);
     
     // Insert at end again
-    it = buf.insert(&_allocator, 2);
+    it = buf.insert(&_allocator, 1, 2);
     ASSERT_EQ(2, *it);
     ASSERT_EQ(4, buf.size());
     ASSERT_EQ(1, buf[0]);
@@ -287,14 +293,14 @@ TEST_F(BufferTest, BufferInsert) {
     buf.push_back(1);
     buf.push_back(3);
     
-    auto it = buf.insert(0);
+    auto it = buf.insert(1, 0);
     ASSERT_EQ(0, *it);
     ASSERT_EQ(3, buf.size());
     ASSERT_EQ(1, buf[0]);
     ASSERT_EQ(3, buf[1]);
     ASSERT_EQ(0, buf[2]);
     
-    it = buf.insert(2);
+    it = buf.insert(1, 2);
     ASSERT_EQ(2, *it);
     ASSERT_EQ(4, buf.size());
     ASSERT_EQ(1, buf[0]);

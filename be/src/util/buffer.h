@@ -28,6 +28,7 @@
 #include "common/logging.h"
 #include "fmt/format.h"
 #include "gutil/macros.h"
+#include "util/stack_util.h"
 #include "runtime/memory/allocator_v2.h"
 
 namespace starrocks::util {
@@ -251,7 +252,12 @@ void RawBuffer<T, padding>::relocate(memory::Allocator* allocator, size_t new_si
     size_t old_used_bytes = used_bytes();
 
     if constexpr (std::is_trivially_copyable_v<T>) {
-        _start = reinterpret_cast<uint8_t*>(allocator->realloc(reinterpret_cast<void*>(_start), old_allocated_bytes, new_allocated_bytes));
+        uint8_t* new_start = reinterpret_cast<uint8_t*>(allocator->realloc(reinterpret_cast<void*>(_start), old_allocated_bytes, new_allocated_bytes));
+        // if (new_start == _start) {
+        //     LOG(INFO) << "real realloc, new_size:" << new_allocated_bytes << ", old_size:" << old_allocated_bytes
+        //         << ", stack: " << starrocks::get_stack_trace();
+        // }
+        _start = new_start;
         _end = _start + old_used_bytes;
         _end_of_storage = _start + new_allocated_bytes - kPadding;
     } else {
