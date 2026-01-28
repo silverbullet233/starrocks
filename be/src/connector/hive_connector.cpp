@@ -29,7 +29,7 @@
 #include "exec/pipeline/query_context.h"
 #include "exec/pipeline/scan/glm_manager.h"
 #include "exprs/expr.h"
-#include "runtime/memory/allocator_v2.h"
+#include "runtime/memory/memory_allocator.h"
 #include "storage/chunk_helper.h"
 
 namespace starrocks::connector {

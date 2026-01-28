@@ -36,7 +36,7 @@ typedef unsigned long ulong;
 #include "exprs/binary_function.h"
 #include "exprs/unary_function.h"
 #include "runtime/datetime_value.h"
-#include "runtime/memory/allocator_v2.h"
+#include "runtime/memory/memory_allocator.h"
 #include "runtime/runtime_state.h"
 #include "types/date_value.h"
 

@@ -44,7 +44,7 @@
 #include "testutil/assert.h"
 #include "testutil/id_generator.h"
 #include "util/filesystem_util.h"
-#include "runtime/memory/allocator_v2.h"
+#include "runtime/memory/memory_allocator.h"
 
 namespace starrocks {
 

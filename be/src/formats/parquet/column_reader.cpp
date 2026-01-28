@@ -28,7 +28,7 @@
 #include "formats/parquet/scalar_column_reader.h"
 #include "formats/utils.h"
 #include "gen_cpp/parquet_types.h"
-#include "runtime/memory/allocator_v2.h"
+#include "runtime/memory/memory_allocator.h"
 #include "simd/batch_run_counter.h"
 #include "storage/column_or_predicate.h"
 #include "storage/column_predicate.h"

@@ -21,7 +21,7 @@
 #include "column/datum.h"
 #include "fs/fs.h"
 #include "runtime/global_dict/types.h"
-#include "runtime/memory/allocator_v2.h"
+#include "runtime/memory/memory_allocator.h"
 #include "storage/del_vector.h"
 #include "storage/disjunctive_predicates.h"
 #include "storage/options.h"

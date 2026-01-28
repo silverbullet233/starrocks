@@ -30,7 +30,7 @@
 #include "storage/rowset/column_writer.h"
 #include "types/constexpr.h"
 #include "util/json_flattener.h"
-#include "runtime/memory/allocator_v2.h"
+#include "runtime/memory/memory_allocator.h"
 
 namespace starrocks {
 Status FlatJsonColumnCompactor::append(const Column& column) {

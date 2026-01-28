@@ -19,7 +19,7 @@
 
 #include "column/column_helper.h"
 #include "column/nullable_column.h"
-#include "runtime/memory/allocator_v2.h"
+#include "runtime/memory/memory_allocator.h"
 #include "simd/batch_run_counter.h"
 #include "simd/simd.h"
 #include "util/slice.h"

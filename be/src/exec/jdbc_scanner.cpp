@@ -30,7 +30,7 @@
 #include "types/type_checker_manager.h"
 #include "udf/java/java_udf.h"
 #include "util/defer_op.h"
-#include "runtime/memory/allocator_v2.h"
+#include "runtime/memory/memory_allocator.h"
 
 namespace starrocks {
 

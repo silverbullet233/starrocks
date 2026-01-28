@@ -17,7 +17,7 @@
 #include <memory>
 
 #include "fs/fs_util.h"
-#include "runtime/memory/allocator_v2.h"
+#include "runtime/memory/memory_allocator.h"
 #include "storage/del_vector.h"
 #include "storage/lake/lake_persistent_index.h"
 #include "storage/lake/location_provider.h"

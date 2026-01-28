@@ -47,7 +47,7 @@
 #include "fs/fs_starlet.h"
 #include "gutil/strings/substitute.h"
 #include "runtime/current_thread.h"
-#include "runtime/memory/allocator_v2.h"
+#include "runtime/memory/memory_allocator.h"
 #include "runtime/raw_container_checked.h"
 #include "storage/rowset/storage_page_decoder.h"
 #include "util/coding.h"

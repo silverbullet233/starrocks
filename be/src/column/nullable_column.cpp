@@ -19,7 +19,7 @@
 #include "column/vectorized_fwd.h"
 #include "gutil/casts.h"
 #include "gutil/strings/fastmem.h"
-#include "runtime/memory/allocator_v2.h"
+#include "runtime/memory/memory_allocator.h"
 #include "simd/simd.h"
 #include "util/mysql_row_buffer.h"
 

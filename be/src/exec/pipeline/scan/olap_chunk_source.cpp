@@ -47,7 +47,7 @@
 #include "storage/storage_engine.h"
 #include "storage/tablet_index.h"
 #include "types/logical_type.h"
-#include "runtime/memory/allocator_v2.h"
+#include "runtime/memory/memory_allocator.h"
 #include "util/runtime_profile.h"
 #include "util/table_metrics.h"
 

@@ -24,7 +24,7 @@
 #include "exprs/expr_context.h"
 #include "fs/fs_broker.h"
 #include "runtime/exec_env.h"
-#include "runtime/memory/allocator_v2.h"
+#include "runtime/memory/memory_allocator.h"
 #include "runtime/runtime_state.h"
 #include "runtime/stream_load/load_stream_mgr.h"
 #include "runtime/stream_load/stream_load_pipe.h"

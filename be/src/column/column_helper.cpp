@@ -46,7 +46,7 @@
 #include "util/date_func.h"
 #include "util/int96.h"
 #include "util/phmap/phmap.h"
-#include "runtime/memory/allocator_v2.h"
+#include "runtime/memory/memory_allocator.h"
 
 namespace starrocks {
 Filter& ColumnHelper::merge_nullable_filter(Column* column) {

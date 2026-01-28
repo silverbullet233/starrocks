@@ -21,7 +21,7 @@
 #include <vector>
 
 #include "column/vectorized_fwd.h"
-#include "runtime/memory/allocator_v2.h"
+#include "runtime/memory/memory_allocator.h"
 #ifdef __AVX2__
 #include <emmintrin.h>
 #endif

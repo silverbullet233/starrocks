@@ -18,7 +18,7 @@
 #include "column/column_helper.h"
 #include "column/nullable_column.h"
 #include "column/vectorized_fwd.h"
-#include "runtime/memory/allocator_v2.h"
+#include "runtime/memory/memory_allocator.h"
 #include "common/status.h"
 #include "gutil/casts.h"
 #include "storage/rowset/scalar_column_iterator.h"

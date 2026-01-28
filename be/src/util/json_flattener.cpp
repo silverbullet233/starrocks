@@ -38,7 +38,7 @@
 #include "column/nullable_column.h"
 #include "column/type_traits.h"
 #include "column/vectorized_fwd.h"
-#include "runtime/memory/allocator_v2.h"
+#include "runtime/memory/memory_allocator.h"
 #include "common/compiler_util.h"
 #include "common/config.h"
 #include "common/status.h"

@@ -30,7 +30,7 @@
 #include "gutil/macros.h"
 #include "gutil/strings/fastmem.h"
 #include "util/stack_util.h"
-#include "runtime/memory/allocator_v2.h"
+#include "runtime/memory/memory_allocator.h"
 #include "common/config.h"
 
 namespace starrocks::util {

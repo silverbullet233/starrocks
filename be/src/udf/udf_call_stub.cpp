@@ -25,7 +25,7 @@
 #include "common/status.h"
 #include "exec/arrow_to_starrocks_converter.h"
 #include "gutil/casts.h"
-#include "runtime/memory/allocator_v2.h"
+#include "runtime/memory/memory_allocator.h"
 #include "util/arrow/row_batch.h"
 #include "util/arrow/starrocks_column_to_arrow.h"
 #include "util/arrow/utils.h"

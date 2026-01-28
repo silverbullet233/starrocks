@@ -21,7 +21,7 @@
 #include "column/struct_column.h"
 #include "common/object_pool.h"
 #include "exprs/function_helper.h"
-#include "runtime/memory/allocator_v2.h"
+#include "runtime/memory/memory_allocator.h"
 
 namespace starrocks {
 

@@ -22,7 +22,7 @@
 #include "exec/tablet_info.h"
 #include "gutil/casts.h"
 #include "runtime/client_cache.h"
-#include "runtime/memory/allocator_v2.h"
+#include "runtime/memory/memory_allocator.h"
 #include "storage/chunk_helper.h"
 #include "storage/table_reader.h"
 #include "util/thrift_rpc_helper.h"

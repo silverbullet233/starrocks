@@ -23,7 +23,7 @@
 #include "gutil/strings/split.h"
 #include "gutil/strings/strip.h"
 #include "gutil/strings/substitute.h"
-#include "runtime/memory/allocator_v2.h"
+#include "runtime/memory/memory_allocator.h"
 #include "runtime/memory/memory_resource.h"
 #include "types/logical_type.h"
 #include "util/slice.h"

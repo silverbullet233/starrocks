@@ -25,7 +25,7 @@
 #include "common/statusor.h"
 #include "exec/arrow_type_traits.h"
 #include "exprs/expr.h"
-#include "runtime/memory/allocator_v2.h"
+#include "runtime/memory/memory_allocator.h"
 #include "runtime/time_types.h"
 #include "runtime/types.h"
 #include "types/large_int_value.h"

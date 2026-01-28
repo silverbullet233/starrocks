@@ -18,7 +18,7 @@
 #include "common/logging.h"
 #include "common/status.h"
 #include "exec/hdfs_scanner/hdfs_scanner.h"
-#include "runtime/memory/allocator_v2.h"
+#include "runtime/memory/memory_allocator.h"
 #include "jni.h"
 #include "runtime/runtime_state.h"
 

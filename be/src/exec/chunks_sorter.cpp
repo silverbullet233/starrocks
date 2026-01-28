@@ -26,7 +26,7 @@
 #include "util/orlp/pdqsort.h"
 #include "util/runtime_profile.h"
 #include "util/stopwatch.hpp"
-#include "runtime/memory/allocator_v2.h"
+#include "runtime/memory/memory_allocator.h"
 
 namespace starrocks {
 

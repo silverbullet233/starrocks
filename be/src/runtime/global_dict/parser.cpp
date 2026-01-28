@@ -36,7 +36,7 @@
 #include "runtime/types.h"
 #include "simd/gather.h"
 #include "types/logical_type.h"
-#include "runtime/memory/allocator_v2.h"
+#include "runtime/memory/memory_allocator.h"
 
 namespace starrocks {
 

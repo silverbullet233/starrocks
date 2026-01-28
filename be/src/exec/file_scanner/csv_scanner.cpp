@@ -23,7 +23,7 @@
 #include "util/slice.h"
 #include "util/string_parser.hpp"
 #include "util/utf8_check.h"
-#include "runtime/memory/allocator_v2.h"
+#include "runtime/memory/memory_allocator.h"
 
 namespace starrocks {
 

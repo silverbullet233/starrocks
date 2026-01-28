@@ -19,7 +19,7 @@
 
 #if defined(__aarch64__)
 #include "arm_acle.h"
-#include "runtime/memory/allocator_v2.h"
+#include "runtime/memory/memory_allocator.h"
 #endif
 
 namespace starrocks {

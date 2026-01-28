@@ -18,7 +18,7 @@
 #include "formats/parquet/parquet_block_split_bloom_filter.h"
 #include "formats/parquet/predicate_filter_evaluator.h"
 #include "formats/parquet/stored_column_reader_with_index.h"
-#include "runtime/memory/allocator_v2.h"
+#include "runtime/memory/memory_allocator.h"
 #include "formats/parquet/utils.h"
 #include "gutil/casts.h"
 #include "io/shared_buffered_input_stream.h"

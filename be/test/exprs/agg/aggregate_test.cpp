@@ -19,7 +19,7 @@
 #include <memory>
 
 #include "exprs/agg/base_aggregate_test.h"
-#include "runtime/memory/allocator_v2.h"
+#include "runtime/memory/memory_allocator.h"
 
 namespace starrocks {
 namespace {

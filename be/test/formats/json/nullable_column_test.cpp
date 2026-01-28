@@ -18,7 +18,7 @@
 
 #include "column/column_helper.h"
 #include "runtime/types.h"
-#include "runtime/memory/allocator_v2.h"
+#include "runtime/memory/memory_allocator.h"
 #include "simdjson.h"
 #include "testutil/assert.h"
 #include "util/json_converter.h"

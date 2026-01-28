@@ -18,7 +18,7 @@
 
 #include "column/binary_column.h"
 #include "column/nullable_column.h"
-#include "runtime/memory/allocator_v2.h"
+#include "runtime/memory/memory_allocator.h"
 #include "util/slice.h"
 
 namespace starrocks {

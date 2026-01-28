@@ -17,7 +17,7 @@
 #include <gtest/gtest.h>
 
 #include "column/fixed_length_column.h"
-#include "runtime/memory/allocator_v2.h"
+#include "runtime/memory/memory_allocator.h"
 #include "testutil/assert.h"
 
 namespace starrocks {

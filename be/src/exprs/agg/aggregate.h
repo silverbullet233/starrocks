@@ -18,7 +18,7 @@
 
 #include "column/column.h"
 #include "runtime/current_thread.h"
-#include "runtime/memory/allocator_v2.h"
+#include "runtime/memory/memory_allocator.h"
 
 namespace starrocks {
 class FunctionContext;

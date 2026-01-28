@@ -36,7 +36,7 @@
 #include "storage/tablet_schema.h"
 #include "storage/type_traits.h"
 #include "storage/types.h"
-#include "runtime/memory/allocator_v2.h"
+#include "runtime/memory/memory_allocator.h"
 
 namespace starrocks {
 

@@ -30,7 +30,7 @@
 #include "exec/spill/spiller.h"
 #include "exprs/expr_context.h"
 #include "runtime/chunk_cursor.h"
-#include "runtime/memory/allocator_v2.h"
+#include "runtime/memory/memory_allocator.h"
 #include "runtime/runtime_state.h"
 #include "storage/chunk_helper.h"
 

@@ -23,7 +23,7 @@
 #include "runtime/types.h"
 #include "types/hll.h"
 #include "util/percentile_value.h"
-#include "runtime/memory/allocator_v2.h"
+#include "runtime/memory/memory_allocator.h"
 
 namespace starrocks {
 

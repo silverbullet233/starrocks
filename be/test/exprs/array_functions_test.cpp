@@ -22,7 +22,7 @@
 #include "column/const_column.h"
 #include "column/map_column.h"
 #include "exprs/mock_vectorized_expr.h"
-#include "runtime/memory/allocator_v2.h"
+#include "runtime/memory/memory_allocator.h"
 
 namespace starrocks {
 

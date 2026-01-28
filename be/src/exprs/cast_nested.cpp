@@ -18,7 +18,7 @@
 #include "column/struct_column.h"
 #include "exprs/cast_expr.h"
 #include "exprs/expr_context.h"
-#include "runtime/memory/allocator_v2.h"
+#include "runtime/memory/memory_allocator.h"
 
 namespace starrocks {
 

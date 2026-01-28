@@ -18,7 +18,7 @@
 
 #include "column/column.h"
 #include "column/fixed_length_column_base.h"
-#include "runtime/memory/allocator_v2.h"
+#include "runtime/memory/memory_allocator.h"
 #include "util/decimal_types.h"
 #include "util/mysql_row_buffer.h"
 

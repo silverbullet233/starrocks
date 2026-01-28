@@ -24,7 +24,7 @@
 #include "exprs/expr.h"
 #include "runtime/exec_env.h"
 #include "runtime/memory_scratch_sink.h"
-#include "runtime/memory/allocator_v2.h"
+#include "runtime/memory/memory_allocator.h"
 #include "storage/chunk_helper.h"
 #include "storage/storage_engine.h"
 #include "storage/tablet_manager.h"

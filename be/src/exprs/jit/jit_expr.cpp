@@ -28,7 +28,7 @@
 #include "exprs/function_context.h"
 #include "exprs/jit/jit_engine.h"
 #include "runtime/runtime_state.h"
-#include "runtime/memory/allocator_v2.h"
+#include "runtime/memory/memory_allocator.h"
 
 namespace starrocks {
 

@@ -32,7 +32,7 @@
 #include "exprs/expr_context.h"
 #include "exprs/function_helper.h"
 #include "exprs/lambda_function.h"
-#include "runtime/memory/allocator_v2.h"
+#include "runtime/memory/memory_allocator.h"
 #include "runtime/user_function_cache.h"
 #include "simd/simd.h"
 #include "storage/chunk_helper.h"

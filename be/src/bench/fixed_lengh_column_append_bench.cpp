@@ -19,7 +19,7 @@
 
 #include "column/fixed_length_column.h"
 #include "runtime/current_thread.h"
-#include "runtime/memory/allocator_v2.h"
+#include "runtime/memory/memory_allocator.h"
 
 namespace starrocks {
 namespace {

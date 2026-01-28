@@ -18,7 +18,7 @@
 #include "exec/join/join_hash_map.h"
 #include "exec/join/join_hash_table_descriptor.h"
 #include "exec/join/join_key_constructor.h"
-#include "runtime/memory/allocator_v2.h"
+#include "runtime/memory/memory_allocator.h"
 #include "simd/simd.h"
 #include "util/runtime_profile.h"
 

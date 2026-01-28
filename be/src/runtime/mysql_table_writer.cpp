@@ -45,7 +45,7 @@
 #include "common/status.h"
 #include "fmt/compile.h"
 #include "fmt/core.h"
-#include "runtime/memory/allocator_v2.h"
+#include "runtime/memory/memory_allocator.h"
 #include "types/logical_type.h"
 #include "types/logical_type_infra.h"
 

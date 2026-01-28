@@ -19,7 +19,7 @@
 #include "common/config.h"
 #include "common/logging.h"
 #include "common/status.h"
-#include "runtime/memory/allocator_v2.h"
+#include "runtime/memory/memory_allocator.h"
 #include "serde/column_array_serde.h"
 #include "storage/olap_define.h"
 

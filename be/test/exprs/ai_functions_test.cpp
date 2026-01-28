@@ -24,7 +24,7 @@
 #include "column/nullable_column.h"
 #include "exprs/mock_vectorized_expr.h"
 #include "util/json.h"
-#include "runtime/memory/allocator_v2.h"
+#include "runtime/memory/memory_allocator.h"
 
 namespace starrocks {
 

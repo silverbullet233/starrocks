@@ -13,7 +13,7 @@
 // limitations under the License.
 
 #include "storage/push_utils.h"
-#include "runtime/memory/allocator_v2.h"
+#include "runtime/memory/memory_allocator.h"
 
 namespace starrocks {
 

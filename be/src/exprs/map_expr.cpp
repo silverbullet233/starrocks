@@ -19,7 +19,7 @@
 #include "column/const_column.h"
 #include "column/fixed_length_column.h"
 #include "column/map_column.h"
-#include "runtime/memory/allocator_v2.h"
+#include "runtime/memory/memory_allocator.h"
 #include "util/raw_container.h"
 
 namespace starrocks {

@@ -27,7 +27,7 @@
 #include "common/logging.h"
 #include "function_helper.h"
 #include "simd/simd.h"
-#include "runtime/memory/allocator_v2.h"
+#include "runtime/memory/memory_allocator.h"
 
 namespace starrocks {
 

@@ -15,7 +15,7 @@
 #include "connector/binlog_connector.h"
 
 #include "runtime/descriptors.h"
-#include "runtime/memory/allocator_v2.h"
+#include "runtime/memory/memory_allocator.h"
 #include "storage/chunk_helper.h"
 #include "storage/storage_engine.h"
 #include "storage/tablet_manager.h"

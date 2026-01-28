@@ -17,7 +17,7 @@
 #include "column/column_helper.h"
 #include "formats/csv/converter.h"
 #include "formats/csv/output_stream_string.h"
-#include "runtime/memory/allocator_v2.h"
+#include "runtime/memory/memory_allocator.h"
 #include "runtime/types.h"
 
 namespace starrocks::csv {

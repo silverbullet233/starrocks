@@ -20,7 +20,7 @@
 #include "column/column_helper.h"
 #include "exec/stream/state/mem_state_table.h"
 #include "runtime/current_thread.h"
-#include "runtime/memory/allocator_v2.h"
+#include "runtime/memory/memory_allocator.h"
 #include "simd/simd.h"
 
 namespace starrocks::stream {

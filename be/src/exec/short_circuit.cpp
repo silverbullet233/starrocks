@@ -24,7 +24,7 @@
 #include "exec/scan_node.h"
 #include "exec/short_circuit_hybrid.h"
 #include "runtime/exec_env.h"
-#include "runtime/memory/allocator_v2.h"
+#include "runtime/memory/memory_allocator.h"
 #include "runtime/memory_scratch_sink.h"
 #include "runtime/result_buffer_mgr.h"
 #include "runtime/result_sink.h"

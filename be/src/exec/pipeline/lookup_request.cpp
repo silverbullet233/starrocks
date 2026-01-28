@@ -24,7 +24,7 @@
 #include "exec/pipeline/scan/glm_manager.h"
 #include "exec/sorting/sorting.h"
 #include "runtime/descriptors.h"
-#include "runtime/memory/allocator_v2.h"
+#include "runtime/memory/memory_allocator.h"
 #include "serde/column_array_serde.h"
 #include "storage/range.h"
 #include "util/logging.h"

@@ -19,7 +19,7 @@
 #include "column/column_helper.h"
 #include "column/column_viewer.h"
 #include "column/nullable_column.h"
-#include "runtime/memory/allocator_v2.h"
+#include "runtime/memory/memory_allocator.h"
 #include "exprs/base64.h"
 #include "exprs/binary_function.h"
 #include "exprs/function_context.h"

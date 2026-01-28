@@ -38,7 +38,7 @@
 #include "runtime/types.h"
 #include "util/runtime_profile.h"
 #include "util/simdjson_util.h"
-#include "runtime/memory/allocator_v2.h"
+#include "runtime/memory/memory_allocator.h"
 
 namespace starrocks {
 

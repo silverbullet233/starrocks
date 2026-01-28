@@ -37,7 +37,7 @@
 #include "gutil/casts.h"
 #include "gutil/integral_types.h"
 #include "gutil/strings/substitute.h"
-#include "runtime/memory/allocator_v2.h"
+#include "runtime/memory/memory_allocator.h"
 #include "runtime/time_types.h"
 #include "runtime/types.h"
 #include "storage/olap_common.h"

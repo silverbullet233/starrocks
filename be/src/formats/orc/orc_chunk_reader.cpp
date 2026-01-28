@@ -29,7 +29,7 @@
 #include "exprs/expr_context.h"
 #include "exprs/literal.h"
 #include "exprs/runtime_filter.h"
-#include "runtime/memory/allocator_v2.h"
+#include "runtime/memory/memory_allocator.h"
 #include "formats/orc/orc_mapping.h"
 #include "formats/orc/orc_memory_pool.h"
 #include "formats/orc/utils.h"

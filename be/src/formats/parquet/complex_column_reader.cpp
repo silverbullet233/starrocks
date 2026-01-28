@@ -24,7 +24,7 @@
 #include "formats/parquet/schema.h"
 #include "gutil/casts.h"
 #include "gutil/strings/substitute.h"
-#include "runtime/memory/allocator_v2.h"
+#include "runtime/memory/memory_allocator.h"
 #include "storage/column_expr_predicate.h"
 #include "types/variant_value.h"
 #include "util/slice.h"

@@ -18,7 +18,7 @@
 #include <random>
 
 #include "column/binary_column.h"
-#include "runtime/memory/allocator_v2.h"
+#include "runtime/memory/memory_allocator.h"
 
 namespace starrocks {
 

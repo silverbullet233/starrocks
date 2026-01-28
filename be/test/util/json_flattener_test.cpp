@@ -47,7 +47,7 @@
 #include "util/json.h"
 #include "util/json_flattener.h"
 #include "util/slice.h"
-#include "runtime/memory/allocator_v2.h"
+#include "runtime/memory/memory_allocator.h"
 
 namespace starrocks {
 

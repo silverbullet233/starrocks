@@ -24,7 +24,7 @@
 #include "column/column_helper.h"
 #include "column/vectorized_fwd.h"
 #include "runtime/descriptors.h"
-#include "runtime/memory/allocator_v2.h"
+#include "runtime/memory/memory_allocator.h"
 #include "runtime/runtime_state.h"
 #include "simd/simd.h"
 #include "util/runtime_profile.h"

@@ -18,7 +18,7 @@
 
 #include "column/column_helper.h"
 #include "runtime/runtime_state.h"
-#include "runtime/memory/allocator_v2.h"
+#include "runtime/memory/memory_allocator.h"
 #include "storage/lake/tablet_write_log_manager.h"
 #include "testutil/assert.h"
 

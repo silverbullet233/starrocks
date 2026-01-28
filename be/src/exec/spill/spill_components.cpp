@@ -32,7 +32,7 @@
 #include "exec/spill/spiller.h"
 #include "exec/spill/spiller.hpp"
 #include "exec/workgroup/scan_task_queue.h"
-#include "runtime/memory/allocator_v2.h"
+#include "runtime/memory/memory_allocator.h"
 #include "exec/workgroup/work_group.h"
 #include "exec/workgroup/work_group_fwd.h"
 #include "runtime/current_thread.h"

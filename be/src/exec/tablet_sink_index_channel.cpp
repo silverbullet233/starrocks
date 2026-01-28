@@ -30,7 +30,7 @@
 #include "runtime/current_thread.h"
 #include "runtime/load_fail_point.h"
 #include "runtime/runtime_state.h"
-#include "runtime/memory/allocator_v2.h"
+#include "runtime/memory/memory_allocator.h"
 #include "serde/protobuf_serde.h"
 #include "testutil/sync_point.h"
 #include "util/brpc_stub_cache.h"

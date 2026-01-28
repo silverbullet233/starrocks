@@ -16,7 +16,7 @@
 #include "column/column_viewer.h"
 #include "column/map_column.h"
 #include "exprs/cast_expr.h"
-#include "runtime/memory/allocator_v2.h"
+#include "runtime/memory/memory_allocator.h"
 
 namespace starrocks {
 

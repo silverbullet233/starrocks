@@ -28,7 +28,7 @@
 #include "column/fixed_length_column.h"
 #include "column/nullable_column.h"
 #include "column/vectorized_fwd.h"
-#include "runtime/memory/allocator_v2.h"
+#include "runtime/memory/memory_allocator.h"
 #include "common/constexpr.h"
 #include "common/statusor.h"
 #include "exprs/expr_context.h"

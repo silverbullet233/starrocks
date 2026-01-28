@@ -18,7 +18,7 @@
 #include "column/map_column.h"
 #include "column/vectorized_fwd.h"
 #include "common/logging.h"
-#include "runtime/memory/allocator_v2.h"
+#include "runtime/memory/memory_allocator.h"
 #include "util/buffer.h"
 
 namespace starrocks {

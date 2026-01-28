@@ -22,7 +22,7 @@
 #include "column/vectorized_fwd.h"
 #include "common/object_pool.h"
 #include "gutil/strings/substitute.h"
-#include "runtime/memory/allocator_v2.h"
+#include "runtime/memory/memory_allocator.h"
 #include "types/bitmap_value.h"
 #include "types/hll.h"
 #include "types/variant_value.h"

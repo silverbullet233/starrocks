@@ -32,7 +32,7 @@
 #include "formats/parquet/types.h"
 #include "formats/parquet/utils.h"
 #include "io/shared_buffered_input_stream.h"
-#include "runtime/memory/allocator_v2.h"
+#include "runtime/memory/memory_allocator.h"
 #include "storage/column_predicate.h"
 #include "storage/predicate_tree/predicate_tree_fwd.h"
 #include "storage/range.h"

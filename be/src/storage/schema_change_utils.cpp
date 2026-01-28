@@ -19,7 +19,7 @@
 #include "column/datum_convert.h"
 #include "runtime/exec_env.h"
 #include "runtime/mem_pool.h"
-#include "runtime/memory/allocator_v2.h"
+#include "runtime/memory/memory_allocator.h"
 #include "runtime/runtime_state.h"
 #include "simd/simd.h"
 #include "storage/chunk_helper.h"

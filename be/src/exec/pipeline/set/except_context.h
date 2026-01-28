@@ -24,7 +24,7 @@
 #include "exec/pipeline/context_with_dependency.h"
 #include "exprs/expr_context.h"
 #include "gutil/casts.h"
-#include "runtime/memory/allocator_v2.h"
+#include "runtime/memory/memory_allocator.h"
 #include "runtime/mem_pool.h"
 #include "util/hash_util.hpp"
 #include "util/phmap/phmap.h"

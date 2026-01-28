@@ -37,7 +37,7 @@
 #include "column_reader.h"
 #include "common/status.h"
 #include "io/shared_buffered_input_stream.h"
-#include "runtime/memory/allocator_v2.h"
+#include "runtime/memory/memory_allocator.h"
 #include "storage/olap_common.h"
 #include "storage/options.h"
 #include "storage/predicate_tree/predicate_tree_fwd.h"

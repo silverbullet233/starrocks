@@ -25,7 +25,7 @@
 #include "gen_cpp/PlanNodes_types.h"
 #include "gutil/casts.h"
 #include "runtime/runtime_state.h"
-#include "runtime/memory/allocator_v2.h"
+#include "runtime/memory/memory_allocator.h"
 #include "types/logical_type_infra.h"
 #include "util/defer_op.h"
 #include "util/orlp/pdqsort.h"

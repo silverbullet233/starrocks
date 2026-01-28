@@ -23,7 +23,7 @@
 #include "exec/pipeline/set/union_passthrough_operator.h"
 #include "exprs/expr.h"
 #include "exprs/expr_context.h"
-#include "runtime/memory/allocator_v2.h"
+#include "runtime/memory/memory_allocator.h"
 
 namespace starrocks {
 UnionNode::UnionNode(ObjectPool* pool, const TPlanNode& tnode, const DescriptorTbl& descs)

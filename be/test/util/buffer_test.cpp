@@ -17,7 +17,7 @@
 #include <gtest/gtest.h>
 #include <vector>
 
-#include "runtime/memory/allocator_v2.h"
+#include "runtime/memory/memory_allocator.h"
 
 namespace starrocks {
 

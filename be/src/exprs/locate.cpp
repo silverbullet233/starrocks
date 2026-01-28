@@ -20,7 +20,7 @@
 #include "column/column_viewer.h"
 #include "exprs/string_functions.h"
 #include "runtime/Volnitsky.h"
-#include "runtime/memory/allocator_v2.h"
+#include "runtime/memory/memory_allocator.h"
 #include "util/utf8.h"
 
 namespace starrocks {

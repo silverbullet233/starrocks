@@ -20,7 +20,7 @@
 #include "exprs/expr.h"
 #include "runtime/current_thread.h"
 #include "runtime/runtime_state.h"
-#include "runtime/memory/allocator_v2.h"
+#include "runtime/memory/memory_allocator.h"
 
 namespace starrocks::pipeline {
 Status ProjectOperator::prepare(RuntimeState* state) {

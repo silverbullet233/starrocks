@@ -20,7 +20,7 @@
 #include "column/type_traits.h"
 #include "column/vectorized_fwd.h"
 #include "gutil/strings/fastmem.h"
-#include "runtime/memory/allocator_v2.h"
+#include "runtime/memory/memory_allocator.h"
 #include "types/logical_type.h"
 
 namespace starrocks {

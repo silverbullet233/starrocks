@@ -44,7 +44,7 @@
 extern "C" {
 #endif
 #include "libserdes/serdes-avro.h"
-#include "runtime/memory/allocator_v2.h"
+#include "runtime/memory/memory_allocator.h"
 #ifdef __cplusplus
 }
 #endif
