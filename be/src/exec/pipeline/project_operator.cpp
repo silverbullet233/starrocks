@@ -20,6 +20,7 @@
 #include "exprs/expr.h"
 #include "runtime/current_thread.h"
 #include "runtime/runtime_state.h"
+#include "runtime/memory/memory_allocator.h"
 
 namespace starrocks::pipeline {
 Status ProjectOperator::prepare(RuntimeState* state) {
@@ -61,13 +62,13 @@ Status ProjectOperator::push_chunk(RuntimeState* state, const ChunkPtr& chunk) {
             ASSIGN_OR_RETURN(result_columns[i], _expr_ctxs[i]->evaluate(chunk.get()));
 
             if (result_columns[i]->only_null()) {
-                auto mutable_col = ColumnHelper::create_column(_expr_ctxs[i]->root()->type(), true);
+                auto mutable_col = ColumnHelper::create_column(_expr_ctxs[i]->get_allocator(), _expr_ctxs[i]->root()->type(), true);
                 mutable_col->append_nulls(num_rows);
                 result_columns[i] = std::move(mutable_col);
             } else if (result_columns[i]->is_constant()) {
                 // Note: we must create a new column every time here,
                 // because result_columns[i] is shared_ptr
-                MutableColumnPtr new_column = ColumnHelper::create_column(_expr_ctxs[i]->root()->type(), false);
+                MutableColumnPtr new_column = ColumnHelper::create_column(_expr_ctxs[i]->get_allocator(), _expr_ctxs[i]->root()->type(), false);
                 auto* const_column = down_cast<const ConstColumn*>(result_columns[i].get());
                 new_column->append(*const_column->data_column(), 0, 1);
                 new_column->assign(num_rows, 0);
@@ -77,7 +78,8 @@ Status ProjectOperator::push_chunk(RuntimeState* state, const ChunkPtr& chunk) {
             // follow SlotDescriptor is_null flag
             if (_type_is_nullable[i] && !result_columns[i]->is_nullable()) {
                 result_columns[i] =
-                        NullableColumn::create(std::move(result_columns[i]), NullColumn::create(num_rows, 0));
+                        NullableColumn::create(_allocator, std::move(result_columns[i]),
+                                               NullColumn::create(_allocator, num_rows, 0));
             }
         }
         RETURN_IF_HAS_ERROR(_expr_ctxs);

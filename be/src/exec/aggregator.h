@@ -21,6 +21,7 @@
 #include <memory>
 #include <new>
 #include <utility>
+#include <vector>
 
 #include "column/chunk.h"
 #include "column/column_helper.h"

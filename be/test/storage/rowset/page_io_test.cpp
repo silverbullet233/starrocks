@@ -40,7 +40,7 @@ protected:
     size_t _cache_size = 10 * 1024 * 1024;
     std::shared_ptr<StoragePageCache> _prev_page_cache;
 
-    std::shared_ptr<LRUCacheEngine> _lru_cache;
+    std::shared_ptr<LRUCacheEngine<>> _lru_cache;
     std::shared_ptr<StoragePageCache> _page_cache;
 
     std::shared_ptr<MemoryFileSystem> _fs;
@@ -51,7 +51,7 @@ protected:
 void PageIOTest::SetUp() {
     _prev_page_cache = DataCache::GetInstance()->page_cache_ptr();
     MemCacheOptions options{.mem_space_size = _cache_size};
-    _lru_cache = std::make_shared<LRUCacheEngine>();
+    _lru_cache = std::make_shared<LRUCacheEngine<>>();
     ASSERT_OK(_lru_cache->init(options));
     _page_cache = std::make_shared<StoragePageCache>(_lru_cache.get());
     DataCache::GetInstance()->set_page_cache(_page_cache);

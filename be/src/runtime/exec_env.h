@@ -125,6 +125,7 @@ public:
     ~GlobalEnv() { _is_init = false; }
 
     Status init();
+    Status init_for_bench(std::shared_ptr<MemTracker> process_mem_tracker);
     void stop() {
         _is_init = false;
         _reset_tracker();

@@ -288,7 +288,8 @@ MutableColumns LocalPartitionTopnContext::_create_agg_result_columns(size_t num_
     for (size_t i = 0; i < _pre_agg->_agg_fn_types.size(); ++i) {
         // For count, count distinct, bitmap_union_int such as never return null function,
         // we need to create a not-nullable column.
-        agg_result_columns[i] = ColumnHelper::create_column(_pre_agg->_agg_fn_types[i].result_type,
+        auto* allocator = !_pre_agg->_agg_fn_ctxs.empty() && i < _pre_agg->_agg_fn_ctxs.size() ? _pre_agg->_agg_fn_ctxs[i]->get_allocator() : memory::get_default_allocator();
+        agg_result_columns[i] = ColumnHelper::create_column(allocator, _pre_agg->_agg_fn_types[i].result_type,
                                                             _pre_agg->_agg_fn_types[i].is_nullable);
         agg_result_columns[i]->reserve(num_rows);
     }

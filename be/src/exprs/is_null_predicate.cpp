@@ -41,13 +41,13 @@ public:
         ASSIGN_OR_RETURN(ColumnPtr column, _children[0]->evaluate_checked(context, ptr));
 
         if (column->only_null()) {
-            return ColumnHelper::create_const_column<TYPE_BOOLEAN>(true, column->size());
+            return ColumnHelper::create_const_column<TYPE_BOOLEAN>(context->get_allocator(), true, column->size());
         }
 
         if (column->is_json()) {
             // Consider JSON NULL as NULL
             ColumnViewer<TYPE_JSON> viewer(column);
-            ColumnBuilder<TYPE_BOOLEAN> builder(column->size());
+            ColumnBuilder<TYPE_BOOLEAN> builder(context->get_allocator(), column->size());
             for (size_t i = 0; i < column->size(); i++) {
                 bool value = viewer.is_null(i) || viewer.value(i)->is_null_or_none();
                 builder.append(value);
@@ -56,11 +56,11 @@ public:
         }
 
         if (!column->is_nullable() || !column->has_null()) {
-            return ColumnHelper::create_const_column<TYPE_BOOLEAN>(false, column->size());
+            return ColumnHelper::create_const_column<TYPE_BOOLEAN>(context->get_allocator(), false, column->size());
         }
 
         auto col = ColumnHelper::as_raw_column<NullableColumn>(column)->null_column();
-        return VectorizedStrictUnaryFunction<isNullImpl>::evaluate<TYPE_NULL, TYPE_BOOLEAN>(col);
+        return VectorizedStrictUnaryFunction<isNullImpl>::evaluate<TYPE_NULL, TYPE_BOOLEAN>(context->get_allocator(), col);
     }
 };
 
@@ -76,13 +76,13 @@ public:
         ASSIGN_OR_RETURN(ColumnPtr column, _children[0]->evaluate_checked(context, ptr));
 
         if (column->only_null()) {
-            return ColumnHelper::create_const_column<TYPE_BOOLEAN>(false, column->size());
+            return ColumnHelper::create_const_column<TYPE_BOOLEAN>(context->get_allocator(), false, column->size());
         }
 
         if (column->is_json()) {
             // Consider JSON NULL as NULL
             ColumnViewer<TYPE_JSON> viewer(column);
-            ColumnBuilder<TYPE_BOOLEAN> builder(column->size());
+            ColumnBuilder<TYPE_BOOLEAN> builder(context->get_allocator(), column->size());
             for (size_t i = 0; i < column->size(); i++) {
                 bool value = !viewer.is_null(i) && !viewer.value(i)->is_null_or_none();
                 builder.append(value);
@@ -91,11 +91,11 @@ public:
         }
 
         if (!column->is_nullable() || !column->has_null()) {
-            return ColumnHelper::create_const_column<TYPE_BOOLEAN>(true, column->size());
+            return ColumnHelper::create_const_column<TYPE_BOOLEAN>(context->get_allocator(), true, column->size());
         }
 
         auto col = ColumnHelper::as_raw_column<NullableColumn>(column)->null_column();
-        return VectorizedStrictUnaryFunction<isNotNullImpl>::evaluate<TYPE_NULL, TYPE_BOOLEAN>(col);
+        return VectorizedStrictUnaryFunction<isNotNullImpl>::evaluate<TYPE_NULL, TYPE_BOOLEAN>(context->get_allocator(), col);
     }
 };
 

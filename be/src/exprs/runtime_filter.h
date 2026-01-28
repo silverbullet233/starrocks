@@ -242,8 +242,36 @@ public:
 
     class RunningContext {
     public:
-        Filter selection;
-        Filter merged_selection;
+        RunningContext() = default;
+        RunningContext(const RunningContext& rhs):
+            selection(memory::get_default_allocator()),
+            merged_selection(memory::get_default_allocator()),
+            use_merged_selection(rhs.use_merged_selection),
+            compatibility(rhs.compatibility),
+            hash_values(rhs.hash_values),
+            round_hashes(rhs.round_hashes),
+            bucket_ids(rhs.bucket_ids),
+            round_ids(rhs.round_ids),
+            exchange_hash_function_version(rhs.exchange_hash_function_version) {
+            selection.assign(rhs.selection.begin(), rhs.selection.end());
+            merged_selection.assign(rhs.merged_selection.begin(), rhs.merged_selection.end());
+        }
+        RunningContext& operator=(const RunningContext& rhs) {
+            selection.assign(rhs.selection.begin(), rhs.selection.end());
+            merged_selection.assign(rhs.merged_selection.begin(), rhs.merged_selection.end());
+            use_merged_selection = rhs.use_merged_selection;
+            compatibility = rhs.compatibility;
+            hash_values = rhs.hash_values;
+            round_hashes = rhs.round_hashes;
+            bucket_ids = rhs.bucket_ids;
+            round_ids = rhs.round_ids;
+            exchange_hash_function_version = rhs.exchange_hash_function_version;
+            return *this;
+        }
+        ~RunningContext() = default;
+        // @TODO pending fix
+        Filter selection{memory::get_default_allocator()};
+        Filter merged_selection{memory::get_default_allocator()};
         bool use_merged_selection;
         bool compatibility = true;
         std::vector<uint32_t> hash_values;

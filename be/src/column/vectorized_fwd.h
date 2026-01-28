@@ -17,6 +17,7 @@
 #include <memory>
 #include <span>
 #include <vector>
+#include "util/buffer.h"
 
 namespace starrocks {
 
@@ -45,7 +46,11 @@ class ColumnAllocator;
 
 // We may change the Buffer implementation in the future.
 template <typename T>
-using Buffer = std::vector<T, ColumnAllocator<T>>;
+using Buffer = util::Buffer<T, 0>;
+
+template <typename T>
+using RawBuffer = util::RawBuffer<T, 0>;
+
 
 template <typename T>
 using ImmBuffer = std::span<const T>;
@@ -138,5 +143,6 @@ using FieldPtr = std::shared_ptr<Field>;
 using Filter = Buffer<uint8_t>;
 using FilterPtr = std::shared_ptr<Filter>;
 using FilterData = uint8_t;
+using RawFilter = RawBuffer<uint8_t>;
 
 } // namespace starrocks

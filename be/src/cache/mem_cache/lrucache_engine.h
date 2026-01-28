@@ -20,7 +20,9 @@
 #include "util/lru_cache.h"
 
 namespace starrocks {
-class LRUCacheEngine final : public LocalMemCacheEngine {
+
+template <class Alloc = DefaultCacheAllocator>
+class LRUCacheEngine final : public LocalMemCacheEngine, private memory::AllocHolder<Alloc> {
 public:
     LRUCacheEngine() = default;
     ~LRUCacheEngine() override = default;
@@ -52,6 +54,7 @@ public:
 
     size_t mem_quota() const override;
     size_t mem_usage() const override;
+    memory::Allocator* get_allocator() const override;
 
     size_t lookup_count() const override;
 
@@ -66,6 +69,7 @@ public:
     Status prune() override;
 
 private:
+    using ShardedLRUCache = ShardedLRUCache<Alloc>;
     bool _check_write(size_t charge, const MemCacheWriteOptions& options) const;
 
     std::atomic<bool> _initialized = false;

@@ -53,14 +53,10 @@ public:
     using Container = Buffer<ValueType>;
     using ImmContainer = std::span<const ValueType>;
 
-    FixedLengthColumnBase() = default;
+    explicit FixedLengthColumnBase(memory::Allocator* allocator) : Column(allocator), _data(allocator) {}
 
-    explicit FixedLengthColumnBase(const size_t n) : _data(n) {}
-
-    FixedLengthColumnBase(const size_t n, const ValueType x) : _data(n, x) {}
-
-    FixedLengthColumnBase(const FixedLengthColumnBase& src)
-            : _resource(src._resource), _data(src.immutable_data().begin(), src.immutable_data().end()) {}
+    FixedLengthColumnBase(memory::Allocator* allocator, const size_t n, const ValueType x = ValueType{})
+            : Column(allocator), _data(allocator, n, x) {}
 
     // Only used as a underlying type for other column type(i.e. DecimalV3Column), C++
     // is weak to implement delegation for composite type like golang, so we have to use
@@ -68,7 +64,7 @@ public:
     // construct the wrapped object first, move constructor is used to prevent the unnecessary
     // time-consuming copy operation.
     FixedLengthColumnBase(FixedLengthColumnBase&& src) noexcept
-            : _resource(std::move(src._resource)), _data(std::move(src._data)) {}
+            : Column(src._allocator), _resource(std::move(src._resource)), _data(std::move(src._data)) {}
 
     bool is_numeric() const override { return std::is_arithmetic_v<ValueType>; }
 
@@ -102,11 +98,11 @@ public:
 
     void reserve(size_t n) override { _data.reserve(n); }
 
-    void resize(size_t n) override { get_data().resize(n); }
+    void resize(size_t n) override { get_data().resize(n, T{}); }
 
     void resize_uninitialized(size_t n) override {
         auto& data = get_data();
-        raw::stl_vector_resize_uninitialized(&data, n);
+        data.resize(n);
     }
 
     void assign(size_t n, size_t idx) override {
@@ -125,12 +121,12 @@ public:
 
     void append(const Buffer<T>& values) {
         auto& datas = get_data();
-        datas.insert(datas.end(), values.begin(), values.end());
+        datas.insert(values.begin(), values.end());
     }
 
     void append(const ImmBuffer<T> values) {
         auto& datas = get_data();
-        datas.insert(datas.end(), values.begin(), values.end());
+        datas.insert(values.begin(), values.end());
     }
 
     void append_datum(const Datum& datum) override {
@@ -164,7 +160,7 @@ public:
         const size_t count = length / sizeof(ValueType);
         auto& datas = this->get_data();
         size_t dst_offset = datas.size();
-        raw::stl_vector_resize_uninitialized(&datas, datas.size() + count);
+        datas.resize(datas.size() + count);
         T* dst = datas.data() + dst_offset;
         memcpy(dst, buff, length);
         return count;
@@ -174,14 +170,14 @@ public:
 
     void append_value_multiple_times(const void* value, size_t count) override {
         auto& datas = get_data();
-        datas.insert(datas.end(), count, *reinterpret_cast<const T*>(value));
+        datas.insert(count, *reinterpret_cast<const T*>(value));
     }
 
     void append_default() override;
 
     void append_default(size_t count) override;
 
-    StatusOr<MutableColumnPtr> replicate(const Buffer<uint32_t>& offsets) override;
+    StatusOr<MutableColumnPtr> replicate(const Buffer<uint32_t>& offsets, memory::Allocator* allocator = nullptr) override;
 
     void fill_default(const Filter& filter) override;
 
@@ -286,6 +282,7 @@ protected:
 
 private:
     using Column::append;
+    DISALLOW_COPY(FixedLengthColumnBase);
 };
 
 } // namespace starrocks

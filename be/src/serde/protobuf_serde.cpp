@@ -217,7 +217,7 @@ StatusOr<Chunk> ProtobufChunkDeserializer::deserialize(std::string_view buff, in
     Columns columns;
     columns.resize(_meta.slot_id_to_index.size());
     for (size_t i = 0, sz = _meta.is_nulls.size(); i < sz; ++i) {
-        columns[i] = ColumnHelper::create_column(_meta.types[i], _meta.is_nulls[i], _meta.is_consts[i], rows);
+        columns[i] = ColumnHelper::create_column(memory::get_default_allocator(), _meta.types[i], _meta.is_nulls[i], _meta.is_consts[i], rows);
     }
 
     if (_encode_level.empty()) {
@@ -251,7 +251,7 @@ StatusOr<Chunk> ProtobufChunkDeserializer::deserialize(std::string_view buff, in
         for (size_t i = 0, sz = _meta.extra_data_metas.size(); i < sz; ++i) {
             auto extra_meta = _meta.extra_data_metas[i];
             extra_columns[i] =
-                    ColumnHelper::create_column(extra_meta.type, extra_meta.is_null, extra_meta.is_const, rows);
+                    ColumnHelper::create_column(memory::get_default_allocator(), extra_meta.type, extra_meta.is_null, extra_meta.is_const, rows);
         }
         for (auto& column : extra_columns) {
             ASSIGN_OR_RETURN(cur, ColumnArraySerde::deserialize(cur, column->as_mutable_raw_ptr()));

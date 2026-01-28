@@ -119,8 +119,8 @@ size_t DataCache::get_mem_capacity() const {
 }
 
 Status DataCache::_init_lrucache_engine(const MemCacheOptions& cache_options) {
-    _local_mem_cache = std::make_shared<LRUCacheEngine>();
-    RETURN_IF_ERROR(reinterpret_cast<LRUCacheEngine*>(_local_mem_cache.get())->init(cache_options));
+    _local_mem_cache = std::make_shared<LRUCacheEngine<>>();
+    RETURN_IF_ERROR(reinterpret_cast<LRUCacheEngine<>*>(_local_mem_cache.get())->init(cache_options));
     LOG(INFO) << "lrucache engine init successfully";
     return Status::OK();
 }

@@ -20,6 +20,9 @@
 
 namespace starrocks {
 class CacheKey;
+namespace memory {
+class Allocator;
+}
 
 struct MemCacheOptions {
     size_t mem_space_size = 0;
@@ -63,7 +66,7 @@ public:
     // Insert object to cache
     virtual Status insert(const std::string& key, void* value, size_t size, MemCacheDeleter deleter,
                           MemCacheHandlePtr* handle, const MemCacheWriteOptions& options) = 0;
-
+    
     // Lookup object from cache, the `handle` wraps the object pointer.
     // As long as the handle object is not destroyed and the user does not manually call the `handle->release()`
     // function, the corresponding pointer will never be freed by the cache system.
@@ -100,6 +103,7 @@ public:
 
     virtual size_t mem_quota() const = 0;
     virtual size_t mem_usage() const = 0;
+    virtual memory::Allocator* get_allocator() const = 0;
 
     // Get the lookup count, including cache hit count and cache miss count.
     virtual size_t lookup_count() const = 0;

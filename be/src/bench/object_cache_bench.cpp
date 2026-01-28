@@ -83,7 +83,7 @@ private:
     size_t _page_size = 1024;
 
     std::shared_ptr<BlockCache> _block_cache;
-    std::shared_ptr<LRUCacheEngine> _lru_cache;
+    std::shared_ptr<LRUCacheEngine<>> _lru_cache;
     std::shared_ptr<StarCacheEngine> _star_cache;
     std::shared_ptr<StoragePageCache> _page_cache;
 };

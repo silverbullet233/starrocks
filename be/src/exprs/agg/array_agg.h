@@ -58,7 +58,7 @@ struct ArrayAggAggregateState {
                 }
             }
         } else {
-            data_column.append(column, offset, count);
+            data_column->append(column, offset, count);
         }
     }
 
@@ -82,25 +82,25 @@ struct ArrayAggAggregateState {
 
     ColumnType* get_data_column() {
         auto size = set.size();
-        if (data_column.size() > 0 || size == 0) {
-            return &data_column;
+        if (data_column->size() > 0 || size == 0) {
+            return data_column.get();
         }
-        data_column.get_data().reserve(size);
+        data_column->get_data().reserve(size);
         if constexpr (is_distinct) {
             if constexpr (lt_is_string<PT>) {
                 for (auto& key : set) {
-                    data_column.append(Slice(key.data, key.size));
+                    data_column->append(Slice(key.data, key.size));
                 }
             } else {
                 for (auto& key : set) {
-                    data_column.append(key);
+                    data_column->append(key);
                 }
             }
         }
-        return &data_column;
+        return data_column.get();
     }
 
-    bool check_overflow(FunctionContext* ctx) const { return check_overflow(data_column, ctx); }
+    bool check_overflow(FunctionContext* ctx) const { return check_overflow(*data_column, ctx); }
 
     static bool check_overflow(const Column& col, FunctionContext* ctx) {
         Status st = col.capacity_limit_reached();
@@ -112,12 +112,12 @@ struct ArrayAggAggregateState {
     }
 
     void reset() {
-        data_column.resize(0);
+        data_column->resize(0);
         null_count = 0;
         set.clear();
     }
 
-    ColumnType data_column; // Aggregated elements for array_agg
+    ColumnType::MutablePtr data_column; // Aggregated elements for array_agg
     size_t null_count = 0;
     MyHashSet set;
 };
@@ -163,6 +163,11 @@ class ArrayAggAggregateFunctionBase final
                                               ArrayAggAggregateFunctionBase<LT, is_distinct, State, MyHashSet>> {
 public:
     using InputColumnType = RunTimeColumnType<LT>;
+
+    void create(FunctionContext* ctx, AggDataPtr __restrict ptr) const override {
+        auto* state = new (ptr) State<LT, is_distinct, MyHashSet>;
+        state->data_column = InputColumnType::create(ctx->get_allocator());
+    }
 
     void update(FunctionContext* ctx, const Column** columns, AggDataPtr __restrict state,
                 size_t row_num) const override {
@@ -243,7 +248,7 @@ public:
                                               int64_t frame_end) const override {
         // For distinct mode, data_column used as a result cache for get_values method, any updates to
         // this state should invalidate the cache.
-        this->data(state).data_column.resize(0);
+        this->data(state).data_column->resize(0);
         const auto* column = down_cast<const InputColumnType*>(columns[0]);
         this->data(state).update(ctx->mem_pool(), *column, frame_start, frame_end - frame_start);
         this->data(state).check_overflow(ctx);
@@ -253,7 +258,7 @@ public:
                                   int64_t peer_group_end) const override {
         // For distinct mode, data_column used as a result cache for get_values method, any updates to
         // this state should invalidate the cache.
-        this->data(state).data_column.resize(0);
+        this->data(state).data_column->resize(0);
         this->data(state).append_null(peer_group_end - peer_group_start);
     }
 
@@ -473,7 +478,7 @@ public:
         }
         // further remove duplicated values
         // TODO(fzh) optimize N*N, since distinct is often rewritten to group by, the distinct values are not too many.
-        Buffer<bool> duplicated_flags;
+        Buffer<bool> duplicated_flags(ctx->get_allocator());
         if (ctx->get_is_distinct()) {
             duplicated_flags.resize(elem_size);
             bool is_duplicated = false;
@@ -495,7 +500,7 @@ public:
                 duplicated_flags[row_id] = is_duplicated;
             }
         }
-        Buffer<uint32_t> index;
+        Buffer<uint32_t> index(ctx->get_allocator());
         if (!duplicated_flags.empty() || !perm.empty()) {
             auto res_num = 0;
             index.resize(elem_size);

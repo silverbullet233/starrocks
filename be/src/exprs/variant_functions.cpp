@@ -117,7 +117,7 @@ StatusOr<ColumnPtr> VariantFunctions::_do_variant_query(FunctionContext* context
     auto variant_viewer = ColumnViewer<TYPE_VARIANT>(columns[0]);
     auto json_path_viewer = ColumnViewer<TYPE_VARCHAR>(columns[1]);
 
-    ColumnBuilder<ResultType> result(num_rows);
+    ColumnBuilder<ResultType> result(context->get_allocator(), num_rows);
     VariantPath stored_path;
     for (size_t row = 0; row < num_rows; ++row) {
         if (variant_viewer.is_null(row) || json_path_viewer.is_null(row)) {
@@ -166,7 +166,7 @@ StatusOr<ColumnPtr> VariantFunctions::variant_typeof(FunctionContext* context, c
     auto variant_viewer = ColumnViewer<TYPE_VARIANT>(variant_column);
     size_t num_rows = variant_column->size();
 
-    ColumnBuilder<TYPE_VARCHAR> result(num_rows);
+    ColumnBuilder<TYPE_VARCHAR> result(context->get_allocator(), num_rows);
     for (size_t row = 0; row < num_rows; ++row) {
         if (variant_viewer.is_null(row)) {
             result.append_null();

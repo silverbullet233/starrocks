@@ -47,8 +47,13 @@
 #include "util/json.h"
 #include "util/json_flattener.h"
 #include "util/slice.h"
+#include "runtime/memory/memory_allocator.h"
 
 namespace starrocks {
+
+namespace {
+static memory::Allocator* kAllocator = memory::get_default_allocator();
+}
 
 class JsonPathDeriverTest
         : public ::testing::TestWithParam<
@@ -66,8 +71,8 @@ public:
 
 TEST_P(JsonPathDeriverTest, json_path_deriver_test) {
     std::unique_ptr<FunctionContext> ctx(FunctionContext::create_test_context());
-    auto json_column = JsonColumn::create();
-    ColumnBuilder<TYPE_VARCHAR> builder(1);
+    auto json_column = JsonColumn::create(kAllocator);
+    ColumnBuilder<TYPE_VARCHAR> builder(kAllocator, 1);
 
     std::string param_json1 = std::get<0>(GetParam());
     std::string param_json2 = std::get<1>(GetParam());
@@ -137,7 +142,7 @@ protected:
 
     Columns test_json(const std::vector<std::string>& inputs, const std::vector<std::string>& paths,
                       const std::vector<LogicalType>& types, bool has_remain) {
-        MutableColumnPtr input_mut = JsonColumn::create();
+        MutableColumnPtr input_mut = JsonColumn::create(kAllocator);
         JsonColumn* json_input = down_cast<JsonColumn*>(input_mut.get());
         for (const auto& json : inputs) {
             ASSIGN_OR_ABORT(auto json_value, JsonValue::parse(json));
@@ -174,7 +179,7 @@ protected:
 
     Columns test_null_json(const std::vector<std::string>& inputs, const std::vector<std::string>& paths,
                            const std::vector<LogicalType>& types, bool has_remain) {
-        MutableColumnPtr input_mut = JsonColumn::create();
+        MutableColumnPtr input_mut = JsonColumn::create(kAllocator);
         JsonColumn* json_input = down_cast<JsonColumn*>(input_mut.get());
 
         ColumnPtr input = ColumnPtr(std::move(input_mut));
@@ -476,7 +481,7 @@ TEST_F(JsonFlattenerTest, testPointJson) {
 
 TEST_F(JsonFlattenerTest, testClean) {
     std::unique_ptr<FunctionContext> ctx(FunctionContext::create_test_context());
-    auto json_column = JsonColumn::create();
+    auto json_column = JsonColumn::create(kAllocator);
     for (int k = 0; k < 5; k++) {
         vpack::Builder builder;
         builder.openObject(true);
@@ -507,7 +512,7 @@ TEST_F(JsonFlattenerTest, testClean) {
 
 TEST_F(JsonFlattenerTest, testComplexJsonExtract) {
     std::unique_ptr<FunctionContext> ctx(FunctionContext::create_test_context());
-    auto json_column = JsonColumn::create();
+    auto json_column = JsonColumn::create(kAllocator);
 
     // clang-format off
     std::vector<std::string> jsons = {
@@ -563,7 +568,7 @@ TEST_F(JsonFlattenerTest, testComplexJsonExtract) {
 
 TEST_F(JsonFlattenerTest, testComplexJsonExtract2) {
     std::unique_ptr<FunctionContext> ctx(FunctionContext::create_test_context());
-    auto json_column = JsonColumn::create();
+    auto json_column = JsonColumn::create(kAllocator);
 
     // clang-format off
     std::vector<std::string> jsons = {
@@ -596,7 +601,7 @@ public:
 
     Columns test_json(const std::vector<std::string>& inputs, const std::vector<std::string>& paths,
                       const std::vector<LogicalType>& types, bool has_remain) {
-        MutableColumnPtr input_mut = JsonColumn::create();
+        MutableColumnPtr input_mut = JsonColumn::create(kAllocator);
         JsonColumn* json_input = down_cast<JsonColumn*>(input_mut.get());
         for (const auto& json : inputs) {
             ASSIGN_OR_ABORT(auto json_value, JsonValue::parse(json));

@@ -58,26 +58,20 @@ public:
 
     void append_selective(const Column& src, const uint32_t* indexes, uint32_t from, uint32_t size) override;
 
-    ColumnViewBase(ColumnPtr&& default_column, long concat_rows_limit, long concat_bytes_limit)
-            : _default_column(std::move(default_column)),
+    ColumnViewBase(memory::Allocator* allocator, ColumnPtr&& default_column, long concat_rows_limit,
+                   long concat_bytes_limit)
+            : Column(allocator),
+              _default_column(std::move(default_column)),
               _concat_rows_limit(concat_rows_limit),
               _concat_bytes_limit(concat_bytes_limit) {}
-
-    ColumnViewBase(const ColumnViewBase& that)
-            : _default_column(that._default_column->clone()),
-              _concat_rows_limit(that._concat_rows_limit),
-              _concat_bytes_limit(that._concat_bytes_limit),
-              _habitats(that._habitats),
-              _num_rows(that._num_rows),
-              _tasks(that._tasks),
-              _habitat_idx(that._habitat_idx),
-              _row_idx(that._row_idx),
-              _concat_column(that._concat_column) {}
 
     ColumnViewBase(ColumnViewBase&&) = delete;
     void append_default() override;
 
-    MutableColumnPtr clone_empty() const override { return _default_column->clone_empty(); }
+    MutableColumnPtr clone_empty(memory::Allocator* allocator = nullptr) const override {
+        allocator = allocator == nullptr ? this->get_allocator() : allocator;
+        return _default_column->clone_empty(allocator);
+    }
 
     virtual void append_to(Column& dest_column, const uint32_t* indexes, uint32_t from, uint32_t count) const;
 
@@ -111,7 +105,11 @@ public:
                                                bool& has_null) override {
         NOT_SUPPORT();
     }
-    MutablePtr clone() const override { NOT_SUPPORT(); }
+    MutablePtr clone(memory::Allocator* allocator = nullptr) const override {
+        allocator = allocator == nullptr ? this->get_allocator() : allocator;
+        static_cast<void>(allocator);
+        NOT_SUPPORT();
+    }
     uint32_t serialize_size(size_t idx) const override { NOT_SUPPORT(); }
     size_t filter_range(const Filter& filter, size_t from, size_t to) override { NOT_SUPPORT(); }
     int compare_at(size_t left, size_t right, const Column& rhs, int nan_direction_hint) const override {

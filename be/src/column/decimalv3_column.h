@@ -18,6 +18,7 @@
 
 #include "column/column.h"
 #include "column/fixed_length_column_base.h"
+#include "runtime/memory/memory_allocator.h"
 #include "util/decimal_types.h"
 #include "util/mysql_row_buffer.h"
 
@@ -31,13 +32,12 @@ class DecimalV3Column final
                             DecimalV3Column<DecimalType<T>>, Column>;
 
 public:
-    DecimalV3Column() = default;
-    explicit DecimalV3Column(size_t num_rows);
-    DecimalV3Column(int precision, int scale);
-    DecimalV3Column(int precision, int scale, size_t num_rows);
-
-    DecimalV3Column(DecimalV3Column const&) = default;
-    DecimalV3Column& operator=(DecimalV3Column const&) = default;
+    using Base = CowFactory<ColumnFactory<FixedLengthColumnBase<T>, DecimalV3Column<DecimalType<T>>>,
+                            DecimalV3Column<DecimalType<T>>, Column>;
+    DecimalV3Column(memory::Allocator* allocator);
+    explicit DecimalV3Column(memory::Allocator* allocator, size_t num_rows);
+    DecimalV3Column(memory::Allocator* allocator, int precision, int scale);
+    DecimalV3Column(memory::Allocator* allocator, int precision, int scale, size_t num_rows);
 
     bool is_decimal() const override;
     bool is_numeric() const override;
@@ -46,7 +46,16 @@ public:
     int precision() const;
     int scale() const;
 
-    MutableColumnPtr clone_empty() const override { return this->create(_precision, _scale); }
+    MutableColumnPtr clone_empty(memory::Allocator* allocator = nullptr) const override {
+        allocator = allocator == nullptr ? this->get_allocator() : allocator;
+        return this->create(allocator, _precision, _scale);
+    }
+    MutableColumnPtr clone(memory::Allocator* allocator = nullptr) const override {
+        allocator = allocator == nullptr ? this->get_allocator() : allocator;
+        auto p = clone_empty(allocator);
+        p->append(*this, 0, this->size());
+        return p;
+    }
 
     void put_mysql_row_buffer(MysqlRowBuffer* buf, size_t idx, bool is_binary_protocol = false) const override;
     std::string debug_item(size_t idx) const override;
@@ -55,6 +64,8 @@ public:
 private:
     int _precision;
     int _scale;
+
+    DISALLOW_COPY(DecimalV3Column);
 };
 
 } // namespace starrocks

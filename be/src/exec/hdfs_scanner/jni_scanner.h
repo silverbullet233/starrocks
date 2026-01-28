@@ -18,6 +18,7 @@
 #include "common/logging.h"
 #include "common/status.h"
 #include "exec/hdfs_scanner/hdfs_scanner.h"
+#include "runtime/memory/memory_allocator.h"
 #include "jni.h"
 #include "runtime/runtime_state.h"
 
@@ -33,7 +34,7 @@ public:
     };
 
     JniScanner(std::string factory_class, std::map<std::string, std::string> params)
-            : _jni_scanner_params(std::move(params)), _jni_scanner_factory_class(std::move(factory_class)) {}
+            : _chunk_filter(_scanner_ctx.allocator), _jni_scanner_params(std::move(params)), _jni_scanner_factory_class(std::move(factory_class)) {}
 
     ~JniScanner() override { close(); }
 

@@ -19,13 +19,15 @@
 #include "column/vectorized_fwd.h"
 #include "gutil/casts.h"
 #include "gutil/strings/fastmem.h"
+#include "runtime/memory/memory_allocator.h"
 #include "simd/simd.h"
 #include "util/mysql_row_buffer.h"
 
 namespace starrocks {
 
-NullableColumn::NullableColumn(MutableColumnPtr&& data_column, MutableColumnPtr&& null_column)
-        : _data_column(std::move(data_column)), _has_null(false) {
+NullableColumn::NullableColumn(memory::Allocator* allocator, MutableColumnPtr&& data_column,
+                                MutableColumnPtr&& null_column)
+        : Base(allocator), _data_column(std::move(data_column)), _has_null(false) {
     DCHECK(!_data_column->is_constant() && !_data_column->is_nullable())
             << "nullable column's data must be single column";
     DCHECK(!null_column->is_constant() && !null_column->is_nullable())
@@ -139,12 +141,14 @@ void NullableColumn::append_value_multiple_times(const Column& src, uint32_t ind
     DCHECK_EQ(_null_column->size(), _data_column->size());
 }
 
-StatusOr<MutableColumnPtr> NullableColumn::replicate(const Buffer<uint32_t>& offsets) {
-    ASSIGN_OR_RETURN(auto data_col, this->_data_column->replicate(offsets));
+StatusOr<MutableColumnPtr> NullableColumn::replicate(const Buffer<uint32_t>& offsets, memory::Allocator* allocator) {
+    auto* alloc = allocator != nullptr ? allocator : this->_allocator;
+    ASSIGN_OR_RETURN(auto data_col, this->_data_column->replicate(offsets, alloc));
 
-    ASSIGN_OR_RETURN(auto null_col, this->_null_column->replicate(offsets));
+    ASSIGN_OR_RETURN(auto null_col, this->_null_column->replicate(offsets, alloc));
 
-    return NullableColumn::create(std::move(data_col), NullColumn::dynamic_pointer_cast(std::move(null_col)));
+    return NullableColumn::create(alloc, std::move(data_col),
+                                  NullColumn::dynamic_pointer_cast(std::move(null_col)));
 }
 
 bool NullableColumn::append_nulls(size_t count) {
@@ -152,7 +156,7 @@ bool NullableColumn::append_nulls(size_t count) {
         return true;
     }
     _data_column->resize_uninitialized(_data_column->size() + count);
-    null_column_data().insert(null_column_data().end(), count, 1);
+    null_column_data().insert(count, 1);
     DCHECK_EQ(_null_column->size(), _data_column->size());
     _has_null = true;
     return true;
@@ -197,7 +201,7 @@ bool NullableColumn::append_continuous_fixed_length_strings(const char* data, si
 size_t NullableColumn::append_numbers(const void* buff, size_t length) {
     size_t n;
     if ((n = _data_column->append_numbers(buff, length)) > 0) {
-        null_column_data().insert(null_column_data().end(), n, 0);
+        null_column_data().insert(n, 0);
     }
     DCHECK_EQ(_null_column->size(), _data_column->size());
     return n;
@@ -205,7 +209,7 @@ size_t NullableColumn::append_numbers(const void* buff, size_t length) {
 
 void NullableColumn::append_value_multiple_times(const void* value, size_t count) {
     _data_column->append_value_multiple_times(value, count);
-    null_column_data().insert(null_column_data().end(), count, 0);
+    null_column_data().insert(count, 0);
 }
 
 void NullableColumn::fill_null_with_default() {
@@ -229,8 +233,8 @@ void NullableColumn::update_rows(const Column& src, const uint32_t* indexes) {
         // update rows may convert between null and not null, so we need count every times
         update_has_null();
     } else {
-        auto new_null_column = NullColumn::create();
-        new_null_column->get_data().insert(new_null_column->get_data().end(), replace_num, 0);
+        auto new_null_column = NullColumn::create(this->_allocator);
+        new_null_column->get_data().insert(replace_num, 0);
         _null_column->update_rows(*new_null_column.get(), indexes);
         _data_column->update_rows(src, indexes);
     }

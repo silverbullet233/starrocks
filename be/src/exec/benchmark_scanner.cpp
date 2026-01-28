@@ -20,6 +20,7 @@
 #include "benchgen/record_batch_iterator_factory.h"
 #include "column/chunk.h"
 #include "column/column_helper.h"
+#include "runtime/memory/memory_allocator.h"
 #include "exec/file_scanner/parquet_scanner.h"
 #include "exprs/cast_expr.h"
 #include "exprs/column_ref.h"
@@ -29,7 +30,7 @@
 namespace starrocks {
 
 BenchmarkScanner::BenchmarkScanner(BenchmarkScannerParam param, const TupleDescriptor* tuple_desc)
-        : _param(std::move(param)), _slot_descs(tuple_desc->slots()) {}
+        : _param(std::move(param)), _slot_descs(tuple_desc->slots()), _chunk_filter(memory::get_default_allocator()) {}
 
 Status BenchmarkScanner::open(RuntimeState* state) {
     _conv_ctx.state = state;
@@ -82,7 +83,8 @@ Status BenchmarkScanner::get_next(RuntimeState* state, ChunkPtr* chunk, bool* eo
 
     for (size_t i = 0; i < _slot_descs.size(); ++i) {
         SlotDescriptor* slot_desc = _slot_descs[i];
-        MutableColumnPtr column = ColumnHelper::create_column(*_raw_type_descs[i], slot_desc->is_nullable());
+        MutableColumnPtr column =
+                ColumnHelper::create_column(memory::get_default_allocator(), *_raw_type_descs[i], slot_desc->is_nullable());
         column->reserve(num_elements);
         raw_chunk->append_column(std::move(column), slot_desc->id());
 
@@ -105,7 +107,8 @@ Status BenchmarkScanner::get_next(RuntimeState* state, ChunkPtr* chunk, bool* eo
     for (size_t i = 0; i < _slot_descs.size(); ++i) {
         SlotDescriptor* slot_desc = _slot_descs[i];
         ASSIGN_OR_RETURN(auto column, _cast_exprs[i]->evaluate_checked(nullptr, raw_chunk.get()));
-        column = ColumnHelper::unfold_const_column(slot_desc->type(), raw_chunk->num_rows(), std::move(column));
+        column = ColumnHelper::unfold_const_column(memory::get_default_allocator(), slot_desc->type(),
+                                                    raw_chunk->num_rows(), std::move(column));
         cast_chunk->append_column(column, slot_desc->id());
     }
 

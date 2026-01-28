@@ -175,5 +175,6 @@ protected:
     bool _case_sensitive = true;
 
     bool _schema_only;
+    memory::Allocator* _allocator;
 };
 } // namespace starrocks

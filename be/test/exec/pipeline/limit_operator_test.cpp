@@ -17,9 +17,14 @@
 #include <gtest/gtest.h>
 
 #include "runtime/runtime_state.h"
+#include "runtime/memory/memory_allocator.h"
 #include "testutil/assert.h"
 
 namespace starrocks::pipeline {
+
+namespace {
+static memory::Allocator* kAllocator = memory::get_default_allocator();
+}
 
 class AutoIncChunkBuilder {
 public:
@@ -27,7 +32,7 @@ public:
 
     ChunkPtr get_next() {
         ChunkPtr chunk = std::make_shared<Chunk>();
-        auto col = ColumnHelper::create_column(TypeDescriptor(TYPE_BIGINT), false);
+        auto col = ColumnHelper::create_column(kAllocator, TypeDescriptor(TYPE_BIGINT), false);
         for (size_t i = 0; i < _chunk_size; i++) {
             col->append_datum(Datum(_next_value++));
         }

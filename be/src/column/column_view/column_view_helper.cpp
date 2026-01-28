@@ -42,12 +42,12 @@ std::optional<MutableColumnPtr> ColumnViewHelper::create_column_view(const TypeD
     if (!should_use_view(type_desc.type)) {
         return {};
     }
-    MutableColumnPtr default_column = ColumnHelper::create_column(type_desc, nullable);
+    MutableColumnPtr default_column = ColumnHelper::create_column(memory::get_default_allocator(), type_desc, nullable);
     if (default_column->is_nullable()) {
         down_cast<NullableColumn*>(default_column.get())->append_default_not_null_value();
     } else {
         default_column->append_default();
     }
-    return ColumnView::create(std::move(default_column), concat_rows_limit, concat_bytes_limit);
+    return ColumnView::create(default_column->get_allocator(), std::move(default_column), concat_rows_limit, concat_bytes_limit);
 }
 } // namespace starrocks

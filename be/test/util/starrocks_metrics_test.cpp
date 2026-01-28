@@ -51,7 +51,7 @@ public:
 protected:
     void SetUp() override {
         MemCacheOptions opts{.mem_space_size = 10 * 1024 * 1024};
-        _lru_cache = std::make_shared<LRUCacheEngine>();
+        _lru_cache = std::make_shared<LRUCacheEngine<>>();
         ASSERT_OK(_lru_cache->init(opts));
 
         _page_cache = std::make_shared<StoragePageCache>();
@@ -61,7 +61,7 @@ protected:
 
     void TearDown() override {}
 
-    std::shared_ptr<LRUCacheEngine> _lru_cache = nullptr;
+    std::shared_ptr<LRUCacheEngine<>> _lru_cache = nullptr;
     std::shared_ptr<StoragePageCache> _page_cache = nullptr;
 };
 

@@ -50,14 +50,15 @@ public:
             simdjson::ondemand::array outer_array = doc.get_array();
             for (auto bucket_json : outer_array) {
                 simdjson::ondemand::array inner_array = bucket_json.get_array();
-                buckets.push_back(Bucket<LT>::from_json(inner_array, ctx->get_arg_type(0), &state.mem_pool));
+                buckets.push_back(Bucket<LT>::from_json(inner_array, ctx->get_arg_type(0), &state.mem_pool,
+                                                        ctx->get_allocator()));
             }
         } catch (const simdjson::simdjson_error& e) {
             throw std::runtime_error("histogram_hll_ndv: can't parse JSON specification of histogram buckets.");
         }
 
-        state.buckets = buckets;
-        state.hlls = std::vector<HyperLogLog>(buckets.size());
+        state.buckets = std::move(buckets);
+        state.hlls = std::vector<HyperLogLog>(state.buckets.size());
     }
 
     void reset(FunctionContext* ctx, const Columns& args, AggDataPtr state) const override {

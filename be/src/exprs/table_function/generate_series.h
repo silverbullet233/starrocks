@@ -54,8 +54,9 @@ public:
         using NumericType = RunTimeCppType<Type>;
         auto max_chunk_size = runtime_state->chunk_size();
         auto state = down_cast<MyState*>(base_state);
-        auto res = RunTimeColumnType<Type>::create();
-        auto offsets = UInt32Column::create();
+        auto allocator = state->get_allocator();
+        auto res = RunTimeColumnType<Type>::create(allocator);
+        auto offsets = UInt32Column::create(allocator);
         auto arg_start = ColumnViewer<Type>(state->get_columns()[0]);
         auto arg_stop = ColumnViewer<Type>(state->get_columns()[1]);
         auto curr_row = state->processed_rows();

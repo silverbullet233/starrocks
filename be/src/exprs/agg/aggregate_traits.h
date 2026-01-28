@@ -18,7 +18,9 @@
 
 #include "column/array_column.h"
 #include "column/type_traits.h"
+#include "column/vectorized_fwd.h"
 #include "gutil/strings/fastmem.h"
+#include "runtime/memory/memory_allocator.h"
 #include "types/logical_type.h"
 
 namespace starrocks {
@@ -118,11 +120,11 @@ struct AggDataTypeTraits<lt, ArrayGuard<lt>> {
 template <LogicalType lt>
 struct AggDataTypeTraits<lt, StringOrBinaryGuard<lt>> {
     using ColumnType = RunTimeColumnType<lt>;
-    using ValueType = Buffer<uint8_t>;
+    using ValueType = RawBuffer<uint8_t>;
     using RefType = Slice;
 
-    static void assign_value(ValueType& value, const RefType& ref) {
-        value.resize(ref.size);
+    static void assign_value(ValueType& value, const RefType& ref, memory::Allocator* allocator) {
+        value.resize(allocator, ref.size);
         strings::memcpy_inlined(value.data(), ref.data, ref.size);
     }
 
@@ -134,16 +136,16 @@ struct AggDataTypeTraits<lt, StringOrBinaryGuard<lt>> {
 
     static RefType get_ref(const ValueType& value) { return Slice(value.data(), value.size()); }
 
-    static void update_max(ValueType& current, const RefType& input) {
+    static void update_max(ValueType& current, const RefType& input, memory::Allocator* allocator) {
         if (Slice(current.data(), current.size()).compare(input) < 0) {
-            current.resize(input.size);
+            current.resize(allocator, input.size);
             memcpy(current.data(), input.data, input.size);
         }
     }
 
-    static void update_min(ValueType& current, const RefType& input) {
+    static void update_min(ValueType& current, const RefType& input, memory::Allocator* allocator) {
         if (Slice(current.data(), current.size()).compare(input) > 0) {
-            current.resize(input.size);
+            current.resize(allocator, input.size);
             memcpy(current.data(), input.data, input.size);
         }
     }

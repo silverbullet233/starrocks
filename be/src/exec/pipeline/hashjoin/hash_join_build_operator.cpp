@@ -38,6 +38,7 @@ HashJoinBuildOperator::HashJoinBuildOperator(OperatorFactory* factory, int32_t i
           _distribution_mode(distribution_mode) {}
 
 Status HashJoinBuildOperator::push_chunk(RuntimeState* state, const ChunkPtr& chunk) {
+    chunk->check_or_die();
     return _join_builder->append_chunk_to_ht(state, chunk);
 }
 

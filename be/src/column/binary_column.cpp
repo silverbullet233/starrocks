@@ -49,9 +49,8 @@ void BinaryColumnBase<T>::check_or_die() const {
 
 template <typename T>
 void BinaryColumnBase<T>::append(const Slice& str) {
-    auto& bytes = get_bytes();
-    bytes.insert(bytes.end(), str.data, str.data + str.size);
-    _offsets.emplace_back(bytes.size());
+    _bytes.insert(str.data, str.data + str.size);
+    _offsets.emplace_back(_bytes.size());
     invalidate_slice_cache();
 }
 
@@ -64,7 +63,7 @@ void BinaryColumnBase<T>::append(const Column& src, size_t offset, size_t count)
     const uint8_t* src_base = b._data_base();
     const uint8_t* p = src_base + b._offsets[offset];
     const uint8_t* e = src_base + b._offsets[offset + count];
-    bytes.insert(bytes.end(), p, e);
+    bytes.insert(p, e);
 
     // `new_offsets[i] = offsets[(num_prev_offsets + i - 1) + 1]` is the end offset of the new i-th string.
     // new_offsets[i] = new_offsets[i - 1] + (b._offsets[offset + i + 1] - b._offsets[offset + i])
@@ -185,8 +184,9 @@ void BinaryColumnBase<T>::append_value_multiple_times(const Column& src, uint32_
 
 //TODO(fzh): optimize copy using SIMD
 template <typename T>
-StatusOr<MutableColumnPtr> BinaryColumnBase<T>::replicate(const Buffer<uint32_t>& offsets) {
-    auto dest = BinaryColumnBase<T>::create();
+StatusOr<MutableColumnPtr> BinaryColumnBase<T>::replicate(const Buffer<uint32_t>& offsets, memory::Allocator* allocator) {
+    auto* alloc = allocator != nullptr ? allocator : this->_allocator;
+    auto dest = BinaryColumnBase<T>::create(alloc);
     auto& dest_offsets = dest->get_offset();
     auto& dest_bytes = dest->get_bytes();
     auto src_size = offsets.size() - 1; // this->size() may be large than offsets->size() -1
@@ -260,7 +260,7 @@ void append_fixed_length(const Slice* data, size_t data_size, Bytes* bytes,
 
     size_t rows = data_size;
     size_t length = offsets->size();
-    raw::stl_vector_resize_uninitialized(offsets, offsets->size() + rows);
+    offsets->resize(offsets->size() + rows);
 
     for (size_t i = 0; i < rows; ++i) {
         memcpy(&(*bytes)[offset], data[i].get_data(), copy_length);
@@ -288,8 +288,8 @@ bool BinaryColumnBase<T>::append_strings_overflow(const Slice* data, size_t size
         for (size_t i = 0; i < size; i++) {
             const auto& s = data[i];
             const auto* const p = reinterpret_cast<const Bytes::value_type*>(s.data);
-            bytes.insert(bytes.end(), p, p + s.size);
-            _offsets.emplace_back(bytes.size());
+            bytes.insert(p, p + s.size);
+            _offsets.emplace_back(_bytes.size());
         }
     }
     invalidate_slice_cache();
@@ -305,7 +305,7 @@ bool BinaryColumnBase<T>::append_continuous_strings(const Slice* data, size_t si
     size_t new_size = bytes.size();
     const auto* p = reinterpret_cast<const uint8_t*>(data[0].data);
     const auto* q = reinterpret_cast<const uint8_t*>(data[size - 1].data + data[size - 1].size);
-    bytes.insert(bytes.end(), p, q);
+    bytes.insert(p, q);
 
     _offsets.reserve(_offsets.size() + size);
     for (size_t i = 0; i < size; i++) {
@@ -328,10 +328,10 @@ bool BinaryColumnBase<T>::append_continuous_fixed_length_strings(const char* dat
     size_t data_size = size * fixed_length;
     const auto* p = reinterpret_cast<const uint8_t*>(data);
     const auto* q = reinterpret_cast<const uint8_t*>(data + data_size);
-    bytes.insert(bytes.end(), p, q);
+    bytes.insert(p, q);
 
     // copy offsets
-    starrocks::raw::stl_vector_resize_uninitialized(&_offsets, _offsets.size() + size);
+    _offsets.resize(_offsets.size() + size);
     // _offsets.resize(_offsets.size() + size);
     T* off_data = _offsets.data() + _offsets.size() - size;
 
@@ -368,7 +368,7 @@ template <typename T>
 void BinaryColumnBase<T>::append_bytes(char* const* data, uint32_t* length, size_t size) {
     auto& bytes = get_bytes();
     for (size_t i = 0; i < size; i++) {
-        bytes.insert(bytes.end(), data[i], data[i] + length[i]);
+        bytes.insert(data[i], data[i] + length[i]);
     }
     invalidate_slice_cache();
 }
@@ -424,8 +424,8 @@ void BinaryColumnBase<T>::append_value_multiple_times(const void* value, size_t 
     const auto* const p = reinterpret_cast<const uint8_t*>(slice->data);
     const uint8_t* const pend = p + slice->size;
     for (size_t i = 0; i < count; ++i) {
-        bytes.insert(bytes.end(), p, pend);
-        _offsets.emplace_back(bytes.size());
+        bytes.insert(p, pend);
+        _offsets.emplace_back(_bytes.size());
     }
     invalidate_slice_cache();
 }
@@ -521,7 +521,7 @@ void BinaryColumnBase<T>::update_rows(const Column& src, const uint32_t* indexes
             strings::memcpy_inlined(dest_bytes + _offsets[indexes[i]], src_bytes + src_offsets[i], str_size);
         }
     } else {
-        auto new_binary_column = BinaryColumnBase<T>::create();
+        auto new_binary_column = BinaryColumnBase<T>::create(this->_allocator);
         size_t idx_begin = 0;
         for (size_t i = 0; i < replace_num; i++) {
             DCHECK_GE(_offsets.size() - 1, indexes[i]);
@@ -550,7 +550,7 @@ void BinaryColumnBase<T>::assign(size_t n, size_t idx) {
     const auto* const start = reinterpret_cast<const Bytes::value_type*>(value.data());
     const uint8_t* const end = start + value.size();
     for (int i = 0; i < n; ++i) {
-        _bytes.insert(_bytes.end(), start, end);
+        _bytes.insert(start, end);
         _offsets.emplace_back(_bytes.size());
     }
     invalidate_slice_cache();
@@ -572,7 +572,7 @@ void BinaryColumnBase<T>::remove_first_n_values(size_t count) {
 
 template <typename T>
 MutableColumnPtr BinaryColumnBase<T>::cut(size_t start, size_t length) const {
-    auto result = this->create();
+    auto result = this->create(this->get_allocator());
 
     if (start >= size() || length == 0) {
         return result;
@@ -767,7 +767,7 @@ const uint8_t* BinaryColumnBase<T>::deserialize_and_append(const uint8_t* pos) {
 
     auto& bytes = get_bytes();
     size_t old_size = bytes.size();
-    bytes.insert(bytes.end(), pos, pos + string_size);
+    bytes.insert(pos, pos + string_size);
 
     _offsets.emplace_back(old_size + string_size);
     return pos + string_size;
@@ -908,7 +908,7 @@ StatusOr<MutableColumnPtr> BinaryColumnBase<T>::upgrade_if_overflow() {
         if (_offsets.size() > Column::MAX_CAPACITY_LIMIT) {
             return Status::InternalError("column size exceed the limit");
         } else if (get_immutable_bytes().size() >= Column::MAX_CAPACITY_LIMIT) {
-            auto new_column = BinaryColumnBase<uint64_t>::create();
+            auto new_column = BinaryColumnBase<uint64_t>::create(this->_allocator);
             new_column->get_offset().resize(_offsets.size());
             new_column->get_bytes().swap(get_bytes());
 
@@ -948,7 +948,7 @@ StatusOr<MutableColumnPtr> BinaryColumnBase<T>::downgrade() {
         if (get_immutable_bytes().size() >= Column::MAX_CAPACITY_LIMIT) {
             return Status::InternalError("column size exceed the limit, can't downgrade");
         } else {
-            auto new_column = BinaryColumn::create();
+            auto new_column = BinaryColumn::create(this->get_allocator());
             new_column->get_offset().resize(_offsets.size());
             new_column->get_bytes().swap(get_bytes());
 

@@ -20,6 +20,7 @@
 #include "column/const_column.h"
 #include "column/fixed_length_column.h"
 #include "common/object_pool.h"
+#include "runtime/memory/memory_allocator.h"
 
 namespace starrocks {
 
@@ -52,11 +53,11 @@ public:
         int cal_rows = all_const ? 1 : output_rows;
         for (size_t i = 0; i < num_elements; i++) {
             element_columns[i] =
-                    ColumnHelper::unfold_const_column(element_type, cal_rows, std::move(element_columns[i]));
+                    ColumnHelper::unfold_const_column(context->get_allocator(), element_type, cal_rows, std::move(element_columns[i]));
         }
 
-        auto array_elements = ColumnHelper::create_column(element_type, true);
-        auto array_offsets = UInt32Column::create();
+        auto array_elements = ColumnHelper::create_column(context->get_allocator(), element_type, true);
+        auto array_offsets = UInt32Column::create(context->get_allocator());
 
         // fill array column.
         uint32_t curr_offset = 0;
@@ -69,9 +70,10 @@ public:
             array_offsets->append(curr_offset);
         }
 
-        auto ptr = ArrayColumn::create(std::move(array_elements), std::move(array_offsets));
+        auto ptr = ArrayColumn::create(context->get_allocator(), std::move(array_elements),
+                                       std::move(array_offsets));
         if (all_const) {
-            return ConstColumn::create(std::move(ptr), output_rows);
+            return ConstColumn::create(context->get_allocator(), std::move(ptr), output_rows);
         }
         return ptr;
     }

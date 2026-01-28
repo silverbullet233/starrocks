@@ -13,6 +13,7 @@
 // limitations under the License.
 
 #include "storage/push_utils.h"
+#include "runtime/memory/memory_allocator.h"
 
 namespace starrocks {
 
@@ -83,7 +84,7 @@ Status PushBrokerReader::init(const TBrokerScanRange& t_scan_range, const TPushR
 }
 
 ColumnPtr PushBrokerReader::_build_object_column(const ColumnPtr& column) {
-    ColumnBuilder<TYPE_OBJECT> builder(config::vector_chunk_size);
+    ColumnBuilder<TYPE_OBJECT> builder(memory::get_default_allocator(), config::vector_chunk_size);
     ColumnViewer<TYPE_VARCHAR> viewer(column);
 
     if (!column->has_null()) {
@@ -109,7 +110,7 @@ ColumnPtr PushBrokerReader::_build_object_column(const ColumnPtr& column) {
 }
 
 ColumnPtr PushBrokerReader::_build_hll_column(const ColumnPtr& column) {
-    ColumnBuilder<TYPE_HLL> builder(config::vector_chunk_size);
+    ColumnBuilder<TYPE_HLL> builder(memory::get_default_allocator(), config::vector_chunk_size);
     ColumnViewer<TYPE_VARCHAR> viewer(column);
 
     if (!column->has_null()) {
@@ -138,11 +139,11 @@ ColumnPtr PushBrokerReader::_padding_char_column(const ColumnPtr& column, const 
                                                  size_t num_rows) {
     const Column* data_column = ColumnHelper::get_data_column(column.get());
     const auto* binary = down_cast<const BinaryColumn*>(data_column);
-    const auto offsets = binary->get_offset();
+    const auto& offsets = binary->get_offset();
     uint32_t len = slot_desc->type().len;
 
     // Padding 0 to CHAR field, the storage bitmap index and zone map need it.
-    auto new_binary = BinaryColumn::create();
+    auto new_binary = BinaryColumn::create(memory::get_default_allocator());
     Offsets& new_offset = new_binary->get_offset();
     Bytes& new_bytes = new_binary->get_bytes();
     new_offset.resize(num_rows + 1);
@@ -162,7 +163,8 @@ ColumnPtr PushBrokerReader::_padding_char_column(const ColumnPtr& column, const 
 
     if (slot_desc->is_nullable()) {
         auto* nullable_column = down_cast<const NullableColumn*>(column.get());
-        return NullableColumn::create(std::move(new_binary), nullable_column->null_column());
+        return NullableColumn::create(memory::get_default_allocator(), std::move(new_binary),
+                                      nullable_column->null_column());
     }
     return new_binary;
 }
@@ -178,7 +180,7 @@ Status PushBrokerReader::_convert_chunk(const ChunkPtr& from, ChunkPtr* to) {
 
         const SlotDescriptor* slot_desc = _tuple_desc->slots().at(i);
         const TypeDescriptor& type_desc = slot_desc->type();
-        from_col = ColumnHelper::unfold_const_column(type_desc, num_rows, std::move(from_col));
+        from_col = ColumnHelper::unfold_const_column(memory::get_default_allocator(), type_desc, num_rows, std::move(from_col));
 
         switch (type_desc.type) {
         case TYPE_OBJECT:

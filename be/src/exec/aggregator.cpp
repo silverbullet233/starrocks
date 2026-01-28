@@ -28,6 +28,7 @@
 #include "exec/aggregate/agg_hash_variant.h"
 #include "exec/aggregate/agg_profile.h"
 #include "exec/exec_node.h"
+#include "runtime/memory/memory_allocator.h"
 #include "exec/pipeline/operator.h"
 #include "exprs/agg/aggregate_factory.h"
 #include "exprs/agg/aggregate_state_allocator.h"
@@ -65,6 +66,7 @@ inline AggDataPtr AllocateState<HashMapWithKey>::operator()(const typename HashM
     size_t aggregate_function_sz = aggregator->_agg_fn_ctxs.size();
     try {
         for (int i = 0; i < aggregate_function_sz; i++) {
+            // LOG(INFO) << "AllocateState create " << aggregator->_agg_functions[i]->get_name();
             aggregator->_agg_functions[i]->create(aggregator->_agg_fn_ctxs[i],
                                                   agg_state + aggregator->_agg_states_offsets[i]);
             created++;
@@ -271,7 +273,10 @@ void AggregatorParams::init() {
 #define ALIGN_TO(size, align) ((size + align - 1) / align * align)
 #define PAD(size, align) (align - (size % align)) % align;
 
-Aggregator::Aggregator(AggregatorParamsPtr params) : _params(std::move(params)) {
+Aggregator::Aggregator(AggregatorParamsPtr params)
+        : _params(std::move(params)),
+          _tmp_agg_states(memory::get_default_allocator()),
+          _streaming_selection(memory::get_default_allocator()) {
     _allocator = std::make_unique<CountingAllocatorWithHook>();
 }
 
@@ -780,6 +785,7 @@ void Aggregator::close(RuntimeState* state) {
         (void)agg_close();
     }
 #endif
+    // LOG(INFO) << "reset _spiller: " << (void*)_spiller.get();
     _spiller.reset();
 }
 
@@ -837,6 +843,7 @@ bool Aggregator::should_expand_preagg_hash_tables(size_t prev_row_returned, size
 
 Status Aggregator::evaluate_agg_input_column(Chunk* chunk, std::vector<ExprContext*>& agg_expr_ctxs, int i) {
     SCOPED_TIMER(_agg_stat->expr_compute_timer);
+    SCOPED_TIMER(_agg_stat->eval_agg_input_timer);
     for (size_t j = 0; j < agg_expr_ctxs.size(); j++) {
         // _agg_input_raw_columns[i][j] != nullptr means this column has been evaluated
         if (_agg_input_raw_columns[i][j] != nullptr) {
@@ -867,7 +874,9 @@ Status Aggregator::evaluate_agg_input_column(Chunk* chunk, std::vector<ExprConte
 }
 
 Status Aggregator::compute_single_agg_state(Chunk* chunk, size_t chunk_size) {
+    // LOG(INFO) << "compute_single_agg_state";
     SCOPED_TIMER(_agg_stat->agg_function_compute_timer);
+    SCOPED_TIMER(_agg_stat->compute_single_state_timer);
     bool use_intermediate = _use_intermediate_as_input();
     auto& agg_expr_ctxs = use_intermediate ? _intermediate_agg_expr_ctxs : _agg_expr_ctxs;
 
@@ -893,6 +902,7 @@ Status Aggregator::compute_single_agg_state(Chunk* chunk, size_t chunk_size) {
 
 Status Aggregator::compute_batch_agg_states(Chunk* chunk, size_t chunk_size) {
     SCOPED_TIMER(_agg_stat->agg_function_compute_timer);
+    SCOPED_TIMER(_agg_stat->compute_batch_state_timer);
     bool use_intermediate = _use_intermediate_as_input();
     auto& agg_expr_ctxs = use_intermediate ? _intermediate_agg_expr_ctxs : _agg_expr_ctxs;
 
@@ -917,6 +927,7 @@ Status Aggregator::compute_batch_agg_states(Chunk* chunk, size_t chunk_size) {
 
 Status Aggregator::compute_batch_agg_states_with_selection(Chunk* chunk, size_t chunk_size) {
     SCOPED_TIMER(_agg_stat->agg_function_compute_timer);
+    SCOPED_TIMER(_agg_stat->compute_batch_state_with_selection_timer);
     bool use_intermediate = _use_intermediate_as_input();
     auto& agg_expr_ctxs = use_intermediate ? _intermediate_agg_expr_ctxs : _agg_expr_ctxs;
 
@@ -998,7 +1009,8 @@ Status Aggregator::convert_to_chunk_no_groupby(ChunkPtr* chunk) {
     if (UNLIKELY(_num_input_rows == 0 && _group_by_expr_ctxs.empty() && !use_intermediate)) {
         for (size_t i = 0; i < _agg_fn_types.size(); i++) {
             if (_agg_fn_types[i].is_nullable) {
-                agg_result_column[i] = ColumnHelper::create_column(_agg_fn_types[i].result_type, true);
+                auto* allocator = !_agg_fn_ctxs.empty() ? _agg_fn_ctxs[i]->get_allocator() : memory::get_default_allocator();
+                agg_result_column[i] = ColumnHelper::create_column(allocator, _agg_fn_types[i].result_type, true);
                 agg_result_column[i]->append_default();
             }
         }
@@ -1059,8 +1071,9 @@ Status Aggregator::output_chunk_by_streaming(Chunk* input_chunk, ChunkPtr* chunk
         DCHECK_EQ(num_rows, _group_by_columns[i]->size());
         // materialize group by const columns
         if (_group_by_columns[i]->is_constant()) {
+            auto* allocator = !_group_by_expr_ctxs.empty() ? _group_by_expr_ctxs[0]->get_allocator() : memory::get_default_allocator();
             auto res =
-                    ColumnHelper::unfold_const_column(_group_by_types[i].result_type, num_rows, _group_by_columns[i]);
+                    ColumnHelper::unfold_const_column(allocator, _group_by_types[i].result_type, num_rows, _group_by_columns[i]);
             result_chunk->append_column(std::move(res), slots[i]->id());
         } else {
             result_chunk->append_column(_group_by_columns[i], slots[i]->id());
@@ -1097,7 +1110,7 @@ Status Aggregator::output_chunk_by_streaming(Chunk* input_chunk, ChunkPtr* chunk
                 if (force_use_intermediate_as_output) {
                     if (agg_result_column[i]->is_nullable()) {
                         _agg_input_columns[i][0] =
-                                ColumnHelper::cast_to_nullable_column(std::move(_agg_input_columns[i][0]));
+                                ColumnHelper::cast_to_nullable_column(memory::get_default_allocator(), std::move(_agg_input_columns[i][0]));
                     }
                 }
                 result_chunk->append_column(std::move(_agg_input_columns[i][0]), slot_id);
@@ -1132,8 +1145,9 @@ Status Aggregator::convert_to_spill_format(Chunk* input_chunk, ChunkPtr* chunk) 
         DCHECK_EQ(num_rows, _group_by_columns[i]->size());
         // materialize group by const columns
         if (_group_by_columns[i]->is_constant()) {
+            auto* allocator = !_group_by_expr_ctxs.empty() ? _group_by_expr_ctxs[0]->get_allocator() : memory::get_default_allocator();
             auto res =
-                    ColumnHelper::unfold_const_column(_group_by_types[i].result_type, num_rows, _group_by_columns[i]);
+                    ColumnHelper::unfold_const_column(allocator, _group_by_types[i].result_type, num_rows, _group_by_columns[i]);
             result_chunk->append_column(std::move(res), slots[i]->id());
         } else {
             result_chunk->append_column(_group_by_columns[i], slots[i]->id());
@@ -1223,13 +1237,15 @@ MutableColumns Aggregator::_create_agg_result_columns(size_t num_rows, bool use_
         for (size_t i = 0; i < _agg_fn_types.size(); ++i) {
             // For count, count distinct, bitmap_union_int such as never return null function,
             // we need to create a not-nullable column.
-            agg_result_columns[i] = ColumnHelper::create_column(_agg_fn_types[i].result_type,
+            auto* allocator = !_agg_fn_ctxs.empty() ? _agg_fn_ctxs[i]->get_allocator() : memory::get_default_allocator();
+            agg_result_columns[i] = ColumnHelper::create_column(allocator, _agg_fn_types[i].result_type,
                                                                 _agg_fn_types[i].is_result_nullable<false>());
             agg_result_columns[i]->reserve(num_rows);
         }
     } else {
         for (size_t i = 0; i < _agg_fn_types.size(); ++i) {
-            agg_result_columns[i] = ColumnHelper::create_column(_agg_fn_types[i].serde_type,
+            auto* allocator = !_agg_fn_ctxs.empty() ? _agg_fn_ctxs[i]->get_allocator() : memory::get_default_allocator();
+            agg_result_columns[i] = ColumnHelper::create_column(allocator, _agg_fn_types[i].serde_type,
                                                                 _agg_fn_types[i].is_result_nullable<true>());
             agg_result_columns[i]->reserve(num_rows);
         }
@@ -1240,8 +1256,9 @@ MutableColumns Aggregator::_create_agg_result_columns(size_t num_rows, bool use_
 MutableColumns Aggregator::_create_group_by_columns(size_t num_rows) const {
     MutableColumns group_by_columns(_group_by_types.size());
     for (size_t i = 0; i < _group_by_types.size(); ++i) {
+        auto* allocator = !_group_by_expr_ctxs.empty() ? _group_by_expr_ctxs[i]->get_allocator() : memory::get_default_allocator();
         group_by_columns[i] =
-                ColumnHelper::create_column(_group_by_types[i].result_type, _group_by_types[i].is_nullable);
+                ColumnHelper::create_column(allocator, _group_by_types[i].result_type, _group_by_types[i].is_nullable);
         group_by_columns[i]->reserve(num_rows);
     }
     return group_by_columns;
@@ -1332,6 +1349,7 @@ void Aggregator::_reset_exprs() {
 
 Status Aggregator::_evaluate_group_by_exprs(Chunk* chunk) {
     SCOPED_TIMER(_agg_stat->expr_compute_timer);
+    SCOPED_TIMER(_agg_stat->eval_group_by_exprs_timer);
     // Compute group by columns
     for (size_t i = 0; i < _group_by_expr_ctxs.size(); i++) {
         ASSIGN_OR_RETURN(_group_by_columns[i], _group_by_expr_ctxs[i]->evaluate(chunk));
@@ -1349,8 +1367,9 @@ Status Aggregator::_evaluate_group_by_exprs(Chunk* chunk) {
         // for nullable column when the real whole chunk data all not-null.
         if (_group_by_types[i].is_nullable && !_group_by_columns[i]->is_nullable()) {
             // TODO: optimized the memory usage
-            _group_by_columns[i] =
-                    NullableColumn::create(_group_by_columns[i], NullColumn::create(_group_by_columns[i]->size(), 0));
+            _group_by_columns[i] = NullableColumn::create(
+                    memory::get_default_allocator(), _group_by_columns[i],
+                    NullColumn::create(memory::get_default_allocator(), _group_by_columns[i]->size(), 0));
         } else if (!_group_by_types[i].is_nullable && _group_by_columns[i]->is_nullable()) {
             return Status::InternalError(fmt::format("error nullablel column, index: {}, slot: {}", i,
                                                      _group_by_expr_ctxs[i]->root()->debug_string()));
@@ -1601,12 +1620,14 @@ void Aggregator::_init_agg_hash_variant(HashVariantType& hash_variant) {
 }
 
 void Aggregator::build_hash_map(size_t chunk_size, bool agg_group_by_with_limit) {
+    SCOPED_TIMER(_agg_stat->build_hash_map_timer);
     if (agg_group_by_with_limit) {
         if (_hash_map_variant.size() >= _limit) {
             build_hash_map_with_selection(chunk_size);
             return;
         } else {
-            _streaming_selection.assign(chunk_size, 0);
+            _streaming_selection.resize(chunk_size);
+            memset(_streaming_selection.data(), 0, chunk_size);
         }
     }
 
@@ -1627,12 +1648,14 @@ void Aggregator::build_hash_map(size_t chunk_size, std::atomic<int64_t>& shared_
 }
 
 void Aggregator::_build_hash_map_with_shared_limit(size_t chunk_size, std::atomic<int64_t>& shared_limit_countdown) {
+    SCOPED_TIMER(_agg_stat->build_hash_map_with_limit_timer);
     auto start_size = _hash_map_variant.size();
     if (_hash_map_variant.size() >= _limit || shared_limit_countdown.load(std::memory_order_relaxed) <= 0) {
         build_hash_map_with_selection(chunk_size);
         return;
     } else {
         _streaming_selection.resize(chunk_size);
+        memset(_streaming_selection.data(), 0, chunk_size);
     }
     _hash_map_variant.visit([&](auto& hash_map_with_key) {
         using MapType = std::remove_reference_t<decltype(*hash_map_with_key)>;
@@ -1644,6 +1667,7 @@ void Aggregator::_build_hash_map_with_shared_limit(size_t chunk_size, std::atomi
 }
 
 void Aggregator::build_hash_map_with_selection(size_t chunk_size) {
+    SCOPED_TIMER(_agg_stat->build_hash_map_with_selection_timer);
     _hash_map_variant.visit([&](auto& hash_map_with_key) {
         using MapType = std::remove_reference_t<decltype(*hash_map_with_key)>;
         hash_map_with_key->build_hash_map_with_selection(chunk_size, _group_by_columns, _mem_pool.get(),
@@ -1732,6 +1756,7 @@ Status Aggregator::convert_hash_map_to_chunk(int32_t chunk_size, ChunkPtr* chunk
                         TRY_CATCH_BAD_ALLOC(_agg_functions[i]->batch_serialize(_agg_fn_ctxs[i], read_index,
                                                                                _tmp_agg_states, _agg_states_offsets[i],
                                                                                agg_result_columns[i].get()));
+
                     }
                 }
             }

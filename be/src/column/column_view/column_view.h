@@ -23,9 +23,9 @@ namespace starrocks {
 class ColumnView final : public CowFactory<ColumnFactory<ColumnViewBase, ColumnView>, ColumnView, Column> {
 public:
     using Super = CowFactory<ColumnFactory<ColumnViewBase, ColumnView>, ColumnView, Column>;
-    explicit ColumnView(ColumnPtr&& default_column, long concat_rows_limit, long concat_bytes_limit)
-            : Super(std::move(default_column), concat_rows_limit, concat_bytes_limit) {}
-    ColumnView(const ColumnView& column_view) : Super(column_view) {}
+    explicit ColumnView(memory::Allocator* allocator, ColumnPtr&& default_column, long concat_rows_limit, long concat_bytes_limit)
+            : Super(allocator, std::move(default_column), concat_rows_limit, concat_bytes_limit) {}
+    ColumnView(const ColumnView& column_view) = delete;
     ColumnView(ColumnView&& column_view) = delete;
     bool is_view() const override { return true; }
     bool is_json_view() const override { return ColumnHelper::get_data_column(_default_column.get())->is_json(); }

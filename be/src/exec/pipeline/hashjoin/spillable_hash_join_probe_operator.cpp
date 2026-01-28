@@ -213,7 +213,7 @@ Status SpillableHashJoinProbeOperator::push_chunk(RuntimeState* state, const Chu
 Status SpillableHashJoinProbeOperator::_push_probe_chunk(RuntimeState* state, const ChunkPtr& chunk) {
     // compute hash
     size_t num_rows = chunk->num_rows();
-    auto hash_column = spill::SpillHashColumn::create(num_rows);
+    auto hash_column = spill::SpillHashColumn::create(_allocator, num_rows);
     auto& hash_values = hash_column->get_data();
 
     // TODO: use another hash function
@@ -496,7 +496,8 @@ StatusOr<ChunkPtr> SpillableHashJoinProbeOperator::pull_chunk(RuntimeState* stat
 }
 
 bool SpillableHashJoinProbeOperator::spilled() const {
-    return _join_builder->spiller()->spilled();
+    auto spiller = _join_builder->spiller();
+    return spiller && spiller->spilled();
 }
 
 void SpillableHashJoinProbeOperator::_acquire_next_partitions() {

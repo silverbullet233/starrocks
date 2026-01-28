@@ -45,6 +45,7 @@
 #include "common/status.h"
 #include "fmt/compile.h"
 #include "fmt/core.h"
+#include "runtime/memory/memory_allocator.h"
 #include "types/logical_type.h"
 #include "types/logical_type_infra.h"
 
@@ -104,7 +105,7 @@ struct ViewerBuilder {
     template <LogicalType ltype>
     void operator()(std::vector<MysqlTableWriter::VariantViewer>* _viewers, ColumnPtr* column) {
         if constexpr (ltype == LogicalType::TYPE_TIME) {
-            *column = ColumnHelper::convert_time_column_from_double_to_str(*column);
+            *column = ColumnHelper::convert_time_column_from_double_to_str(memory::get_default_allocator(), *column);
         } else {
             _viewers->emplace_back(ColumnViewer<ltype>(*column));
         }

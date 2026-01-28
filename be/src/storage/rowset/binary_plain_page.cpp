@@ -15,6 +15,7 @@
 #include "storage/rowset/binary_plain_page.h"
 
 #include "common/config.h"
+#include "runtime/memory/memory_allocator.h"
 
 #ifdef __SSE4_2__
 #include <emmintrin.h>
@@ -68,7 +69,7 @@ Status BinaryPlainPageDecoder<Type>::get_dict_filter_selection(const std::vector
             const uint32_t end = std::min(_num_elems, begin + kMaxRowsPerEval);
             const uint32_t chunk_elems = end - begin;
 
-            BinaryColumn::Offsets offsets;
+            BinaryColumn::Offsets offsets(memory::get_default_allocator());
             offsets.resize(chunk_elems + 1);
             offsets[0] = 0;
 
@@ -81,7 +82,8 @@ Status BinaryPlainPageDecoder<Type>::get_dict_filter_selection(const std::vector
             offsets[chunk_elems] = chunk_bytes;
 
             ContainerResource container(_page_handle, &_data[base_abs_off], chunk_bytes);
-            auto dict_chunk_column = BinaryColumn::create(std::move(container), std::move(offsets));
+            auto dict_chunk_column =
+                    BinaryColumn::create(memory::get_default_allocator(), std::move(container), std::move(offsets));
 
             RETURN_IF_ERROR(compound_and_predicates_evaluate(
                     predicates, dict_chunk_column.get(), _dict_filter_cache_selection.data() + begin,
@@ -297,7 +299,7 @@ Status BinaryPlainPageDecoder<Type>::next_range_with_filter(
             return Status::OK();
         }
 
-        BinaryColumn::Offsets temp_offsets;
+        BinaryColumn::Offsets temp_offsets(memory::get_default_allocator());
         temp_offsets.resize(num_rows + 1);
         temp_offsets[0] = 0;
 
@@ -325,15 +327,17 @@ Status BinaryPlainPageDecoder<Type>::next_range_with_filter(
 
         // Create zero-copy BinaryColumn directly from page
         ContainerResource container(_page_handle, data_ptr, data_length);
-        auto temp_data_column = BinaryColumn::create(container, std::move(temp_offsets));
+        auto temp_data_column =
+                BinaryColumn::create(memory::get_default_allocator(), container, std::move(temp_offsets));
 
         // Create temporary column for predicate evaluation
         ColumnPtr temp_eval_column;
         if (null != nullptr) {
             // If null data is provided, create a NullableColumn for predicate evaluation
-            auto temp_null_column = NullColumn::create();
+            auto temp_null_column = NullColumn::create(memory::get_default_allocator());
             temp_null_column->append_numbers(null, num_rows);
-            temp_eval_column = NullableColumn::create(temp_data_column, temp_null_column);
+            temp_eval_column = NullableColumn::create(memory::get_default_allocator(), std::move(temp_data_column),
+                                                      std::move(temp_null_column));
         } else {
             // No null data, use data column directly
             temp_eval_column = temp_data_column;

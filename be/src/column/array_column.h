@@ -42,18 +42,12 @@ public:
     using OffsetColumn = UInt32Column;
     using OffsetColumnPtr = UInt32Column::Ptr;
 
-    ArrayColumn(MutableColumnPtr&& elements, MutableColumnPtr&& offsets);
+    ArrayColumn(memory::Allocator* allocator, MutableColumnPtr&& elements, MutableColumnPtr&& offsets);
 
-    ArrayColumn(const ArrayColumn& rhs)
-            : _elements(rhs._elements->clone()), _offsets(OffsetColumn::static_pointer_cast(rhs._offsets->clone())) {}
-
-    ArrayColumn(ArrayColumn&& rhs) noexcept : _elements(std::move(rhs._elements)), _offsets(std::move(rhs._offsets)) {}
-
-    ArrayColumn& operator=(const ArrayColumn& rhs) {
-        ArrayColumn tmp(rhs);
-        this->swap_column(tmp);
-        return *this;
-    }
+    ArrayColumn(ArrayColumn&& rhs) noexcept
+            : Base(rhs._allocator),
+              _elements(std::move(rhs._elements)),
+              _offsets(std::move(rhs._offsets)) {}
 
     ArrayColumn& operator=(ArrayColumn&& rhs) noexcept {
         ArrayColumn tmp(std::move(rhs));
@@ -61,14 +55,16 @@ public:
         return *this;
     }
 
-    static Ptr create(const ColumnPtr& elements, const ColumnPtr& offsets) {
-        return ArrayColumn::create(elements->as_mutable_ptr(), offsets->as_mutable_ptr());
+    static Ptr create(memory::Allocator* allocator, const ColumnPtr& elements, const ColumnPtr& offsets) {
+        return ArrayColumn::create(allocator, elements->as_mutable_ptr(), offsets->as_mutable_ptr());
     }
-    static Ptr create(const ArrayColumn& rhs) { return Base::create(rhs); }
+    static Ptr create(memory::Allocator* allocator, const ArrayColumn& rhs) {
+        return ArrayColumn::static_pointer_cast(rhs.clone(allocator));
+    }
 
     template <typename... Args>
-    requires(IsMutableColumns<Args...>::value) static MutablePtr create(Args&&... args) {
-        return Base::create(std::forward<Args>(args)...);
+    requires(IsMutableColumns<Args...>::value) static MutablePtr create(memory::Allocator* allocator, Args&&... args) {
+        return Base::create(allocator, std::forward<Args>(args)...);
     }
 
     ~ArrayColumn() override = default;
@@ -138,7 +134,11 @@ public:
 
     uint32_t serialize_size(size_t idx) const override;
 
-    MutableColumnPtr clone_empty() const override;
+    MutableColumnPtr clone_empty(memory::Allocator* allocator = nullptr) const override;
+    MutableColumnPtr clone(memory::Allocator* allocator = nullptr) const override {
+        allocator = allocator == nullptr ? this->get_allocator() : allocator;
+        return create(allocator, _elements->clone(allocator), _offsets->clone(allocator));
+    }
 
     size_t filter_range(const Filter& filter, size_t from, size_t to) override;
 
@@ -239,6 +239,8 @@ private:
     // For example, [1, 2, 3], [4, 5, 6].
     // The two element array has three offsets(0, 3, 6)
     UInt32Column::WrappedPtr _offsets;
+
+    DISALLOW_COPY(ArrayColumn);
 };
 
 extern template bool ArrayColumn::is_all_array_lengths_equal<true>(const ColumnPtr& v1, const ColumnPtr& v2,

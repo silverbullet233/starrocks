@@ -39,8 +39,13 @@
 #include "util/defer_op.h"
 #include "util/json.h"
 #include "util/json_flattener.h"
+#include "runtime/memory/memory_allocator.h"
 
 namespace starrocks {
+
+namespace {
+static memory::Allocator* kAllocator = memory::get_default_allocator();
+}
 
 class FlatJsonQueryTestFixture2
         : public ::testing::TestWithParam<std::tuple<std::string, std::vector<std::string>, std::vector<LogicalType>,
@@ -54,8 +59,8 @@ class FlatJsonQueryTestFixture2
 
 TEST_P(FlatJsonQueryTestFixture2, flat_json_query) {
     std::unique_ptr<FunctionContext> ctx(FunctionContext::create_test_context());
-    auto json_col = JsonColumn::create();
-    ColumnBuilder<TYPE_VARCHAR> builder(1);
+    auto json_col = JsonColumn::create(kAllocator);
+    ColumnBuilder<TYPE_VARCHAR> builder(kAllocator, 1);
 
     std::string param_json = std::get<0>(GetParam());
     std::vector<std::string> param_flat_path = std::get<1>(GetParam());
@@ -72,7 +77,7 @@ TEST_P(FlatJsonQueryTestFixture2, flat_json_query) {
         builder.append(param_path);
     }
 
-    auto flat_json = JsonColumn::create();
+    auto flat_json = JsonColumn::create(kAllocator);
     auto flat_json_ptr = flat_json.get();
 
     JsonFlattener jf(param_flat_path, param_flat_type, false);
@@ -157,8 +162,8 @@ class FlatJsonQueryErrorTestFixture
 
 TEST_P(FlatJsonQueryErrorTestFixture, json_query) {
     std::unique_ptr<FunctionContext> ctx(FunctionContext::create_test_context());
-    auto json_col = JsonColumn::create();
-    ColumnBuilder<TYPE_VARCHAR> builder(1);
+    auto json_col = JsonColumn::create(kAllocator);
+    ColumnBuilder<TYPE_VARCHAR> builder(kAllocator, 1);
 
     std::string param_json = std::get<0>(GetParam());
     std::vector<std::string> param_flat_path = std::get<1>(GetParam());
@@ -174,7 +179,7 @@ TEST_P(FlatJsonQueryErrorTestFixture, json_query) {
         builder.append(param_path);
     }
 
-    auto flat_json = JsonColumn::create();
+    auto flat_json = JsonColumn::create(kAllocator);
     auto flat_json_ptr = flat_json.get();
 
     std::vector<LogicalType> param_flat_type;
@@ -219,7 +224,7 @@ class FlatJsonExistsTestFixture2
 
 TEST_P(FlatJsonExistsTestFixture2, flat_json_exists_test) {
     std::unique_ptr<FunctionContext> ctx(FunctionContext::create_test_context());
-    auto json_col = JsonColumn::create();
+    auto json_col = JsonColumn::create(kAllocator);
 
     std::string param_json = std::get<0>(GetParam());
     std::vector<std::string> param_flat_path = std::get<1>(GetParam());
@@ -233,7 +238,7 @@ TEST_P(FlatJsonExistsTestFixture2, flat_json_exists_test) {
 
     Columns flat_columns;
 
-    auto flat_json = JsonColumn::create();
+    auto flat_json = JsonColumn::create(kAllocator);
     auto* flat_json_ptr = down_cast<JsonColumn*>(flat_json.get());
 
     JsonFlattener jf(param_flat_path, param_flat_type, false);
@@ -243,7 +248,7 @@ TEST_P(FlatJsonExistsTestFixture2, flat_json_exists_test) {
     Columns columns;
     columns.emplace_back(std::move(flat_json));
     if (!param_path.empty()) {
-        auto path_column = BinaryColumn::create();
+        auto path_column = BinaryColumn::create(kAllocator);
         path_column->append(param_path);
         columns.emplace_back(std::move(path_column));
     }
@@ -302,7 +307,7 @@ class FlatJsonLengthTestFixture2
 
 TEST_P(FlatJsonLengthTestFixture2, flat_json_length_test) {
     std::unique_ptr<FunctionContext> ctx(FunctionContext::create_test_context());
-    auto json_col = JsonColumn::create();
+    auto json_col = JsonColumn::create(kAllocator);
 
     std::string param_json = std::get<0>(GetParam());
     std::vector<std::string> param_flat_path = std::get<1>(GetParam());
@@ -316,7 +321,7 @@ TEST_P(FlatJsonLengthTestFixture2, flat_json_length_test) {
 
     Columns flat_columns;
 
-    auto flat_json = JsonColumn::create();
+    auto flat_json = JsonColumn::create(kAllocator);
     auto* flat_json_ptr = down_cast<JsonColumn*>(flat_json.get());
 
     JsonFlattener jf(param_flat_path, param_flat_type, false);
@@ -326,7 +331,7 @@ TEST_P(FlatJsonLengthTestFixture2, flat_json_length_test) {
     Columns columns;
     columns.emplace_back(std::move(flat_json));
     if (!param_path.empty()) {
-        auto path_column = BinaryColumn::create();
+        auto path_column = BinaryColumn::create(kAllocator);
         path_column->append(param_path);
         columns.emplace_back(std::move(path_column));
     }
@@ -363,8 +368,8 @@ class FlatJsonKeysTestFixture2
 
 TEST_P(FlatJsonKeysTestFixture2, json_keys) {
     std::unique_ptr<FunctionContext> ctx(FunctionContext::create_test_context());
-    auto json_column = JsonColumn::create();
-    ColumnBuilder<TYPE_VARCHAR> builder(1);
+    auto json_column = JsonColumn::create(kAllocator);
+    ColumnBuilder<TYPE_VARCHAR> builder(kAllocator, 1);
 
     std::string param_json = std::get<0>(GetParam());
     std::string param_path = std::get<1>(GetParam());
@@ -382,7 +387,7 @@ TEST_P(FlatJsonKeysTestFixture2, json_keys) {
         builder.append(param_path);
     }
 
-    auto flat_json = JsonColumn::create();
+    auto flat_json = JsonColumn::create(kAllocator);
     auto flat_json_ptr = flat_json.get();
 
     Columns columns{std::move(flat_json), builder.build(true)};
@@ -437,8 +442,8 @@ public:
         config::enable_json_flat_complex_type = true;
         config::enable_lazy_dynamic_flat_json = true; // Enable hyper extraction path to test _extract_with_hyper
         _ctx = std::unique_ptr<FunctionContext>(FunctionContext::create_test_context());
-        auto ints = JsonColumn::create();
-        ColumnBuilder<TYPE_VARCHAR> builder(1);
+        auto ints = JsonColumn::create(kAllocator);
+        ColumnBuilder<TYPE_VARCHAR> builder(kAllocator, 1);
 
         std::string param_json = std::get<0>(GetParam());
         std::string param_path = std::get<1>(GetParam());
@@ -457,7 +462,7 @@ public:
             builder.append(param_path);
         }
 
-        auto flat_json = JsonColumn::create();
+        auto flat_json = JsonColumn::create(kAllocator);
         auto* flat_json_ptr = down_cast<JsonColumn*>(flat_json.get());
 
         JsonFlattener jf(flat_path, flat_type, false);
@@ -615,8 +620,8 @@ public:
 
 TEST_P(FlatJsonDeriverPaths, flat_json_path_test) {
     std::unique_ptr<FunctionContext> ctx(FunctionContext::create_test_context());
-    auto json_column = JsonColumn::create();
-    ColumnBuilder<TYPE_VARCHAR> builder(1);
+    auto json_column = JsonColumn::create(kAllocator);
+    ColumnBuilder<TYPE_VARCHAR> builder(kAllocator, 1);
 
     std::string param_json1 = std::get<0>(GetParam());
     std::string param_json2 = std::get<1>(GetParam());

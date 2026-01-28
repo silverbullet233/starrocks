@@ -27,13 +27,27 @@ public:
     using Container = Buffer<ValueType>;
     using SuperClass =
             CowFactory<ColumnFactory<FixedLengthColumnBase<T>, FixedLengthColumn<T>>, FixedLengthColumn<T>, Column>;
-    FixedLengthColumn() = default;
+    explicit FixedLengthColumn(memory::Allocator* allocator) : SuperClass(allocator) {}
 
-    explicit FixedLengthColumn(const size_t n) : SuperClass(n) {}
+    FixedLengthColumn(memory::Allocator* allocator, const size_t n) : SuperClass(allocator, n) {}
 
-    FixedLengthColumn(const size_t n, const ValueType x) : SuperClass(n, x) {}
+    FixedLengthColumn(memory::Allocator* allocator, const size_t n, const ValueType x)
+            : SuperClass(allocator, n, x) {}
 
-    FixedLengthColumn(const FixedLengthColumn& src) : SuperClass((const FixedLengthColumnBase<T>&)(src)) {}
-    MutableColumnPtr clone_empty() const override { return this->create(); }
+    MutableColumnPtr clone_empty(memory::Allocator* allocator = nullptr) const override {
+        allocator = allocator == nullptr ? this->get_allocator() : allocator;
+        return this->create(allocator);
+    }
+    MutableColumnPtr clone(memory::Allocator* allocator = nullptr) const override {
+        allocator = allocator == nullptr ? this->get_allocator() : allocator;
+        auto dst = this->create(allocator);
+        auto span = this->immutable_data();
+        auto* dst_col = down_cast<FixedLengthColumn*>(dst.get());
+        dst_col->get_data().assign(span.begin(), span.end());
+        return dst;
+    }
+
+private:
+    DISALLOW_COPY(FixedLengthColumn);
 };
 } // namespace starrocks

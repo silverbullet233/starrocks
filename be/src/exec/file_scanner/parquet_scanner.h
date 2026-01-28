@@ -55,7 +55,7 @@ public:
 
     static Status new_column(const arrow::DataType* arrow_type, const SlotDescriptor* slot_desc,
                              MutableColumnPtr* column, ConvertFuncTree* conv_func, Expr** expr, ObjectPool& pool,
-                             bool strict_mode);
+                             bool strict_mode, memory::Allocator* allocator);
 
     static Status build_dest(const arrow::DataType* arrow_type, const TypeDescriptor* type_desc, bool is_nullable,
                              TypeDescriptor* raw_type_desc, ConvertFuncTree* conv_func, bool& need_cast,

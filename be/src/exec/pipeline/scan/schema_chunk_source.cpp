@@ -155,7 +155,7 @@ Status SchemaChunkSource::_read_chunk(RuntimeState* state, ChunkPtr* chunk) {
         DCHECK(dest_slot_descs[i]->is_materialized());
         int j = _index_map[i];
         SlotDescriptor* src_slot = src_slot_descs[j];
-        MutableColumnPtr column = ColumnHelper::create_column(src_slot->type(), src_slot->is_nullable());
+        MutableColumnPtr column = ColumnHelper::create_column(memory::get_default_allocator(), src_slot->type(), src_slot->is_nullable());
         column->reserve(state->chunk_size());
         chunk_src->append_column(std::move(column), src_slot->id());
     }
@@ -166,7 +166,7 @@ Status SchemaChunkSource::_read_chunk(RuntimeState* state, ChunkPtr* chunk) {
     }
 
     for (auto dest_slot_desc : dest_slot_descs) {
-        MutableColumnPtr column = ColumnHelper::create_column(dest_slot_desc->type(), dest_slot_desc->is_nullable());
+        MutableColumnPtr column = ColumnHelper::create_column(memory::get_default_allocator(), dest_slot_desc->type(), dest_slot_desc->is_nullable());
         chunk_dst->append_column(std::move(column), dest_slot_desc->id());
     }
 

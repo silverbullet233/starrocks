@@ -28,6 +28,7 @@
 #include "column/fixed_length_column.h"
 #include "column/nullable_column.h"
 #include "column/vectorized_fwd.h"
+#include "runtime/memory/memory_allocator.h"
 #include "common/constexpr.h"
 #include "common/statusor.h"
 #include "exprs/expr_context.h"
@@ -181,7 +182,7 @@ StatusOr<ColumnPtr> ArraySortLambdaExpr::evaluate_lambda_expr(ExprContext* conte
 
     // Create output arrays
     auto sorted_elements = element_col->clone_empty();
-    auto sorted_offsets = UInt32Column::create();
+    auto sorted_offsets = UInt32Column::create(context->get_allocator());
 
     DCHECK(data_column->size() == 1 || data_column->size() == chunk->num_rows());
 
@@ -254,10 +255,11 @@ StatusOr<ColumnPtr> ArraySortLambdaExpr::evaluate_lambda_expr(ExprContext* conte
     }
 
     // Create output array column
-    auto result_array = ArrayColumn::create(std::move(sorted_elements), std::move(sorted_offsets));
+    auto result_array = ArrayColumn::create(context->get_allocator(), std::move(sorted_elements),
+                                            std::move(sorted_offsets));
     result_array->check_or_die();
     if (compute_once) {
-        auto const_result_array = ConstColumn::create(std::move(result_array), chunk->num_rows());
+        auto const_result_array = ConstColumn::create(context->get_allocator(), std::move(result_array), chunk->num_rows());
         return const_result_array;
     }
     return result_array;
@@ -456,7 +458,7 @@ StatusOr<ColumnPtr> ArraySortLambdaExpr::evaluate_checked(ExprContext* context, 
 
     // Handle null array
     if (array_col->only_null()) {
-        return ColumnHelper::align_return_type(std::move(array_col), type(), chunk->num_rows(), true);
+        return ColumnHelper::align_return_type(context->get_allocator(), std::move(array_col), type(), chunk->num_rows(), true);
     }
 
     NullColumnPtr null_column = nullptr;

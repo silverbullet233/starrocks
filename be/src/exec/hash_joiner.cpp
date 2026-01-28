@@ -205,6 +205,8 @@ void HashJoiner::_init_hash_table_param(HashTableParam* param, RuntimeState* sta
             param->join_keys.emplace_back(JoinKeyDesc{&expr->type(), _is_null_safes[i], nullptr});
         }
     }
+
+    param->allocator = memory::get_default_allocator();
 }
 
 Status HashJoiner::append_chunk_to_ht(RuntimeState* state, const ChunkPtr& chunk) {
@@ -488,7 +490,7 @@ Status HashJoiner::_process_outer_join_with_other_conjunct(ChunkPtr* chunk, size
                                                            JoinHashTable& hash_table) {
     bool filter_all = false;
     bool hit_all = false;
-    Filter filter;
+    Filter filter(memory::get_default_allocator());
 
     RETURN_IF_ERROR(_calc_filter_for_other_conjunct(chunk, filter, filter_all, hit_all));
     _process_row_for_other_conjunct(chunk, start_column, column_count, filter_all, hit_all, filter);
@@ -502,7 +504,7 @@ Status HashJoiner::_process_outer_join_with_other_conjunct(ChunkPtr* chunk, size
 Status HashJoiner::_process_semi_join_with_other_conjunct(ChunkPtr* chunk, JoinHashTable& hash_table) {
     bool filter_all = false;
     bool hit_all = false;
-    Filter filter;
+    Filter filter(memory::get_default_allocator());
 
     RETURN_IF_ERROR(_calc_filter_for_other_conjunct(chunk, filter, filter_all, hit_all));
 
@@ -516,7 +518,7 @@ Status HashJoiner::_process_semi_join_with_other_conjunct(ChunkPtr* chunk, JoinH
 Status HashJoiner::_process_right_anti_join_with_other_conjunct(ChunkPtr* chunk, JoinHashTable& hash_table) {
     bool filter_all = false;
     bool hit_all = false;
-    Filter filter;
+    Filter filter(memory::get_default_allocator());
 
     RETURN_IF_ERROR(_calc_filter_for_other_conjunct(chunk, filter, filter_all, hit_all));
     hash_table.remove_duplicate_index(&filter);

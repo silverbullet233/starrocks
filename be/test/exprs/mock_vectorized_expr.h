@@ -154,7 +154,7 @@ public:
     StatusOr<ColumnPtr> evaluate_checked(ExprContext* context, Chunk* ptr) override {
         start();
         if (only_null) {
-            return ColumnHelper::create_const_null_column(size);
+            return ColumnHelper::create_const_null_column(context->get_allocator(), size);
         }
         MutableColumnPtr col = nullptr;
         if constexpr (lt_is_decimal<Type>) {
@@ -176,7 +176,7 @@ public:
                 nul->append((flag + i) % 2);
             }
         }
-        auto re = NullableColumn::create(std::move(col), std::move(nul));
+        auto re = NullableColumn::create(context->get_allocator(), std::move(col), std::move(nul));
         re->update_has_null();
         stop();
         return re;

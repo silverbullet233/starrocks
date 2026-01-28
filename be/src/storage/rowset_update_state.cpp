@@ -698,7 +698,7 @@ static Status append_full_row_column(const Schema& tschema,
     for (size_t i = 0; i < read_column_ids.size(); ++i) {
         columns[read_column_ids[i] - tschema.num_key_fields()] = state.write_columns[i]->clone();
     }
-    auto full_row_column = BinaryColumn::create();
+    auto full_row_column = BinaryColumn::create(memory::get_default_allocator());
     auto row_encoder = RowStoreEncoderFactory::instance()->get_or_create_encoder(SIMPLE);
     RETURN_IF_ERROR(row_encoder->encode_columns_to_full_row_column(tschema, columns, *full_row_column));
     state.write_columns.emplace_back(std::move(full_row_column));

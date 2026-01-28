@@ -111,7 +111,7 @@ Status ColumnDecoder::_encode_array_to_global_id(Column* datas, Column* codes) {
 void ColumnDecoder::check_global_dict() {
     if (_global_dict && _all_page_dict_encoded) {
         std::vector<int16_t> code_convert_map;
-        Status st = GlobalDictCodeColumnIterator::build_code_convert_map(_iter, _global_dict, &code_convert_map);
+        Status st = GlobalDictCodeColumnIterator::build_code_convert_map(_iter, _global_dict, &code_convert_map, _iter->_opts.allocator);
         if (st.ok()) {
             _code_convert_map = std::move(code_convert_map);
         } else {

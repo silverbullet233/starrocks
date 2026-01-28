@@ -170,7 +170,7 @@ StatusOr<bool> MemTable::insert(const Chunk& chunk, const uint32_t* indexes, uin
     }
 
     bool is_column_with_row = false;
-    auto full_row_col = BinaryColumn::create();
+    auto full_row_col = BinaryColumn::create(memory::get_default_allocator());
     if (_keys_type == PRIMARY_KEYS) {
         std::unique_ptr<Schema> schema_without_full_row_column;
         if (_vectorized_schema->field_names().back() == Schema::FULL_ROW_COLUMN) {

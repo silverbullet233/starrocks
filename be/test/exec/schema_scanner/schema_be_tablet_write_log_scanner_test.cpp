@@ -18,17 +18,22 @@
 
 #include "column/column_helper.h"
 #include "runtime/runtime_state.h"
+#include "runtime/memory/memory_allocator.h"
 #include "storage/lake/tablet_write_log_manager.h"
 #include "testutil/assert.h"
 
 namespace starrocks {
+
+namespace {
+static memory::Allocator* kAllocator = memory::get_default_allocator();
+}
 
 class SchemaBeTabletWriteLogScannerTest : public ::testing::Test {
 private:
     ChunkPtr create_chunk(const std::vector<SlotDescriptor*> slot_descs) {
         ChunkPtr chunk = std::make_shared<Chunk>();
         for (const auto* slot_desc : slot_descs) {
-            MutableColumnPtr column = ColumnHelper::create_column(slot_desc->type(), slot_desc->is_nullable());
+            MutableColumnPtr column = ColumnHelper::create_column(kAllocator, slot_desc->type(), slot_desc->is_nullable());
             chunk->append_column(std::move(column), slot_desc->id());
         }
         return chunk;

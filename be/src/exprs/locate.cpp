@@ -20,6 +20,7 @@
 #include "column/column_viewer.h"
 #include "exprs/string_functions.h"
 #include "runtime/Volnitsky.h"
+#include "runtime/memory/memory_allocator.h"
 #include "util/utf8.h"
 
 namespace starrocks {
@@ -39,7 +40,7 @@ struct LocateCaseSensitiveUTF8 {
 };
 
 // locate haystack is a vector and needle is a constant
-ColumnPtr haystack_vector_and_needle_const(const ColumnPtr& haystack_ptr, const ColumnPtr& needle_ptr,
+ColumnPtr haystack_vector_and_needle_const(FunctionContext* context, const ColumnPtr& haystack_ptr, const ColumnPtr& needle_ptr,
                                            const ColumnPtr& start_pos_ptr) {
     const BinaryColumn* haystack = nullptr;
     const FixedLengthColumn<int32_t>* start_pos = nullptr;
@@ -47,7 +48,7 @@ ColumnPtr haystack_vector_and_needle_const(const ColumnPtr& haystack_ptr, const 
     ColumnPtr start_pos_expansion = nullptr;
     if (start_pos_ptr->is_constant()) {
         // expand vector in start_pos_ptr to specfied size
-        auto start_pos_mut = RunTimeColumnType<TYPE_INT>::create();
+        auto start_pos_mut = RunTimeColumnType<TYPE_INT>::create(context->get_allocator());
         int32_t value = ColumnHelper::get_const_value<TYPE_INT>(start_pos_ptr);
         start_pos_mut->append_value_multiple_times(&value, haystack_ptr->size());
         start_pos_expansion = std::move(start_pos_mut);
@@ -82,7 +83,7 @@ ColumnPtr haystack_vector_and_needle_const(const ColumnPtr& haystack_ptr, const 
 
     const Buffer<uint32_t>& offsets = haystack->get_offset();
     Slice needle = ColumnHelper::get_const_value<TYPE_VARCHAR>(needle_ptr);
-    auto res = RunTimeColumnType<TYPE_INT>::create();
+    auto res = RunTimeColumnType<TYPE_INT>::create(context->get_allocator());
     res->resize(haystack->size());
 
     if (needle.size == 0) {
@@ -103,7 +104,7 @@ ColumnPtr haystack_vector_and_needle_const(const ColumnPtr& haystack_ptr, const 
             }
         }
         if (res_null != nullptr) {
-            return NullableColumn::create(std::move(res), std::move(res_null));
+            return NullableColumn::create(context->get_allocator(), std::move(res), std::move(res_null));
         } else {
             return res;
         }
@@ -148,7 +149,7 @@ ColumnPtr haystack_vector_and_needle_const(const ColumnPtr& haystack_ptr, const 
     }
 
     if (res_null != nullptr) {
-        return NullableColumn::create(std::move(res), std::move(res_null));
+        return NullableColumn::create(context->get_allocator(), std::move(res), std::move(res_null));
     } else {
         return res;
     }
@@ -156,14 +157,14 @@ ColumnPtr haystack_vector_and_needle_const(const ColumnPtr& haystack_ptr, const 
 
 // locate for needle is not constant
 // haystack may be variable vector or constant
-ColumnPtr haystack_vector_and_needle_vector(const ColumnPtr& haystack_ptr, const ColumnPtr& needle_ptr,
+ColumnPtr haystack_vector_and_needle_vector(FunctionContext* context, const ColumnPtr& haystack_ptr, const ColumnPtr& needle_ptr,
                                             const ColumnPtr& start_pos_ptr) {
     ColumnViewer<TYPE_VARCHAR> haystack_viewer(haystack_ptr);
     ColumnViewer<TYPE_VARCHAR> needle_viewer(needle_ptr);
     ColumnViewer<TYPE_INT> start_pos_viewer(start_pos_ptr);
 
     size_t size = haystack_ptr->size();
-    ColumnBuilder<TYPE_INT> builder(size);
+    ColumnBuilder<TYPE_INT> builder(context->get_allocator(), size);
 
     for (size_t i = 0; i < size; ++i) {
         if (haystack_viewer.is_null(i) || needle_viewer.is_null(i) || start_pos_viewer.is_null(i)) {
@@ -217,11 +218,11 @@ StatusOr<ColumnPtr> StringFunctions::instr(FunctionContext* context, const Colum
 
     const ColumnPtr& haystack = columns[0];
     const ColumnPtr& needle = columns[1];
-    ColumnPtr start_pos = ColumnHelper::create_const_column<TYPE_INT>(1, columns[0]->size());
+    ColumnPtr start_pos = ColumnHelper::create_const_column<TYPE_INT>(context->get_allocator(), 1, columns[0]->size());
     if (!haystack->is_constant() && needle->is_constant()) {
-        return haystack_vector_and_needle_const(haystack, needle, start_pos);
+        return haystack_vector_and_needle_const(context, haystack, needle, start_pos);
     } else {
-        return haystack_vector_and_needle_vector(haystack, needle, start_pos);
+        return haystack_vector_and_needle_vector(context, haystack, needle, start_pos);
     }
 }
 
@@ -231,11 +232,11 @@ StatusOr<ColumnPtr> StringFunctions::locate(FunctionContext* context, const Colu
 
     const ColumnPtr& haystack = columns[1];
     const ColumnPtr& needle = columns[0];
-    ColumnPtr start_pos = ColumnHelper::create_const_column<TYPE_INT>(1, columns[0]->size());
+    ColumnPtr start_pos = ColumnHelper::create_const_column<TYPE_INT>(context->get_allocator(), 1, columns[0]->size());
     if (!haystack->is_constant() && needle->is_constant()) {
-        return haystack_vector_and_needle_const(haystack, needle, start_pos);
+        return haystack_vector_and_needle_const(context, haystack, needle, start_pos);
     } else {
-        return haystack_vector_and_needle_vector(haystack, needle, start_pos);
+        return haystack_vector_and_needle_vector(context, haystack, needle, start_pos);
     }
 }
 
@@ -247,9 +248,9 @@ StatusOr<ColumnPtr> StringFunctions::locate_pos(FunctionContext* context, const 
     const ColumnPtr& needle = columns[0];
     const ColumnPtr& start_pos = columns[2];
     if (!haystack->is_constant() && needle->is_constant()) {
-        return haystack_vector_and_needle_const(haystack, needle, start_pos);
+        return haystack_vector_and_needle_const(context, haystack, needle, start_pos);
     } else {
-        return haystack_vector_and_needle_vector(haystack, needle, start_pos);
+        return haystack_vector_and_needle_vector(context, haystack, needle, start_pos);
     }
 }
 

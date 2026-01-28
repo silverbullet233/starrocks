@@ -193,11 +193,12 @@ std::pair<Columns, UInt32Column::Ptr> JavaUDTFFunction::process(RuntimeState* ru
     }
 
     // Build Return Type
-    auto offsets_col = UInt32Column::create();
+    auto allocator = state->get_allocator();
+    auto offsets_col = UInt32Column::create(allocator);
     auto& offsets = offsets_col->get_data();
     offsets.resize(num_rows + 1);
 
-    auto col = ColumnHelper::create_column(stateUDTF->type_desc(), true);
+    auto col = ColumnHelper::create_column(allocator, stateUDTF->type_desc(), true);
     col->reserve(num_rows);
 
     for (int i = 0; i < num_rows; ++i) {

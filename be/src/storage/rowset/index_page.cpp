@@ -73,9 +73,11 @@ Status IndexPageReader::_parse(const Slice& body, const IndexPageFooterPB& foote
         Slice key;
         PagePointer value;
         if (!get_length_prefixed_slice(&input, &key)) {
+            DCHECK(false) << "get length prefixed slice failed";
             return Status::InternalError("Data corruption");
         }
         if (!value.decode_from(&input)) {
+            DCHECK(false) << "decode failed";
             return Status::InternalError("Data corruption");
         }
         _keys.push_back(key);

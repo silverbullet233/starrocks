@@ -284,35 +284,35 @@ Status PrimaryKeyEncoder::create_column(const Schema& schema, MutableColumnPtr* 
         auto type = schema.field(key_idxes[0])->type()->type();
         switch (type) {
         case TYPE_BOOLEAN:
-            *pcolumn = BooleanColumn::create();
+            *pcolumn = BooleanColumn::create(memory::get_default_allocator());
             break;
         case TYPE_TINYINT:
-            *pcolumn = Int8Column::create();
+            *pcolumn = Int8Column::create(memory::get_default_allocator());
             break;
         case TYPE_SMALLINT:
-            *pcolumn = Int16Column::create();
+            *pcolumn = Int16Column::create(memory::get_default_allocator());
             break;
         case TYPE_INT:
-            *pcolumn = Int32Column::create();
+            *pcolumn = Int32Column::create(memory::get_default_allocator());
             break;
         case TYPE_BIGINT:
-            *pcolumn = Int64Column::create();
+            *pcolumn = Int64Column::create(memory::get_default_allocator());
             break;
         case TYPE_LARGEINT:
-            *pcolumn = Int128Column::create();
+            *pcolumn = Int128Column::create(memory::get_default_allocator());
             break;
         case TYPE_VARCHAR:
             if (large_column) {
-                *pcolumn = LargeBinaryColumn::create();
+                *pcolumn = LargeBinaryColumn::create(memory::get_default_allocator());
             } else {
-                *pcolumn = BinaryColumn::create();
+                *pcolumn = BinaryColumn::create(memory::get_default_allocator());
             }
             break;
         case TYPE_DATE:
-            *pcolumn = DateColumn::create();
+            *pcolumn = DateColumn::create(memory::get_default_allocator());
             break;
         case TYPE_DATETIME:
-            *pcolumn = TimestampColumn::create();
+            *pcolumn = TimestampColumn::create(memory::get_default_allocator());
             break;
         default:
             return Status::NotSupported(StringPrintf("primary key type not support: %s", logical_type_to_string(type)));
@@ -321,9 +321,9 @@ Status PrimaryKeyEncoder::create_column(const Schema& schema, MutableColumnPtr* 
         // composite keys encoding to binary
         // TODO(cbl): support fixed length encoded keys, e.g. (int32, int32) => int64
         if (large_column) {
-            *pcolumn = LargeBinaryColumn::create();
+            *pcolumn = LargeBinaryColumn::create(memory::get_default_allocator());
         } else {
-            *pcolumn = BinaryColumn::create();
+            *pcolumn = BinaryColumn::create(memory::get_default_allocator());
         }
     }
     return Status::OK();

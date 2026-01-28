@@ -42,7 +42,9 @@
 #include <unordered_map>
 
 #include "common/status.h"
+#include "util/core_local.h"
 #include "util/metrics.h"
+#include "util/phmap/phmap.h"
 #include "util/runtime_profile.h"
 #include "util/spinlock.h"
 
@@ -351,6 +353,20 @@ public:
         }
     }
 
+    void update_allocation_by_allocator(int64_t bytes) {
+        for (auto* tracker : _all_trackers) {
+            __sync_fetch_and_add(tracker->_allocation_by_allocator.access(), bytes);
+        }
+    }
+
+    int64_t allocation_by_allocator() const {
+        int64_t sum = 0;
+        for (int i = 0;i < _allocation_by_allocator.size(); ++i) {
+            sum += *_allocation_by_allocator.access_at_core(i);
+        }
+        return sum;
+    }
+
     // Returns true if a valid limit of this tracker or one of its ancestors is exceeded.
     bool any_limit_exceeded() {
         for (auto& _limit_tracker : _limit_trackers) {
@@ -457,6 +473,9 @@ public:
                _type == MemTrackerType::RESOURCE_GROUP || _type == MemTrackerType::RESOURCE_GROUP_SHARED_MEMORY_POOL;
     }
 
+    void add_alloc_record(void* ptr, size_t size, std::string stack);
+    void remove_alloc_record(void* ptr, size_t size);
+
 private:
     // Walks the MemTracker hierarchy and populates _all_trackers and _limit_trackers
     void Init();
@@ -507,6 +526,14 @@ private:
     // Iterator into _parent->_child_trackers for this object. Stored to have O(1)
     // remove.
     std::list<MemTracker*>::iterator _child_tracker_it;
+    CoreLocalValue<int64_t> _allocation_by_allocator{0};
+
+    struct AllocRecord {
+        size_t size;
+        std::string stack;
+    };
+    std::mutex _alloc_record_mutex;
+    phmap::flat_hash_map<void*, AllocRecord> _alloc_records;
 };
 
 #define MEM_TRACKER_SAFE_CONSUME(mem_tracker, mem_bytes) \

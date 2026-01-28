@@ -38,9 +38,14 @@
 #include <utility>
 
 #include "cache/datacache.h"
+#include "util/buffer.h"
+#include "storage/rowset/page_handle_fwd.h"
 
 namespace starrocks {
 
+namespace memory {
+class Allocator;
+}
 class PageCacheHandle;
 class MemTracker;
 struct MemCacheWriteOptions;
@@ -53,6 +58,8 @@ struct StoragePageCacheMetrics {
     static std::atomic<size_t> released_page_handle_count;
 };
 
+
+using PageDataPtr = std::unique_ptr<PageData>;
 // Wrapper around Cache, and used for cache page of column datas in Segment.
 // TODO(zc): We should add some metric to see cache hit/miss rate.
 class StoragePageCache {
@@ -92,7 +99,11 @@ public:
 
     Status insert(const std::string& key, void* data, int64_t size, MemCacheDeleter deleter,
                   const MemCacheWriteOptions& opts, PageCacheHandle* handle);
+    
+    // @TODO: a new abstract for page cache value
+    Status insert(const std::string& key, PageData* data, const MemCacheWriteOptions& opts, PageCacheHandle* handle);
 
+    memory::Allocator* get_allocator() const { return _cache->get_allocator(); }
     size_t memory_usage() const { return _cache->mem_usage(); }
 
     void set_capacity(size_t capacity);

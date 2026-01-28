@@ -29,6 +29,7 @@
 #include "exec/pipeline/query_context.h"
 #include "exec/pipeline/scan/glm_manager.h"
 #include "exprs/expr.h"
+#include "runtime/memory/memory_allocator.h"
 #include "storage/chunk_helper.h"
 
 namespace starrocks::connector {
@@ -794,6 +795,7 @@ Status HiveDataSource::_init_scanner(RuntimeState* state) {
     scanner_params.use_min_max_opt = _use_min_max_opt;
     scanner_params.use_count_opt = _use_count_opt;
     scanner_params.all_conjunct_ctxs = _all_conjunct_ctxs;
+    scanner_params.allocator = memory::get_default_allocator();
 
     HdfsScanner* scanner = nullptr;
     auto format = scan_range.file_format;

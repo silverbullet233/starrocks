@@ -884,8 +884,8 @@ void BitmapValue::to_array(Buffer<int64_t>* array) const {
     }
     case SET:
         array->reserve(array->size() + _set->size());
-        auto iter = array->insert(array->end(), _set->begin(), _set->end());
-        std::sort(iter, array->end());
+        array->insert(_set->begin(), _set->end());
+        std::sort(array->begin(), array->end());
         break;
     }
 }

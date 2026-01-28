@@ -23,6 +23,8 @@
 #include "exprs/agg/aggregate.h"
 #include "exprs/agg/aggregate_traits.h"
 #include "gutil/casts.h"
+#include "runtime/memory/memory_allocator.h"
+#include "util/buffer.h"
 #include "simdjson.h"
 #include "storage/types.h"
 #include "util/ndv_estimator.h"
@@ -35,7 +37,7 @@ struct Bucket {
     using ValueType = AggDataValueType<LT>;
 
     static Bucket from_json(simdjson::ondemand::array bucket_json, const FunctionContext::TypeDesc* type_desc,
-                            MemPool* mem_pool) {
+                            MemPool* mem_pool, memory::Allocator* allocator) {
         TypeInfoPtr type_info = get_type_info(LT, type_desc->precision, type_desc->scale);
         auto bucket_iter = bucket_json.begin();
 
@@ -53,15 +55,20 @@ struct Bucket {
         ++bucket_iter;
         int64_t upper_repeats = std::stoll(std::string{std::string_view{*bucket_iter}});
 
-        return Bucket(lower_datum.get<RefType>(), upper_datum.get<RefType>(), count, upper_repeats);
+        return Bucket(lower_datum.get<RefType>(), upper_datum.get<RefType>(), count, upper_repeats, allocator);
     }
 
-    Bucket() = default;
+    // Bucket() = default;
 
-    Bucket(RefType input_lower, RefType input_upper, size_t count, size_t upper_repeats)
-            : count(count), upper_repeats(upper_repeats), count_in_bucket(1), distinct_count(0) {
-        AggDataTypeTraits<LT>::assign_value(lower, input_lower);
-        AggDataTypeTraits<LT>::assign_value(upper, input_upper);
+    Bucket(RefType input_lower, RefType input_upper, size_t count, size_t upper_repeats, [[maybe_unused]] memory::Allocator* allocator)
+            : count(count), upper_repeats(upper_repeats) {
+        if constexpr (lt_is_string_or_binary<LT>) {
+            AggDataTypeTraits<LT>::assign_value(lower, input_lower, allocator);
+            AggDataTypeTraits<LT>::assign_value(upper, input_upper, allocator);
+        } else {
+            AggDataTypeTraits<LT>::assign_value(lower, input_lower);
+            AggDataTypeTraits<LT>::assign_value(upper, input_upper);
+        }
     }
 
     bool is_equals_to_upper(RefType value) {
@@ -76,7 +83,13 @@ struct Bucket {
         return AggDataTypeTraits<LT>::is_less_equal(value, AggDataTypeTraits<LT>::get_ref(upper));
     }
 
-    void update_upper(RefType value) { AggDataTypeTraits<LT>::assign_value(upper, value); }
+    void update_upper(RefType value, [[maybe_unused]] memory::Allocator* allocator) {
+        if constexpr (lt_is_string<LT>) {
+            AggDataTypeTraits<LT>::assign_value(upper, value, allocator);
+        } else {
+            AggDataTypeTraits<LT>::assign_value(upper, value);
+        }
+    }
 
     Datum get_lower_datum() const { return Datum(AggDataTypeTraits<LT>::get_ref(lower)); }
     Datum get_upper_datum() const { return Datum(AggDataTypeTraits<LT>::get_ref(upper)); }
@@ -88,18 +101,13 @@ struct Bucket {
     // the number of values that on the upper boundary
     int64_t upper_repeats;
     // total value count in this bucket
-    int64_t count_in_bucket;
+    int64_t count_in_bucket = 1;
     // distinct value count estimation in this bucket
-    int64_t distinct_count;
+    int64_t distinct_count = 0;
 };
 
 template <LogicalType LT>
 struct HistogramState {
-    HistogramState() {
-        auto data = RunTimeColumnType<LT>::create();
-        column = NullableColumn::create(std::move(data), NullColumn::create());
-    }
-
     ColumnPtr column;
 };
 
@@ -108,6 +116,12 @@ class HistogramAggregationFunction final
         : public AggregateFunctionBatchHelper<HistogramState<LT>, HistogramAggregationFunction<LT, T>> {
 public:
     using ColumnType = RunTimeColumnType<LT>;
+
+    void create(FunctionContext* ctx, AggDataPtr __restrict ptr) const override {
+        auto* state = new (ptr) HistogramState<LT>;
+        auto data = RunTimeColumnType<LT>::create(ctx->get_allocator());
+        state->column = NullableColumn::create(ctx->get_allocator(), std::move(data), NullColumn::create(ctx->get_allocator()));
+    }
 
     void update(FunctionContext* ctx, const Column** columns, AggDataPtr __restrict state,
                 size_t row_num) const override {
@@ -183,8 +197,7 @@ private:
                 continue;
             }
             if (buckets.empty()) {
-                Bucket<LT> bucket(v, v, 1, 1);
-                buckets.emplace_back(bucket);
+                buckets.emplace_back(v, v, 1, 1, ctx->get_allocator());
             } else {
                 Bucket<LT>* last_bucket = &buckets.back();
 
@@ -194,10 +207,9 @@ private:
                     last_bucket->upper_repeats++;
                 } else {
                     if (last_bucket->count_in_bucket >= bucket_size) {
-                        Bucket<LT> bucket(v, v, last_bucket->count + 1, 1);
-                        buckets.emplace_back(bucket);
+                        buckets.emplace_back(v, v, last_bucket->count + 1, 1, ctx->get_allocator());
                     } else {
-                        last_bucket->update_upper(v);
+                        last_bucket->update_upper(v, ctx->get_allocator());
                         last_bucket->count++;
                         last_bucket->count_in_bucket++;
                         last_bucket->upper_repeats = 1;
@@ -252,8 +264,7 @@ private:
                 continue;
             }
             if (buckets.empty()) {
-                Bucket<LT> bucket(v, v, 1, 1);
-                buckets.emplace_back(bucket);
+                buckets.emplace_back(v, v, 1, 1, ctx->get_allocator());
                 sample_distinct = 1;
                 count_once = 1;
                 new_upper = true;
@@ -274,12 +285,11 @@ private:
                         int64_t last_ndv = ndv_estimator->estimate(last_bucket->count_in_bucket, sample_distinct,
                                                                    count_once, sample_ratio);
                         last_bucket->distinct_count = last_ndv;
-                        Bucket<LT> bucket(v, v, last_bucket->count + 1, 1);
-                        buckets.emplace_back(bucket);
+                        buckets.emplace_back(v, v, last_bucket->count + 1, 1, ctx->get_allocator());
                         sample_distinct = 1;
                         count_once = 1;
                     } else {
-                        last_bucket->update_upper(v);
+                        last_bucket->update_upper(v, ctx->get_allocator());
                         last_bucket->count++;
                         last_bucket->count_in_bucket++;
                         last_bucket->upper_repeats = 1;

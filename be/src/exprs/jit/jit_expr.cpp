@@ -28,6 +28,7 @@
 #include "exprs/function_context.h"
 #include "exprs/jit/jit_engine.h"
 #include "runtime/runtime_state.h"
+#include "runtime/memory/memory_allocator.h"
 
 namespace starrocks {
 
@@ -113,7 +114,7 @@ StatusOr<ColumnPtr> JITExpr::evaluate_checked(starrocks::ExprContext* context, C
     if (ptr != nullptr) {
         num_rows = ptr->num_rows();
     }
-    auto result_column = ColumnHelper::create_column(type(), is_nullable(), false, num_rows);
+    auto result_column = ColumnHelper::create_column(context->get_allocator(), type(), is_nullable(), false, num_rows);
     if (num_rows == 0) {
         return result_column;
     }
@@ -130,13 +131,13 @@ StatusOr<ColumnPtr> JITExpr::evaluate_checked(starrocks::ExprContext* context, C
         }
 
         if (column->is_constant()) {
-            column = ColumnHelper::unfold_const_column(child->type(), num_rows, std::move(column));
+            column = ColumnHelper::unfold_const_column(context->get_allocator(), child->type(), num_rows, std::move(column));
         }
         DCHECK(num_rows == column->size())
                 << "size unequal " + std::to_string(num_rows) + " != " + std::to_string(column->size());
 
         if (child->is_nullable() && !column->is_nullable()) {
-            column = NullableColumn::create(column, NullColumn::create(column->size(), 0));
+            column = NullableColumn::create(context->get_allocator(), column, NullColumn::create(context->get_allocator(), column->size(), 0));
         } else if (!child->is_nullable() && column->is_nullable()) {
             if (column->has_null()) {
                 return Status::RuntimeError(

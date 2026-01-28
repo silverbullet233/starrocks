@@ -19,6 +19,7 @@
 
 #include "exprs/agg/stream/stream_detail_state.h"
 #include "fmt/format.h"
+#include "runtime/memory/memory_allocator.h"
 
 namespace starrocks::stream {
 
@@ -242,17 +243,17 @@ Status AggGroupState::output_changes(size_t chunk_size, const Columns& group_by_
         if (!_detail_state_tables.empty() && agg_state->is_detail_agg_state()) {
             // detail table's output columns
             auto& agg_func_type = agg_state->agg_fn_type();
-            auto agg_col = ColumnHelper::create_column(agg_func_type.result_type,
+            auto agg_col = ColumnHelper::create_column(agg_state->agg_fn_ctx()->get_allocator(), agg_func_type.result_type,
                                                        agg_func_type.has_nullable_child & agg_func_type.is_nullable);
-            auto count_col = Int64Column::create();
+            auto count_col = Int64Column::create(memory::get_default_allocator());
             Columns detail_cols{std::move(agg_col), std::move(count_col)};
 
             // record each column's map count which is used to expand group by columns.
-            auto result_count = Int64Column::create();
+            auto result_count = Int64Column::create(memory::get_default_allocator());
             RETURN_IF_ERROR(agg_state->output_detail(chunk_size, agg_group_state, detail_cols, result_count.get()));
 
-            auto result_count_data = reinterpret_cast<Int64Column*>(result_count.get())->get_data();
-            Buffer<uint32_t> replicate_offsets;
+            const auto& result_count_data = reinterpret_cast<Int64Column*>(result_count.get())->get_data();
+            Buffer<uint32_t> replicate_offsets(memory::get_default_allocator());
             replicate_offsets.reserve(result_count_data.size() + 1);
             int offset = 0;
             for (auto count : result_count_data) {
@@ -265,7 +266,7 @@ Status AggGroupState::output_changes(size_t chunk_size, const Columns& group_by_
             SlotId slot_id = 0;
             for (size_t j = 0; j < group_by_columns.size(); j++) {
                 ASSIGN_OR_RETURN(auto replicated_col,
-                                 group_by_columns[j]->as_mutable_raw_ptr()->replicate(replicate_offsets))
+                                 group_by_columns[j]->as_mutable_raw_ptr()->replicate(replicate_offsets, agg_state->agg_fn_ctx()->get_allocator()))
                 detail_result_chunk->append_column(replicated_col, slot_id++);
             }
             // TODO: take care slot_ids.
@@ -284,7 +285,7 @@ Status AggGroupState::output_changes(size_t chunk_size, const Columns& group_by_
         for (auto& agg_state : agg_intermediate_states) {
             auto& agg_fn_type = agg_state->agg_fn_type();
             auto* agg_func = agg_state->agg_function();
-            auto agg_col = ColumnHelper::create_column(agg_fn_type.serde_type, agg_fn_type.has_nullable_child);
+            auto agg_col = ColumnHelper::create_column(agg_state->agg_fn_ctx()->get_allocator(), agg_fn_type.serde_type, agg_fn_type.has_nullable_child);
             agg_col->reserve(chunk_size);
             agg_func->batch_serialize(agg_state->agg_fn_ctx(), chunk_size, agg_group_state,
                                       agg_state->agg_state_offset(), agg_col.get());

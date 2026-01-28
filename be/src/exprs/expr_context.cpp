@@ -50,7 +50,9 @@
 
 namespace starrocks {
 
-ExprContext::ExprContext(Expr* root) : _root(root) {}
+ExprContext::ExprContext(Expr* root) : _root(root) {
+    _allocator = memory::get_default_allocator();
+}
 
 ExprContext::~ExprContext() {
     // nothing to do

@@ -22,6 +22,8 @@
 #include <vector>
 
 #include "runtime/global_dict/types.h"
+#include "runtime/memory/memory_allocator.h"
+#include "storage/del_vector.h"
 #include "storage/disjunctive_predicates.h"
 #include "storage/olap_common.h"
 #include "storage/options.h"
@@ -123,6 +125,8 @@ public:
 
     bool enable_join_runtime_filter_pushdown = false;
     bool enable_predicate_col_late_materialize = false;
+
+    memory::Allocator* allocator = memory::get_default_allocator();
 
 public:
     Status convert_to(SegmentReadOptions* dst, const std::vector<LogicalType>& new_types, ObjectPool* obj_pool) const;

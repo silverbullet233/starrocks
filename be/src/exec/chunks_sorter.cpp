@@ -26,6 +26,7 @@
 #include "util/orlp/pdqsort.h"
 #include "util/runtime_profile.h"
 #include "util/stopwatch.hpp"
+#include "runtime/memory/memory_allocator.h"
 
 namespace starrocks {
 
@@ -85,7 +86,7 @@ StatusOr<ChunkPtr> ChunksSorter::materialize_chunk_before_sort(Chunk* chunk, Tup
             if (col->is_nullable()) {
                 // Constant null column doesn't have original column data type information,
                 // so replace it by a nullable column of original data type filled with all NULLs.
-                MutableColumnPtr new_col = ColumnHelper::create_column(order_by_types[i].type_desc, true);
+                MutableColumnPtr new_col = ColumnHelper::create_column(expr_ctx->get_allocator(), order_by_types[i].type_desc, true);
                 new_col->append_nulls(row_num);
                 materialize_chunk->append_column(std::move(new_col), slots_in_row_descriptor[i]->id());
             } else {
@@ -102,7 +103,7 @@ StatusOr<ChunkPtr> ChunksSorter::materialize_chunk_before_sort(Chunk* chunk, Tup
                 new_col->assign(row_num, 0);
                 if (order_by_types[i].is_nullable) {
                     ColumnPtr nullable_column =
-                            NullableColumn::create(std::move(new_col), NullColumn::create(row_num, 0));
+                            NullableColumn::create(memory::get_default_allocator(), std::move(new_col), NullColumn::create(memory::get_default_allocator(), row_num, 0));
                     materialize_chunk->append_column(std::move(nullable_column), slots_in_row_descriptor[i]->id());
                 } else {
                     materialize_chunk->append_column(std::move(new_col), slots_in_row_descriptor[i]->id());
@@ -111,7 +112,7 @@ StatusOr<ChunkPtr> ChunksSorter::materialize_chunk_before_sort(Chunk* chunk, Tup
         } else {
             // When get a non-null column, but it should be nullable, we wrap it with a NullableColumn.
             if (!col->is_nullable() && order_by_types[i].is_nullable) {
-                col = NullableColumn::create(col, NullColumn::create(col->size(), 0));
+                col = NullableColumn::create(memory::get_default_allocator(), col, NullColumn::create(memory::get_default_allocator(), col->size(), 0));
             }
             materialize_chunk->append_column(std::move(col), slots_in_row_descriptor[i]->id());
         }

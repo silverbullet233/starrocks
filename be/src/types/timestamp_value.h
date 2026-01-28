@@ -185,8 +185,8 @@ std::chrono::sys_time<std::chrono::microseconds> TimestampValue::to_sys_time() c
 
 template <bool end>
 void TimestampValue::floor_to_microsecond_period(long period) {
-    int64_t microseconds = ((timestamp::to_julian(_timestamp) - date::AD_EPOCH_JULIAN) * SECS_PER_DAY * USECS_PER_SEC) +
-                           (timestamp::to_time(_timestamp));
+    int64_t day_offset = static_cast<int64_t>(timestamp::to_julian(_timestamp) - date::AD_EPOCH_JULIAN);
+    int64_t microseconds = day_offset * USECS_PER_DAY + timestamp::to_time(_timestamp);
 
     microseconds -= microseconds % period;
     if constexpr (end) {

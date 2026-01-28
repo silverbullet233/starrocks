@@ -16,15 +16,29 @@
 #include <cstdlib>
 
 #include "malloc.h"
+#include <atomic>
 #include "runtime/memory/allocator.h"
+#include <iostream>
 
 namespace starrocks {
 
+static std::atomic<int64_t> g_alloc_count = 0;
+static std::atomic<int64_t> g_alloc_size = 0;
+static std::atomic<int64_t> g_free_count = 0;
+
 class MemHookAllocator : public AllocatorFactory<Allocator, MemHookAllocator> {
 public:
-    void* alloc(size_t size) override { return ::malloc(size); }
+    void* alloc(size_t size) override {
+        // std::cout << "alloc size: " << size << std::endl;
+        g_alloc_count.fetch_add(size, std::memory_order_relaxed);
+        g_alloc_size.fetch_add(size, std::memory_order_relaxed);
+        return ::malloc(size);
+    }
 
-    void free(void* ptr) override { ::free(ptr); }
+    void free(void* ptr) override {
+        g_free_count.fetch_add(1, std::memory_order_relaxed);
+        ::free(ptr);
+    }
 
     void* realloc(void* ptr, size_t size) override { return ::realloc(ptr, size); }
 

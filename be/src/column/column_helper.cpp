@@ -15,6 +15,7 @@
 #include "column/column_helper.h"
 
 #include <runtime/types.h>
+#include "column/column.h"
 
 #ifdef __x86_64__
 #include <immintrin.h>
@@ -45,6 +46,7 @@
 #include "util/date_func.h"
 #include "util/int96.h"
 #include "util/phmap/phmap.h"
+#include "runtime/memory/memory_allocator.h"
 
 namespace starrocks {
 Filter& ColumnHelper::merge_nullable_filter(Column* column) {
@@ -228,10 +230,10 @@ size_t ColumnHelper::count_false_with_notnull(const starrocks::ColumnPtr& col) {
     }
 }
 
-MutableColumnPtr ColumnHelper::create_const_null_column(size_t chunk_size) {
-    auto nullable_column = NullableColumn::create(Int8Column::create(), NullColumn::create());
+MutableColumnPtr ColumnHelper::create_const_null_column(memory::Allocator* allocator, size_t chunk_size) {
+    MutableColumnPtr nullable_column = NullableColumn::create(allocator, Int8Column::create(allocator), NullColumn::create(allocator));
     nullable_column->append_nulls(1);
-    return ConstColumn::create(std::move(nullable_column), chunk_size);
+    return ConstColumn::create(allocator, std::move(nullable_column), chunk_size);
 }
 
 class UpdateColumnNullInfoVisitor : public ColumnVisitorMutableAdapter<UpdateColumnNullInfoVisitor> {
@@ -341,16 +343,16 @@ int64_t ColumnHelper::find_first_not_equal(const Column* column, int64_t target,
 // expression trees' return column should align return type when some return columns maybe diff from the required
 // return type, as well the null flag. e.g., concat_ws returns col from create_const_null_column(), it's type is
 // Nullable(int8), but required return type is nullable(string), so col need align return type to nullable(string).
-MutableColumnPtr ColumnHelper::align_return_type(MutableColumnPtr&& old_col, const TypeDescriptor& type_desc,
+MutableColumnPtr ColumnHelper::align_return_type(memory::Allocator* allocator, MutableColumnPtr&& old_col, const TypeDescriptor& type_desc,
                                                  size_t num_rows, bool is_nullable) {
     MutableColumnPtr new_column;
     if (old_col->only_null()) {
-        new_column = ColumnHelper::create_column(type_desc, true);
+        new_column = ColumnHelper::create_column(allocator, type_desc, true);
         new_column->append_nulls(num_rows);
     } else if (old_col->is_constant()) {
         // Note: we must create a new column every time here,
         // because result_columns[i] is shared_ptr
-        new_column = ColumnHelper::create_column(type_desc, false);
+        new_column = ColumnHelper::create_column(allocator, type_desc, false);
         auto* const_column = down_cast<const ConstColumn*>(old_col.get());
         new_column->append(*const_column->data_column(), 0, 1);
         new_column->assign(num_rows, 0);
@@ -358,21 +360,21 @@ MutableColumnPtr ColumnHelper::align_return_type(MutableColumnPtr&& old_col, con
         new_column = std::move(old_col);
     }
     if (is_nullable && !new_column->is_nullable()) {
-        new_column = NullableColumn::create(std::move(new_column), NullColumn::create(new_column->size(), 0));
+        new_column = NullableColumn::create(allocator, std::move(new_column), NullColumn::create(allocator, new_column->size(), 0));
     }
     return new_column;
 }
 
-MutableColumnPtr ColumnHelper::align_return_type(ColumnPtr&& old_col, const TypeDescriptor& type_desc, size_t num_rows,
+MutableColumnPtr ColumnHelper::align_return_type(memory::Allocator* allocator, ColumnPtr&& old_col, const TypeDescriptor& type_desc, size_t num_rows,
                                                  bool is_nullable) {
-    return align_return_type(Column::mutate(std::move(old_col)), type_desc, num_rows, is_nullable);
+    return align_return_type(allocator, Column::mutate(std::move(old_col)), type_desc, num_rows, is_nullable);
 }
 
-MutableColumnPtr ColumnHelper::create_column(const TypeDescriptor& type_desc, bool nullable) {
-    return create_column(type_desc, nullable, false, 0);
+MutableColumnPtr ColumnHelper::create_column(memory::Allocator* allocator, const TypeDescriptor& type_desc, bool nullable) {
+    return create_column(allocator, type_desc, nullable, false, 0);
 }
 
-MutableColumnPtr ColumnHelper::create_column(const TypeDescriptor& type_desc, bool nullable, bool use_view_if_needed,
+MutableColumnPtr ColumnHelper::create_column(memory::Allocator* allocator, const TypeDescriptor& type_desc, bool nullable, bool use_view_if_needed,
                                              long column_view_concat_rows_limit, long column_view_concat_bytes_limit) {
     if (use_view_if_needed) {
         auto opt_column = ColumnViewHelper::create_column_view(type_desc, nullable, column_view_concat_rows_limit,
@@ -381,10 +383,11 @@ MutableColumnPtr ColumnHelper::create_column(const TypeDescriptor& type_desc, bo
             return std::move(opt_column.value());
         }
     }
-    return create_column(type_desc, nullable);
+    return create_column(allocator, type_desc, nullable);
 }
 
 struct ColumnBuilder {
+    memory::Allocator* allocator;
     template <LogicalType ltype>
     MutableColumnPtr operator()(const TypeDescriptor& type_desc, size_t size) {
         switch (ltype) {
@@ -397,73 +400,73 @@ struct ColumnBuilder {
         case TYPE_MAP:
             LOG(FATAL) << "Unsupported column type" << ltype;
         case TYPE_DECIMAL32:
-            return Decimal32Column::create(type_desc.precision, type_desc.scale, size);
+            return Decimal32Column::create(allocator, type_desc.precision, type_desc.scale, size);
         case TYPE_DECIMAL64:
-            return Decimal64Column::create(type_desc.precision, type_desc.scale, size);
+            return Decimal64Column::create(allocator, type_desc.precision, type_desc.scale, size);
         case TYPE_DECIMAL128:
-            return Decimal128Column::create(type_desc.precision, type_desc.scale, size);
+            return Decimal128Column::create(allocator, type_desc.precision, type_desc.scale, size);
         case TYPE_DECIMAL256:
-            return Decimal256Column::create(type_desc.precision, type_desc.scale, size);
+            return Decimal256Column::create(allocator, type_desc.precision, type_desc.scale, size);
         default:
-            return RunTimeColumnType<ltype>::create(size);
+            return RunTimeColumnType<ltype>::create(allocator, size);
         }
     }
 };
 
-MutableColumnPtr ColumnHelper::create_column(const TypeDescriptor& type_desc, bool nullable, bool is_const, size_t size,
+MutableColumnPtr ColumnHelper::create_column(memory::Allocator* allocator, const TypeDescriptor& type_desc, bool nullable, bool is_const, size_t size,
                                              bool use_adaptive_nullable_column) {
     auto type = type_desc.type;
     if (is_const && (nullable || type == TYPE_NULL)) {
-        return ColumnHelper::create_const_null_column(size);
+        return ColumnHelper::create_const_null_column(allocator, size);
     } else if (type == TYPE_NULL) {
         if (use_adaptive_nullable_column) {
-            return AdaptiveNullableColumn::create(BooleanColumn::create(size), NullColumn::create(size, DATUM_NULL));
+            return AdaptiveNullableColumn::create(allocator, BooleanColumn::create(allocator, size), NullColumn::create(allocator, size, DATUM_NULL));
         } else {
-            return NullableColumn::create(BooleanColumn::create(size), NullColumn::create(size, DATUM_NULL));
+            return NullableColumn::create(allocator, BooleanColumn::create(allocator, size), NullColumn::create(allocator, size, DATUM_NULL));
         }
     }
 
     MutableColumnPtr p;
     if (type_desc.type == LogicalType::TYPE_ARRAY) {
-        auto offsets = UInt32Column::create(size);
-        auto data = create_column(type_desc.children[0], true, is_const, size);
-        p = ArrayColumn::create(std::move(data), std::move(offsets));
+        auto offsets = UInt32Column::create(allocator, size);
+        auto data = create_column(allocator, type_desc.children[0], true, is_const, size);
+        p = ArrayColumn::create(allocator, std::move(data), std::move(offsets));
     } else if (type_desc.type == LogicalType::TYPE_MAP) {
-        auto offsets = UInt32Column::create(size);
+        auto offsets = UInt32Column::create(allocator, size);
         MutableColumnPtr keys = nullptr;
         MutableColumnPtr values = nullptr;
         if (type_desc.children[0].is_unknown_type()) {
-            keys = create_column(TypeDescriptor{TYPE_NULL}, true, is_const, size);
+            keys = create_column(allocator, TypeDescriptor{TYPE_NULL}, true, is_const, size);
         } else {
-            keys = create_column(type_desc.children[0], true, is_const, size);
+            keys = create_column(allocator, type_desc.children[0], true, is_const, size);
         }
         if (type_desc.children[1].is_unknown_type()) {
-            values = create_column(TypeDescriptor{TYPE_NULL}, true, is_const, size);
+            values = create_column(allocator, TypeDescriptor{TYPE_NULL}, true, is_const, size);
         } else {
-            values = create_column(type_desc.children[1], true, is_const, size);
+            values = create_column(allocator, type_desc.children[1], true, is_const, size);
         }
-        p = MapColumn::create(std::move(keys), std::move(values), std::move(offsets));
+        p = MapColumn::create(allocator, std::move(keys), std::move(values), std::move(offsets));
     } else if (type_desc.type == LogicalType::TYPE_STRUCT) {
         size_t field_size = type_desc.children.size();
         DCHECK_EQ(field_size, type_desc.field_names.size());
         MutableColumns columns;
         for (size_t i = 0; i < field_size; i++) {
-            auto field_column = create_column(type_desc.children[i], true, is_const, size);
+            auto field_column = create_column(allocator, type_desc.children[i], true, is_const, size);
             columns.emplace_back(std::move(field_column));
         }
-        p = StructColumn::create(std::move(columns), type_desc.field_names);
+        p = StructColumn::create(allocator, std::move(columns), type_desc.field_names);
     } else {
-        p = type_dispatch_column(type_desc.type, ColumnBuilder(), type_desc, size);
+        p = type_dispatch_column(type_desc.type, ColumnBuilder{allocator}, type_desc, size);
     }
 
     if (is_const) {
-        return ConstColumn::create(std::move(p), size);
+        return ConstColumn::create(allocator, std::move(p), size);
     }
     if (nullable) {
         if (use_adaptive_nullable_column) {
-            return AdaptiveNullableColumn::create(std::move(p), NullColumn::create(size, DATUM_NULL));
+            return AdaptiveNullableColumn::create(allocator, std::move(p), NullColumn::create(allocator, size, DATUM_NULL));
         } else {
-            return NullableColumn::create(std::move(p), NullColumn::create(size, DATUM_NULL));
+            return NullableColumn::create(allocator, std::move(p), NullColumn::create(allocator, size, DATUM_NULL));
         }
     }
     return p;
@@ -522,9 +525,9 @@ size_t ColumnHelper::compute_bytes_size(ColumnsConstIterator const& begin, Colum
     return n;
 }
 
-ColumnPtr ColumnHelper::convert_time_column_from_double_to_str(const ColumnPtr& column) {
-    auto get_binary_column = [](const DoubleColumn* data_column, size_t size) -> MutableColumnPtr {
-        auto new_data_column = BinaryColumn::create();
+ColumnPtr ColumnHelper::convert_time_column_from_double_to_str(memory::Allocator* allocator, const ColumnPtr& column) {
+    auto get_binary_column = [allocator](const DoubleColumn* data_column, size_t size) -> MutableColumnPtr {
+        auto new_data_column = BinaryColumn::create(allocator);
         new_data_column->reserve(size);
 
         for (int row = 0; row < size; ++row) {
@@ -543,12 +546,12 @@ ColumnPtr ColumnHelper::convert_time_column_from_double_to_str(const ColumnPtr& 
     } else if (column->is_nullable()) {
         auto* nullable_column = down_cast<const NullableColumn*>(column.get());
         auto* data_column = down_cast<const DoubleColumn*>(nullable_column->data_column().get());
-        res = NullableColumn::create(get_binary_column(data_column, column->size()),
+        res = NullableColumn::create(allocator, get_binary_column(data_column, column->size()),
                                      std::move(nullable_column->null_column()));
     } else if (column->is_constant()) {
         auto* const_column = down_cast<const ConstColumn*>(column.get());
         std::string time_str = time_str_from_double(const_column->get(0).get_double());
-        res = ColumnHelper::create_const_column<TYPE_VARCHAR>(time_str, column->size());
+        res = ColumnHelper::create_const_column<TYPE_VARCHAR>(allocator, time_str, column->size());
     } else {
         auto* data_column = down_cast<const DoubleColumn*>(column.get());
         res = get_binary_column(data_column, column->size());

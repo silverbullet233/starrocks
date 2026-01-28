@@ -39,6 +39,7 @@
 #include "runtime/current_thread.h"
 #include "runtime/descriptors.h"
 #include "runtime/exec_env.h"
+#include "runtime/memory/memory_allocator.h"
 #include "storage/chunk_helper.h"
 #include "storage/column_predicate_rewriter.h"
 #include "storage/index/vector/vector_search_option.h"
@@ -61,7 +62,8 @@ OlapChunkSource::OlapChunkSource(ScanOperator* op, RuntimeProfile* runtime_profi
           _scan_node(scan_node),
           _scan_ctx(scan_ctx),
           _limit(scan_node->limit()),
-          _scan_range(down_cast<ScanMorsel*>(_morsel.get())->get_olap_scan_range()) {}
+          _scan_range(down_cast<ScanMorsel*>(_morsel.get())->get_olap_scan_range()),
+          _selection(memory::get_default_allocator()) {}
 
 OlapChunkSource::~OlapChunkSource() {
     _reader.reset();

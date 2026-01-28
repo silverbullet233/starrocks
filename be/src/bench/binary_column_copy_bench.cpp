@@ -18,6 +18,7 @@
 #include <random>
 
 #include "column/binary_column.h"
+#include "runtime/memory/memory_allocator.h"
 
 namespace starrocks {
 
@@ -109,7 +110,7 @@ std::string BinaryColumnCopyBench::_rand_str() {
 }
 
 BinaryColumn::MutablePtr BinaryColumnCopyBench::_gen_binary_column() {
-    BinaryColumn::MutablePtr column = BinaryColumn::create();
+    BinaryColumn::MutablePtr column = BinaryColumn::create(memory::get_default_allocator());
 
     for (size_t i = 0; i < _chunk_size; i++) {
         std::string str = _rand_str();

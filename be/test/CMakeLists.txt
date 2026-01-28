@@ -313,6 +313,7 @@ set(EXEC_FILES
         ./runtime/memory/system_allocator_test.cpp
         ./runtime/memory/memory_resource_test.cpp
         ./runtime/memory/counting_allocator_test.cpp
+        ./runtime/memory/allocator_v2_test.cpp
         ./runtime/mem_pool_test.cpp
         ./runtime/mem_tracker_test.cpp
         ./runtime/result_queue_mgr_test.cpp
@@ -368,6 +369,7 @@ set(EXEC_FILES
         ./util/bthreads/shared_mutex_test.cpp
         ./util/bthreads/shared_future_test.cpp
         ./util/bthreads/single_flight_test.cpp
+        ./util/buffer_test.cpp
         ./util/byte_buffer_test.cpp
         ./util/c_string_test.cpp
         ./util/cidr_test.cpp

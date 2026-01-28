@@ -25,6 +25,7 @@
 #include "gutil/bits.h"
 #include "gutil/casts.h"
 #include "gutil/strings/fastmem.h"
+#include "runtime/memory/memory_allocator.h"
 #include "util/mysql_row_buffer.h"
 
 namespace starrocks {
@@ -36,8 +37,10 @@ void ArrayColumn::check_or_die() const {
     _elements->check_or_die();
 }
 
-ArrayColumn::ArrayColumn(MutableColumnPtr&& elements, MutableColumnPtr&& offsets)
-        : _elements(std::move(elements)), _offsets(OffsetColumn::static_pointer_cast(std::move(offsets))) {
+ArrayColumn::ArrayColumn(memory::Allocator* allocator, MutableColumnPtr&& elements, MutableColumnPtr&& offsets)
+        : Base(allocator),
+          _elements(std::move(elements)),
+          _offsets(OffsetColumn::static_pointer_cast(std::move(offsets))) {
     DCHECK(_elements->is_nullable());
     if (_offsets->empty()) {
         _offsets->append(0);
@@ -77,7 +80,8 @@ void ArrayColumn::reserve(size_t n) {
 }
 
 void ArrayColumn::resize(size_t n) {
-    _offsets->get_data().resize(n + 1, _offsets->get_data().back());
+    size_t val = _offsets->get_data().back();
+    _offsets->get_data().resize(n + 1, val);
     size_t array_size = _offsets->get_data().back();
     _elements->resize(array_size);
 }
@@ -192,7 +196,7 @@ void ArrayColumn::update_rows(const Column& src, const uint32_t* indexes) {
     }
 
     if (!need_resize) {
-        Buffer<uint32_t> element_idxes;
+        Buffer<uint32_t> element_idxes(_allocator);
         for (size_t i = 0; i < replace_num; ++i) {
             size_t element_count = src_offsets[i + 1] - src_offsets[i];
             size_t element_offset = offsets[indexes[i]];
@@ -300,8 +304,9 @@ void ArrayColumn::deserialize_and_append_batch(Buffer<Slice>& srcs, size_t chunk
     }
 }
 
-MutableColumnPtr ArrayColumn::clone_empty() const {
-    return create(_elements->clone_empty(), OffsetColumn::create());
+MutableColumnPtr ArrayColumn::clone_empty(memory::Allocator* allocator) const {
+    allocator = allocator == nullptr ? get_allocator() : allocator;
+    return create(allocator, _elements->clone_empty(allocator), OffsetColumn::create(allocator));
 }
 
 size_t ArrayColumn::filter_range(const Filter& filter, size_t from, size_t to) {
@@ -309,7 +314,7 @@ size_t ArrayColumn::filter_range(const Filter& filter, size_t from, size_t to) {
     auto* offsets = reinterpret_cast<uint32_t*>(_offsets->mutable_raw_data());
     uint32_t elements_start = offsets[from];
     uint32_t elements_end = offsets[to];
-    Filter element_filter(elements_end, 0);
+    Filter element_filter(_allocator, elements_end, 0);
 
     auto check_offset = from;
     auto result_offset = from;
@@ -599,7 +604,7 @@ StatusOr<MutableColumnPtr> ArrayColumn::downgrade() {
 Status ArrayColumn::unfold_const_children(const starrocks::TypeDescriptor& type) {
     DCHECK(type.children.size() == 1) << "Array schema does not match data's";
     size_t col_size = _elements->size();
-    _elements = ColumnHelper::unfold_const_column(type.children[0], col_size, _elements);
+    _elements = ColumnHelper::unfold_const_column(_allocator, type.children[0], col_size, std::move(_elements));
     return Status::OK();
 }
 

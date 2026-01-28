@@ -22,7 +22,7 @@
 namespace starrocks {
 
 void BuildKeyConstructorForSerialized::prepare(RuntimeState* state, JoinHashTableItems* table_items) {
-    table_items->build_slice.resize(table_items->row_count + 1);
+    table_items->build_slice.resize(table_items->_allocator, table_items->row_count + 1);
     table_items->build_pool = std::make_unique<MemPool>();
 }
 
@@ -61,7 +61,7 @@ void BuildKeyConstructorForSerialized::build_key(RuntimeState* state, JoinHashTa
             ptr += table_items->build_slice[i].size;
         }
     } else {
-        table_items->build_key_nulls.resize(row_count + 1);
+        table_items->build_key_nulls.resize(table_items->_allocator, row_count + 1);
         auto* dest_is_nulls = table_items->build_key_nulls.data();
         std::memcpy(dest_is_nulls, null_columns[0]->immutable_data().data(),
                     (row_count + 1) * sizeof(NullColumn::ValueType));

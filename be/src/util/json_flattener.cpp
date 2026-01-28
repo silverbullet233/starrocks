@@ -38,6 +38,7 @@
 #include "column/nullable_column.h"
 #include "column/type_traits.h"
 #include "column/vectorized_fwd.h"
+#include "runtime/memory/memory_allocator.h"
 #include "common/compiler_util.h"
 #include "common/config.h"
 #include "common/status.h"
@@ -777,11 +778,11 @@ JsonFlattener::JsonFlattener(JsonPathDeriver& deriver) {
         leaf->type = types[i];
         leaf->index = i;
 
-        _flat_columns.emplace_back(ColumnHelper::create_column(TypeDescriptor(types[i]), true));
+        _flat_columns.emplace_back(ColumnHelper::create_column(memory::get_default_allocator(), TypeDescriptor(types[i]), true));
     }
 
     if (_has_remain) {
-        _flat_columns.emplace_back(ColumnHelper::create_column(TypeDescriptor(LogicalType::TYPE_JSON), false));
+        _flat_columns.emplace_back(ColumnHelper::create_column(memory::get_default_allocator(), TypeDescriptor(LogicalType::TYPE_JSON), false));
         _remain = down_cast<JsonColumn*>(_flat_columns.back().get());
     }
 }
@@ -796,11 +797,11 @@ JsonFlattener::JsonFlattener(const std::vector<std::string>& paths, const std::v
         leaf->type = types[i];
         leaf->index = i;
 
-        _flat_columns.emplace_back(ColumnHelper::create_column(TypeDescriptor(types[i]), true));
+        _flat_columns.emplace_back(ColumnHelper::create_column(memory::get_default_allocator(), TypeDescriptor(types[i]), true));
     }
 
     if (_has_remain) {
-        _flat_columns.emplace_back(ColumnHelper::create_column(TypeDescriptor(LogicalType::TYPE_JSON), false));
+        _flat_columns.emplace_back(ColumnHelper::create_column(memory::get_default_allocator(), TypeDescriptor(LogicalType::TYPE_JSON), false));
         _remain = down_cast<JsonColumn*>(_flat_columns.back().get());
     }
 }
@@ -1023,19 +1024,36 @@ void JsonMerger::set_root_path(const std::string& base_path) {
 }
 
 ColumnPtr JsonMerger::merge(const Columns& columns) {
+    // LOG(INFO) << "JsonMerger::merge";
     DCHECK_GE(columns.size(), 1);
     DCHECK(_src_columns.empty());
 
-    _result = NullableColumn::create(JsonColumn::create(), NullColumn::create());
+    _result = NullableColumn::create(memory::get_default_allocator(), JsonColumn::create(memory::get_default_allocator()),
+                                     NullColumn::create(memory::get_default_allocator()));
     auto* nullable_result = down_cast<NullableColumn*>(_result.get());
     _json_result = down_cast<JsonColumn*>(nullable_result->data_column_raw_ptr());
     _null_result = down_cast<NullColumn*>(nullable_result->null_column_raw_ptr());
     size_t rows = columns[0]->size();
     _result->reserve(rows);
 
+    // LOG(INFO) << "before put";
     for (auto& col : columns) {
+        // LOG(INFO) << "col: " << col->get_name() << "," << (void*)col.get() << ",  [";
+        // for (size_t i = 0;i < col->size();i++) {
+        //     LOG(INFO) << col->debug_item(i) << ",";
+        // }
+        // LOG(INFO) << "]" << std::endl;
         _src_columns.emplace_back(col.get());
     }
+    // LOG(INFO) << "JsonMerger::merge, columns: " << columns.size();
+    // for (size_t i = 0;i < _src_columns.size();i++) {
+    //     auto col = _src_columns[i];
+    //     LOG(INFO) << "col[" << i << "]: " << _src_columns[i]->get_name() << "," << (void*)col << ",  [";
+    //     for (size_t i = 0;i < col->size();i++) {
+    //         LOG(INFO) << col->debug_item(i) << ",";
+    //     }
+    //     LOG(INFO) << "]" << std::endl;
+    // }
 
     if (_src_root->op == JsonFlatPath::OP_INCLUDE) {
         _merge_impl<true>(rows);
@@ -1180,6 +1198,7 @@ void JsonMerger::_merge_json_with_remain(const JsonFlatPath* root, const vpack::
         if (child->children.empty() && child->op != JsonFlatPath::OP_NEW_LEVEL) {
             DCHECK(child->op == JsonFlatPath::OP_INCLUDE);
             auto col = _src_columns[child->index];
+            col->check_or_die();
             if (!col->is_null(index)) {
                 DCHECK(flat_json::JSON_MERGE_FUNC.contains(child->type));
                 auto func = flat_json::JSON_MERGE_FUNC.at(child->type);
@@ -1263,11 +1282,11 @@ HyperJsonTransformer::HyperJsonTransformer(const std::vector<std::string>& paths
                                            bool has_remain)
         : _dst_remain(has_remain), _dst_paths(std::move(paths)), _dst_types(types) {
     for (size_t i = 0; i < _dst_paths.size(); i++) {
-        _dst_columns.emplace_back(ColumnHelper::create_column(TypeDescriptor(types[i]), true));
+        _dst_columns.emplace_back(ColumnHelper::create_column(memory::get_default_allocator(), TypeDescriptor(types[i]), true));
     }
 
     if (_dst_remain) {
-        _dst_columns.emplace_back(JsonColumn::create());
+        _dst_columns.emplace_back(JsonColumn::create(memory::get_default_allocator()));
     }
 }
 
@@ -1562,7 +1581,9 @@ Status HyperJsonTransformer::_cast(const MergeTask& task, const ColumnPtr& col) 
     DCHECK(task.need_cast);
     Chunk chunk;
     chunk.append_column(col, task.dst_index);
-    ASSIGN_OR_RETURN(auto res_col, task.cast_expr->evaluate_checked(nullptr, &chunk));
+    ExprContext tmp_ctx(task.cast_expr);
+    tmp_ctx.set_allocator(memory::get_default_allocator());
+    ASSIGN_OR_RETURN(auto res_col, task.cast_expr->evaluate_checked(&tmp_ctx, &chunk));
     auto res = res_col->as_mutable_ptr();
     res->set_delete_state(col->delete_state());
 
@@ -1573,8 +1594,9 @@ Status HyperJsonTransformer::_cast(const MergeTask& task, const ColumnPtr& col) 
         auto data = down_cast<ConstColumn*>(res.get())->data_column();
         _dst_columns[task.dst_index]->append_value_multiple_times(*data, 0, col->size());
     } else if (_dst_columns[task.dst_index]->is_nullable() && !res->is_nullable()) {
-        auto nl = NullColumn::create(col->size(), 0);
-        _dst_columns[task.dst_index] = NullableColumn::create(std::move(res), std::move(nl));
+        auto nl = NullColumn::create(col->get_allocator(), col->size(), 0);
+        _dst_columns[task.dst_index] =
+                NullableColumn::create(col->get_allocator(), std::move(res), std::move(nl));
     } else {
         DCHECK_EQ(_dst_columns[task.dst_index]->is_nullable(), res->is_nullable());
         _dst_columns[task.dst_index].swap(res);

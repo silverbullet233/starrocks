@@ -318,7 +318,7 @@ StatusOr<ColumnPtr> JsonFunctions::get_native_json_string(FunctionContext* conte
 StatusOr<ColumnPtr> JsonFunctions::parse_json(FunctionContext* context, const Columns& columns) {
     int num_rows = columns[0]->size();
     ColumnViewer<TYPE_VARCHAR> viewer(columns[0]);
-    ColumnBuilder<TYPE_JSON> result(num_rows);
+    ColumnBuilder<TYPE_JSON> result(context->get_allocator(), num_rows);
 
     for (int row = 0; row < columns[0]->size(); row++) {
         if (viewer.is_null(row)) {
@@ -341,7 +341,7 @@ StatusOr<ColumnPtr> JsonFunctions::parse_json(FunctionContext* context, const Co
 
 StatusOr<ColumnPtr> JsonFunctions::json_string(FunctionContext* context, const Columns& columns) {
     ColumnViewer<TYPE_JSON> viewer(columns[0]);
-    ColumnBuilder<TYPE_VARCHAR> result(columns[0]->size());
+    ColumnBuilder<TYPE_VARCHAR> result(context->get_allocator(), columns[0]->size());
 
     for (int row = 0; row < columns[0]->size(); row++) {
         if (viewer.is_null(row)) {
@@ -361,7 +361,7 @@ StatusOr<ColumnPtr> JsonFunctions::json_string(FunctionContext* context, const C
 
 StatusOr<ColumnPtr> JsonFunctions::json_pretty(FunctionContext* context, const Columns& columns) {
     ColumnViewer<TYPE_JSON> viewer(columns[0]);
-    ColumnBuilder<TYPE_VARCHAR> result(columns[0]->size());
+    ColumnBuilder<TYPE_VARCHAR> result(context->get_allocator(), columns[0]->size());
 
     arangodb::velocypack::Options options = arangodb::velocypack::Options::Defaults;
     options.prettyPrint = true;
@@ -387,7 +387,7 @@ StatusOr<ColumnPtr> JsonFunctions::json_pretty(FunctionContext* context, const C
 
 StatusOr<ColumnPtr> _string_json(FunctionContext* context, const Columns& columns) {
     ColumnViewer<TYPE_VARCHAR> viewer(columns[0]);
-    ColumnBuilder<TYPE_JSON> result(columns[0]->size());
+    ColumnBuilder<TYPE_JSON> result(context->get_allocator(), columns[0]->size());
 
     for (int row = 0; row < columns[0]->size(); row++) {
         if (viewer.is_null(row)) {
@@ -631,7 +631,7 @@ static StatusOr<ColumnPtr> _extract_from_flat_json(FunctionContext* context, con
     if (!state->init_flat) {
         if (columns[1]->only_null()) {
             // only null path, return null
-            return ColumnHelper::create_const_null_column(columns[0]->size());
+            return ColumnHelper::create_const_null_column(context->get_allocator(), columns[0]->size());
         } else if (LIKELY(columns[1]->is_constant())) {
             path = ColumnHelper::get_const_value<TYPE_VARCHAR>(columns[1].get()).to_string();
         } else {
@@ -664,7 +664,7 @@ StatusOr<ColumnPtr> JsonFunctions::_flat_json_query_impl(FunctionContext* contex
         // partial match, must be json type
         auto num_rows = flat_column->size();
         auto json_viewer = ColumnViewer<TYPE_JSON>(flat_column);
-        ColumnBuilder<ResultType> result(num_rows);
+        ColumnBuilder<ResultType> result(context->get_allocator(), num_rows);
 
         JsonPath stored_path;
         vpack::Builder builder;
@@ -691,7 +691,9 @@ StatusOr<ColumnPtr> JsonFunctions::_flat_json_query_impl(FunctionContext* contex
             DCHECK(state->cast_expr != nullptr);
             Chunk chunk;
             chunk.append_column(flat_column, 0);
-            ret = state->cast_expr->evaluate_checked(nullptr, &chunk);
+            ExprContext tmp_ctx(state->cast_expr);
+            tmp_ctx.set_allocator(memory::get_default_allocator());
+            ret = state->cast_expr->evaluate_checked(&tmp_ctx, &chunk);
         } else {
             ret = std::move(*flat_column).mutate();
         }
@@ -709,7 +711,7 @@ StatusOr<ColumnPtr> JsonFunctions::_full_json_query_impl(FunctionContext* contex
     auto num_rows = columns[0]->size();
     auto json_viewer = ColumnViewer<TYPE_JSON>(columns[0]);
     auto path_viewer = ColumnViewer<TYPE_VARCHAR>(columns[1]);
-    ColumnBuilder<ResultType> result(num_rows);
+    ColumnBuilder<ResultType> result(context->get_allocator(), num_rows);
 
     JsonPath stored_path;
     vpack::Builder builder;
@@ -756,7 +758,7 @@ StatusOr<ColumnPtr> JsonFunctions::_flat_json_exists(FunctionContext* context, c
     auto* state = get_native_json_state(context);
     if (state->is_partial_match) {
         auto json_viewer = ColumnViewer<TYPE_JSON>(flat_column);
-        ColumnBuilder<TYPE_BOOLEAN> result(rows);
+        ColumnBuilder<TYPE_BOOLEAN> result(context->get_allocator(), rows);
 
         JsonPath stored_path;
         for (int row = 0; row < rows; row++) {
@@ -775,7 +777,7 @@ StatusOr<ColumnPtr> JsonFunctions::_flat_json_exists(FunctionContext* context, c
         }
         return result.build(ColumnHelper::is_all_const(columns));
     } else {
-        ColumnBuilder<TYPE_BOOLEAN> result(rows);
+        ColumnBuilder<TYPE_BOOLEAN> result(context->get_allocator(), rows);
         for (size_t row = 0; row < rows; ++row) {
             if (columns[0]->is_null(row)) {
                 // only the json value is null, return null
@@ -792,7 +794,7 @@ StatusOr<ColumnPtr> JsonFunctions::_full_json_exists(FunctionContext* context, c
     auto num_rows = columns[0]->size();
     auto json_viewer = ColumnViewer<TYPE_JSON>(columns[0]);
     auto path_viewer = ColumnViewer<TYPE_VARCHAR>(columns[1]);
-    ColumnBuilder<TYPE_BOOLEAN> result(num_rows);
+    ColumnBuilder<TYPE_BOOLEAN> result(context->get_allocator(), num_rows);
 
     JsonPath stored_path;
     for (int row = 0; row < num_rows; row++) {
@@ -825,7 +827,7 @@ StatusOr<ColumnPtr> JsonFunctions::json_contains(FunctionContext* context, const
     auto num_rows = columns[0]->size();
     auto target_viewer = ColumnViewer<TYPE_JSON>(columns[0]);
     auto candidate_viewer = ColumnViewer<TYPE_JSON>(columns[1]);
-    ColumnBuilder<TYPE_BOOLEAN> result(num_rows);
+    ColumnBuilder<TYPE_BOOLEAN> result(context->get_allocator(), num_rows);
 
     for (int row = 0; row < num_rows; row++) {
         if (target_viewer.is_null(row) || target_viewer.value(row) == nullptr || candidate_viewer.is_null(row) ||
@@ -847,7 +849,7 @@ StatusOr<ColumnPtr> JsonFunctions::json_contains(FunctionContext* context, const
 
 StatusOr<ColumnPtr> JsonFunctions::json_array_empty(FunctionContext* context, const Columns& columns) {
     RETURN_IF(columns.size() != 0, Status::InvalidArgument("json_array_empty requires none parameter"));
-    ColumnBuilder<TYPE_JSON> result(1);
+    ColumnBuilder<TYPE_JSON> result(context->get_allocator(), 1);
     JsonValue json(vpack::Slice::emptyArraySlice());
     result.append(std::move(json));
     return result.build(true);
@@ -859,7 +861,7 @@ StatusOr<ColumnPtr> JsonFunctions::json_array(FunctionContext* context, const Co
     DCHECK_GT(columns.size(), 0);
 
     size_t rows = columns[0]->size();
-    ColumnBuilder<TYPE_JSON> result(rows);
+    ColumnBuilder<TYPE_JSON> result(context->get_allocator(), rows);
     std::vector<ColumnViewer<TYPE_JSON>> viewers;
     for (auto& col : columns) {
         viewers.emplace_back(col);
@@ -887,7 +889,7 @@ StatusOr<ColumnPtr> JsonFunctions::json_array(FunctionContext* context, const Co
 
 StatusOr<ColumnPtr> JsonFunctions::json_object_empty(FunctionContext* context, const Columns& columns) {
     RETURN_IF(0 != columns.size(), Status::InvalidArgument("json_object_empty requires 0 arguments"));
-    ColumnBuilder<TYPE_JSON> result(1);
+    ColumnBuilder<TYPE_JSON> result(context->get_allocator(), 1);
     JsonValue json(vpack::Slice::emptyObjectSlice());
     result.append(std::move(json));
     return result.build(true);
@@ -899,7 +901,7 @@ StatusOr<ColumnPtr> JsonFunctions::json_object(FunctionContext* context, const C
     DCHECK_GT(columns.size(), 0);
 
     size_t rows = columns[0]->size();
-    ColumnBuilder<TYPE_JSON> result(rows);
+    ColumnBuilder<TYPE_JSON> result(context->get_allocator(), rows);
     std::vector<ColumnViewer<TYPE_JSON>> viewers;
     for (auto& col : columns) {
         viewers.emplace_back(col);
@@ -968,7 +970,7 @@ StatusOr<ColumnPtr> JsonFunctions::_flat_json_length(FunctionContext* context, c
 
     auto* state = get_native_json_state(context);
     if (state->is_partial_match) {
-        ColumnBuilder<TYPE_INT> result(rows);
+        ColumnBuilder<TYPE_INT> result(context->get_allocator(), rows);
         ColumnViewer<TYPE_JSON> json_viewer(flat_column);
 
         JsonPath stored_path;
@@ -995,7 +997,7 @@ StatusOr<ColumnPtr> JsonFunctions::_flat_json_length(FunctionContext* context, c
     } else {
         // full match
         ColumnViewer<TYPE_JSON> viewer(flat_column);
-        ColumnBuilder<TYPE_INT> result(rows);
+        ColumnBuilder<TYPE_INT> result(context->get_allocator(), rows);
         DCHECK_EQ(state->flat_column_type, TYPE_JSON);
         for (size_t row = 0; row < rows; ++row) {
             if (columns[0]->is_null(row)) {
@@ -1023,7 +1025,7 @@ StatusOr<ColumnPtr> JsonFunctions::_flat_json_length(FunctionContext* context, c
 StatusOr<ColumnPtr> JsonFunctions::_full_json_length(FunctionContext* context, const Columns& columns) {
     DCHECK_GT(columns.size(), 0);
     size_t rows = columns[0]->size();
-    ColumnBuilder<TYPE_INT> result(rows);
+    ColumnBuilder<TYPE_INT> result(context->get_allocator(), rows);
     ColumnViewer<TYPE_JSON> json_column(columns[0]);
 
     std::unique_ptr<ColumnViewer<TYPE_VARCHAR>> path_viewer;
@@ -1085,7 +1087,7 @@ StatusOr<ColumnPtr> JsonFunctions::_flat_json_keys_with_path(FunctionContext* co
     size_t rows = columns[0]->size();
     if (state->is_partial_match) {
         ColumnViewer<TYPE_JSON> json_viewer(flat_column);
-        ColumnBuilder<TYPE_JSON> result(rows);
+        ColumnBuilder<TYPE_JSON> result(context->get_allocator(), rows);
 
         for (size_t row = 0; row < rows; ++row) {
             if (columns[0]->is_null(row) || json_viewer.is_null(row)) {
@@ -1116,7 +1118,7 @@ StatusOr<ColumnPtr> JsonFunctions::_flat_json_keys_with_path(FunctionContext* co
     } else {
         // full match
         ColumnViewer<TYPE_JSON> json_viewer(flat_column);
-        ColumnBuilder<TYPE_JSON> result(rows);
+        ColumnBuilder<TYPE_JSON> result(context->get_allocator(), rows);
 
         for (size_t row = 0; row < rows; ++row) {
             if (columns[0]->is_null(row) || json_viewer.is_null(row)) {
@@ -1146,7 +1148,7 @@ StatusOr<ColumnPtr> JsonFunctions::_flat_json_keys_with_path(FunctionContext* co
 StatusOr<ColumnPtr> JsonFunctions::_full_json_keys_with_path(FunctionContext* context, const Columns& columns) {
     auto rows = columns[0]->size();
     auto json_viewer = ColumnViewer<TYPE_JSON>(columns[0]);
-    ColumnBuilder<TYPE_JSON> result(rows);
+    ColumnBuilder<TYPE_JSON> result(context->get_allocator(), rows);
     ColumnViewer<TYPE_VARCHAR> path_viewer(columns[1]);
     JsonPath stored_path;
 
@@ -1189,7 +1191,7 @@ StatusOr<ColumnPtr> JsonFunctions::_full_json_keys_with_path(FunctionContext* co
 StatusOr<ColumnPtr> JsonFunctions::_json_keys_without_path(FunctionContext* context, const Columns& columns) {
     auto rows = columns[0]->size();
     auto json_viewer = ColumnViewer<TYPE_JSON>(columns[0]);
-    ColumnBuilder<TYPE_JSON> result(rows);
+    ColumnBuilder<TYPE_JSON> result(context->get_allocator(), rows);
 
     JsonPath stored_path;
 
@@ -1236,7 +1238,7 @@ StatusOr<ColumnPtr> JsonFunctions::json_remove(FunctionContext* context, const C
               Status::InvalidArgument("json_remove requires at least 2 arguments: json_doc and path"));
 
     size_t rows = columns[0]->size();
-    ColumnBuilder<TYPE_JSON> result(rows);
+    ColumnBuilder<TYPE_JSON> result(context->get_allocator(), rows);
     ColumnViewer<TYPE_JSON> json_viewer(columns[0]);
 
     // Get all path arguments
@@ -1451,7 +1453,7 @@ static StatusOr<JsonValue> _remove_json_paths_core(JsonValue* json_value,
 
 StatusOr<ColumnPtr> JsonFunctions::to_json(FunctionContext* context, const Columns& columns) {
     RETURN_IF_COLUMNS_ONLY_NULL(columns);
-    return cast_nested_to_json(columns[0], context->allow_throw_exception());
+    return cast_nested_to_json(context, columns[0], context->allow_throw_exception());
 }
 
 bool JsonFunctions::json_value_contains(JsonValue* target, JsonValue* candidate) {
@@ -1751,7 +1753,7 @@ StatusOr<ColumnPtr> JsonFunctions::json_set(FunctionContext* context, const Colu
     }
 
     size_t rows = columns[0]->size();
-    ColumnBuilder<TYPE_JSON> result(rows);
+    ColumnBuilder<TYPE_JSON> result(context->get_allocator(), rows);
     ColumnViewer<TYPE_JSON> json_viewer(columns[0]);
 
     std::vector<ColumnViewer<TYPE_JSON>> path_viewers;

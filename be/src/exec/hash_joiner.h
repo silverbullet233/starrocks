@@ -377,7 +377,7 @@ private:
         for (auto& expr_ctx : expr_ctxs) {
             ASSIGN_OR_RETURN(auto column_ptr, expr_ctx->evaluate(chunk.get()));
             if (column_ptr->only_null()) {
-                MutableColumnPtr column = ColumnHelper::create_column(expr_ctx->root()->type(), true);
+                MutableColumnPtr column = ColumnHelper::create_column(expr_ctx->get_allocator(), expr_ctx->root()->type(), true);
                 column->append_nulls(chunk->num_rows());
                 key_columns.emplace_back(std::move(column));
             } else if (column_ptr->is_constant()) {

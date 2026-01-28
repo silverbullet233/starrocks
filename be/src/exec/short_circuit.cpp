@@ -24,6 +24,7 @@
 #include "exec/scan_node.h"
 #include "exec/short_circuit_hybrid.h"
 #include "runtime/exec_env.h"
+#include "runtime/memory/memory_allocator.h"
 #include "runtime/memory_scratch_sink.h"
 #include "runtime/result_buffer_mgr.h"
 #include "runtime/result_sink.h"
@@ -72,7 +73,7 @@ public:
         for (int i = 0; i < num_columns; ++i) {
             ASSIGN_OR_RETURN(ColumnPtr column, _output_expr_ctxs[i]->evaluate(chunk))
             column = _output_expr_ctxs[i]->root()->type().type == TYPE_TIME
-                             ? ColumnHelper::convert_time_column_from_double_to_str(column)
+                             ? ColumnHelper::convert_time_column_from_double_to_str(memory::get_default_allocator(), column)
                              : column;
             result_columns.emplace_back(std::move(column));
         }

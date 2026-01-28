@@ -281,6 +281,8 @@ public:
     void set_observer(PipelineObserver* observer) { _observer = observer; }
     PipelineObserver* observer() const { return _observer; }
 
+    memory::Allocator* allocator() const { return _allocator; }
+
     void _init_rf_counters(bool init_bloom);
 
 protected:
@@ -342,6 +344,8 @@ protected:
     std::atomic_int64_t _last_growth_cpu_time_ns = 0;
 
     PipelineObserver* _observer = nullptr;
+    // @TODO add allocator?
+    memory::Allocator* _allocator = nullptr;
 
 private:
     void _init_conjuct_counters();

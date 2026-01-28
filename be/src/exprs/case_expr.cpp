@@ -305,7 +305,7 @@ private:
     StatusOr<ColumnPtr> evaluate_case(ExprContext* context, Chunk* chunk) {
         ColumnPtr else_column = nullptr;
         if (!_has_else_expr) {
-            else_column = ColumnHelper::create_const_null_column(chunk != nullptr ? chunk->num_rows() : 1);
+            else_column = ColumnHelper::create_const_null_column(context->get_allocator(), chunk != nullptr ? chunk->num_rows() : 1);
         } else {
             ASSIGN_OR_RETURN(else_column, _children[_children.size() - 1]->evaluate_checked(context, chunk));
         }
@@ -350,7 +350,7 @@ private:
                     res_nullable = true;
                 }
             }
-            MutableColumnPtr res = ColumnHelper::create_column(this->type(), res_nullable);
+            MutableColumnPtr res = ColumnHelper::create_column(context->get_allocator(), this->type(), res_nullable);
 
             for (auto& then_column : then_columns) {
                 then_column = ColumnHelper::unpack_and_duplicate_const_column(size, then_column);
@@ -403,7 +403,8 @@ private:
             ColumnViewer<WhenType> case_viewer(case_column);
             then_viewers.emplace_back(else_column);
 
-            ColumnBuilder<ResultType> builder(size, this->type().precision, this->type().scale);
+            ColumnBuilder<ResultType> builder(context->get_allocator(), size, this->type().precision,
+                                              this->type().scale);
 
             size_t view_size = when_viewers.size();
             if (!when_columns_has_null) {
@@ -459,7 +460,7 @@ private:
     StatusOr<ColumnPtr> evaluate_no_case(ExprContext* context, Chunk* chunk) {
         ColumnPtr else_column = nullptr;
         if (!_has_else_expr) {
-            else_column = ColumnHelper::create_const_null_column(chunk != nullptr ? chunk->num_rows() : 1);
+            else_column = ColumnHelper::create_const_null_column(context->get_allocator(), chunk != nullptr ? chunk->num_rows() : 1);
         } else {
             ASSIGN_OR_RETURN(else_column, _children[_children.size() - 1]->evaluate_checked(context, chunk));
         }
@@ -517,7 +518,7 @@ private:
                     res_nullable = true;
                 }
             }
-            MutableColumnPtr res = ColumnHelper::create_column(this->type(), res_nullable);
+            MutableColumnPtr res = ColumnHelper::create_column(context->get_allocator(), this->type(), res_nullable);
 
             for (auto& then_column : then_columns) {
                 then_column = ColumnHelper::unpack_and_duplicate_const_column(size, then_column);
@@ -556,7 +557,8 @@ private:
             for (auto& col : then_columns) {
                 then_viewers.emplace_back(col);
             }
-            ColumnBuilder<ResultType> builder(size, this->type().precision, this->type().scale);
+            ColumnBuilder<ResultType> builder(context->get_allocator(), size, this->type().precision,
+                                              this->type().scale);
             // max case size in use SIMD CASE WHEN implements
             constexpr int max_simd_case_when_size = 8;
 
@@ -602,7 +604,7 @@ private:
                                 down_cast<const BooleanColumn*>(data_column)->immutable_data().data());
                     }
 
-                    auto res = RunTimeColumnType<ResultType>::create();
+                    auto res = RunTimeColumnType<ResultType>::create(context->get_allocator());
 
                     if constexpr (lt_is_decimal<ResultType>) {
                         res->set_scale(this->type().scale);

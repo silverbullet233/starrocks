@@ -121,7 +121,16 @@ public:
     explicit NullableAggregateFunctionBase(NestedAggregateFunctionPtr nested_function_,
                                            AggNullPred null_pred = AggNullPred())
             : nested_function(std::move(nested_function_)), null_pred(std::move(null_pred)) {}
-    // as array_agg is not nullable, so it needn't create() here.
+
+    void create(FunctionContext* ctx, AggDataPtr __restrict ptr) const override {
+        auto* state = new (ptr) State;
+        nested_function->create(ctx, state->mutable_nest_state());
+    }
+
+    void destroy(FunctionContext* ctx, AggDataPtr __restrict ptr) const override {
+        auto* state = &this->data(ptr);
+        nested_function->destroy(ctx, state->mutable_nest_state());
+    }
 
     std::string get_name() const override { return "nullable " + nested_function->get_name(); }
 
@@ -222,7 +231,7 @@ public:
         if (src[0]->is_nullable()) {
             const auto* nullable_column = down_cast<const NullableColumn*>(src[0].get());
             if constexpr (IsNeverNullFunctionState<State>) {
-                dst_nullable_column->null_column_data().resize(chunk_size);
+                dst_nullable_column->null_column_data().resize(chunk_size, 0);
                 nested_function->convert_to_serialize_format(ctx, src, chunk_size, dst_data_column);
             } else if (nullable_column->has_null()) {
                 dst_nullable_column->set_has_null(true);
@@ -243,14 +252,14 @@ public:
                     }
                 }
             } else {
-                dst_nullable_column->null_column_data().resize(chunk_size);
+                dst_nullable_column->null_column_data().resize(chunk_size, 0);
 
                 Columns src_data_columns(1);
                 src_data_columns[0] = nullable_column->data_column();
                 nested_function->convert_to_serialize_format(ctx, src_data_columns, chunk_size, dst_data_column);
             }
         } else {
-            dst_nullable_column->null_column_data().resize(chunk_size);
+            dst_nullable_column->null_column_data().resize(chunk_size, 0);
             nested_function->convert_to_serialize_format(ctx, src, chunk_size, dst_data_column);
         }
         dst_nullable_column->data_column() = std::move(dst_data_column);
@@ -269,7 +278,7 @@ public:
                                         start, end);
             if constexpr (IsUnresizableWindowFunctionState<NestedState>) {
                 NullData& null_data = nullable_column->null_column_data();
-                null_data.insert(null_data.end(), end - start, 0);
+                null_data.insert(end - start, 0);
             }
         } else {
             NullData& null_data = nullable_column->null_column_data();
@@ -1081,7 +1090,7 @@ public:
         auto* dst_nullable_column = down_cast<NullableColumn*>(dst.get());
 
         // dst's null_column, initial with false.
-        dst_nullable_column->null_column_data().resize(chunk_size);
+        dst_nullable_column->null_column_data().resize(chunk_size, 0);
 
         // dst's null_column, used to | with src's null columns to indicate result chunk's null column.
         NullData& dst_null_data = dst_nullable_column->null_column_data();

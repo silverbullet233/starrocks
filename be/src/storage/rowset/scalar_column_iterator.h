@@ -197,7 +197,7 @@ private:
     // It's used to get element ordinal for specfied offset value.
     int64_t _element_ordinal = 0;
 
-    UInt32Column _array_size;
+    UInt32Column::MutablePtr _array_size;
 };
 
 } // namespace starrocks

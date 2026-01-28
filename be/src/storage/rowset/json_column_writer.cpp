@@ -120,7 +120,7 @@ Status FlatJsonColumnWriter::_flat_column(MutableColumns& json_datas) {
 
         // recode null column in 1st
         if (_json_meta->is_nullable()) {
-            auto nulls = NullColumn::create();
+            auto nulls = NullColumn::create(memory::get_default_allocator());
             uint8_t IS_NULL = 1;
             uint8_t NOT_NULL = 0;
             if (json_data->only_null()) {

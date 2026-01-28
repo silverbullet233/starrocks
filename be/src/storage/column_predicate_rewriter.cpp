@@ -25,6 +25,7 @@
 #include "column/nullable_column.h"
 #include "column/vectorized_fwd.h"
 #include "common/config.h"
+#include "runtime/memory/memory_allocator.h"
 #include "common/object_pool.h"
 #include "common/statusor.h"
 #include "exprs/expr_context.h"
@@ -356,7 +357,7 @@ Status ColumnPredicateRewriter::_load_segment_dict(std::vector<std::pair<std::st
     int dict_codes[dict_size];
     std::iota(dict_codes, dict_codes + dict_size, 0);
 
-    auto column = BinaryColumn::create();
+    auto column = BinaryColumn::create(memory::get_default_allocator());
     RETURN_IF_ERROR(column_iterator->decode_dict_codes(dict_codes, dict_size, column.get()));
 
     for (int i = 0; i < dict_size; ++i) {
@@ -392,14 +393,15 @@ Status ColumnPredicateRewriter::_load_segment_dict_vec(ColumnIterator* iter, Col
     int dict_codes[dict_size];
     std::iota(dict_codes, dict_codes + dict_size, 0);
 
-    auto dict_col = BinaryColumn::create();
+    auto dict_col = BinaryColumn::create(memory::get_default_allocator());
     RETURN_IF_ERROR(column_iterator->decode_dict_codes(dict_codes, dict_size, dict_col.get()));
 
     if (field_nullable) {
         // create nullable column with NULL at last.
-        NullColumn::MutablePtr null_col = NullColumn::create();
+        NullColumn::MutablePtr null_col = NullColumn::create(memory::get_default_allocator());
         null_col->resize(dict_size);
-        auto null_column = NullableColumn::create(std::move(dict_col), std::move(null_col));
+        auto null_column = NullableColumn::create(memory::get_default_allocator(), std::move(dict_col),
+                                                  std::move(null_col));
         null_column->append_default();
         *dict_column = std::move(null_column);
     } else {
@@ -407,7 +409,7 @@ Status ColumnPredicateRewriter::_load_segment_dict_vec(ColumnIterator* iter, Col
         *dict_column = std::move(dict_col);
     }
 
-    auto code_col = Int32Column::create();
+    auto code_col = Int32Column::create(memory::get_default_allocator());
     code_col->resize(dict_size);
     auto& code_buf = code_col->get_data();
     for (int i = 0; i < dict_size; i++) {
@@ -465,7 +467,7 @@ StatusOr<ColumnPredicateRewriter::RewriteStatus> ColumnPredicateRewriter::_rewri
     }
 
     // TODO(yan): use eq/ne predicates when only one item, but it's very very hard to construct ne/eq expr.
-    auto used_values = Int32Column::create();
+    auto used_values = Int32Column::create(memory::get_default_allocator());
     for (int i = 0; i < code_size; i++) {
         if (selection[i]) {
             used_values->append(code_values[i]);

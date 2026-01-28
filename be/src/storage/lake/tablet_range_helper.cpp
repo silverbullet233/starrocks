@@ -148,7 +148,7 @@ StatusOr<SstSeekRange> TabletRangeHelper::create_sst_seek_range_from(const Table
             if (!is_nullable && datum.is_null()) {
                 return Status::InvalidArgument("Non-nullable primary key contains NULL in tablet range");
             }
-            auto column = ColumnHelper::create_column(type_desc, is_nullable);
+            auto column = ColumnHelper::create_column(memory::get_default_allocator(), type_desc, is_nullable);
             column->append_datum(datum);
             chunk->append_column(std::move(column), (SlotId)idx);
         }

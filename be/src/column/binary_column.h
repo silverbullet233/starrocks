@@ -31,6 +31,7 @@ namespace starrocks {
 template <typename T>
 class BinaryColumnBase final : public CowFactory<ColumnFactory<Column, BinaryColumnBase<T>>, BinaryColumnBase<T>> {
     friend class CowFactory<ColumnFactory<Column, BinaryColumnBase<T>>, BinaryColumnBase<T>>;
+    using Base = CowFactory<ColumnFactory<Column, BinaryColumnBase<T>>, BinaryColumnBase<T>>;
 
 public:
     using ValueType = Slice;
@@ -38,7 +39,8 @@ public:
     using Offset = T;
     using Offsets = Buffer<T>;
     using Byte = uint8_t;
-    using Bytes = starrocks::raw::RawVectorPad16<uint8_t, ColumnAllocator<uint8_t>>;
+    using Bytes = starrocks::util::Buffer<uint8_t, starrocks::util::SIMD_PADDING_BYTES>;
+    // using Bytes = starrocks::raw::RawVectorPad16<uint8_t, ColumnAllocator<uint8_t>>;
 
     struct BinaryDataProxyContainer {
         BinaryDataProxyContainer(const BinaryColumnBase& column) : _column(column) {}
@@ -58,17 +60,23 @@ public:
 
     // TODO(kks): when we create our own vector, we could let vector[-1] = 0,
     // and then we don't need explicitly emplace_back zero value
-    BinaryColumnBase() { _offsets.emplace_back(0); }
+    explicit BinaryColumnBase(memory::Allocator* allocator)
+            : Base(allocator), _bytes(allocator), _offsets(allocator), _slices(allocator), _german_strings(allocator) {
+        _offsets.emplace_back(0);
+    }
     // Default value is empty string
-    explicit BinaryColumnBase(size_t size) : _offsets(size + 1, 0) {}
-    BinaryColumnBase(Bytes bytes, Offsets offsets) : _bytes(std::move(bytes)), _offsets(std::move(offsets)) {
+    BinaryColumnBase(memory::Allocator* allocator, size_t size)
+            : Base(allocator), _bytes(allocator), _offsets(allocator, size + 1, 0), _slices(allocator), _german_strings(allocator) {}
+    BinaryColumnBase(memory::Allocator* allocator, Bytes bytes, Offsets offsets)
+            : Base(allocator), _bytes(std::move(bytes)), _offsets(std::move(offsets)), _slices(allocator), _german_strings(allocator) {
         if (_offsets.empty()) {
             _offsets.emplace_back(0);
         }
     }
 
-    explicit BinaryColumnBase(ContainerResource resource, Offsets offsets)
-            : _bytes(), _offsets(std::move(offsets)), _resource(std::move(resource)), _immuable_container(*this) {
+    explicit BinaryColumnBase(memory::Allocator* allocator, ContainerResource resource, Offsets offsets)
+            : Base(allocator), _bytes(allocator), _offsets(std::move(offsets)), _resource(std::move(resource)),
+              _slices(allocator), _german_strings(allocator), _immuable_container(*this) {
         if (_offsets.empty()) {
             _offsets.emplace_back(0);
         }
@@ -78,21 +86,8 @@ public:
     }
 
     // NOTE: do *NOT* copy |_slices|
-    BinaryColumnBase(const BinaryColumnBase<T>& rhs)
-            : _bytes(rhs._bytes), _offsets(rhs._offsets), _resource(rhs._resource), _immuable_container(*this) {}
-
-    // NOTE: do *NOT* copy |_slices|
     BinaryColumnBase(BinaryColumnBase<T>&& rhs) noexcept
-            : _bytes(std::move(rhs._bytes)),
-              _offsets(std::move(rhs._offsets)),
-              _resource(std::move(rhs._resource)),
-              _immuable_container(*this) {}
-
-    BinaryColumnBase<T>& operator=(const BinaryColumnBase<T>& rhs) {
-        BinaryColumnBase<T> tmp(rhs);
-        this->swap_column(tmp);
-        return *this;
-    }
+            : Base(rhs._allocator), _bytes(std::move(rhs._bytes)), _offsets(std::move(rhs._offsets)), _slices(std::move(rhs._slices)), _german_strings(std::move(rhs._german_strings)) {}
 
     BinaryColumnBase<T>& operator=(BinaryColumnBase<T>&& rhs) noexcept {
         BinaryColumnBase<T> tmp(std::move(rhs));
@@ -193,7 +188,8 @@ public:
     }
 
     void resize(size_t n) override {
-        _offsets.resize(n + 1, _offsets.back());
+        auto val = _offsets.back();
+        _offsets.resize(n + 1, val);
         _bytes.resize(_offsets.back());
         _slices_cache = false;
     }
@@ -222,7 +218,7 @@ public:
     bool append_nulls(size_t count) override { return false; }
 
     void append_string(const std::string& str) {
-        _bytes.insert(_bytes.end(), str.data(), str.data() + str.size());
+        _bytes.insert(str.data(), str.data() + str.size());
         _offsets.emplace_back(_bytes.size());
         _slices_cache = false;
     }
@@ -248,11 +244,11 @@ public:
     }
 
     void append_default(size_t count) override {
-        _offsets.insert(_offsets.end(), count, static_cast<uint32_t>(_bytes.size()));
+        _offsets.insert(count, static_cast<uint32_t>(_bytes.size()));
         _slices_cache = false;
     }
 
-    StatusOr<MutableColumnPtr> replicate(const Buffer<uint32_t>& offsets) override;
+    StatusOr<MutableColumnPtr> replicate(const Buffer<uint32_t>& offsets, memory::Allocator* allocator = nullptr) override;
 
     void fill_default(const Filter& filter) override;
 
@@ -299,7 +295,16 @@ public:
         return static_cast<uint32_t>(sizeof(uint32_t) + _offsets[idx + 1] - _offsets[idx]);
     }
 
-    MutableColumnPtr clone_empty() const override { return BinaryColumnBase<T>::create(); }
+    MutableColumnPtr clone_empty(memory::Allocator* allocator = nullptr) const override {
+        allocator = allocator == nullptr ? this->get_allocator() : allocator;
+        return BinaryColumnBase<T>::create(allocator);
+    }
+    MutableColumnPtr clone(memory::Allocator* allocator = nullptr) const override {
+        allocator = allocator == nullptr ? this->get_allocator() : allocator;
+        auto p = clone_empty(allocator);
+        p->append(*this, 0, this->size());
+        return p;
+    }
 
     MutableColumnPtr cut(size_t start, size_t length) const;
     size_t filter_range(const Filter& filter, size_t start, size_t to) override;
@@ -439,6 +444,8 @@ private:
     mutable bool _german_strings_cache = false;
 
     BinaryDataProxyContainer _immuable_container = BinaryDataProxyContainer(*this);
+
+    DISALLOW_COPY(BinaryColumnBase);
 };
 
 using Offsets = BinaryColumnBase<uint32_t>::Offsets;

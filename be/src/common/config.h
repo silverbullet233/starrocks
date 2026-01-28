@@ -1910,4 +1910,7 @@ CONF_Int32(cow_optimization_diagnose_level, "0");
 // to potentially find a better predicate order. When selectivity is already good (low), sampling
 // is unlikely to help and will be skipped.
 CONF_mDouble(predicate_sampling_trigger_selectivity_threshold, "0.2");
+CONF_Int64(mmap_bytes_threshold, "67108864"); // 64MB
+CONF_Bool(enable_mem_tracker_debug, "false");
+CONF_Bool(enable_buffer_realloc, "true");
 } // namespace starrocks::config

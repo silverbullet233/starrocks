@@ -44,6 +44,7 @@
 #include "exprs/function_context.h"
 #include "exprs/like_predicate.h"
 #include "runtime/exec_env.h"
+#include "runtime/memory/memory_allocator.h"
 #include "storage/chunk_helper.h"
 #include "storage/range.h"
 #include "storage/types.h"
@@ -210,7 +211,7 @@ Status BitmapIndexIterator::seek_dict_by_ngram(const void* value, roaring::Roari
 
 StatusOr<Buffer<rowid_t>> BitmapIndexIterator::filter_dict_by_predicate(
         const roaring::Roaring* rowids, const std::function<bool(const Slice*)>& predicate) const {
-    Buffer<rowid_t> hit_rowids;
+    Buffer<rowid_t> hit_rowids(memory::get_default_allocator());
 
     // Check if dictionary column has ordinal index
     // Old indexes or indexes without ngram support don't have ordinal index on dictionary column
@@ -331,13 +332,13 @@ StatusOr<Buffer<rowid_t>> BitmapIndexIterator::seek_dictionary_by_predicate(cons
     ASSIGN_OR_RETURN(auto ret, predicate(*column));
 
     const auto* hit_column = down_cast<const BooleanColumn*>(ret.get());
-    Buffer<rowid_t> hit_rowids;
+    Buffer<rowid_t> hit_rowids(memory::get_default_allocator());
     for (int i = 0; i < hit_column->size(); ++i) {
         if (hit_column->get_data()[i]) {
             hit_rowids.push_back(beg_rowid + i);
         }
     }
-    return hit_rowids;
+    return std::move(hit_rowids);
 }
 
 Status BitmapIndexIterator::read_bitmap(rowid_t ordinal, Roaring* result) {

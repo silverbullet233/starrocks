@@ -15,6 +15,7 @@
 #include "connector/binlog_connector.h"
 
 #include "runtime/descriptors.h"
+#include "runtime/memory/memory_allocator.h"
 #include "storage/chunk_helper.h"
 #include "storage/storage_engine.h"
 #include "storage/tablet_manager.h"
@@ -292,7 +293,7 @@ Status BinlogDataSource::_mock_chunk_test(ChunkPtr* chunk) {
     int64_t step = 1;
     int64_t ndv_count = 100;
     for (auto idx = 0; idx < 2; idx++) {
-        auto column = Int64Column::create();
+        auto column = Int64Column::create(memory::get_default_allocator());
         for (int64_t i = 0; i < 4; i++) {
             start += step;
             VLOG_ROW << "Append col:" << idx << ", row:" << start;
@@ -302,7 +303,7 @@ Status BinlogDataSource::_mock_chunk_test(ChunkPtr* chunk) {
     }
 
     // ops
-    auto ops = Int8Column::create();
+    auto ops = Int8Column::create(memory::get_default_allocator());
     for (int64_t i = 0; i < 1; i++) {
         ops->append(0);
     }

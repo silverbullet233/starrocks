@@ -11,7 +11,7 @@
 #include <sstream>
 #include <string>
 
-#include "storage/olap_common.h"
+#include "common/logging.h"
 
 using std::string;
 using std::stringstream;
@@ -60,11 +60,13 @@ uint32_t CacheKey::hash(const char* data, size_t n, uint32_t seed) const {
 Cache::~Cache() = default;
 
 // LRU cache implementation
-LRUHandle* HandleTable::lookup(const CacheKey& key, uint32_t hash) {
+template <class Alloc>
+LRUHandle* HandleTable<Alloc>::lookup(const CacheKey& key, uint32_t hash) {
     return *_find_pointer(key, hash);
 }
 
-LRUHandle* HandleTable::insert(LRUHandle* h) {
+template <class Alloc>
+LRUHandle* HandleTable<Alloc>::insert(LRUHandle* h) {
     LRUHandle** ptr = _find_pointer(h->key(), h->hash);
     LRUHandle* old = *ptr;
     h->next_hash = (old == nullptr ? nullptr : old->next_hash);
@@ -85,7 +87,8 @@ LRUHandle* HandleTable::insert(LRUHandle* h) {
     return old;
 }
 
-LRUHandle* HandleTable::remove(const CacheKey& key, uint32_t hash) {
+template <class Alloc>
+LRUHandle* HandleTable<Alloc>::remove(const CacheKey& key, uint32_t hash) {
     LRUHandle** ptr = _find_pointer(key, hash);
     LRUHandle* result = *ptr;
 
@@ -96,8 +99,8 @@ LRUHandle* HandleTable::remove(const CacheKey& key, uint32_t hash) {
 
     return result;
 }
-
-LRUHandle** HandleTable::_find_pointer(const CacheKey& key, uint32_t hash) {
+template <class Alloc>
+LRUHandle** HandleTable<Alloc>::_find_pointer(const CacheKey& key, uint32_t hash) {
     LRUHandle** ptr = &_list[hash & (_length - 1)];
 
     while (*ptr != nullptr && ((*ptr)->hash != hash || key != (*ptr)->key())) {
@@ -107,14 +110,16 @@ LRUHandle** HandleTable::_find_pointer(const CacheKey& key, uint32_t hash) {
     return ptr;
 }
 
-bool HandleTable::_resize() {
+template <class Alloc>
+bool HandleTable<Alloc>::_resize() {
     uint32_t new_length = 4;
 
     while (new_length < _elems) {
         new_length *= 2;
     }
 
-    auto** new_list = new (std::nothrow) LRUHandle*[new_length];
+    const size_t new_bytes = sizeof(LRUHandle*) * new_length;
+    auto* new_list = reinterpret_cast<LRUHandle**>(this->get_allocator()->alloc(new_bytes, alignof(LRUHandle*)));
 
     if (nullptr == new_list) {
         LOG(FATAL) << "failed to malloc new hash list. new_length=" << new_length;
@@ -139,40 +144,47 @@ bool HandleTable::_resize() {
     }
 
     if (_elems != count) {
-        delete[] new_list;
+        this->get_allocator()->free(new_list, new_bytes);
         LOG(FATAL) << "_elems not match new count. elems=" << _elems << ", count=" << count;
         return false;
     }
 
-    delete[] _list;
+    if (_list != nullptr && _length > 0) {
+        this->get_allocator()->free(_list, sizeof(LRUHandle*) * _length);
+    }
     _list = new_list;
     _length = new_length;
     return true;
 }
 
-LRUCache::LRUCache() {
+template <class Alloc>
+LRUCache<Alloc>::LRUCache() {
     // Make empty circular linked list
     _lru.next = &_lru;
     _lru.prev = &_lru;
 }
 
-LRUCache::~LRUCache() noexcept {
+template <class Alloc>
+LRUCache<Alloc>::~LRUCache() noexcept {
     prune();
 }
 
-bool LRUCache::_unref(LRUHandle* e) {
+template <class Alloc>
+bool LRUCache<Alloc>::_unref(LRUHandle* e) {
     DCHECK(e->refs > 0);
     e->refs--;
     return e->refs == 0;
 }
 
-void LRUCache::_lru_remove(LRUHandle* e) {
+template <class Alloc>
+void LRUCache<Alloc>::_lru_remove(LRUHandle* e) {
     e->next->prev = e->prev;
     e->prev->next = e->next;
     e->prev = e->next = nullptr;
 }
 
-void LRUCache::_lru_append(LRUHandle* list, LRUHandle* e) {
+template <class Alloc>
+void LRUCache<Alloc>::_lru_append(LRUHandle* list, LRUHandle* e) {
     // Make "e" newest entry by inserting just before *list
     e->next = list;
     e->prev = list->prev;
@@ -180,7 +192,8 @@ void LRUCache::_lru_append(LRUHandle* list, LRUHandle* e) {
     e->next->prev = e;
 }
 
-void LRUCache::set_capacity(size_t capacity) {
+template <class Alloc>
+void LRUCache<Alloc>::set_capacity(size_t capacity) {
     std::vector<LRUHandle*> last_ref_list;
     {
         std::lock_guard l(_mutex);
@@ -189,46 +202,54 @@ void LRUCache::set_capacity(size_t capacity) {
     }
 
     for (auto entry : last_ref_list) {
-        entry->free();
+        entry->free(this->get_allocator());
     }
 }
 
-uint64_t LRUCache::get_lookup_count() const {
+template <class Alloc>
+uint64_t LRUCache<Alloc>::get_lookup_count() const {
     std::lock_guard l(_mutex);
     return _lookup_count;
 }
 
-uint64_t LRUCache::get_hit_count() const {
+template <class Alloc>
+uint64_t LRUCache<Alloc>::get_hit_count() const {
     std::lock_guard l(_mutex);
     return _hit_count;
 }
 
-uint64_t LRUCache::get_insert_count() const {
+template <class Alloc>
+uint64_t LRUCache<Alloc>::get_insert_count() const {
     std::lock_guard l(_mutex);
     return _insert_count;
 }
 
-uint64_t LRUCache::get_insert_evict_count() const {
+template <class Alloc>
+uint64_t LRUCache<Alloc>::get_insert_evict_count() const {
     std::lock_guard l(_mutex);
     return _insert_evict_count;
 }
 
-uint64_t LRUCache::get_release_evict_count() const {
+template <class Alloc>
+uint64_t LRUCache<Alloc>::get_release_evict_count() const {
     std::lock_guard l(_mutex);
     return _release_evict_count;
 }
 
-uint64_t LRUCache::get_usage() const {
+template <class Alloc>
+uint64_t LRUCache<Alloc>::get_usage() const {
     std::lock_guard l(_mutex);
     return _usage;
 }
 
-size_t LRUCache::get_capacity() const {
+template <class Alloc>
+size_t LRUCache<Alloc>::get_capacity() const {
     std::lock_guard l(_mutex);
     return _capacity;
 }
 
-Cache::Handle* LRUCache::lookup(const CacheKey& key, uint32_t hash) {
+template <class Alloc>
+Cache::Handle* LRUCache<Alloc>::lookup(const CacheKey& key, uint32_t hash) {
     std::lock_guard l(_mutex);
     ++_lookup_count;
     LRUHandle* e = _table.lookup(key, hash);
@@ -245,7 +266,8 @@ Cache::Handle* LRUCache::lookup(const CacheKey& key, uint32_t hash) {
     return reinterpret_cast<Cache::Handle*>(e);
 }
 
-void LRUCache::release(Cache::Handle* handle) {
+template <class Alloc>
+void LRUCache<Alloc>::release(Cache::Handle* handle) {
     if (handle == nullptr) {
         return;
     }
@@ -276,11 +298,12 @@ void LRUCache::release(Cache::Handle* handle) {
 
     // free handle out of mutex
     if (last_ref) {
-        e->free();
+        e->free(this->get_allocator());
     }
 }
 
-void LRUCache::_evict_from_lru(size_t charge, std::vector<LRUHandle*>* deleted) {
+template <class Alloc>
+void LRUCache<Alloc>::_evict_from_lru(size_t charge, std::vector<LRUHandle*>* deleted) {
     LRUHandle* cur = &_lru;
     // 1. evict normal cache entries
     while (_usage + charge > _capacity && cur->next != &_lru) {
@@ -301,7 +324,8 @@ void LRUCache::_evict_from_lru(size_t charge, std::vector<LRUHandle*>* deleted) 
     }
 }
 
-void LRUCache::_evict_one_entry(LRUHandle* e) {
+template <class Alloc>
+void LRUCache<Alloc>::_evict_one_entry(LRUHandle* e) {
     DCHECK(e->in_cache);
     DCHECK(e->refs == 1); // LRU list contains elements which may be evicted
     _lru_remove(e);
@@ -311,11 +335,12 @@ void LRUCache::_evict_one_entry(LRUHandle* e) {
     _usage -= e->charge;
 }
 
-Cache::Handle* LRUCache::insert(const CacheKey& key, uint32_t hash, void* value, size_t value_size,
+template <class Alloc>
+Cache::Handle* LRUCache<Alloc>::insert(const CacheKey& key, uint32_t hash, void* value, size_t value_size,
                                 void (*deleter)(const CacheKey& key, void* value), CachePriority priority) {
     size_t key_mem_size = sizeof(LRUHandle) - 1 + key.size();
     size_t kv_mem_size = value_size + key_mem_size;
-    auto* e = reinterpret_cast<LRUHandle*>(malloc(key_mem_size));
+    auto* e = reinterpret_cast<LRUHandle*>(this->get_allocator()->alloc(key_mem_size));
     e->value = value;
     e->deleter = deleter;
     e->charge = kv_mem_size;
@@ -365,13 +390,14 @@ Cache::Handle* LRUCache::insert(const CacheKey& key, uint32_t hash, void* value,
     // we free the entries here outside of mutex for
     // performance reasons
     for (auto entry : last_ref_list) {
-        entry->free();
+        entry->free(this->get_allocator());
     }
 
     return reinterpret_cast<Cache::Handle*>(e);
 }
 
-void LRUCache::erase(const CacheKey& key, uint32_t hash) {
+template <class Alloc>
+void LRUCache<Alloc>::erase(const CacheKey& key, uint32_t hash) {
     LRUHandle* e = nullptr;
     bool last_ref = false;
     {
@@ -391,11 +417,12 @@ void LRUCache::erase(const CacheKey& key, uint32_t hash) {
     }
     // free handle out of mutex, when last_ref is true, e must not be nullptr
     if (last_ref) {
-        e->free();
+        e->free(this->get_allocator());
     }
 }
 
-int LRUCache::prune() {
+template <class Alloc>
+int LRUCache<Alloc>::prune() {
     std::vector<LRUHandle*> last_ref_list;
     {
         std::lock_guard l(_mutex);
@@ -412,27 +439,31 @@ int LRUCache::prune() {
         }
     }
     for (auto entry : last_ref_list) {
-        entry->free();
+        entry->free(this->get_allocator());
     }
     return last_ref_list.size();
 }
 
-inline uint32_t ShardedLRUCache::_hash_slice(const CacheKey& s) {
+template <class Alloc>
+inline uint32_t ShardedLRUCache<Alloc>::_hash_slice(const CacheKey& s) {
     return s.hash(s.data(), s.size(), 0);
 }
 
-uint32_t ShardedLRUCache::_shard(uint32_t hash) {
+template <class Alloc>
+uint32_t ShardedLRUCache<Alloc>::_shard(uint32_t hash) {
     return hash >> (32 - kNumShardBits);
 }
 
-ShardedLRUCache::ShardedLRUCache(size_t capacity) : _last_id(0), _capacity(capacity) {
+template <class Alloc>
+ShardedLRUCache<Alloc>::ShardedLRUCache(size_t capacity) : _last_id(0), _capacity(capacity) {
     const size_t per_shard = (_capacity + (kNumShards - 1)) / kNumShards;
     for (auto& _shard : _shards) {
         _shard.set_capacity(per_shard);
     }
 }
 
-void ShardedLRUCache::_set_capacity(size_t capacity) {
+template <class Alloc>
+void ShardedLRUCache<Alloc>::_set_capacity(size_t capacity) {
     const size_t per_shard = (capacity + (kNumShards - 1)) / kNumShards;
     for (auto& _shard : _shards) {
         _shard.set_capacity(per_shard);
@@ -440,13 +471,15 @@ void ShardedLRUCache::_set_capacity(size_t capacity) {
     _capacity = capacity;
 }
 
-void ShardedLRUCache::set_capacity(size_t capacity) {
+template <class Alloc>
+void ShardedLRUCache<Alloc>::set_capacity(size_t capacity) {
     // Maybe multi client try to set capactity, we protect it using mutex.
     std::lock_guard l(_mutex);
     _set_capacity(capacity);
 }
 
-bool ShardedLRUCache::adjust_capacity(int64_t delta, size_t min_capacity) {
+template <class Alloc>
+bool ShardedLRUCache<Alloc>::adjust_capacity(int64_t delta, size_t min_capacity) {
     std::lock_guard l(_mutex);
     int64_t new_capacity = _capacity + delta;
     if (new_capacity < static_cast<int64_t>(min_capacity)) {
@@ -456,42 +489,56 @@ bool ShardedLRUCache::adjust_capacity(int64_t delta, size_t min_capacity) {
     return true;
 }
 
-Cache::Handle* ShardedLRUCache::insert(const CacheKey& key, void* value, size_t value_size,
+template <class Alloc>
+memory::Allocator* ShardedLRUCache<Alloc>::get_allocator() const {
+    auto* alloc = const_cast<Alloc*>(memory::AllocHolder<Alloc>::get_allocator());
+    return static_cast<memory::Allocator*>(alloc);
+}
+
+template <class Alloc>
+Cache::Handle* ShardedLRUCache<Alloc>::insert(const CacheKey& key, void* value, size_t value_size,
                                        void (*deleter)(const CacheKey& key, void* value), CachePriority priority) {
     const uint32_t hash = _hash_slice(key);
     return _shards[_shard(hash)].insert(key, hash, value, value_size, deleter, priority);
 }
 
-Cache::Handle* ShardedLRUCache::lookup(const CacheKey& key) {
+template <class Alloc>
+Cache::Handle* ShardedLRUCache<Alloc>::lookup(const CacheKey& key) {
     const uint32_t hash = _hash_slice(key);
     return _shards[_shard(hash)].lookup(key, hash);
 }
 
-void ShardedLRUCache::release(Handle* handle) {
+template <class Alloc>
+void ShardedLRUCache<Alloc>::release(Handle* handle) {
     auto* h = reinterpret_cast<LRUHandle*>(handle);
     _shards[_shard(h->hash)].release(handle);
 }
 
-void ShardedLRUCache::erase(const CacheKey& key) {
+template <class Alloc>
+void ShardedLRUCache<Alloc>::erase(const CacheKey& key) {
     const uint32_t hash = _hash_slice(key);
     _shards[_shard(hash)].erase(key, hash);
 }
 
-void* ShardedLRUCache::value(Handle* handle) {
+template <class Alloc>
+void* ShardedLRUCache<Alloc>::value(Handle* handle) {
     return reinterpret_cast<LRUHandle*>(handle)->value;
 }
 
-Slice ShardedLRUCache::value_slice(Handle* handle) {
+template <class Alloc>
+Slice ShardedLRUCache<Alloc>::value_slice(Handle* handle) {
     auto lru_handle = reinterpret_cast<LRUHandle*>(handle);
     return {(char*)lru_handle->value, lru_handle->value_size};
 }
 
-uint64_t ShardedLRUCache::new_id() {
+template <class Alloc>
+uint64_t ShardedLRUCache<Alloc>::new_id() {
     std::lock_guard l(_mutex);
     return ++(_last_id);
 }
 
-size_t ShardedLRUCache::_get_stat(uint64_t (LRUCache::*mem_fun)() const) const {
+template <class Alloc>
+size_t ShardedLRUCache<Alloc>::_get_stat(uint64_t (LRUCache::*mem_fun)() const) const {
     uint64_t n = 0;
     for (auto& shard : _shards) {
         n += (shard.*mem_fun)();
@@ -499,12 +546,14 @@ size_t ShardedLRUCache::_get_stat(uint64_t (LRUCache::*mem_fun)() const) const {
     return static_cast<size_t>(n);
 }
 
-size_t ShardedLRUCache::get_capacity() const {
+template <class Alloc>
+size_t ShardedLRUCache<Alloc>::get_capacity() const {
     std::lock_guard l(_mutex);
     return _capacity;
 }
 
-void ShardedLRUCache::prune() {
+template <class Alloc>
+void ShardedLRUCache<Alloc>::prune() {
     int num_prune = 0;
     for (auto& _shard : _shards) {
         num_prune += _shard.prune();
@@ -512,11 +561,13 @@ void ShardedLRUCache::prune() {
     VLOG(7) << "Successfully prune cache, clean " << num_prune << " entries.";
 }
 
-size_t ShardedLRUCache::get_memory_usage() const {
+template <class Alloc>
+size_t ShardedLRUCache<Alloc>::get_memory_usage() const {
     return _get_stat(&LRUCache::get_usage);
 }
 
-size_t ShardedLRUCache::get_lookup_count() const {
+template <class Alloc>
+size_t ShardedLRUCache<Alloc>::get_lookup_count() const {
     uint64_t total = 0;
     for (auto& shard : _shards) {
         total += shard.get_lookup_count();
@@ -524,7 +575,8 @@ size_t ShardedLRUCache::get_lookup_count() const {
     return static_cast<size_t>(total);
 }
 
-size_t ShardedLRUCache::get_hit_count() const {
+template <class Alloc>
+size_t ShardedLRUCache<Alloc>::get_hit_count() const {
     uint64_t total = 0;
     for (auto& shard : _shards) {
         total += shard.get_hit_count();
@@ -532,19 +584,23 @@ size_t ShardedLRUCache::get_hit_count() const {
     return static_cast<size_t>(total);
 }
 
-size_t ShardedLRUCache::get_insert_count() const {
+template <class Alloc>
+size_t ShardedLRUCache<Alloc>::get_insert_count() const {
     return _get_stat(&LRUCache::get_insert_count);
 }
 
-size_t ShardedLRUCache::get_insert_evict_count() const {
+template <class Alloc>
+size_t ShardedLRUCache<Alloc>::get_insert_evict_count() const {
     return _get_stat(&LRUCache::get_insert_evict_count);
 }
 
-size_t ShardedLRUCache::get_release_evict_count() const {
+template <class Alloc>
+size_t ShardedLRUCache<Alloc>::get_release_evict_count() const {
     return _get_stat(&LRUCache::get_release_evict_count);
 }
 
-void ShardedLRUCache::get_cache_status(rapidjson::Document* document) {
+template <class Alloc>
+void ShardedLRUCache<Alloc>::get_cache_status(rapidjson::Document* document) {
     size_t shard_count = sizeof(_shards) / sizeof(LRUCache);
 
     for (uint32_t i = 0; i < shard_count; ++i) {
@@ -577,6 +633,10 @@ void ShardedLRUCache::get_cache_status(rapidjson::Document* document) {
         document->PushBack(shard_info, document->GetAllocator());
     }
 }
+
+template class HandleTable<DefaultCacheAllocator>;
+template class LRUCache<DefaultCacheAllocator>;
+template class ShardedLRUCache<DefaultCacheAllocator>;
 
 Cache* new_lru_cache(size_t capacity) {
     return new ShardedLRUCache(capacity);

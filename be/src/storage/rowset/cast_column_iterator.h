@@ -38,6 +38,8 @@ public:
 
     DISALLOW_COPY_AND_MOVE(CastColumnIterator);
 
+    Status init(const ColumnIteratorOptions& opts) override;
+
     Status next_batch(size_t* n, Column* dst) override;
 
     Status next_batch(const SparseRange<>& range, Column* dst) override;
@@ -72,6 +74,9 @@ private:
     Expr* _cast_expr;
     // Chunk for holding data read from the source column iterator
     Chunk _source_chunk;
+    TypeDescriptor _source_type;
+    TypeDescriptor _target_type;
+    bool _nullable_source;
 };
 
 } // namespace starrocks

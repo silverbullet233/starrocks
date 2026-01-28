@@ -214,7 +214,7 @@ private:
 
     template <LogicalType TYPE>
     StatusOr<Datum> cast_primitive() {
-        ColumnBuilder<TYPE> builder(1);
+        ColumnBuilder<TYPE> builder(memory::get_default_allocator(), 1);
         Status st = cast_vpjson_to<TYPE, false>(_json_slice, builder);
         RETURN_IF_ERROR(st);
         auto col = builder.build(false);
@@ -245,7 +245,7 @@ private:
     }
 
     StatusOr<Datum> cast_string() {
-        ColumnBuilder<TYPE_VARCHAR> builder(1);
+        ColumnBuilder<TYPE_VARCHAR> builder(memory::get_default_allocator(), 1);
         Status st = cast_vpjson_to<TYPE_VARCHAR, false>(_json_slice, builder);
         RETURN_IF_ERROR(st);
         auto col = builder.build(false);

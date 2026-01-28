@@ -30,6 +30,7 @@
 #include "types/type_checker_manager.h"
 #include "udf/java/java_udf.h"
 #include "util/defer_op.h"
+#include "runtime/memory/memory_allocator.h"
 
 namespace starrocks {
 
@@ -234,7 +235,7 @@ Status JDBCScanner::_init_column_class_name(RuntimeState* state) {
         // eg:
         // JDBC(java.sql.Date) -> SR(TYPE_VARCHAR) -> SR(cast(varchar as TYPE_DATE))
         auto intermediate = TypeDescriptor(ret_type);
-        auto result_column = ColumnHelper::create_column(intermediate, true);
+        auto result_column = ColumnHelper::create_column(memory::get_default_allocator(), intermediate, true);
         _result_chunk->append_column(std::move(result_column), i);
         auto column_ref = _pool.add(new ColumnRef(intermediate, i));
         // TODO: add check cast status
@@ -338,11 +339,11 @@ Status JDBCScanner::_fill_chunk(jobject jchunk, size_t num_rows, ChunkPtr* chunk
         ASSIGN_OR_RETURN(auto result, _cast_exprs[col_idx]->evaluate(_result_chunk.get()));
         // unfold const_nullable_column to avoid error down_cast.
         // unpack_and_duplicate_const_column is not suitable, we need set correct type.
-        result = ColumnHelper::unfold_const_column(slot_desc->type(), num_rows, std::move(result));
+        result = ColumnHelper::unfold_const_column(_cast_exprs[col_idx]->get_allocator(), slot_desc->type(), num_rows, std::move(result));
         if (column->is_nullable() == result->is_nullable()) {
             column = result;
         } else if (column->is_nullable() && !result->is_nullable()) {
-            column = NullableColumn::create(result, NullColumn::create(num_rows));
+            column = NullableColumn::create(memory::get_default_allocator(), result, NullColumn::create(memory::get_default_allocator(), num_rows));
         } else if (!column->is_nullable() && result->is_nullable()) {
             if (result->has_null()) {
                 return Status::DataQualityError(

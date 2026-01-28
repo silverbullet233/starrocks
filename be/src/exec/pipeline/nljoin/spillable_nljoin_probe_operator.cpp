@@ -22,6 +22,7 @@
 #include "exec/spill/common.h"
 #include "exec/spill/options.h"
 #include "exec/spill/spiller_factory.h"
+#include "runtime/memory/memory_allocator.h"
 
 namespace starrocks::pipeline {
 
@@ -78,7 +79,7 @@ ChunkPtr NLJoinProber::_init_output_chunk(RuntimeState* state, const ChunkPtr& b
         if (!is_probe && build_chunk) {
             nullable |= build_chunk->get_column_by_slot_id(slot->id())->is_nullable();
         }
-        MutableColumnPtr new_col = ColumnHelper::create_column(slot->type(), nullable);
+        MutableColumnPtr new_col = ColumnHelper::create_column(memory::get_default_allocator(), slot->type(), nullable);
         chunk->append_column(std::move(new_col), slot->id());
     }
 

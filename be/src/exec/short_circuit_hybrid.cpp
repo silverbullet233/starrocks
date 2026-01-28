@@ -24,6 +24,7 @@
 #include "exprs/expr.h"
 #include "runtime/exec_env.h"
 #include "runtime/memory_scratch_sink.h"
+#include "runtime/memory/memory_allocator.h"
 #include "storage/chunk_helper.h"
 #include "storage/storage_engine.h"
 #include "storage/tablet_manager.h"
@@ -70,7 +71,7 @@ Status ShortCircuitHybridScanNode::get_next(RuntimeState* state, ChunkPtr* chunk
     }
     SCOPED_TIMER(_runtime_profile->total_time_counter());
     std::vector<bool> found(_num_rows, false);
-    Buffer<uint8_t> selections;
+    Buffer<uint8_t> selections(memory::get_default_allocator());
 
     RETURN_IF_ERROR(_process_key_chunk());
     RETURN_IF_ERROR(_process_value_chunk(found));

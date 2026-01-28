@@ -115,6 +115,7 @@ set(UTIL_FILES
   memory_lock.cpp
   internal_service_recoverable_stub.cpp
   lake_service_recoverable_stub.cpp
+  buffer.cpp
   byte_buffer.cpp
   variant_converter.cpp
   variant_encoder.cpp

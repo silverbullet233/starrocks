@@ -57,10 +57,10 @@ public:
     Status reset_state(starrocks::RuntimeState* state, const std::vector<ChunkPtr>& refill_chunks) override;
 
 private:
-    static ColumnPtr generate_repeat_column(int64_t value, int64_t num_rows) {
-        auto column = RunTimeColumnType<TYPE_BIGINT>::create();
+    ColumnPtr generate_repeat_column(int64_t value, int64_t num_rows) {
+        auto column = RunTimeColumnType<TYPE_BIGINT>::create(_allocator);
         column->append_datum(Datum(value));
-        return ConstColumn::create(std::move(column), num_rows);
+        return ConstColumn::create(_allocator, std::move(column), num_rows);
     }
 
     /**
@@ -69,15 +69,16 @@ private:
      * @param num_rows : const column's rows number.
      * @return ColumnPtr : a constant column with the input column's type.
      */
-    static ColumnPtr generate_null_column(ColumnPtr& cur_column, int64_t num_rows) {
+    ColumnPtr generate_null_column(ColumnPtr& cur_column, int64_t num_rows) {
         auto clone_column = cur_column->clone_empty();
         if (clone_column->is_nullable()) {
             clone_column->append_nulls(1);
-            return ConstColumn::create(std::move(clone_column), num_rows);
+            return ConstColumn::create(_allocator, std::move(clone_column), num_rows);
         } else {
-            auto nullable_column = NullableColumn::create(std::move(clone_column), NullColumn::create());
+            auto nullable_column =
+                    NullableColumn::create(_allocator, std::move(clone_column), NullColumn::create(_allocator));
             nullable_column->append_nulls(1);
-            return ConstColumn::create(std::move(nullable_column), num_rows);
+            return ConstColumn::create(_allocator, std::move(nullable_column), num_rows);
         }
     }
 

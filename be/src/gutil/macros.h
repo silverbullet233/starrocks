@@ -99,6 +99,7 @@ struct CompileAssert {};
     TypeName(const TypeName&) = delete; \
     void operator=(const TypeName&) = delete
 
+
 #undef DISALLOW_MOVE
 #define DISALLOW_MOVE(TypeName)    \
     TypeName(TypeName&&) = delete; \

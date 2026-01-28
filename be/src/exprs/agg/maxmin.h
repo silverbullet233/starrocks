@@ -19,9 +19,11 @@
 
 #include "column/fixed_length_column.h"
 #include "column/type_traits.h"
+#include "column/vectorized_fwd.h"
 #include "exprs/agg/aggregate.h"
 #include "exprs/agg/aggregate_traits.h"
 #include "gutil/casts.h"
+#include "runtime/memory/memory_allocator.h"
 #include "util/raw_container.h"
 
 namespace starrocks {
@@ -166,6 +168,7 @@ class MaxMinAggregateFunction final
         : public AggregateFunctionBatchHelper<State, MaxMinAggregateFunction<LT, State, OP, T>> {
 public:
     using InputColumnType = RunTimeColumnType<LT>;
+
 
     void reset(FunctionContext* ctx, const Columns& args, AggDataPtr state) const override {
         this->data(state).reset();

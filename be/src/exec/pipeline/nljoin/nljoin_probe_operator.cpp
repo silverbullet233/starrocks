@@ -62,6 +62,12 @@ Status NLJoinProbeOperator::prepare(RuntimeState* state) {
     return Status::OK();
 }
 
+Status NLJoinProbeOperator::prepare_local_state(RuntimeState* state) {
+    RETURN_IF_ERROR(OperatorWithDependency::prepare_local_state(state));
+    _self_build_match_flag = std::make_unique<Filter>(_allocator);
+    return Status::OK();
+}
+
 void NLJoinProbeOperator::close(RuntimeState* state) {
     _cross_join_context->decr_prober(state);
     Operator::close(state);
@@ -103,7 +109,7 @@ void NLJoinProbeOperator::_check_post_probe() const {
     if ((_input_finished && output_finished) || skip_probe) {
         switch (_join_stage) {
         case Probe: {
-            if (!_is_right_join() || !_cross_join_context->finish_probe(_driver_sequence, _self_build_match_flag)) {
+            if (!_is_right_join() || !_cross_join_context->finish_probe(_driver_sequence, *_self_build_match_flag)) {
                 _advance_join_stage(JoinStage::Finished);
             } else {
                 _advance_join_stage(JoinStage::RightJoin);
@@ -269,7 +275,7 @@ ChunkPtr NLJoinProbeOperator::_init_output_chunk(size_t chunk_size) const {
         if (_probe_chunk) {
             nullable |= _probe_chunk->is_column_nullable(slot->id());
         }
-        MutableColumnPtr new_col = ColumnHelper::create_column(slot->type(), nullable);
+        MutableColumnPtr new_col = ColumnHelper::create_column(_allocator, slot->type(), nullable);
         chunk->append_column(std::move(new_col), slot->id());
     }
     for (size_t i = _probe_column_count; i < _col_types.size(); i++) {
@@ -278,7 +284,7 @@ ChunkPtr NLJoinProbeOperator::_init_output_chunk(size_t chunk_size) const {
         if (_curr_build_chunk) {
             nullable |= _curr_build_chunk->is_column_nullable(slot->id());
         }
-        MutableColumnPtr new_col = ColumnHelper::create_column(slot->type(), nullable);
+        MutableColumnPtr new_col = ColumnHelper::create_column(_allocator, slot->type(), nullable);
         chunk->append_column(std::move(new_col), slot->id());
     }
 
@@ -303,10 +309,10 @@ void NLJoinProbeOperator::iterate_enumerate_chunk(const ChunkPtr& chunk,
 Status NLJoinProbeOperator::_eval_nullaware_anti_conjuncts(const ChunkPtr& chunk, FilterPtr* filter) {
     if (!_join_conjuncts.empty() && chunk && !chunk->is_empty()) {
         size_t num_rows = chunk->num_rows();
-        auto null_column = NullColumn::create(chunk->num_rows());
+        auto null_column = NullColumn::create(_allocator, chunk->num_rows());
         auto& null_data = null_column->get_data();
 
-        *filter = std::make_shared<Filter>(chunk->num_rows(), 1);
+        *filter = std::make_shared<Filter>(_allocator, chunk->num_rows(), 1);
         auto& filter_data = **filter;
 
         // for null-aware left anti join, join_conjunct[0] is on-predicate
@@ -427,7 +433,7 @@ Status NLJoinProbeOperator::_probe_for_other_join(const ChunkPtr& chunk) {
 
     if ((_is_left_semi_join() || _is_left_anti_join()) && chunk->num_rows() > 0) {
         if (!filter && chunk->num_rows() > 0) {
-            filter = std::make_shared<Filter>(chunk->num_rows(), 0);
+            filter = std::make_shared<Filter>(_allocator, chunk->num_rows(), 0);
             if (_is_left_semi_join()) {
                 (*filter)[0] = 1;
             } else {
@@ -464,23 +470,23 @@ Status NLJoinProbeOperator::_probe_for_other_join(const ChunkPtr& chunk) {
         // So we need to mark the build_match_flag for all rows
         if (_join_conjuncts.empty()) {
             DCHECK(!filter);
-            _self_build_match_flag.assign(_self_build_match_flag.size(), 1);
+            _self_build_match_flag->assign(_self_build_match_flag->size(), 1);
         } else if (filter) {
             bool multi_probe_rows = _num_build_chunks() == 1;
             if (multi_probe_rows) {
                 size_t num_build_rows = _cross_join_context->num_build_rows();
                 DCHECK_GE(filter->size(), num_build_rows);
                 for (size_t i = 0; i < filter->size(); i += num_build_rows) {
-                    ColumnHelper::or_two_filters(&_self_build_match_flag, filter->data() + i);
+                    ColumnHelper::or_two_filters(_self_build_match_flag.get(), filter->data() + i);
                 }
             } else {
-                DCHECK_LE(_prev_chunk_size + _prev_chunk_start, _self_build_match_flag.size());
+                DCHECK_LE(_prev_chunk_size + _prev_chunk_start, _self_build_match_flag->size());
                 DCHECK_EQ(_prev_chunk_size, filter->size());
-                ColumnHelper::or_two_filters(_prev_chunk_size, _self_build_match_flag.data() + _prev_chunk_start,
+                ColumnHelper::or_two_filters(_prev_chunk_size, _self_build_match_flag->data() + _prev_chunk_start,
                                              filter->data());
             }
             VLOG(3) << fmt::format("NLJoin operator {} set build_flags for right join, filter={}, flags={}",
-                                   _driver_sequence, fmt::join(*filter, ","), fmt::join(_self_build_match_flag, ","));
+                                   _driver_sequence, fmt::join(*filter, ","), fmt::join(*_self_build_match_flag, ","));
         }
     }
 
@@ -768,9 +774,9 @@ StatusOr<ChunkPtr> NLJoinProbeOperator::_pull_chunk_for_inner_join(size_t chunk_
 }
 
 void NLJoinProbeOperator::_init_build_match() const {
-    if (_is_right_join() && _self_build_match_flag.size() < _cross_join_context->num_build_rows()) {
+    if (_is_right_join() && _self_build_match_flag->size() < _cross_join_context->num_build_rows()) {
         VLOG(3) << "init build_match_flags " << _cross_join_context->num_build_rows();
-        _self_build_match_flag.resize(_cross_join_context->num_build_rows(), 0);
+        _self_build_match_flag->resize(_cross_join_context->num_build_rows(), 0);
     }
 }
 

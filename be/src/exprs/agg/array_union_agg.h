@@ -57,7 +57,7 @@ struct ArrayUnionAggAggregateState {
                 }
             }
         } else {
-            data_column.append(column, offset, count);
+            data_column->append(column, offset, count);
         }
     }
 
@@ -81,25 +81,25 @@ struct ArrayUnionAggAggregateState {
 
     ColumnType* get_data_column() {
         auto size = set.size();
-        if (data_column.size() > 0 || size == 0) {
-            return &data_column;
+        if (data_column->size() > 0 || size == 0) {
+            return data_column.get();
         }
-        data_column.get_data().reserve(size);
+        data_column->get_data().reserve(size);
         if constexpr (is_distinct) {
             if constexpr (lt_is_string<PT>) {
                 for (auto& key : set) {
-                    data_column.append(Slice(key.data, key.size));
+                    data_column->append(Slice(key.data, key.size));
                 }
             } else {
                 for (auto& key : set) {
-                    data_column.append(key);
+                    data_column->append(key);
                 }
             }
         }
-        return &data_column;
+        return data_column.get();
     }
 
-    ColumnType data_column; // Aggregated elements for array_agg
+    ColumnType::MutablePtr data_column; // Aggregated elements for array_agg
     size_t null_count = 0;
     MyHashSet set;
 };
@@ -110,6 +110,12 @@ class ArrayUnionAggAggregateFunction final
                                               ArrayUnionAggAggregateFunction<LT, is_distinct, MyHashSet>> {
 public:
     using InputColumnType = RunTimeColumnType<LT>;
+
+    void create(FunctionContext* ctx, AggDataPtr __restrict ptr) const override {
+        auto* state = new (ptr) ArrayUnionAggAggregateState<LT, is_distinct, MyHashSet>;
+        LOG(INFO) << "create ArrayUnionAggAggregateState";
+        state->data_column = InputColumnType::create(ctx->get_allocator());
+    }
 
     void update_state(FunctionContext* ctx, const ArrayColumn* input_column, AggDataPtr __restrict state,
                       size_t row_num) const {

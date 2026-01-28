@@ -37,6 +37,7 @@
 #include "storage/column_predicate.h"
 #include "storage/column_predicate_rewriter.h"
 #include "storage/del_vector.h"
+#include "runtime/memory/memory_allocator.h"
 #include "storage/index/index_descriptor.h"
 #include "storage/index/vector/tenann/del_id_filter.h"
 #include "storage/index/vector/tenann/tenann_index_utils.h"
@@ -752,6 +753,8 @@ SegmentIterator::SegmentIterator(std::shared_ptr<Segment> segment, Schema schema
           _segment(std::move(segment)),
           _opts(std::move(options)),
           _bitmap_index_evaluator(_schema, _opts.pred_tree),
+          _selection(_opts.allocator),
+          _selected_idx(_opts.allocator),
           _predicate_columns(_opts.pred_tree.num_columns()),
           _enable_predicate_col_late_materialize(_opts.enable_predicate_col_late_materialize) {
     // Initialize vector index context only when needed
@@ -1169,6 +1172,7 @@ Status SegmentIterator::_init_column_iterator_by_cid(const ColumnId cid, const C
     iter_opts.reader_type = _opts.reader_type;
     iter_opts.lake_io_opts = _opts.lake_io_opts;
     iter_opts.has_preaggregation = _opts.has_preaggregation;
+    iter_opts.allocator = _opts.allocator;
 
     RandomAccessFileOptions opts{.skip_fill_local_cache = !_opts.lake_io_opts.fill_data_cache,
                                  .buffer_size = _opts.lake_io_opts.buffer_size,
@@ -1381,7 +1385,7 @@ StatusOr<size_t> SegmentIterator::_sample_predicate_columns(vector<rowid_t>* row
     // Use two selections:
     // 1. _selection: for merged result of all predicates (merged_selection)
     // 2. current_selection: for current predicate result
-    Buffer<uint8_t> current_selection;
+    Buffer<uint8_t> current_selection(_opts.allocator);
     current_selection.resize(chunk_size);
 
     bool use_merged_selection = true; // Similar to RuntimeFilter's use_merged_selection flag
@@ -1874,6 +1878,7 @@ Status SegmentIterator::_read_columns(const Schema& schema, Chunk* chunk, size_t
         ColumnId cid = schema.field(i)->id();
         auto* column = chunk->get_column_raw_ptr_by_index(i);
         size_t nread = nrows;
+        // LOG(INFO) << "column_iterator: " << _column_iterators[cid]->name();
         RETURN_IF_ERROR(_column_iterators[cid]->next_batch(&nread, column));
         may_has_del_row = may_has_del_row | (column->delete_state() != DEL_NOT_SATISFIED);
         DCHECK_EQ(nrows, nread);
@@ -2115,7 +2120,7 @@ Status SegmentIterator::_do_get_next(Chunk* result, vector<rowid_t>* rowid) {
 
     if (_vector_index_ctx && _vector_index_ctx->use_vector_index && !_vector_index_ctx->use_ivfpq) {
         DCHECK(rowid != nullptr);
-        FloatColumn::MutablePtr distance_column = FloatColumn::create();
+        FloatColumn::MutablePtr distance_column = FloatColumn::create(_opts.allocator);
         vector<rowid_t> rowids;
         for (const auto& rid : *rowid) {
             auto it = _vector_index_ctx->id2distance_map.find(rid);
@@ -3570,8 +3575,8 @@ void SegmentIterator::close() {
         rfile.reset();
     }
 
-    STLClearObject(&_selection);
-    STLClearObject(&_selected_idx);
+    _selection.clear();
+    _selected_idx.clear();
 
     _bitmap_index_evaluator.close();
 

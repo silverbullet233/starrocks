@@ -15,6 +15,7 @@
 #pragma once
 
 #include <type_traits>
+#include <utility>
 
 #include "common/logging.h"
 #include "types/logical_type.h"
@@ -211,7 +212,7 @@ auto type_dispatch_sortable(LogicalType ltype, Functor fun, Args... args) {
 }
 
 template <class Ret, class Functor, class... Args>
-Ret type_dispatch_predicate(LogicalType ltype, bool assert, Functor fun, Args... args) {
+Ret type_dispatch_predicate(LogicalType ltype, bool assert, Functor fun, Args&&... args) {
     switch (ltype) {
         APPLY_FOR_ALL_SCALAR_TYPE(_TYPE_DISPATCH_CASE)
     default:

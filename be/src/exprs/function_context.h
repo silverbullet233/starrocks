@@ -43,6 +43,10 @@ struct JavaUDAFContext {};
 #endif
 struct NgramBloomFilterState;
 
+namespace memory {
+class Allocator;
+}
+
 class FunctionContext {
 public:
     using TypeDesc = TypeDescriptor;
@@ -183,6 +187,8 @@ public:
 
     std::unique_ptr<NgramBloomFilterState>& get_ngram_state() { return _ngramState; }
 
+    memory::Allocator* get_allocator() const { return _allocator; }
+
 private:
     friend class ExprContext;
 
@@ -232,6 +238,7 @@ private:
 
     // used for ngram bloom filter to speed up some function
     std::unique_ptr<NgramBloomFilterState> _ngramState;
+    memory::Allocator* _allocator = nullptr;
 };
 
 } // namespace starrocks

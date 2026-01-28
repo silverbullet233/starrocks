@@ -82,7 +82,7 @@ Status RangeRouter::init(const std::vector<TTabletRange>& tablet_ranges, size_t 
             DCHECK(type_desc != nullptr);
             MutableColumnPtr& column = boundary_columns[i];
             if (!column) {
-                column = ColumnHelper::create_column(*type_desc, true);
+                column = ColumnHelper::create_column(memory::get_default_allocator(), *type_desc, true);
                 column->reserve(num_ranges);
             }
 

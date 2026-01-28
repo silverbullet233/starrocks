@@ -238,6 +238,7 @@ void HashJoinNode::_init_hash_table_param(HashTableParam* param, RuntimeState* r
     param->enable_partition_hash_join = _enable_partition_hash_join;
     param->column_view_concat_rows_limit = runtime_state->column_view_concat_rows_limit();
     param->column_view_concat_bytes_limit = runtime_state->column_view_concat_bytes_limit();
+    param->allocator = memory::get_default_allocator();
 
     std::set<SlotId> predicate_slots;
     for (ExprContext* expr_context : _conjunct_ctxs) {
@@ -687,7 +688,7 @@ Status HashJoinNode::_evaluate_build_keys(const ChunkPtr& chunk) {
         const TypeDescriptor& data_type = ctx->root()->type();
         ASSIGN_OR_RETURN(ColumnPtr key_column, ctx->evaluate(chunk.get()));
         if (key_column->only_null()) {
-            MutableColumnPtr column = ColumnHelper::create_column(data_type, true);
+            MutableColumnPtr column = ColumnHelper::create_column(ctx->get_allocator(), data_type, true);
             column->append_nulls(num_rows);
             _key_columns.emplace_back(std::move(column));
         } else if (key_column->is_constant()) {
@@ -766,7 +767,7 @@ Status HashJoinNode::_probe(RuntimeState* state, ScopedTimer<MonotonicStopWatch>
                     for (auto& probe_expr_ctx : _probe_expr_ctxs) {
                         ASSIGN_OR_RETURN(ColumnPtr column_ptr, probe_expr_ctx->evaluate(_probing_chunk.get()));
                         if (column_ptr->is_nullable() && column_ptr->is_constant()) {
-                            MutableColumnPtr column = ColumnHelper::create_column(probe_expr_ctx->root()->type(), true);
+                            MutableColumnPtr column = ColumnHelper::create_column(probe_expr_ctx->get_allocator(), probe_expr_ctx->root()->type(), true);
                             column->append_nulls(_probing_chunk->num_rows());
                             _key_columns.emplace_back(std::move(column));
                         } else if (column_ptr->is_constant()) {
@@ -914,7 +915,7 @@ Status HashJoinNode::_process_outer_join_with_other_conjunct(ChunkPtr* chunk, si
                                                              size_t column_count) {
     bool filter_all = false;
     bool hit_all = false;
-    Filter filter;
+    Filter filter(memory::get_default_allocator());
 
     RETURN_IF_ERROR(_calc_filter_for_other_conjunct(chunk, filter, filter_all, hit_all));
     _process_row_for_other_conjunct(chunk, start_column, column_count, filter_all, hit_all, filter);
@@ -928,7 +929,7 @@ Status HashJoinNode::_process_outer_join_with_other_conjunct(ChunkPtr* chunk, si
 Status HashJoinNode::_process_semi_join_with_other_conjunct(ChunkPtr* chunk) {
     bool filter_all = false;
     bool hit_all = false;
-    Filter filter;
+    Filter filter(memory::get_default_allocator());
 
     RETURN_IF_ERROR(_calc_filter_for_other_conjunct(chunk, filter, filter_all, hit_all));
 
@@ -941,7 +942,7 @@ Status HashJoinNode::_process_semi_join_with_other_conjunct(ChunkPtr* chunk) {
 Status HashJoinNode::_process_right_anti_join_with_other_conjunct(ChunkPtr* chunk) {
     bool filter_all = false;
     bool hit_all = false;
-    Filter filter;
+    Filter filter(memory::get_default_allocator());
 
     RETURN_IF_ERROR(_calc_filter_for_other_conjunct(chunk, filter, filter_all, hit_all));
 

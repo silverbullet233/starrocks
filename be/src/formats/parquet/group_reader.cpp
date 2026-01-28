@@ -39,6 +39,7 @@
 #include "formats/parquet/schema.h"
 #include "gutil/strings/substitute.h"
 #include "runtime/types.h"
+#include "runtime/memory/memory_allocator.h"
 #include "simd/simd.h"
 #include "storage/chunk_helper.h"
 #include "util/defer_op.h"
@@ -181,7 +182,8 @@ Status GroupReader::get_next(ChunkPtr* chunk, size_t* row_count) {
         active_chunk->reset();
 
         bool has_filter = false;
-        Filter chunk_filter(count, 1);
+        memory::Allocator* alloc = _param.allocator != nullptr ? _param.allocator : memory::get_default_allocator();
+        Filter chunk_filter(alloc, count, 1);
 
         // row id filter
         if (nullptr != _skip_rows_ctx && _skip_rows_ctx->has_skip_rows()) {
@@ -221,8 +223,10 @@ Status GroupReader::get_next(ChunkPtr* chunk, size_t* row_count) {
                 Range<uint64_t> lazy_read_range = r.filter(&chunk_filter);
                 // if all data is filtered, we have skipped early.
                 DCHECK(lazy_read_range.span_size() > 0);
-                Filter lazy_filter = {chunk_filter.begin() + lazy_read_range.begin() - r.begin(),
-                                      chunk_filter.begin() + lazy_read_range.end() - r.begin()};
+                memory::Allocator* alloc = _param.allocator != nullptr ? _param.allocator : memory::get_default_allocator();
+                Filter lazy_filter(alloc);
+                lazy_filter.assign(chunk_filter.begin() + lazy_read_range.begin() - r.begin(),
+                                   chunk_filter.begin() + lazy_read_range.end() - r.begin());
                 RETURN_IF_ERROR(_read_range(_lazy_column_indices, lazy_read_range, &lazy_filter, &lazy_chunk, true));
                 lazy_chunk->filter_range(lazy_filter, 0, lazy_read_range.span_size());
             } else {
@@ -350,6 +354,7 @@ Status GroupReader::_create_column_readers() {
     opts.modification_time = _param.modification_time;
     opts.file_size = _param.file_size;
     opts.datacache_options = _param.datacache_options;
+    opts.allocator = _param.allocator != nullptr ? _param.allocator : memory::get_default_allocator();
     for (const auto& column : _param.read_cols) {
         ASSIGN_OR_RETURN(ColumnReaderPtr column_reader, _create_column_reader(column));
         _column_readers[column.slot_id()] = std::move(column_reader);

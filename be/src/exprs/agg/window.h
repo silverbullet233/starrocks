@@ -16,9 +16,11 @@
 #include "column/array_column.h"
 #include "column/column_helper.h"
 #include "column/nullable_column.h"
+#include "column/type_traits.h"
 #include "column/vectorized_fwd.h"
 #include "exprs/agg/aggregate.h"
 #include "exprs/agg/aggregate_traits.h"
+#include "runtime/memory/memory_allocator.h"
 
 namespace starrocks {
 
@@ -112,7 +114,7 @@ class ValueWindowFunction : public WindowFunction<State> {
 public:
     using InputColumnType = RunTimeColumnType<LT>;
 
-    void get_values_helper(ConstAggDataPtr __restrict state, Column* dst, size_t start, size_t end) const {
+    void get_values_helper(FunctionContext* ctx, ConstAggDataPtr __restrict state, Column* dst, size_t start, size_t end) const {
         DCHECK_GT(end, start);
         DCHECK(dst->is_nullable());
         auto* nullable_column = down_cast<NullableColumn*>(dst);
@@ -145,7 +147,11 @@ public:
             auto* column = down_cast<InputColumnType*>(data_column);
             auto value = AggregateFunctionStateHelper<State>::data(state).value;
             for (size_t i = start; i < end; ++i) {
-                AggDataTypeTraits<LT>::assign_value(column, i, value);
+                if constexpr (lt_is_string<LT>) {
+                    AggDataTypeTraits<LT>::assign_value(column, i, value, ctx->get_allocator());
+                } else {
+                    AggDataTypeTraits<LT>::assign_value(column, i, value);
+                }
             }
         }
     }
@@ -418,7 +424,11 @@ class FirstValueWindowFunction final : public ValueWindowFunction<LT, FirstValue
     using InputColumnType = typename ValueWindowFunction<LT, FirstValueState<LT>, T>::InputColumnType;
 
     void reset(FunctionContext* ctx, const Columns& args, AggDataPtr __restrict state) const override {
-        this->data(state).value = {};
+        if constexpr (lt_is_string<LT>) {
+            this->data(state).value.release(ctx->get_allocator());
+        } else {
+            this->data(state).value = {};
+        }
         this->data(state).is_null = false;
         this->data(state).has_value = false;
     }
@@ -452,14 +462,27 @@ class FirstValueWindowFunction final : public ValueWindowFunction<LT, FirstValue
             const auto* column = down_cast<const InputColumnType*>(data_column);
             this->data(state).is_null = false;
             this->data(state).has_value = true;
-            AggDataTypeTraits<LT>::assign_value(this->data(state).value,
-                                                AggDataTypeTraits<LT>::get_row_ref(*column, value_index));
+            if constexpr (lt_is_string<LT>) {
+                AggDataTypeTraits<LT>::assign_value(this->data(state).value,
+                                                    AggDataTypeTraits<LT>::get_row_ref(*column, value_index),
+                                                    ctx->get_allocator());
+            } else {
+                AggDataTypeTraits<LT>::assign_value(this->data(state).value,
+                                                    AggDataTypeTraits<LT>::get_row_ref(*column, value_index));
+            }
         }
     }
 
     void get_values(FunctionContext* ctx, ConstAggDataPtr __restrict state, Column* dst, size_t start,
                     size_t end) const override {
-        this->get_values_helper(state, dst, start, end);
+        this->get_values_helper(ctx, state, dst, start, end);
+    }
+
+    void destroy(FunctionContext* ctx, AggDataPtr __restrict ptr) const override {
+        if constexpr (lt_is_string<LT>) {
+            this->data(ptr).value.release(ctx->get_allocator());
+        }
+        AggregateFunctionStateHelper<FirstValueState<LT>>::destroy(ctx, ptr);
     }
 
     std::string get_name() const override { return "nullable_first_value"; }
@@ -478,7 +501,11 @@ class LastValueWindowFunction final : public ValueWindowFunction<LT, LastValueSt
     using InputColumnType = typename ValueWindowFunction<LT, FirstValueState<LT>, T>::InputColumnType;
 
     void reset(FunctionContext* ctx, const Columns& args, AggDataPtr __restrict state) const override {
-        this->data(state).value = {};
+        if constexpr (lt_is_string<LT>) {
+            this->data(state).value.release(ctx->get_allocator());
+        } else {
+            this->data(state).value = {};
+        }
         this->data(state).is_null = false;
         this->data(state).has_value = false;
     }
@@ -507,14 +534,27 @@ class LastValueWindowFunction final : public ValueWindowFunction<LT, LastValueSt
             const auto* column = down_cast<const InputColumnType*>(data_column);
             this->data(state).is_null = false;
             this->data(state).has_value = true;
-            AggDataTypeTraits<LT>::assign_value(this->data(state).value,
-                                                AggDataTypeTraits<LT>::get_row_ref(*column, value_index));
+            if constexpr (lt_is_string<LT>) {
+                AggDataTypeTraits<LT>::assign_value(this->data(state).value,
+                                                    AggDataTypeTraits<LT>::get_row_ref(*column, value_index),
+                                                    ctx->get_allocator());
+            } else {
+                AggDataTypeTraits<LT>::assign_value(this->data(state).value,
+                                                    AggDataTypeTraits<LT>::get_row_ref(*column, value_index));
+            }
         }
     }
 
     void get_values(FunctionContext* ctx, ConstAggDataPtr __restrict state, Column* dst, size_t start,
                     size_t end) const override {
-        this->get_values_helper(state, dst, start, end);
+        this->get_values_helper(ctx, state, dst, start, end);
+    }
+
+    void destroy(FunctionContext* ctx, AggDataPtr __restrict ptr) const override {
+        if constexpr (lt_is_string<LT>) {
+            this->data(ptr).value.release(ctx->get_allocator());
+        }
+        AggregateFunctionStateHelper<LastValueState<LT, ignoreNulls>>::destroy(ctx, ptr);
     }
 
     std::string get_name() const override { return "nullable_last_value"; }
@@ -549,7 +589,13 @@ class LeadLagWindowFunction final : public ValueWindowFunction<LT, LeadLagState<
     using InputColumnType = typename ValueWindowFunction<LT, FirstValueState<LT>, T>::InputColumnType;
 
     void reset(FunctionContext* ctx, const Columns& args, AggDataPtr __restrict state) const override {
-        this->data(state).value = {};
+        if constexpr (lt_is_string<LT>) {
+            this->data(state).value.release(ctx->get_allocator());
+            this->data(state).default_value.release(ctx->get_allocator());
+        } else {
+            this->data(state).value = {};
+            this->data(state).default_value = {};
+        }
         this->data(state).is_null = false;
 
         // get offset
@@ -574,11 +620,21 @@ class LeadLagWindowFunction final : public ValueWindowFunction<LT, LeadLagState<
             } else {
                 if constexpr (lt_is_array<LT>) {
                     const auto* column = down_cast<const ArrayColumn*>(ColumnHelper::get_data_column(arg2));
-                    AggDataTypeTraits<LT>::assign_value(this->data(state).default_value,
-                                                        AggDataTypeTraits<LT>::get_row_ref(*column, 0));
+                    if constexpr (lt_is_string<LT>) {
+                        AggDataTypeTraits<LT>::assign_value(this->data(state).default_value,
+                                                            AggDataTypeTraits<LT>::get_row_ref(*column, 0),
+                                                            ctx->get_allocator());
+                    } else {
+                        AggDataTypeTraits<LT>::assign_value(this->data(state).default_value,
+                                                            AggDataTypeTraits<LT>::get_row_ref(*column, 0));
+                    }
                 } else {
                     auto value = ColumnHelper::get_const_value<LT>(arg2);
-                    AggDataTypeTraits<LT>::assign_value(this->data(state).default_value, value);
+                    if constexpr (lt_is_string<LT>) {
+                        AggDataTypeTraits<LT>::assign_value(this->data(state).default_value, value, ctx->get_allocator());
+                    } else {
+                        AggDataTypeTraits<LT>::assign_value(this->data(state).default_value, value);
+                    }
                 }
             }
         } else {
@@ -694,6 +750,11 @@ class LeadLagWindowFunction final : public ValueWindowFunction<LT, LeadLagState<
                             AggDataTypeTraits<LT>::assign_value(
                                     this->data(state).value,
                                     AggDataTypeTraits<LT>::get_row_ref(*this->data(state).default_value, 0));
+                        } else if constexpr (lt_is_string<LT>){
+                            AggDataTypeTraits<LT>::assign_value(
+                                this->data(state).value,
+                                AggDataTypeTraits<LT>::get_ref(this->data(state).default_value),
+                                ctx->get_allocator());
                         } else {
                             this->data(state).value = this->data(state).default_value;
                         }
@@ -705,9 +766,16 @@ class LeadLagWindowFunction final : public ValueWindowFunction<LT, LeadLagState<
                             if (!this->data(state).is_null) {
                                 const auto* column =
                                         down_cast<const InputColumnType*>(ColumnHelper::get_data_column(def_col));
-                                AggDataTypeTraits<LT>::assign_value(
-                                        this->data(state).value,
-                                        AggDataTypeTraits<LT>::get_row_ref(*column, current_row));
+                                if constexpr (lt_is_string<LT>) {
+                                    AggDataTypeTraits<LT>::assign_value(
+                                            this->data(state).value,
+                                            AggDataTypeTraits<LT>::get_row_ref(*column, current_row),
+                                            ctx->get_allocator());
+                                } else {
+                                    AggDataTypeTraits<LT>::assign_value(
+                                            this->data(state).value,
+                                            AggDataTypeTraits<LT>::get_row_ref(*column, current_row));
+                                }
                             }
                         } else {
                             this->data(state).is_null = true;
@@ -718,8 +786,14 @@ class LeadLagWindowFunction final : public ValueWindowFunction<LT, LeadLagState<
                 const Column* data_column = ColumnHelper::get_data_column(columns[0]);
                 const auto* column = down_cast<const InputColumnType*>(data_column);
                 this->data(state).is_null = false;
-                AggDataTypeTraits<LT>::assign_value(this->data(state).value,
-                                                    AggDataTypeTraits<LT>::get_row_ref(*column, value_index));
+                if constexpr (lt_is_string<LT>) {
+                    AggDataTypeTraits<LT>::assign_value(this->data(state).value,
+                                                        AggDataTypeTraits<LT>::get_row_ref(*column, value_index),
+                                                        ctx->get_allocator());
+                } else {
+                    AggDataTypeTraits<LT>::assign_value(this->data(state).value,
+                                                        AggDataTypeTraits<LT>::get_row_ref(*column, value_index));
+                }
             }
         } else {
             // frame_start < peer_group_start is for lag function
@@ -734,6 +808,11 @@ class LeadLagWindowFunction final : public ValueWindowFunction<LT, LeadLagState<
                             AggDataTypeTraits<LT>::assign_value(
                                     this->data(state).value,
                                     AggDataTypeTraits<LT>::get_row_ref(*this->data(state).default_value, 0));
+                        } else if constexpr (lt_is_string<LT>) {
+                            AggDataTypeTraits<LT>::assign_value(
+                                this->data(state).value,
+                                AggDataTypeTraits<LT>::get_ref(this->data(state).default_value),
+                                ctx->get_allocator());
                         } else {
                             this->data(state).value = this->data(state).default_value;
                         }
@@ -748,9 +827,16 @@ class LeadLagWindowFunction final : public ValueWindowFunction<LT, LeadLagState<
                         if (!this->data(state).is_null) {
                             const auto* column =
                                     down_cast<const InputColumnType*>(ColumnHelper::get_data_column(def_col));
-                            AggDataTypeTraits<LT>::assign_value(
-                                    this->data(state).value,
-                                    AggDataTypeTraits<LT>::get_row_ref(*column, current_row_index));
+                            if constexpr (lt_is_string<LT>) {
+                                AggDataTypeTraits<LT>::assign_value(
+                                        this->data(state).value,
+                                        AggDataTypeTraits<LT>::get_row_ref(*column, current_row_index),
+                                        ctx->get_allocator());
+                            } else {
+                                AggDataTypeTraits<LT>::assign_value(
+                                        this->data(state).value,
+                                        AggDataTypeTraits<LT>::get_row_ref(*column, current_row_index));
+                            }
                         }
                     } else {
                         this->data(state).is_null = true;
@@ -763,8 +849,14 @@ class LeadLagWindowFunction final : public ValueWindowFunction<LT, LeadLagState<
                 this->data(state).is_null = false;
                 const Column* data_column = ColumnHelper::get_data_column(columns[0]);
                 const auto* column = down_cast<const InputColumnType*>(data_column);
-                AggDataTypeTraits<LT>::assign_value(this->data(state).value,
-                                                    AggDataTypeTraits<LT>::get_row_ref(*column, frame_end - 1));
+                if constexpr (lt_is_string<LT>) {
+                    AggDataTypeTraits<LT>::assign_value(this->data(state).value,
+                                                        AggDataTypeTraits<LT>::get_row_ref(*column, frame_end - 1),
+                                                        ctx->get_allocator());
+                } else {
+                    AggDataTypeTraits<LT>::assign_value(this->data(state).value,
+                                                        AggDataTypeTraits<LT>::get_row_ref(*column, frame_end - 1));
+                }
             } else {
                 this->data(state).is_null = true;
             }
@@ -773,7 +865,15 @@ class LeadLagWindowFunction final : public ValueWindowFunction<LT, LeadLagState<
 
     void get_values(FunctionContext* ctx, ConstAggDataPtr __restrict state, Column* dst, size_t start,
                     size_t end) const override {
-        this->get_values_helper(state, dst, start, end);
+        this->get_values_helper(ctx, state, dst, start, end);
+    }
+
+    void destroy(FunctionContext* ctx, AggDataPtr __restrict ptr) const override {
+        if constexpr (lt_is_string<LT>) {
+            this->data(ptr).value.release(ctx->get_allocator());
+            this->data(ptr).default_value.release(ctx->get_allocator());
+        }
+        AggregateFunctionStateHelper<LeadLagState<LT, ignoreNulls>>::destroy(ctx, ptr);
     }
 
     std::string get_name() const override { return "lead-lag"; }

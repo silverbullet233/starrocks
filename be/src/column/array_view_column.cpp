@@ -22,13 +22,15 @@
 #include "column/chunk.h"
 #include "column/vectorized_fwd.h"
 #include "gutil/casts.h"
+#include "runtime/memory/memory_allocator.h"
 
 namespace starrocks {
 
-StatusOr<MutableColumnPtr> ArrayViewColumn::replicate(const Buffer<uint32_t>& offsets) {
+StatusOr<MutableColumnPtr> ArrayViewColumn::replicate(const Buffer<uint32_t>& offsets, memory::Allocator* allocator) {
+    auto* alloc = allocator != nullptr ? allocator : this->get_allocator();
     auto dest_size = offsets.size() - 1;
-    auto new_offsets = UInt32Column::create();
-    auto new_lengths = UInt32Column::create();
+    auto new_offsets = UInt32Column::create(alloc);
+    auto new_lengths = UInt32Column::create(alloc);
     new_offsets->reserve(offsets.back());
     new_lengths->reserve(offsets.back());
 
@@ -37,7 +39,7 @@ StatusOr<MutableColumnPtr> ArrayViewColumn::replicate(const Buffer<uint32_t>& of
         new_offsets->append_value_multiple_times(*_offsets, i, repeat_times);
         new_lengths->append_value_multiple_times(*_lengths, i, repeat_times);
     }
-    return ArrayViewColumn::create(_elements->as_mutable_ptr(), std::move(new_offsets), std::move(new_lengths));
+    return ArrayViewColumn::create(alloc, _elements->as_mutable_ptr(), std::move(new_offsets), std::move(new_lengths));
 }
 
 void ArrayViewColumn::assign(size_t n, size_t idx) {
@@ -256,8 +258,9 @@ std::string ArrayViewColumn::debug_string() const {
     return ss.str();
 }
 
-MutableColumnPtr ArrayViewColumn::clone_empty() const {
-    return create(_elements, UInt32Column::create(), UInt32Column::create());
+MutableColumnPtr ArrayViewColumn::clone_empty(memory::Allocator* allocator) const {
+    allocator = allocator == nullptr ? get_allocator() : allocator;
+    return create(allocator, _elements, UInt32Column::create(allocator), UInt32Column::create(allocator));
 }
 
 void ArrayViewColumn::swap_column(Column& rhs) {
@@ -272,9 +275,10 @@ void ArrayViewColumn::reset_column() {
     _lengths->reset_column();
 }
 
-ColumnPtr ArrayViewColumn::to_array_column() const {
-    auto array_elements = _elements->clone_empty();
-    auto array_offsets = UInt32Column::create();
+ColumnPtr ArrayViewColumn::to_array_column(memory::Allocator* allocator) const {
+    auto* alloc = allocator != nullptr ? allocator : this->get_allocator();
+    auto array_elements = _elements->clone_empty(alloc);
+    auto array_offsets = UInt32Column::create(alloc);
     array_offsets->reserve(_offsets->size() + 1);
     array_offsets->append(0);
     uint32_t last_offset = 0;
@@ -287,7 +291,7 @@ ColumnPtr ArrayViewColumn::to_array_column() const {
         array_offsets->append(last_offset + length);
         last_offset += length;
     }
-    return ArrayColumn::create(std::move(array_elements), std::move(array_offsets));
+    return ArrayColumn::create(alloc, std::move(array_elements), std::move(array_offsets));
 }
 
 // for example,
@@ -301,12 +305,13 @@ ColumnPtr ArrayViewColumn::to_array_column() const {
 //  elements column: [1,2,3,4]
 //  offsets column: [0,2,2,3]
 //  length column:  [2,0,0,1]
-MutableColumnPtr ArrayViewColumn::from_array_column(const ColumnPtr& column) {
+MutableColumnPtr ArrayViewColumn::from_array_column(const ColumnPtr& column, memory::Allocator* allocator) {
     if (!column->is_array()) {
         throw std::runtime_error("input column must be an array column");
     }
-    auto view_offsets = UInt32Column::create();
-    auto view_lengths = UInt32Column::create();
+    auto* alloc = allocator != nullptr ? allocator : column->get_allocator();
+    auto view_offsets = UInt32Column::create(alloc);
+    auto view_lengths = UInt32Column::create(alloc);
     view_offsets->reserve(column->size());
     view_lengths->reserve(column->size());
     ColumnPtr view_elements;
@@ -326,8 +331,8 @@ MutableColumnPtr ArrayViewColumn::from_array_column(const ColumnPtr& column) {
             view_offsets->append(offset);
             view_lengths->append(length);
         }
-        auto ret = NullableColumn::create(
-                ArrayViewColumn::create(std::move(view_elements), std::move(view_offsets), std::move(view_lengths)),
+        auto ret = NullableColumn::create(alloc, 
+                ArrayViewColumn::create(alloc, std::move(view_elements), std::move(view_offsets), std::move(view_lengths)),
                 nullable_column->null_column()->as_mutable_ptr());
         ret->check_or_die();
         return ret;
@@ -343,22 +348,24 @@ MutableColumnPtr ArrayViewColumn::from_array_column(const ColumnPtr& column) {
         view_offsets->append(offset);
         view_lengths->append(length);
     }
-    return ArrayViewColumn::create(std::move(view_elements), std::move(view_offsets), std::move(view_lengths));
+    return ArrayViewColumn::create(alloc, std::move(view_elements), std::move(view_offsets), std::move(view_lengths));
 }
 
-ColumnPtr ArrayViewColumn::to_array_column(const ColumnPtr& column) {
+ColumnPtr ArrayViewColumn::to_array_column(const ColumnPtr& column, memory::Allocator* allocator) {
     if (!column->is_array_view()) {
         throw std::runtime_error("input column must be an array view column");
     }
+
+    auto* alloc = allocator != nullptr ? allocator : column->get_allocator();
 
     if (column->is_nullable()) {
         auto nullable_column = down_cast<const NullableColumn*>(column.get());
         DCHECK(nullable_column != nullptr);
         auto array_view_column = down_cast<const ArrayViewColumn*>(nullable_column->data_column().get());
-        auto array_column = array_view_column->to_array_column();
-        return NullableColumn::create(std::move(array_column), std::move(nullable_column->null_column()));
+        auto array_column = array_view_column->to_array_column(alloc);
+        return NullableColumn::create(alloc, std::move(array_column), std::move(nullable_column->null_column()));
     }
     auto array_view_column = down_cast<const ArrayViewColumn*>(column.get());
-    return array_view_column->to_array_column();
+    return array_view_column->to_array_column(alloc);
 }
 } // namespace starrocks

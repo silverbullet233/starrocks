@@ -49,14 +49,14 @@ public:
 protected:
     void SetUp() override;
 
-    std::shared_ptr<LRUCacheEngine> _lru_cache;
+    std::shared_ptr<LRUCacheEngine<>> _lru_cache;
     std::shared_ptr<StoragePageCache> _page_cache;
     size_t _capacity = kNumShards * 2048;
 };
 
 void StoragePageCacheTest::SetUp() {
     MemCacheOptions opts{.mem_space_size = _capacity};
-    _lru_cache = std::make_shared<LRUCacheEngine>();
+    _lru_cache = std::make_shared<LRUCacheEngine<>>();
     ASSERT_OK(_lru_cache->init(opts));
     _page_cache = std::make_shared<StoragePageCache>(_lru_cache.get());
 }

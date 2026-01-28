@@ -119,13 +119,13 @@ StatusOr<ColumnPtr> BinaryFunctions::iceberg_truncate_binary(FunctionContext* co
     ColumnPtr c1 = columns[1];
     NullColumn::MutablePtr null_flags;
     bool has_null = false;
-    PREPARE_COLUMN_WITH_CONST_AND_NULL_FOR_ICEBERG_FUNC(c0, c1);
+    PREPARE_COLUMN_WITH_CONST_AND_NULL_FOR_ICEBERG_FUNC(context, c0, c1);
     (void)has_null;
     const int size = c0->size();
     int32_t width = c1->get(0).get_int32();
     uint8_t* raw_null_flags = null_flags->get_data().data();
     auto col = ColumnHelper::cast_to_raw<TYPE_BINARY>(c0);
-    ColumnBuilder<TYPE_BINARY> result(size);
+    ColumnBuilder<TYPE_BINARY> result(context->get_allocator(), size);
     auto& raw_c0 = col->get_proxy_data();
 
 #define SLICE_SIZE_MIN(x, y) x < y ? x : y

@@ -27,13 +27,13 @@ public:
     void TearDown() override {}
 
 protected:
-    std::shared_ptr<LRUCacheEngine> _cache_engine;
+    std::shared_ptr<LRUCacheEngine<>> _cache_engine;
     std::shared_ptr<StoragePageCache> _page_cache;
 };
 
 void PageHandleTest::SetUp() {
     MemCacheOptions options{.mem_space_size = 10 * 1024 * 1024};
-    _cache_engine = std::make_shared<LRUCacheEngine>();
+    _cache_engine = std::make_shared<LRUCacheEngine<>>();
     ASSERT_OK(_cache_engine->init(options));
     _page_cache = std::make_shared<StoragePageCache>(_cache_engine.get());
 }

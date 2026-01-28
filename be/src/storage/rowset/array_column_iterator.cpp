@@ -18,6 +18,7 @@
 #include "column/column_access_path.h"
 #include "column/const_column.h"
 #include "column/nullable_column.h"
+#include "runtime/memory/memory_allocator.h"
 #include "storage/rowset/scalar_column_iterator.h"
 
 namespace starrocks {
@@ -107,7 +108,7 @@ Status ArrayColumnIterator::next_batch(size_t* n, Column* dst) {
     } else {
         if (!array_column->elements_column()->is_constant()) {
             array_column->elements_column_raw_ptr()->append_default(1);
-            array_column->elements_column() = ConstColumn::create(array_column->elements_column(), num_to_read);
+            array_column->elements_column() = ConstColumn::create(array_column->get_allocator(), array_column->elements_column(), num_to_read);
         } else {
             array_column->elements_column_raw_ptr()->append_default(num_to_read);
         }
@@ -186,7 +187,7 @@ Status ArrayColumnIterator::next_batch(const SparseRange<>& range, Column* dst) 
     } else {
         if (!array_column->elements_column()->is_constant()) {
             array_column->elements_column_raw_ptr()->append_default(1);
-            array_column->elements_column() = ConstColumn::create(array_column->elements_column(), read_rows);
+            array_column->elements_column() = ConstColumn::create(array_column->get_allocator(), array_column->elements_column(), read_rows);
         } else {
             array_column->elements_column_raw_ptr()->append_default(read_rows);
         }
@@ -204,7 +205,7 @@ Status ArrayColumnIterator::fetch_values_by_rowid(const rowid_t* rowids, size_t 
     }
 
     // 2. Read offset column
-    UInt32Column array_size;
+    UInt32Column array_size(_opts.allocator);
     array_size.reserve(size);
     RETURN_IF_ERROR(_array_size_iterator->fetch_values_by_rowid(rowids, size, &array_size));
 
@@ -231,7 +232,7 @@ Status ArrayColumnIterator::fetch_values_by_rowid(const rowid_t* rowids, size_t 
     } else {
         if (!array_column->elements_column()->is_constant()) {
             array_column->elements_column_raw_ptr()->append_default(1);
-            array_column->elements_column() = ConstColumn::create(array_column->elements_column());
+            array_column->elements_column() = ConstColumn::create(array_column->get_allocator(), array_column->elements_column());
         }
 
         size_t size_to_read = 0;
@@ -321,7 +322,7 @@ Status ArrayColumnIterator::fetch_dict_codes_by_rowid(const rowid_t* rowids, siz
     }
 
     // 2. Read offset column
-    UInt32Column array_size;
+    UInt32Column array_size(_opts.allocator);
     array_size.reserve(size);
     RETURN_IF_ERROR(_array_size_iterator->fetch_values_by_rowid(rowids, size, &array_size));
 

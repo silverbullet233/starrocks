@@ -3355,7 +3355,7 @@ TEST_F(FileReaderTest, TestStructSubfieldNoDecodeNotOutput) {
 
 TEST_F(FileReaderTest, TestReadFooterCache) {
     MemCacheOptions options{.mem_space_size = 100 * MB};
-    auto local_cache = std::make_shared<LRUCacheEngine>();
+    auto local_cache = std::make_shared<LRUCacheEngine<>>();
     ASSERT_OK(local_cache->init(options));
     auto cache = std::make_shared<StoragePageCache>(local_cache.get());
 

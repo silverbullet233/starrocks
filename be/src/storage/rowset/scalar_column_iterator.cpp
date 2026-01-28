@@ -53,6 +53,7 @@ ScalarColumnIterator::~ScalarColumnIterator() = default;
 
 Status ScalarColumnIterator::init(const ColumnIteratorOptions& opts) {
     _opts = opts;
+    _array_size = UInt32Column::create(_opts.allocator);
 
     IndexReadOptions index_opts;
     index_opts.use_page_cache = !opts.temporary_data && opts.use_page_cache && !config::disable_storage_page_cache &&
@@ -189,15 +190,15 @@ Status ScalarColumnIterator::seek_to_ordinal_and_calc_element_ordinal(ordinal_t 
         RETURN_IF_ERROR(_reader->seek_at_or_before(ord, &_page_iter));
         RETURN_IF_ERROR(_read_data_page(_page_iter));
     }
-    _array_size.resize(0);
+    _array_size->resize(0);
     _element_ordinal = static_cast<int64_t>(_page->corresponding_element_ordinal());
     _current_ordinal = _page->first_ordinal();
     RETURN_IF_ERROR(_seek_to_pos_in_page(_page.get(), 0));
     size_t size_to_read = ord - _current_ordinal;
-    RETURN_IF_ERROR(_page->read(&_array_size, &size_to_read));
+    RETURN_IF_ERROR(_page->read(_array_size.get(), &size_to_read));
     _current_ordinal += size_to_read;
     CHECK_EQ(ord, _current_ordinal);
-    for (auto e : _array_size.get_data()) {
+    for (auto e : _array_size->get_data()) {
         _element_ordinal += e;
     }
     return Status::OK();

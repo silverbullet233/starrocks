@@ -29,6 +29,7 @@
 #include "util/failpoint/fail_point.h"
 #include "util/runtime_profile.h"
 #include "util/stack_util.h"
+#include "runtime/memory/memory_allocator.h"
 
 namespace starrocks {
 
@@ -411,8 +412,10 @@ void JoinHashTable::close() {
 // may be called more than once if spill
 void JoinHashTable::create(const HashTableParam& param) {
     _table_items = std::make_shared<JoinHashTableItems>();
+    _table_items->_allocator = param.allocator;
     if (_probe_state == nullptr) {
         _probe_state = std::make_unique<HashTableProbeState>();
+        _probe_state->allocator = param.allocator;
         _probe_state->search_ht_timer = param.search_ht_timer;
         _probe_state->output_probe_column_timer = param.output_probe_column_timer;
         _probe_state->output_build_column_timer = param.output_build_column_timer;
@@ -572,7 +575,7 @@ void JoinHashTable::_init_build_column(const HashTableParam& param) {
                     (join_key_col_refs.find(slot->id()) == join_key_col_refs.end()) &&
                     (param.column_view_concat_rows_limit >= 0 || param.column_view_concat_bytes_limit >= 0);
 
-            MutableColumnPtr column = ColumnHelper::create_column(slot->type(), slot->is_nullable(), use_view,
+            MutableColumnPtr column = ColumnHelper::create_column(_table_items->_allocator, slot->type(), slot->is_nullable(), use_view,
                                                                   param.column_view_concat_rows_limit,
                                                                   param.column_view_concat_bytes_limit);
             if (column->is_nullable()) {
@@ -592,7 +595,7 @@ void JoinHashTable::_init_join_keys() {
         if (key_desc.col_ref) {
             _table_items->key_columns.emplace_back(nullptr);
         } else {
-            auto key_column = ColumnHelper::create_column(*key_desc.type, false);
+            auto key_column = ColumnHelper::create_column(_table_items->_allocator, *key_desc.type, false);
             key_column->append_default();
             _table_items->key_columns.emplace_back(std::move(key_column));
         }
@@ -708,6 +711,7 @@ Status JoinHashTable::probe_remain(RuntimeState* state, ChunkPtr* chunk, bool* e
 }
 
 void JoinHashTable::append_chunk(const ChunkPtr& chunk, const Columns& key_columns) {
+    chunk->check_or_die();
     auto& columns = _table_items->build_chunk->columns();
 
     CancelableDefer defer = CancelableDefer([&]() {
@@ -722,7 +726,7 @@ void JoinHashTable::append_chunk(const ChunkPtr& chunk, const Columns& key_colum
         if (!columns[i]->is_nullable() && !columns[i]->is_view() && column->is_nullable()) {
             // upgrade to nullable column
             size_t col_size = columns[i]->size();
-            columns[i] = NullableColumn::create(std::move(columns[i]), NullColumn::create(col_size, 0));
+            columns[i] = NullableColumn::create(_table_items->_allocator, std::move(columns[i]), NullColumn::create(_table_items->_allocator, col_size, 0));
         }
         columns[i]->as_mutable_raw_ptr()->append(*column);
         FAIL_POINT_TRIGGER_EXECUTE(hash_join_append_bad_alloc, {
@@ -738,7 +742,7 @@ void JoinHashTable::append_chunk(const ChunkPtr& chunk, const Columns& key_colum
             if (!_table_items->key_columns[i]->is_nullable() && key_columns[i]->is_nullable()) {
                 size_t row_count = _table_items->key_columns[i]->size();
                 _table_items->key_columns[i] =
-                        NullableColumn::create(_table_items->key_columns[i], NullColumn::create(row_count, 0));
+                        NullableColumn::create(_table_items->_allocator, _table_items->key_columns[i], NullColumn::create(_table_items->_allocator, row_count, 0));
             }
             _table_items->key_columns[i]->as_mutable_raw_ptr()->append(*key_columns[i]);
         }
@@ -763,7 +767,7 @@ void JoinHashTable::merge_ht(const JoinHashTable& ht) {
     for (size_t i = 0; i < _table_items->build_column_count; i++) {
         if (!columns[i]->is_nullable() && !columns[i]->is_view() && other_columns[i]->is_nullable()) {
             // upgrade to nullable column
-            columns[i] = NullableColumn::create(columns[i], NullColumn::create(columns[i]->size(), 0));
+            columns[i] = NullableColumn::create(_table_items->_allocator, columns[i], NullColumn::create(_table_items->_allocator, columns[i]->size(), 0));
         }
         columns[i]->as_mutable_raw_ptr()->append(*other_columns[i], 1, other_columns[i]->size() - 1);
     }
@@ -777,7 +781,7 @@ void JoinHashTable::merge_ht(const JoinHashTable& ht) {
             // upgrade to nullable column
             if (!key_columns[i]->is_nullable() && other_key_columns[i]->is_nullable()) {
                 const size_t row_count = key_columns[i]->size();
-                key_columns[i] = NullableColumn::create(key_columns[i], NullColumn::create(row_count, 0));
+                key_columns[i] = NullableColumn::create(_table_items->_allocator, key_columns[i], NullColumn::create(_table_items->_allocator, row_count, 0));
             }
             key_columns[i]->as_mutable_raw_ptr()->append(*other_key_columns[i]);
         }
@@ -792,7 +796,7 @@ ChunkPtr JoinHashTable::convert_to_spill_schema(const ChunkPtr& chunk) const {
         SlotDescriptor* slot = _table_items->build_slots[i].slot;
         ColumnPtr& column = chunk->get_column_by_slot_id(slot->id());
         if (slot->is_nullable()) {
-            column = ColumnHelper::cast_to_nullable_column(std::move(column));
+            column = ColumnHelper::cast_to_nullable_column(_table_items->_allocator, std::move(column));
         }
         output->append_column(column, slot->id());
     }

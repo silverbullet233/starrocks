@@ -69,10 +69,10 @@ public:
         kMaterialized,
     };
 
-    AdaptiveNullableColumn() = default;
+    AdaptiveNullableColumn(memory::Allocator* allocator) : SuperClass(allocator) {}
 
-    explicit AdaptiveNullableColumn(MutableColumnPtr&& data_column, MutableColumnPtr&& null_column)
-            : SuperClass(std::move(data_column), std::move(null_column)) {
+    explicit AdaptiveNullableColumn(memory::Allocator* allocator, MutableColumnPtr&& data_column, MutableColumnPtr&& null_column)
+            : SuperClass(allocator, std::move(data_column), std::move(null_column)) {
         DCHECK_EQ(_null_column->size(), _data_column->size());
         if (_data_column->size() == 0) {
             _state = State::kUninitialized;
@@ -84,14 +84,11 @@ public:
 
     State state() { return _state; }
 
-    AdaptiveNullableColumn(const AdaptiveNullableColumn& rhs) { CHECK(false) << "unimplemented"; }
-
-    AdaptiveNullableColumn(AdaptiveNullableColumn&& rhs) noexcept { CHECK(false) << "unimplemented"; }
-
-    AdaptiveNullableColumn& operator=(const AdaptiveNullableColumn& rhs) {
-        AdaptiveNullableColumn tmp(rhs);
-        this->swap_column(tmp);
-        return *this;
+    AdaptiveNullableColumn(AdaptiveNullableColumn&& rhs) noexcept
+            : SuperClass(rhs._allocator, rhs._data_column->as_mutable_ptr(), rhs._null_column->as_mutable_ptr()),
+              _state(rhs._state),
+              _size(rhs._size) {
+        CHECK(false) << "unimplemented";
     }
 
     AdaptiveNullableColumn& operator=(AdaptiveNullableColumn&& rhs) noexcept {
@@ -359,8 +356,16 @@ public:
         return sizeof(uint8_t) + _data_column->serialize_size(idx);
     }
 
-    MutableColumnPtr clone_empty() const override {
-        return NullableColumn::create(_data_column->clone_empty(), _null_column->clone_empty());
+    MutableColumnPtr clone_empty(memory::Allocator* allocator = nullptr) const override {
+        allocator = allocator == nullptr ? this->get_allocator() : allocator;
+        return NullableColumn::create(allocator, _data_column->clone_empty(allocator),
+                                      _null_column->clone_empty(allocator));
+    }
+    MutableColumnPtr clone(memory::Allocator* allocator = nullptr) const override {
+        allocator = allocator == nullptr ? this->get_allocator() : allocator;
+        auto p = clone_empty(allocator);
+        p->append(*this, 0, size());
+        return p;
     }
 
     size_t serialize_batch_at_interval(uint8_t* dst, size_t byte_offset, size_t byte_interval, uint32_t max_row_size,
@@ -507,9 +512,9 @@ public:
         }
     }
 
-    StatusOr<MutableColumnPtr> replicate(const Buffer<uint32_t>& offsets) override {
+    StatusOr<MutableColumnPtr> replicate(const Buffer<uint32_t>& offsets, memory::Allocator* allocator = nullptr) override {
         materialized_nullable();
-        return NullableColumn::replicate(offsets);
+        return NullableColumn::replicate(offsets, allocator);
     }
 
     size_t memory_usage() const override {
@@ -557,17 +562,17 @@ public:
             switch (_state) {
             case State::kNull: {
                 _data_column->as_mutable_raw_ptr()->append_default(_size);
-                null_column_data().insert(null_column_data().end(), _size, 1);
+                null_column_data().insert(_size, 1);
                 _has_null = true;
                 break;
             }
             case State::kConstant: {
                 _data_column->as_mutable_raw_ptr()->append_default(_size);
-                null_column_data().insert(null_column_data().end(), _size, 0);
+                null_column_data().insert(_size, 0);
                 break;
             }
             case State::kNotConstant: {
-                null_column_data().insert(null_column_data().end(), _size, 0);
+                null_column_data().insert(_size, 0);
                 break;
             }
             default: {
@@ -587,6 +592,8 @@ private:
 
     mutable State _state;
     mutable size_t _size;
+
+    DISALLOW_COPY(AdaptiveNullableColumn);
 };
 
 } // namespace starrocks

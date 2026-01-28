@@ -217,6 +217,18 @@ void OrderedPartitionExchanger::close(RuntimeState* state) {
 
 Status OrderedPartitionExchanger::accept(const ChunkPtr& chunk, const int32_t sink_driver_sequence) {
     DCHECK_EQ(sink_driver_sequence, 0);
+    auto debug_chunk = [](const ChunkPtr& c) {
+        std::ostringstream oss;
+        oss << "Chunk@" << (void*)c.get();
+        if (c) {
+            oss << ", debug_columns: " << c->debug_columns();
+        }
+        return oss.str();
+    };
+    LOG(INFO) << "OrderedPartitionExchanger::accept, chunk: " 
+        << debug_chunk(chunk) << ", previous_chunk: " << debug_chunk(_previous_chunk)
+        << ", " << (void*)this;
+
 
     Columns partition_columns(_partition_exprs.size());
     for (size_t i = 0; i < partition_columns.size(); ++i) {
@@ -244,6 +256,7 @@ Status OrderedPartitionExchanger::accept(const ChunkPtr& chunk, const int32_t si
             }
             return true;
         };
+        _previous_chunk->check_or_die();
         // Check if the joint of two consecutive chunks are the same
         bool is_joint_equal =
                 is_equal(_previous_partition_columns, _previous_chunk->num_rows() - 1, partition_columns, 0);
@@ -286,6 +299,7 @@ Status OrderedPartitionExchanger::accept(const ChunkPtr& chunk, const int32_t si
 
     _previous_channel_id = chunks.back().first;
     _previous_chunk = chunk;
+    _previous_chunk->check_or_die();
     _previous_partition_columns = std::move(partition_columns);
 
     return Status::OK();

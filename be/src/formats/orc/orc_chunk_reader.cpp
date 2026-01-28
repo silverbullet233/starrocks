@@ -26,8 +26,10 @@
 #include "column/array_column.h"
 #include "column/vectorized_fwd.h"
 #include "exprs/cast_expr.h"
+#include "exprs/expr_context.h"
 #include "exprs/literal.h"
 #include "exprs/runtime_filter.h"
+#include "runtime/memory/memory_allocator.h"
 #include "formats/orc/orc_mapping.h"
 #include "formats/orc/orc_memory_pool.h"
 #include "formats/orc/utils.h"
@@ -475,7 +477,8 @@ Status OrcChunkReader::_fill_chunk(ChunkPtr* chunk, const std::vector<SlotDescri
     if (_broker_load_mode) {
         // always allocate load filter. it's much easier to use in fill chunk function.
         if (_broker_load_filter == nullptr) {
-            _broker_load_filter = std::make_shared<Filter>(_read_chunk_size);
+            auto* allocator = memory::get_default_allocator();
+            _broker_load_filter = std::make_shared<Filter>(allocator, _read_chunk_size);
         }
         _broker_load_filter->assign(_batch->numElements, 1);
     }
@@ -546,7 +549,7 @@ ChunkPtr OrcChunkReader::_create_chunk(const std::vector<SlotDescriptor*>& src_s
         if (indices != nullptr) {
             src_index = (*indices)[src_index];
         }
-        auto col = ColumnHelper::create_column(_src_types[src_index], slot_desc->is_nullable());
+        auto col = ColumnHelper::create_column(memory::get_default_allocator(), _src_types[src_index], slot_desc->is_nullable());
         chunk->append_column(std::move(col), slot_desc->id());
     }
     return chunk;
@@ -569,8 +572,10 @@ StatusOr<ChunkPtr> OrcChunkReader::_cast_chunk(ChunkPtr* chunk,
             src_index = (*indices)[src_index];
         }
         // TODO(murphy) check status
-        ASSIGN_OR_RETURN(ColumnPtr col, _cast_exprs[src_index]->evaluate_checked(nullptr, src.get()));
-        col = ColumnHelper::unfold_const_column(slot->type(), chunk_size, std::move(col));
+        ExprContext tmp_ctx(_cast_exprs[src_index]);
+        tmp_ctx.set_allocator(memory::get_default_allocator());
+        ASSIGN_OR_RETURN(ColumnPtr col, _cast_exprs[src_index]->evaluate_checked(&tmp_ctx, src.get()));
+        col = ColumnHelper::unfold_const_column(memory::get_default_allocator(), slot->type(), chunk_size, std::move(col));
 
         // If we feed nullable column to cast_expr, it may return non-nullable column if it really doesn't have null values
         if (slot->is_nullable()) {
@@ -847,7 +852,9 @@ static StatusOr<orc::Literal> translate_to_orc_literal(Expr* lit, orc::Predicate
     }
 
     auto* vlit = down_cast<VectorizedLiteral*>(lit);
-    ASSIGN_OR_RETURN(auto ptr, vlit->evaluate_checked(nullptr, nullptr));
+    ExprContext tmp_ctx(vlit);
+    tmp_ctx.set_allocator(memory::get_default_allocator());
+    ASSIGN_OR_RETURN(auto ptr, vlit->evaluate_checked(&tmp_ctx, nullptr));
     if (ptr->only_null()) {
         return {pred_type};
     }
@@ -940,7 +947,9 @@ Status OrcChunkReader::_add_conjunct(const Expr* conjunct,
         orc::TruthValue val = orc::TruthValue::NO;
         if (node_type == TExprNodeType::BOOL_LITERAL) {
             Expr* literal = const_cast<Expr*>(conjunct);
-            auto ptr = literal->evaluate_checked(nullptr, nullptr).value();
+            ExprContext tmp_ctx(literal);
+            tmp_ctx.set_allocator(memory::get_default_allocator());
+            auto ptr = literal->evaluate_checked(&tmp_ctx, nullptr).value();
             const Datum& datum = ptr->get(0);
             if (datum.get_int8()) {
                 val = orc::TruthValue::YES;
@@ -1214,7 +1223,7 @@ Status OrcChunkReader::build_search_argument_by_predicates(const OrcPredicates* 
 StatusOr<MutableColumnPtr> OrcChunkReader::get_row_delete_filter(const SkipRowsContextPtr& skip_rows_ctx) {
     int64_t start_pos = _row_reader->getRowNumber();
     auto num_rows = _batch->numElements;
-    auto filter_column = BooleanColumn::create(num_rows, 1);
+    auto filter_column = BooleanColumn::create(memory::get_default_allocator(), num_rows);
     auto& filter = static_cast<BooleanColumn*>(filter_column.get())->get_data();
 
     if (skip_rows_ctx == nullptr || !skip_rows_ctx->has_skip_rows()) {
@@ -1260,7 +1269,7 @@ Status OrcChunkReader::apply_dict_filter_eval_cache(const std::unordered_map<Slo
         uint64_t column_id = _root_mapping->get_orc_type_child_mapping(pos_in_src_slot_descs).orc_type->getColumnId();
 
         const Filter& dict_filter = (*it.second);
-        auto data_filter = BooleanColumn::create(size);
+        auto data_filter = BooleanColumn::create(memory::get_default_allocator(), size);
         Filter& data = static_cast<BooleanColumn*>(data_filter.get())->get_data();
         DCHECK(data.size() == size);
 

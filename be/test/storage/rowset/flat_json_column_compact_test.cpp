@@ -41,8 +41,13 @@
 #include "types/logical_type.h"
 #include "util/json.h"
 #include "util/json_flattener.h"
+#include "runtime/memory/memory_allocator.h"
 
 namespace starrocks {
+
+namespace {
+static memory::Allocator* kAllocator = memory::get_default_allocator();
+}
 
 // NOLINTNEXTLINE
 static const std::string TEST_DIR = "/flat_json_column_rw_test";
@@ -67,7 +72,7 @@ protected:
     }
 
     MutableColumnPtr normal_json(const std::string& json, bool is_nullable) {
-        auto json_col = JsonColumn::create();
+        auto json_col = JsonColumn::create(kAllocator);
         auto* json_column = down_cast<JsonColumn*>(json_col.get());
         if ("NULL" != json) {
             ASSIGN_OR_ABORT(auto jv, JsonValue::parse(json));
@@ -77,17 +82,17 @@ protected:
         }
 
         if (is_nullable) {
-            auto null_col = NullColumn::create();
+            auto null_col = NullColumn::create(kAllocator);
             null_col->append("NULL" == json);
-            return NullableColumn::create(std::move(json_col), std::move(null_col));
+            return NullableColumn::create(kAllocator, std::move(json_col), std::move(null_col));
         }
         return json_col;
     }
 
     MutableColumnPtr flat_json(const std::string& json, bool is_nullable) {
-        auto json_col = JsonColumn::create();
+        auto json_col = JsonColumn::create(kAllocator);
         if ("NULL" != json) {
-            auto flat_col = JsonColumn::create();
+            auto flat_col = JsonColumn::create(kAllocator);
             auto* flat_column = down_cast<JsonColumn*>(flat_col.get());
             ASSIGN_OR_ABORT(auto jv, JsonValue::parse(json));
             flat_column->append(&jv);
@@ -102,19 +107,19 @@ protected:
         }
 
         if (is_nullable) {
-            auto null_col = NullColumn::create();
+            auto null_col = NullColumn::create(kAllocator);
             null_col->append("NULL" == json);
-            return NullableColumn::create(std::move(json_col), std::move(null_col));
+            return NullableColumn::create(kAllocator, std::move(json_col), std::move(null_col));
         }
         return json_col;
     }
 
     MutableColumnPtr more_flat_json(const std::vector<std::string>& jsons, bool is_nullable) {
-        auto json_col = JsonColumn::create();
+        auto json_col = JsonColumn::create(kAllocator);
 
-        auto flat_col = JsonColumn::create();
+        auto flat_col = JsonColumn::create(kAllocator);
         auto* flat_column = down_cast<JsonColumn*>(flat_col.get());
-        auto null_col = NullColumn::create();
+        auto null_col = NullColumn::create(kAllocator);
 
         for (const auto& json : jsons) {
             if ("NULL" != json) {
@@ -133,7 +138,7 @@ protected:
         json_col->set_flat_columns(deriver.flat_paths(), deriver.flat_types(), flattener.mutable_result());
 
         if (is_nullable) {
-            return NullableColumn::create(std::move(json_col), std::move(null_col));
+            return NullableColumn::create(kAllocator, std::move(json_col), std::move(null_col));
         }
         return json_col;
     }

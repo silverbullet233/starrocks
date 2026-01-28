@@ -19,6 +19,7 @@
 
 #include "column/column_helper.h"
 #include "column/nullable_column.h"
+#include "runtime/memory/memory_allocator.h"
 #include "simd/batch_run_counter.h"
 #include "simd/simd.h"
 #include "util/slice.h"
@@ -39,7 +40,7 @@ struct SliceHasher {
 static void BM_GetDictCodesWithMap(benchmark::State& state) {
     std::vector<Slice> dict_values;
     for (int i = 0; i < kDictSize; i++) {
-        dict_values.emplace_back(Slice(kAlphaNumber.data() + i, kDictLength));
+        dict_values.emplace_back(kAlphaNumber.data() + i, kDictLength);
     }
     std::unordered_map<Slice, int32_t, SliceHasher> dict_code_by_value;
     dict_code_by_value.reserve(kDictSize);
@@ -48,13 +49,13 @@ static void BM_GetDictCodesWithMap(benchmark::State& state) {
     }
 
     auto null_score = state.range(0);
-    Filter filter(kDictSize + 1, 1);
+    Filter filter(memory::get_default_allocator(), kDictSize + 1, 1);
 
     std::random_device rd;
     std::mt19937 rng(rd());
     std::uniform_int_distribution<int> dist(0, 999);
 
-    MutableColumnPtr column = ColumnHelper::create_column(TypeDescriptor{TYPE_VARCHAR}, true);
+    MutableColumnPtr column = ColumnHelper::create_column(memory::get_default_allocator(), TypeDescriptor{TYPE_VARCHAR}, true);
     (void)column->append_strings_overflow(dict_values, kDictLength);
     column->append_default();
     for (int i = 0; i < kDictSize + 1; i++) {
@@ -88,7 +89,7 @@ static void BM_GetDictCodesWithMap(benchmark::State& state) {
         auto* dict_nullable_column = down_cast<NullableColumn*>(column.get());
         const auto* dict_value_binary_column =
                 down_cast<const BinaryColumn*>(dict_nullable_column->data_column().get());
-        auto dict_values_filtered = dict_value_binary_column->get_data();
+        const auto& dict_values_filtered = dict_value_binary_column->get_data();
         if (!has_null) {
             dict_codes.reserve(dict_values_filtered.size());
             for (size_t i = 0; i < dict_values_filtered.size(); i++) {
@@ -101,7 +102,7 @@ static void BM_GetDictCodesWithMap(benchmark::State& state) {
 template <int batch_size>
 static void do_GetDictCodesWithFilterBatch(benchmark::State& state) {
     auto null_score = state.range(0);
-    Filter filter(kDictSize, 1);
+    Filter filter(memory::get_default_allocator(), kDictSize, 1);
 
     std::random_device rd;
     std::mt19937 rng(rd());

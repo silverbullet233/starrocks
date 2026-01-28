@@ -22,13 +22,17 @@
 #include "exec/pipeline/set/except_output_source_operator.h"
 #include "exec/pipeline/set/except_probe_sink_operator.h"
 #include "exprs/expr.h"
+#include "runtime/memory/memory_allocator.h"
 #include "runtime/current_thread.h"
 #include "runtime/runtime_state.h"
 
 namespace starrocks {
 
 ExceptNode::ExceptNode(ObjectPool* pool, const TPlanNode& tnode, const DescriptorTbl& descs)
-        : ExecNode(pool, tnode, descs), _tuple_id(tnode.except_node.tuple_id), _tuple_desc(nullptr) {}
+        : ExecNode(pool, tnode, descs),
+          _tuple_id(tnode.except_node.tuple_id),
+          _tuple_desc(nullptr),
+          _remained_keys(memory::get_default_allocator()) {}
 
 Status ExceptNode::init(const TPlanNode& tnode, RuntimeState* state) {
     RETURN_IF_ERROR(ExecNode::init(tnode, state));
@@ -190,7 +194,7 @@ Status ExceptNode::get_next(RuntimeState* state, ChunkPtr* chunk, bool* eos) {
         MutableColumns result_columns(_types.size());
         for (size_t i = 0; i < _types.size(); ++i) {
             result_columns[i] = // default NullableColumn
-                    ColumnHelper::create_column(_types[i].result_type, _types[i].is_nullable);
+                    ColumnHelper::create_column(memory::get_default_allocator(), _types[i].result_type, _types[i].is_nullable);
             result_columns[i]->reserve(runtime_state()->chunk_size());
         }
 

@@ -105,6 +105,7 @@ void SpillableAggregateBlockingSinkOperator::close(RuntimeState* state) {
 }
 
 Status SpillableAggregateBlockingSinkOperator::prepare(RuntimeState* state) {
+
     RETURN_IF_ERROR(AggregateBlockingSinkOperator::prepare(state));
     RETURN_IF_ERROR(AggregateBlockingSinkOperator::prepare_local_state(state));
 
@@ -350,7 +351,6 @@ OperatorPtr SpillableAggregateBlockingSinkOperatorFactory::create(int32_t degree
     auto spiller = _spill_factory->create(*_spill_options);
     // create spill process channel
     auto spill_channel = _spill_channel_factory->get_or_create(driver_sequence);
-
     spill_channel->set_spiller(spiller);
     aggregator->set_spiller(spiller);
     aggregator->set_spill_channel(std::move(spill_channel));

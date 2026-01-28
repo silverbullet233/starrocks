@@ -77,7 +77,7 @@ public:
         Columns dst_columns;
 
         auto dst_bitmap_col = c0->clone_empty();
-        auto dst_offset_col = UInt32Column::create();
+        auto dst_offset_col = UInt32Column::create(c0->get_allocator());
         dst_offset_col->append_datum(Datum(0));
         uint32_t compact_offset = 0;
 

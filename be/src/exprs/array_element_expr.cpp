@@ -20,6 +20,7 @@
 #include "column/column_helper.h"
 #include "column/fixed_length_column.h"
 #include "common/object_pool.h"
+#include "runtime/memory/memory_allocator.h"
 #include "util/raw_container.h"
 
 namespace starrocks {
@@ -41,8 +42,8 @@ public:
         ASSIGN_OR_RETURN(ColumnPtr arg1, _children[1]->evaluate_checked(context, chunk));
         size_t num_rows = std::max(arg0->size(), arg1->size());
         // No optimization for const column now.
-        arg0 = ColumnHelper::unfold_const_column(_children[0]->type(), num_rows, std::move(arg0));
-        arg1 = ColumnHelper::unfold_const_column(_children[1]->type(), num_rows, std::move(arg1));
+        arg0 = ColumnHelper::unfold_const_column(context->get_allocator(), _children[0]->type(), num_rows, std::move(arg0));
+        arg1 = ColumnHelper::unfold_const_column(context->get_allocator(), _children[1]->type(), num_rows, std::move(arg1));
         const auto* array_column = down_cast<const ArrayColumn*>(ColumnHelper::get_data_column(arg0.get()));
         auto* array_elements = array_column->elements_column().get();
         const auto* array_elements_data = ColumnHelper::get_data_column(array_elements);
@@ -75,8 +76,8 @@ public:
             }
         }
 
-        NullData null_flags;
-        raw::make_room(&null_flags, num_rows);
+        NullData null_flags(context->get_allocator());
+        null_flags.resize(num_rows);
 
         // Construct null flags.
         uint32_t prev = offsets[0];
@@ -104,7 +105,7 @@ public:
 
         // construct selection list.
         std::vector<uint32_t> selection;
-        starrocks::raw::make_room(&selection, num_rows);
+        selection.resize(num_rows);
 
         prev = offsets[0];
         uint32_t idx = 0;
@@ -126,7 +127,7 @@ public:
 
         // Construct the final result column;
         MutableColumnPtr result_data = array_elements_data->clone_empty();
-        NullColumn::MutablePtr result_null = NullColumn::create();
+        NullColumn::MutablePtr result_null = NullColumn::create(context->get_allocator());
         result_null->get_data().swap(null_flags);
 
         if (!array_elements_data->empty()) {
@@ -136,7 +137,8 @@ public:
         }
         DCHECK_EQ(result_null->size(), result_data->size());
 
-        return NullableColumn::create(std::move(result_data), std::move(result_null));
+        return NullableColumn::create(context->get_allocator(), std::move(result_data),
+                                      std::move(result_null));
     }
 
     Expr* clone(ObjectPool* pool) const override { return pool->add(new ArrayElementExpr(*this)); }

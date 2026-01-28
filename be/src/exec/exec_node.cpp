@@ -644,7 +644,7 @@ void ExecNode::debug_string(int indentation_level, std::stringstream* out) const
 }
 
 Status eager_prune_eval_conjuncts(const std::vector<ExprContext*>& ctxs, Chunk* chunk) {
-    Filter filter(chunk->num_rows(), 1);
+    Filter filter(memory::get_default_allocator(), chunk->num_rows(), 1);
     Filter* raw_filter = &filter;
 
     // prune chunk when pruned size is large enough
@@ -719,7 +719,7 @@ Status ExecNode::eval_conjuncts(const std::vector<ExprContext*>& ctxs, Chunk* ch
     if (!apply_filter) {
         DCHECK(filter_ptr) << "Must provide a filter if not apply it directly";
     }
-    FilterPtr filter(new Filter(chunk->num_rows(), 1));
+    FilterPtr filter(new Filter(memory::get_default_allocator(), chunk->num_rows(), 1));
     if (filter_ptr != nullptr) {
         *filter_ptr = filter;
     }

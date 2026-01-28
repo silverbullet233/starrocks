@@ -90,7 +90,7 @@ StatusOr<TFetchDataResultPtr> CustomizedResultWriter::_process_chunk(Chunk* chun
     for (int i = 0; i < num_columns; ++i) {
         ASSIGN_OR_RETURN(auto col, _output_expr_ctxs[i]->evaluate(chunk));
         col = _output_expr_ctxs[i]->root()->type().type == TYPE_TIME
-                      ? ColumnHelper::convert_time_column_from_double_to_str(col)
+                      ? ColumnHelper::convert_time_column_from_double_to_str(_output_expr_ctxs[i]->get_allocator(), col)
                       : col;
         result_columns.emplace_back(std::move(col));
     }

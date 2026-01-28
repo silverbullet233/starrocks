@@ -481,6 +481,7 @@ struct PartitionHashMapWithSerializedKey : public PartitionHashMapBase<false, fa
 
     PartitionHashMapWithSerializedKey(int32_t chunk_size)
             : PartitionHashMapBase(chunk_size),
+              slice_sizes(memory::get_default_allocator()),
               inner_mem_pool(std::make_unique<MemPool>()),
               buffer(inner_mem_pool->allocate(max_one_row_size * chunk_size)) {}
 
@@ -546,7 +547,8 @@ struct PartitionHashMapWithSerializedKeyFixedSize : public PartitionHashMapBase<
     Buffer<uint32_t> slice_sizes;
     std::vector<FixedSizeSliceKey> buffer;
 
-    PartitionHashMapWithSerializedKeyFixedSize(int32_t chunk_size) : PartitionHashMapBase(chunk_size) {
+    PartitionHashMapWithSerializedKeyFixedSize(int32_t chunk_size) : PartitionHashMapBase(chunk_size),
+              slice_sizes(memory::get_default_allocator()) {
         buffer.reserve(chunk_size);
         auto* buf = reinterpret_cast<uint8_t*>(buffer.data());
         memset(buf, 0x0, max_fixed_size * chunk_size);

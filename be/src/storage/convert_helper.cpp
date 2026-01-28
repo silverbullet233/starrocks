@@ -25,6 +25,7 @@
 #include "runtime/datetime_value.h"
 #include "runtime/decimalv2_value.h"
 #include "runtime/mem_pool.h"
+#include "runtime/memory/memory_allocator.h"
 #include "storage/chunk_helper.h"
 #include "storage/olap_type_infra.h"
 #include "storage/tablet_schema.h"
@@ -1569,7 +1570,7 @@ public:
         using SrcColumnType = ColumnType<SrcType>;
         using DstColumnType = ColumnType<DstType>;
         // FIXME: precision and scale are lost.
-        MutableColumnPtr dst = DstColumnType::create();
+        MutableColumnPtr dst = DstColumnType::create(memory::get_default_allocator());
         dst->reserve(src.size());
         if constexpr (is_directly_copyable<SrcType, DstType>) {
             if (!src.is_nullable() && !src.is_constant()) {
@@ -1581,7 +1582,8 @@ public:
                 std::swap(dst_column->get_data(), (typename DstColumnType::Container&)(src_column->get_data()));
                 return dst;
             } else if (src.is_nullable() && !dst->only_null()) {
-                dst = NullableColumn::create(std::move(dst), NullColumn::create());
+                dst = NullableColumn::create(memory::get_default_allocator(), std::move(dst),
+                                             NullColumn::create(memory::get_default_allocator()));
                 auto* nullable_dst_column = down_cast<NullableColumn*>(dst.get());
                 auto* nullable_src_column = down_cast<NullableColumn*>(const_cast<Column*>(&src));
                 auto* dst_column = down_cast<DstColumnType*>(nullable_dst_column->data_column_raw_ptr());

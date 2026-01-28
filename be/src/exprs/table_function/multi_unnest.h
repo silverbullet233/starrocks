@@ -47,7 +47,7 @@ public:
             unnested_array_list.emplace_back(std::move(unnested_array_elements));
         }
 
-        auto copy_count_column = UInt32Column::create();
+        auto copy_count_column = UInt32Column::create(state->get_allocator());
         uint32_t offset = 0;
         copy_count_column->append(offset);
         for (int row_idx = 0; row_idx < row_count; ++row_idx) {

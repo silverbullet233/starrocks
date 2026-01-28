@@ -26,6 +26,7 @@
 #include "common/cow.h"
 #include "common/statusor.h"
 #include "gutil/casts.h"
+#include "gutil/macros.h"
 #include "runtime/memory/column_allocator.h"
 #include "storage/delete_condition.h" // for DelCondSatisfied
 #include "util/slice.h"
@@ -39,6 +40,9 @@ struct TypeDescriptor;
 
 // Forward declaration
 class Datum;
+namespace memory {
+class Allocator;
+}
 
 class Column : public Cow<Column> {
 public:
@@ -67,6 +71,8 @@ public:
     static const int EQUALS_NULL = -1;
     static const int EQUALS_TRUE = 1;
 
+    Column() = delete;
+    explicit Column(memory::Allocator* allocator) : _allocator(allocator) {}
     virtual ~Column() = default;
 
     // If true means this is a null literal column
@@ -178,8 +184,9 @@ public:
     // for example: column(1,2)->replicate({0,2,5}) = column(1,1,2,2,2)
     // FixedLengthColumn, BinaryColumn and ConstColumn override this function for better performance.
     // TODO(fzh): optimize replicate() for ArrayColumn, ObjectColumn and others.
-    virtual StatusOr<MutablePtr> replicate(const Buffer<uint32_t>& offsets) {
-        auto dest = this->clone_empty();
+    virtual StatusOr<MutablePtr> replicate(const Buffer<uint32_t>& offsets, memory::Allocator* allocator = nullptr) {
+        auto* alloc = allocator != nullptr ? allocator : _allocator;
+        auto dest = this->clone_empty(alloc);
         auto dest_size = offsets.size() - 1;
         DCHECK(this->size() >= dest_size) << "The size of the source column is less when duplicating it.";
         dest->reserve(offsets.back());
@@ -341,9 +348,9 @@ public:
     virtual uint32_t serialize_size(size_t idx) const = 0;
 
     // return new empty column with the same type
-    virtual MutablePtr clone_empty() const = 0;
+    virtual MutablePtr clone_empty(memory::Allocator* allocator = nullptr) const = 0;
 
-    virtual MutablePtr clone() const = 0;
+    virtual MutablePtr clone(memory::Allocator* allocator = nullptr) const = 0;
 
     // REQUIRES: size of |filter| equals to the size of this column.
     // Removes elements that don't match the filter.
@@ -487,6 +494,8 @@ public:
         return res;
     }
 
+    memory::Allocator* get_allocator() const { return _allocator; }
+
 protected:
     // Helper functions for downgrade and upgrade,
     // if downgrade failed, return the error status.
@@ -500,6 +509,10 @@ protected:
     static StatusOr<MutablePtr> upgrade_helper_func(Column* col);
 
     DelCondSatisfied _delete_state = DEL_NOT_SATISFIED;
+    memory::Allocator* _allocator = nullptr;
+
+private:
+    DISALLOW_COPY(Column);
 };
 
 using ColumnPtr = Column::Ptr;

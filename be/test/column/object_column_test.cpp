@@ -23,24 +23,29 @@
 #include "runtime/types.h"
 #include "types/hll.h"
 #include "util/percentile_value.h"
+#include "runtime/memory/memory_allocator.h"
 
 namespace starrocks {
+
+namespace {
+static memory::Allocator* kAllocator = memory::get_default_allocator();
+}
 
 // NOLINTNEXTLINE
 TEST(ObjectColumnTest, HLL_test_filter) {
     // keep all.
     {
-        auto c = ColumnHelper::create_column(TypeDescriptor::create_hll_type(), false);
+        auto c = ColumnHelper::create_column(kAllocator, TypeDescriptor::create_hll_type(), false);
         c->resize(100);
         ASSERT_EQ(100, c->size());
 
-        Filter filter(100, 1);
+        Filter filter(kAllocator, 100, 1);
         c->filter(filter);
         ASSERT_EQ(100, c->size());
     }
     // filter all.
     {
-        auto c = HyperLogLogColumn::create();
+        auto c = HyperLogLogColumn::create(kAllocator);
         c->resize(100);
 
         Filter filter(100, 0);
@@ -49,11 +54,11 @@ TEST(ObjectColumnTest, HLL_test_filter) {
     }
     // filter out the last 10 elements.
     {
-        auto c = HyperLogLogColumn::create();
+        auto c = HyperLogLogColumn::create(kAllocator);
         c->resize(100);
         ASSERT_EQ(100, c->size());
 
-        Filter filter(100, 1);
+        Filter filter(kAllocator, 100, 1);
         for (int i = 90; i < 100; i++) {
             filter[i] = 0;
         }
@@ -62,11 +67,11 @@ TEST(ObjectColumnTest, HLL_test_filter) {
     }
     // filter out the first 10 elements.
     {
-        auto c = HyperLogLogColumn::create();
+        auto c = HyperLogLogColumn::create(kAllocator);
         c->resize(100);
         ASSERT_EQ(100, c->size());
 
-        Filter filter(100, 1);
+        Filter filter(kAllocator, 100, 1);
         for (int i = 0; i < 10; i++) {
             filter[i] = 0;
         }
@@ -75,11 +80,11 @@ TEST(ObjectColumnTest, HLL_test_filter) {
     }
     // filter out half elements.
     {
-        auto c = HyperLogLogColumn::create();
+        auto c = HyperLogLogColumn::create(kAllocator);
         c->resize(100);
         ASSERT_EQ(100, c->size());
 
-        Filter filter(100, 1);
+        Filter filter(kAllocator, 100, 1);
         for (int i = 0; i < 100; i++) {
             filter[i] = i % 2;
         }
@@ -92,17 +97,17 @@ TEST(ObjectColumnTest, HLL_test_filter) {
 TEST(ObjectColumnTest, HLL_test_filter_range) {
     // keep all.
     {
-        auto c = HyperLogLogColumn::create();
+        auto c = HyperLogLogColumn::create(kAllocator);
         c->resize(100);
         ASSERT_EQ(100, c->size());
 
-        Filter filter(100, 1);
+        Filter filter(kAllocator, 100, 1);
         c->filter_range(filter, 0, 100);
         ASSERT_EQ(100, c->size());
     }
     // filter all.
     {
-        auto c = HyperLogLogColumn::create();
+        auto c = HyperLogLogColumn::create(kAllocator);
         c->resize(100);
 
         Filter filter(100, 0);
@@ -111,7 +116,7 @@ TEST(ObjectColumnTest, HLL_test_filter_range) {
     }
     // filter out the last 10 elements.
     {
-        auto c = HyperLogLogColumn::create();
+        auto c = HyperLogLogColumn::create(kAllocator);
         c->resize(100);
         ASSERT_EQ(100, c->size());
 
@@ -121,7 +126,7 @@ TEST(ObjectColumnTest, HLL_test_filter_range) {
     }
     // filter out the first 10 elements.
     {
-        auto c = HyperLogLogColumn::create();
+        auto c = HyperLogLogColumn::create(kAllocator);
         c->resize(100);
         ASSERT_EQ(100, c->size());
 
@@ -131,7 +136,7 @@ TEST(ObjectColumnTest, HLL_test_filter_range) {
     }
     // filter 12 elements in the middle
     {
-        auto c = HyperLogLogColumn::create();
+        auto c = HyperLogLogColumn::create(kAllocator);
         c->resize(100);
         ASSERT_EQ(100, c->size());
 
@@ -153,8 +158,8 @@ TEST(ObjectColumnTest, test_object_column_upgrade_if_overflow) {
 
 // NOLINTNEXTLINE
 TEST(ObjectColumnTest, test_append_value_multiple_times) {
-    auto src_col = BitmapColumn::create();
-    auto copy_col = BitmapColumn::create();
+    auto src_col = BitmapColumn::create(kAllocator);
+    auto copy_col = BitmapColumn::create(kAllocator);
 
     BitmapValue bitmap;
     for (size_t i = 0; i < 64; i++) {

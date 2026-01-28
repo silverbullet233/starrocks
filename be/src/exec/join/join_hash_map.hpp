@@ -18,6 +18,7 @@
 #include "exec/join/join_hash_map.h"
 #include "exec/join/join_hash_table_descriptor.h"
 #include "exec/join/join_key_constructor.h"
+#include "runtime/memory/memory_allocator.h"
 #include "simd/simd.h"
 #include "util/runtime_profile.h"
 
@@ -35,16 +36,17 @@ void JoinHashMap<LT, CT, MT>::build_prepare(RuntimeState* state) {
 template <LogicalType LT, JoinKeyConstructorType CT, JoinHashMapMethodType MT>
 void JoinHashMap<LT, CT, MT>::probe_prepare(RuntimeState* state) {
     size_t chunk_size = state->chunk_size();
-    _probe_state->build_index.resize(chunk_size + 8);
-    _probe_state->probe_index.resize(chunk_size + 8);
-    _probe_state->next.resize(chunk_size);
-    _probe_state->probe_match_index.resize(chunk_size);
-    _probe_state->probe_match_filter.resize(chunk_size);
-    _probe_state->buckets.resize(chunk_size);
+    _probe_state->build_index.resize(chunk_size + 8, 0);
+    _probe_state->probe_index.resize(chunk_size + 8, 0);
+    auto* alloc = _probe_state->allocator;
+    _probe_state->next.resize(alloc, chunk_size, 0);
+    _probe_state->probe_match_index.resize(alloc, chunk_size, 0);
+    _probe_state->probe_match_filter.resize(alloc, chunk_size, 0);
+    _probe_state->buckets.resize(alloc, chunk_size, 0);
 
     if (_table_items->join_type == TJoinOp::RIGHT_OUTER_JOIN || _table_items->join_type == TJoinOp::FULL_OUTER_JOIN ||
         _table_items->join_type == TJoinOp::RIGHT_SEMI_JOIN || _table_items->join_type == TJoinOp::RIGHT_ANTI_JOIN) {
-        _probe_state->build_match_index.resize(_table_items->row_count + 1, 0);
+        _probe_state->build_match_index.resize(alloc, _table_items->row_count + 1, 0);
         _probe_state->build_match_index[0] = 1;
     }
 
@@ -240,7 +242,7 @@ void JoinHashMap<LT, CT, MT>::_probe_null_output(ChunkPtr* chunk, size_t count) 
         SlotDescriptor* slot = hash_table_slot.slot;
         bool need_output = is_lazy ? hash_table_slot.need_lazy_materialize : hash_table_slot.need_output;
         if (need_output) {
-            MutableColumnPtr column = ColumnHelper::create_column(slot->type(), true);
+            MutableColumnPtr column = ColumnHelper::create_column(_probe_state->allocator, slot->type(), true);
             column->append_nulls(count);
             (*chunk)->append_column(std::move(column), slot->id());
         }
@@ -273,7 +275,7 @@ void JoinHashMap<LT, CT, MT>::_build_default_output(ChunkPtr* chunk, size_t coun
         auto hash_tablet_slot = _table_items->build_slots[i];
         SlotDescriptor* slot = hash_tablet_slot.slot;
         if (hash_tablet_slot.need_output) {
-            MutableColumnPtr column = ColumnHelper::create_column(slot->type(), true);
+            MutableColumnPtr column = ColumnHelper::create_column(_probe_state->allocator, slot->type(), true);
             column->append_nulls(count);
             (*chunk)->append_column(std::move(column), slot->id());
         }
@@ -285,22 +287,30 @@ void JoinHashMap<LT, CT, MT>::_copy_probe_column(ColumnPtr& src_column, ChunkPtr
                                                  bool to_nullable) {
     if (_probe_state->match_flag == JoinMatchFlag::ALL_MATCH_ONE) {
         if (to_nullable) {
-            auto dest_column = NullableColumn::create(src_column, NullColumn::create(src_column->size()));
+            auto dest_column = NullableColumn::create(
+                    _probe_state->allocator, src_column,
+                    NullColumn::create(_probe_state->allocator, src_column->size()));
             (*chunk)->append_column(std::move(dest_column), slot->id());
         } else {
             (*chunk)->append_column(src_column, slot->id());
         }
     } else if (_probe_state->match_flag == JoinMatchFlag::MOST_MATCH_ONE) {
+        // @TODO avoid copy filter
+        Filter filter(_probe_state->allocator);
+        filter.assign(_probe_state->probe_match_filter.begin(),
+                      _probe_state->probe_match_filter.begin() + _probe_state->probe_row_count);
         if (to_nullable) {
-            src_column->as_mutable_raw_ptr()->filter(_probe_state->probe_match_filter, _probe_state->probe_row_count);
-            auto dest_column = NullableColumn::create(src_column, NullColumn::create(src_column->size()));
+            src_column->as_mutable_raw_ptr()->filter(filter, _probe_state->probe_row_count);
+            auto dest_column = NullableColumn::create(
+                    _probe_state->allocator, src_column,
+                    NullColumn::create(_probe_state->allocator, src_column->size()));
             (*chunk)->append_column(std::move(dest_column), slot->id());
         } else {
-            src_column->as_mutable_raw_ptr()->filter(_probe_state->probe_match_filter, _probe_state->probe_row_count);
+            src_column->as_mutable_raw_ptr()->filter(filter, _probe_state->probe_row_count);
             (*chunk)->append_column(src_column, slot->id());
         }
     } else {
-        MutableColumnPtr dest_column = ColumnHelper::create_column(slot->type(), to_nullable);
+        MutableColumnPtr dest_column = ColumnHelper::create_column(_probe_state->allocator, slot->type(), to_nullable);
         dest_column->append_selective(*src_column, _probe_state->probe_index.data(), 0, _probe_state->count);
         (*chunk)->append_column(std::move(dest_column), slot->id());
     }
@@ -312,10 +322,13 @@ void JoinHashMap<LT, CT, MT>::_copy_probe_nullable_column(ColumnPtr& src_column,
     if (_probe_state->match_flag == JoinMatchFlag::ALL_MATCH_ONE) {
         (*chunk)->append_column(src_column, slot->id());
     } else if (_probe_state->match_flag == JoinMatchFlag::MOST_MATCH_ONE) {
-        src_column->as_mutable_raw_ptr()->filter(_probe_state->probe_match_filter, _probe_state->probe_row_count);
+        Filter filter(_probe_state->allocator);
+        filter.assign(_probe_state->probe_match_filter.begin(),
+                      _probe_state->probe_match_filter.begin() + _probe_state->probe_row_count);
+        src_column->as_mutable_raw_ptr()->filter(filter, _probe_state->probe_row_count);
         (*chunk)->append_column(src_column, slot->id());
     } else {
-        MutableColumnPtr dest_column = ColumnHelper::create_column(slot->type(), true);
+        MutableColumnPtr dest_column = ColumnHelper::create_column(_probe_state->allocator, slot->type(), true);
         dest_column->append_selective(*src_column, _probe_state->probe_index.data(), 0, _probe_state->count);
         (*chunk)->append_column(std::move(dest_column), slot->id());
     }
@@ -332,14 +345,15 @@ void JoinHashMap<LT, CT, MT>::_copy_build_column(const ColumnPtr& src_column, Ch
         // build_index[i] Equal to 0 means it is not found in the hash table,
         // but append_selective() has set item of NullColumn to not null
         // so NullColumn needs to be set back to null
-        auto null_column = NullColumn::create(_probe_state->count, 0);
+        auto null_column = NullColumn::create(_probe_state->allocator, _probe_state->count, 0);
         size_t end = _probe_state->count;
         for (size_t i = 0; i < end; i++) {
             if (_probe_state->build_index[i] == 0) {
                 null_column->get_data()[i] = 1;
             }
         }
-        auto dest_column = NullableColumn::create(std::move(data_column), std::move(null_column));
+        auto dest_column = NullableColumn::create(_probe_state->allocator, std::move(data_column),
+                                                  std::move(null_column));
         (*chunk)->append_column(std::move(dest_column), slot->id());
     } else {
         auto dest_column = src_column->clone_empty();
@@ -618,11 +632,11 @@ void JoinHashMap<LT, CT, MT>::_search_ht_impl(RuntimeState* state, const ImmBuff
 
 #define REORDER_PROBE_INDEX()                                                                                         \
     if (_probe_state->match_flag != JoinMatchFlag::NORMAL) {                                                          \
-        Buffer<uint32_t> permutation(_probe_state->probe_index.size(), -1);                                           \
+        Buffer<uint32_t> permutation(_probe_state->allocator, _probe_state->probe_index.size(), -1);         \
         for (auto i = 0; i < _probe_state->match_count; ++i) {                                                        \
             permutation[_probe_state->probe_index[i]] = i;                                                            \
         }                                                                                                             \
-        Buffer<uint32_t> new_order(_probe_state->build_index.size(), 0);                                              \
+        Buffer<uint32_t> new_order(_probe_state->allocator, _probe_state->build_index.size(), 0);            \
         uint32_t count = 0;                                                                                           \
         for (auto i = 0; i < _probe_state->probe_row_count; ++i) {                                                    \
             if (_probe_state->match_flag == JoinMatchFlag::ALL_MATCH_ONE ||                                           \

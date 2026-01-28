@@ -24,6 +24,9 @@
 #include "logging.h"
 #include "util/stack_util.h"
 namespace starrocks {
+namespace memory {
+class Allocator;
+}
 
 // A Clone-on-write base class inspired by Clickhouse and Rust.
 //
@@ -332,7 +335,7 @@ public:
     using BaseWrappedPtr = typename AncestorBase::WrappedPtr;
     using Ptr = typename Base::template ImmutPtr<Derived>;
     using MutablePtr = typename Base::template MutPtr<Derived>;
-    using WrappedPtr = typename Base::template ChameleonPtr<Derived>;
+using WrappedPtr = typename Base::template ChameleonPtr<Derived>;
 
     // AncestorBase is root class of inheritance hierarchy
     // if Derived class is the direct subclass of the root, then AncestorBase is just the Base class
@@ -354,8 +357,8 @@ public:
         return MutablePtr(new Derived(std::forward<std::initializer_list<T>>(arg)));
     }
 
-    typename AncestorBaseType::MutablePtr clone() const override {
-        return typename AncestorBaseType::MutablePtr(new Derived(down_cast<const Derived&>(*this)));
+    typename AncestorBaseType::MutablePtr clone(memory::Allocator* allocator = nullptr) const override {
+        return derived()->clone(allocator);
     }
 
     // cast base ptr to derived ptr statically, like std::static_pointer_cast; if failed, return nullptr.

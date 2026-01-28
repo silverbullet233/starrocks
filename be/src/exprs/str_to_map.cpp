@@ -21,6 +21,7 @@
 #include "column/map_column.h"
 #include "exprs/function_context.h"
 #include "exprs/string_functions.h"
+#include "runtime/memory/memory_allocator.h"
 #include "util/utf8.h"
 
 namespace starrocks {
@@ -79,10 +80,10 @@ StatusOr<ColumnPtr> StringFunctions::str_to_map_v1(FunctionContext* context, con
     // construct result
     size_t str_num = nullable_str->size();
     size_t column_size = columns[0]->size();
-    ColumnBuilder<TYPE_VARCHAR> keys_builder(str_num);
-    ColumnBuilder<TYPE_VARCHAR> values_builder(str_num);
-    auto res_null = NullColumn::create();
-    auto res_offsets = UInt32Column::create();
+    ColumnBuilder<TYPE_VARCHAR> keys_builder(context->get_allocator(), str_num);
+    ColumnBuilder<TYPE_VARCHAR> values_builder(context->get_allocator(), str_num);
+    auto res_null = NullColumn::create(context->get_allocator());
+    auto res_offsets = UInt32Column::create(context->get_allocator());
     res_offsets->reserve(nullable_str->size() + 1);
     res_offsets->append(0);
     res_null->resize(column_size);
@@ -179,9 +180,9 @@ StatusOr<ColumnPtr> StringFunctions::str_to_map_v1(FunctionContext* context, con
         }
     }
 
-    auto map = MapColumn::create(keys_builder.build_nullable_column(), values_builder.build_nullable_column(),
-                                 std::move(res_offsets));
-    return NullableColumn::create(std::move(map), std::move(res_null));
+    auto map = MapColumn::create(context->get_allocator(), keys_builder.build_nullable_column(),
+                                 values_builder.build_nullable_column(), std::move(res_offsets));
+    return NullableColumn::create(context->get_allocator(), std::move(map), std::move(res_null));
 }
 
 } // namespace starrocks

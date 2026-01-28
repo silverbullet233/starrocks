@@ -19,6 +19,7 @@
 #include "column/datum_convert.h"
 #include "runtime/exec_env.h"
 #include "runtime/mem_pool.h"
+#include "runtime/memory/memory_allocator.h"
 #include "runtime/runtime_state.h"
 #include "simd/simd.h"
 #include "storage/chunk_helper.h"
@@ -228,7 +229,7 @@ StatusOr<Buffer<uint8_t>> ChunkChanger::_execute_where_expr(ChunkPtr& chunk) {
     ColumnPtr filter_col = std::move(res.value());
 
     size_t size = filter_col->size();
-    Buffer<uint8_t> filter(size, 0);
+    Buffer<uint8_t> filter(memory::get_default_allocator(), size, 0);
     ColumnViewer<TYPE_BOOLEAN> col(filter_col);
     for (size_t i = 0; i < size; ++i) {
         filter[i] = !col.is_null(i) && col.value(i);
@@ -304,7 +305,7 @@ bool ChunkChanger::change_chunk_v2(ChunkPtr& base_chunk, ChunkPtr& new_chunk, co
             }
 
             if (new_schema.field(i)->is_nullable()) {
-                new_col = ColumnHelper::cast_to_nullable_column(std::move(new_col));
+                new_col = ColumnHelper::cast_to_nullable_column(_schema_mapping[i].mv_expr_ctx->get_allocator(), std::move(new_col));
             }
 #ifdef BE_TEST
             VLOG(2) << "evaluate result:" << new_col->debug_string();

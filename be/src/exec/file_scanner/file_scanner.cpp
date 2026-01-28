@@ -29,6 +29,7 @@
 #include "gutil/strings/substitute.h"
 #include "io/compressed_input_stream.h"
 #include "runtime/descriptors.h"
+#include "runtime/memory/memory_allocator.h"
 #include "runtime/runtime_state.h"
 #include "runtime/stream_load/load_stream_mgr.h"
 #include "util/compression/stream_compression.h"
@@ -48,7 +49,8 @@ FileScanner::FileScanner(starrocks::RuntimeState* state, starrocks::RuntimeProfi
           _error_counter(0),
           _file_scan_type(TFileScanType::LOAD),
           _file_format_str("UNKNOWN"),
-          _schema_only(schema_only) {
+          _schema_only(schema_only),
+          _allocator(memory::get_default_allocator()) {
     if (_params.__isset.file_scan_type) {
         _file_scan_type = _params.file_scan_type;
     }
@@ -165,7 +167,7 @@ void FileScanner::fill_columns_from_path(starrocks::ChunkPtr& chunk, int slot_st
     for (int i = 0; i < columns_from_path.size(); ++i) {
         auto slot_desc = _src_slot_descriptors.at(i + slot_start);
         if (slot_desc == nullptr) continue;
-        auto col = ColumnHelper::create_column(varchar_type, slot_desc->is_nullable());
+        auto col = ColumnHelper::create_column(_allocator, varchar_type, slot_desc->is_nullable());
         const std::string& column_from_path = columns_from_path[i];
         Slice s(column_from_path.c_str(), column_from_path.size());
         col->append_value_multiple_times(&s, size);
@@ -185,7 +187,7 @@ StatusOr<ChunkPtr> FileScanner::materialize(const starrocks::ChunkPtr& src, star
 
     int ctx_index = 0;
     int before_rows = cast->num_rows();
-    Filter filter(cast->num_rows(), 1);
+    Filter filter(_allocator, cast->num_rows(), 1);
 
     // CREATE ROUTINE LOAD routine_load_job_1
     // on table COLUMNS (k1,k2,k3=k1)
@@ -208,12 +210,12 @@ StatusOr<ChunkPtr> FileScanner::materialize(const starrocks::ChunkPtr& src, star
             column_pointers.emplace(col_pointer);
         }
 
-        col = ColumnHelper::unfold_const_column(slot->type(), cast->num_rows(), std::move(col));
+        col = ColumnHelper::unfold_const_column(ctx->get_allocator(), slot->type(), cast->num_rows(), std::move(col));
 
         // The column builder in ctx->evaluate may build column as non-nullable.
         // See be/src/column/column_builder.h#L79.
         if (!col->is_nullable()) {
-            col = ColumnHelper::cast_to_nullable_column(std::move(col));
+            col = ColumnHelper::cast_to_nullable_column(_allocator, std::move(col));
         }
 
         dest_chunk->append_column(col, slot->id());

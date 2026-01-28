@@ -22,6 +22,7 @@
 #include "exec/tablet_info.h"
 #include "gutil/casts.h"
 #include "runtime/client_cache.h"
+#include "runtime/memory/memory_allocator.h"
 #include "storage/chunk_helper.h"
 #include "storage/table_reader.h"
 #include "util/thrift_rpc_helper.h"
@@ -61,7 +62,7 @@ StatusOr<ColumnPtr> DictQueryExpr::evaluate_checked(ExprContext* context, Chunk*
             return Status::InternalError("invalid parameter : get NULL paramenter");
         }
         if (column->is_nullable()) {
-            column = ColumnHelper::update_column_nullable(false, std::move(column), column->size());
+            column = ColumnHelper::update_column_nullable(context->get_allocator(), false, std::move(column), column->size());
         }
     }
 
@@ -77,8 +78,8 @@ StatusOr<ColumnPtr> DictQueryExpr::evaluate_checked(ExprContext* context, Chunk*
     }
     res = value_chunk->get_column_by_index(0)->clone_empty();
     if (!res->is_nullable()) {
-        auto null_column = UInt8Column::create(0, 0);
-        res = NullableColumn::create(std::move(res), std::move(null_column));
+        auto null_column = UInt8Column::create(context->get_allocator(), 0, 0);
+        res = NullableColumn::create(context->get_allocator(), std::move(res), std::move(null_column));
     }
 
     int res_idx = 0;

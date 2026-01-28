@@ -74,6 +74,7 @@
 #include "exprs/column_ref.h"
 #include "exprs/expr_context.h"
 #include "exprs/literal.h"
+#include "runtime/memory/memory_allocator.h"
 #include "gen_cpp/Descriptors_types.h"
 #include "gen_cpp/FrontendService_types.h"
 
@@ -374,7 +375,9 @@ bool SchemaScanner::_parse_expr_predicate(Expr* conjunct, const std::string& col
     Expr* string_literal_expr = (result_child_idx == 0) ? child0 : child1;
     auto* eq_target = dynamic_cast<VectorizedLiteral*>(string_literal_expr);
     DCHECK(eq_target != nullptr);
-    auto literal_col_status = eq_target->evaluate_checked(nullptr, nullptr);
+    ExprContext tmp_ctx(eq_target);
+    tmp_ctx.set_allocator(memory::get_default_allocator());
+    auto literal_col_status = eq_target->evaluate_checked(&tmp_ctx, nullptr);
     if (!literal_col_status.ok()) {
         return false;
     }

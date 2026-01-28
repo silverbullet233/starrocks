@@ -58,6 +58,7 @@ Status LocalExchangeSinkOperator::set_finishing(RuntimeState* state) {
 }
 
 Status LocalExchangeSinkOperator::push_chunk(RuntimeState* state, const ChunkPtr& chunk) {
+    chunk->check_or_die();
     auto res = _exchanger->accept(chunk, _driver_sequence);
     return res;
 }

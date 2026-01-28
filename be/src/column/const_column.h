@@ -24,22 +24,16 @@ namespace starrocks {
 
 class ConstColumn final : public CowFactory<ColumnFactory<Column, ConstColumn>, ConstColumn> {
     friend class CowFactory<ColumnFactory<Column, ConstColumn>, ConstColumn>;
+    using Base = CowFactory<ColumnFactory<Column, ConstColumn>, ConstColumn>;
 
 public:
     using ValueType = void;
 
-    explicit ConstColumn(ColumnPtr data_column);
-    ConstColumn(ColumnPtr data_column, size_t size);
+    ConstColumn(memory::Allocator* allocator, ColumnPtr data_column);
+    ConstColumn(memory::Allocator* allocator, ColumnPtr data_column, size_t size);
 
-    ConstColumn(const ConstColumn& rhs) : _data(rhs._data->clone()), _size(rhs._size) {}
-
-    ConstColumn(ConstColumn&& rhs) noexcept : _data(std::move(rhs._data)), _size(rhs._size) {}
-
-    ConstColumn& operator=(const ConstColumn& rhs) {
-        ConstColumn tmp(rhs);
-        this->swap_column(tmp);
-        return *this;
-    }
+    ConstColumn(ConstColumn&& rhs) noexcept
+            : Base(rhs._allocator), _data(std::move(rhs._data)), _size(rhs._size) {}
 
     ConstColumn& operator=(ConstColumn&& rhs) noexcept {
         ConstColumn tmp(std::move(rhs));
@@ -114,7 +108,7 @@ public:
 
     void append_value_multiple_times(const Column& src, uint32_t index, uint32_t size) override;
 
-    StatusOr<MutableColumnPtr> replicate(const Buffer<uint32_t>& offsets) override;
+    StatusOr<MutableColumnPtr> replicate(const Buffer<uint32_t>& offsets, memory::Allocator* allocator = nullptr) override;
 
     bool append_nulls(size_t count) override {
         DCHECK_GT(count, 0);
@@ -201,7 +195,14 @@ public:
 
     uint32_t serialize_size(size_t idx) const override { return _data->serialize_size(0); }
 
-    MutableColumnPtr clone_empty() const override { return create(_data->clone_empty(), 0); }
+    MutableColumnPtr clone_empty(memory::Allocator* allocator = nullptr) const override {
+        allocator = allocator == nullptr ? this->get_allocator() : allocator;
+        return create(allocator, _data->clone_empty(allocator), 0);
+    }
+    MutableColumnPtr clone(memory::Allocator* allocator = nullptr) const override {
+        allocator = allocator == nullptr ? this->get_allocator() : allocator;
+        return ConstColumn::create(allocator, _data->clone(allocator), _size);
+    }
 
     size_t filter_range(const Filter& filter, size_t from, size_t to) override;
 
@@ -283,6 +284,8 @@ public:
 private:
     Column::WrappedPtr _data;
     uint64_t _size;
+
+    DISALLOW_COPY(ConstColumn);
 };
 
 } // namespace starrocks

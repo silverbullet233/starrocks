@@ -76,11 +76,13 @@ Status Operator::prepare(RuntimeState* state) {
     if (state->query_ctx() && state->query_ctx()->spill_manager()) {
         _mem_resource_manager.prepare(this, state->query_ctx()->spill_manager());
     }
+    _allocator = memory::get_default_allocator();
 
     return Status::OK();
 }
 
 Status Operator::prepare_local_state(RuntimeState* state) {
+    // @TODO use operator-level allocator
     _mem_tracker = std::make_shared<MemTracker>();
 
     _total_timer = ADD_TIMER(_common_metrics, "OperatorTotalTime");

@@ -36,18 +36,21 @@ public:
     using BaseClass = JsonColumnBase;
     using ImmContainer = ObjectDataProxyContainer;
 
-    JsonColumn() = default;
-    explicit JsonColumn(size_t size) : SuperClass(size) {}
-    JsonColumn(const JsonColumn& rhs) : SuperClass(rhs) {}
+    explicit JsonColumn(memory::Allocator* allocator) : SuperClass(allocator) {}
+    JsonColumn(memory::Allocator* allocator, size_t size) : SuperClass(allocator, size) {}
 
     JsonColumn(JsonColumn&& rhs) noexcept : SuperClass(std::move(rhs)) {
+        LOG(INFO) << "JsonColumn move constructor";
         _flat_columns = std::move(rhs._flat_columns);
         _flat_column_paths = std::move(rhs._flat_column_paths);
         _flat_column_types = std::move(rhs._flat_column_types);
     }
 
-    MutableColumnPtr clone() const override;
-    MutableColumnPtr clone_empty() const override { return this->create(); }
+    MutableColumnPtr clone(memory::Allocator* allocator = nullptr) const override;
+    MutableColumnPtr clone_empty(memory::Allocator* allocator = nullptr) const override {
+        allocator = allocator == nullptr ? this->get_allocator() : allocator;
+        return this->create(allocator);
+    }
 
     void append_datum(const Datum& datum) override;
     void put_mysql_row_buffer(starrocks::MysqlRowBuffer* buf, size_t idx,
@@ -158,6 +161,8 @@ private:
     std::vector<std::string> _flat_column_paths;
     std::vector<LogicalType> _flat_column_types;
     std::unordered_map<std::string, int> _path_to_index;
+
+    DISALLOW_COPY(JsonColumn);
 };
 
 } // namespace starrocks
