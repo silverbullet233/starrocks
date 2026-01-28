@@ -44,6 +44,7 @@
 #include "common/status.h"
 #include "util/core_local.h"
 #include "util/metrics.h"
+#include "util/phmap/phmap.h"
 #include "util/runtime_profile.h"
 #include "util/spinlock.h"
 
@@ -430,6 +431,9 @@ public:
 
     std::list<MemTracker*> getChild() { return _child_trackers; }
 
+    void add_alloc_record(void* ptr, size_t size, std::string stack);
+    void remove_alloc_record(void* ptr, size_t size);
+
 private:
     // Walks the MemTracker hierarchy and populates _all_trackers and _limit_trackers
     void Init();
@@ -481,6 +485,13 @@ private:
     // remove.
     std::list<MemTracker*>::iterator _child_tracker_it;
     CoreLocalValue<int64_t> _allocation_by_allocator{0};
+
+    struct AllocRecord {
+        size_t size;
+        std::string stack;
+    };
+    std::mutex _alloc_record_mutex;
+    phmap::flat_hash_map<void*, AllocRecord> _alloc_records;
 };
 
 #define MEM_TRACKER_SAFE_CONSUME(mem_tracker, mem_bytes) \

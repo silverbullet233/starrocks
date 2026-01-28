@@ -72,20 +72,6 @@ public:
 
 };
 
-template <class Alloc>
-class AllocatorHolder: private Alloc {
-public:
-    AllocatorHolder() = default;
-    AllocatorHolder(Alloc* alloc) : Alloc(*alloc) {}
-    ~AllocatorHolder() override = default;
-    Alloc* get() {
-        return this;
-    }
-    const Alloc* get() const {
-        return this;
-    }
-};
-
 // @TODO(silverbullet): support using mmap for large memory allocation
 template <bool clear_memory>
 class JemallocAllocator: public AllocatorFactory<Allocator, JemallocAllocator<clear_memory>> {

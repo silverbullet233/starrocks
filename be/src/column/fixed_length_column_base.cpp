@@ -42,11 +42,8 @@ void FixedLengthColumnBase<T>::append(const Column& src, size_t offset, size_t c
     DCHECK(this != &src);
 
     auto& datas = get_data();
-    const size_t orig_size = datas.size();
-    datas.resize(orig_size + count);
-
     const T* src_data = reinterpret_cast<const T*>(src.raw_data());
-    strings::memcpy_inlined(datas.data() + orig_size, src_data + offset, count * sizeof(T));
+    datas.insert(src_data + offset, src_data + offset + count);
 }
 
 template <typename T>

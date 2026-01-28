@@ -14,488 +14,564 @@
 
 #include <benchmark/benchmark.h>
 
+#include <array>
+#include <cstddef>
 #include <cstdint>
-#include <string>
+#include <cstring>
+#include <initializer_list>
 #include <vector>
 
+#include "runtime/current_thread.h"
 #include "runtime/memory/allocator_v2.h"
 #include "runtime/memory/column_allocator.h"
 #include "util/buffer.h"
-#include "util/raw_container.h"
-#include "runtime/current_thread.h"
 
 namespace starrocks {
 
 namespace {
-
-struct SmallNonPod {
-    SmallNonPod() = default;
-    SmallNonPod(int64_t id, int payload_len) : value(id), payload(payload_len, 'x') {}
-    int64_t value{0};
-    std::string payload;
-};
 
 template <typename T>
 using ColumnVector = std::vector<T, ColumnAllocator<T>>;
 template <typename T, size_t padding = 0>
 using Buffer = util::Buffer<T, padding>;
 
-template <typename MakeContainer>
-void run_ctor_bench(benchmark::State& state, MakeContainer make_container) {
-    SCOPED_SET_CATCHED(true);
-    for (auto _ : state) {
-        auto container = make_container();
-        benchmark::DoNotOptimize(container);
-    }
-    state.SetItemsProcessed(state.iterations());
-}
+constexpr int64_t kInitListSize = 8;
 
-template <typename MakeContainer>
-void run_ctor_count_bench(benchmark::State& state, MakeContainer make_container) {
-    SCOPED_SET_CATCHED(true);
-    const int64_t n = state.range(0);
-    for (auto _ : state) {
-        auto container = make_container(n);
-        benchmark::DoNotOptimize(container);
-    }
-    state.SetItemsProcessed(n * state.iterations());
-}
+struct LargePod {
+    std::array<int64_t, 16> payload{};
+    LargePod() = default;
+    explicit LargePod(int64_t seed) { payload.fill(seed); }
+};
 
-template <typename MakeContainer, typename ReserveFn>
-void run_reserve_bench(benchmark::State& state, MakeContainer make_container, ReserveFn reserve_fn) {
-    SCOPED_SET_CATCHED(true);
-    const int64_t n = state.range(0);
-    for (auto _ : state) {
-        auto container = make_container();
-        reserve_fn(container, n);
-        benchmark::DoNotOptimize(container);
-    }
-    state.SetItemsProcessed(n * state.iterations());
-}
+struct SmallNonPod {
+    int64_t value{0};
+    std::array<char, 16> payload{};
+    SmallNonPod() = default;
+    explicit SmallNonPod(int64_t id) : value(id) { payload.fill('x'); }
+    ~SmallNonPod() {}
+};
 
-template <typename MakeContainer, typename ReserveFn, typename PushFn>
-void run_push_bench(benchmark::State& state, MakeContainer make_container, ReserveFn reserve_fn, PushFn push_fn) {
-    SCOPED_SET_CATCHED(true);
-    const int64_t n = state.range(0);
-    for (auto _ : state) {
-        auto container = make_container();
-        reserve_fn(container, n);
-        for (int64_t i = 0; i < n; ++i) {
-            push_fn(container, i);
-        }
-        benchmark::DoNotOptimize(container);
-    }
-    state.SetItemsProcessed(n * state.iterations());
-}
+template <typename T>
+struct ValueFactory {
+    static T make(int64_t value) { return static_cast<T>(value); }
 
-template <typename MakeContainer, typename PrepareFn, typename PushFn>
-void run_push_bench_prepared(benchmark::State& state, MakeContainer make_container, PrepareFn prepare_fn,
-                             PushFn push_fn) {
-    SCOPED_SET_CATCHED(true);
-    const int64_t n = state.range(0);
-    for (auto _ : state) {
-        state.PauseTiming();
-        auto container = make_container();
-        prepare_fn(container, n);
-        state.ResumeTiming();
-        for (int64_t i = 0; i < n; ++i) {
-            push_fn(container, i);
-        }
-        benchmark::DoNotOptimize(container);
+    template <typename Container>
+    static void emplace(Container& c, int64_t value) {
+        c.emplace_back(static_cast<T>(value));
     }
-    state.SetItemsProcessed(n * state.iterations());
-}
+};
 
-template <typename MakeContainer, typename ResizeFn>
-void run_resize_bench(benchmark::State& state, MakeContainer make_container, ResizeFn resize_fn) {
-    SCOPED_SET_CATCHED(true);
-    const int64_t n = state.range(0);
-    for (auto _ : state) {
-        auto container = make_container();
-        resize_fn(container, n);
-        benchmark::DoNotOptimize(container);
+template <>
+struct ValueFactory<LargePod> {
+    static LargePod make(int64_t value) { return LargePod(value); }
+
+    template <typename Container>
+    static void emplace(Container& c, int64_t value) {
+        c.emplace_back(value);
     }
-    state.SetItemsProcessed(n * state.iterations());
-}
+};
 
-template <typename MakeContainer, typename AssignFn>
-void run_assign_bench(benchmark::State& state, MakeContainer make_container, AssignFn assign_fn) {
-    SCOPED_SET_CATCHED(true);
-    const int64_t n = state.range(0);
-    for (auto _ : state) {
-        auto container = make_container();
-        assign_fn(container, n);
-        benchmark::DoNotOptimize(container);
+template <>
+struct ValueFactory<SmallNonPod> {
+    static SmallNonPod make(int64_t value) { return SmallNonPod(value); }
+
+    template <typename Container>
+    static void emplace(Container& c, int64_t value) {
+        c.emplace_back(value);
     }
-    state.SetItemsProcessed(n * state.iterations());
-}
+};
 
-template <typename MakeContainer, typename ReserveFn, typename PushFn, typename ShrinkFn>
-void run_shrink_to_fit_bench(benchmark::State& state, MakeContainer make_container, ReserveFn reserve_fn,
-                             PushFn push_fn, ShrinkFn shrink_fn) {
-    SCOPED_SET_CATCHED(true);
-    const int64_t n = state.range(0);
-    for (auto _ : state) {
-        state.PauseTiming();
-        auto container = make_container();
-        reserve_fn(container, n);
-        for (int64_t i = 0; i < n / 2; ++i) {
-            push_fn(container, i);
-        }
-        state.ResumeTiming();
-        shrink_fn(container);
-        benchmark::DoNotOptimize(container);
+template <typename T>
+struct InitListFactory;
+
+template <>
+struct InitListFactory<int64_t> {
+    static const std::initializer_list<int64_t>& list() {
+        static const std::initializer_list<int64_t> values = {0, 1, 2, 3, 4, 5, 6, 7};
+        return values;
     }
-    state.SetItemsProcessed(n * state.iterations());
-}
+};
 
-template <typename MakeContainer, typename AccessFn>
-void run_iterate_sum_bench(benchmark::State& state, MakeContainer make_container, AccessFn access_fn) {
-    SCOPED_SET_CATCHED(true);
-    const int64_t n = state.range(0);
-    auto container = make_container(n);
-    for (auto _ : state) {
-        int64_t sum = 0;
-        for (int64_t i = 0; i < n; ++i) {
-            sum += access_fn(container, i);
-        }
-        benchmark::DoNotOptimize(sum);
+template <>
+struct InitListFactory<LargePod> {
+    static const std::initializer_list<LargePod>& list() {
+        static const std::initializer_list<LargePod> values = {
+                LargePod(0), LargePod(1), LargePod(2), LargePod(3),
+                LargePod(4), LargePod(5), LargePod(6), LargePod(7)};
+        return values;
     }
-    state.SetItemsProcessed(n * state.iterations());
-}
+};
 
-void apply_counts(benchmark::internal::Benchmark* b) {
-    for (int64_t n : {16, 128, 1024, 4096}) {
+template <>
+struct InitListFactory<SmallNonPod> {
+    static const std::initializer_list<SmallNonPod>& list() {
+        static const std::initializer_list<SmallNonPod> values = {
+                SmallNonPod(0), SmallNonPod(1), SmallNonPod(2), SmallNonPod(3),
+                SmallNonPod(4), SmallNonPod(5), SmallNonPod(6), SmallNonPod(7)};
+        return values;
+    }
+};
+
+template <typename T>
+struct BufferOps {
+    using ValueType = T;
+    using Container = Buffer<T>;
+
+    static Container make() { return Container(&memory::kDefaultAllocator); }
+    static void reserve(Container& c, int64_t n) { c.reserve(static_cast<size_t>(n)); }
+    static void shrink_to_fit(Container& c) { c.shrink_to_fit(); }
+    static void resize(Container& c, int64_t n) { c.resize(static_cast<size_t>(n)); }
+    static void resize_value(Container& c, int64_t n, const T& value) { c.resize(static_cast<size_t>(n), value); }
+    static void assign(Container& c, int64_t n, const T& value) { c.assign(static_cast<size_t>(n), value); }
+    template <typename InputIt>
+    static void assign_range(Container& c, InputIt first, InputIt last) {
+        c.assign(first, last);
+    }
+    static void assign_init_list(Container& c, std::initializer_list<T> list) { c.assign(list); }
+    static void push_back(Container& c, int64_t i) { c.push_back(ValueFactory<T>::make(i)); }
+    static void emplace_back(Container& c, int64_t i) { ValueFactory<T>::emplace(c, i); }
+    static void insert(Container& c, int64_t n, const T& value) { c.insert(static_cast<size_t>(n), value); }
+    template <typename InputIt>
+    static void insert_range(Container& c, InputIt first, InputIt last) {
+        c.insert(first, last);
+    }
+    static void insert_init_list(Container& c, std::initializer_list<T> list) { c.insert(list); }
+};
+
+template <typename T>
+struct VectorOps {
+    using ValueType = T;
+    using Container = ColumnVector<T>;
+
+    static Container make() { return Container(); }
+    static void reserve(Container& c, int64_t n) { c.reserve(static_cast<size_t>(n)); }
+    static void shrink_to_fit(Container& c) { c.shrink_to_fit(); }
+    static void resize(Container& c, int64_t n) { c.resize(static_cast<size_t>(n)); }
+    static void resize_value(Container& c, int64_t n, const T& value) { c.resize(static_cast<size_t>(n), value); }
+    static void assign(Container& c, int64_t n, const T& value) { c.assign(static_cast<size_t>(n), value); }
+    template <typename InputIt>
+    static void assign_range(Container& c, InputIt first, InputIt last) {
+        c.assign(first, last);
+    }
+    static void assign_init_list(Container& c, std::initializer_list<T> list) { c.assign(list); }
+    static void push_back(Container& c, int64_t i) { c.push_back(ValueFactory<T>::make(i)); }
+    static void emplace_back(Container& c, int64_t i) { ValueFactory<T>::emplace(c, i); }
+    static void insert(Container& c, int64_t n, const T& value) {
+        c.insert(c.end(), static_cast<size_t>(n), value);
+    }
+    template <typename InputIt>
+    static void insert_range(Container& c, InputIt first, InputIt last) {
+        c.insert(c.end(), first, last);
+    }
+    static void insert_init_list(Container& c, std::initializer_list<T> list) { c.insert(c.end(), list); }
+};
+
+static void apply_counts(benchmark::internal::Benchmark* b) {
+    for (int64_t n : {16, 128, 512, 1024, 4096, 16384, 65536, 262144, 1048576, 4194304, 16777216, 67108864, 134217728}) {
         b->Arg(n);
     }
 }
 
-// Constructors (Buffer 3 ctors: explicit, move ctor, move assign)
-static void BM_buffer_default_ctor(benchmark::State& state) {
-    run_ctor_bench(state, [] { return Buffer<int>(&memory::kDefaultAllocator); });
+static void apply_init_list(benchmark::internal::Benchmark* b) {
+    b->Arg(kInitListSize);
 }
 
-static void BM_vector_default_ctor(benchmark::State& state) {
-    run_ctor_bench(state, [] { return ColumnVector<int>(); });
+template <typename Ops>
+void run_reserve_bench(benchmark::State& state) {
+    SCOPED_SET_CATCHED(true);
+    const int64_t n = state.range(0);
+    for (auto _ : state) {
+        auto container = Ops::make();
+        Ops::reserve(container, n);
+        benchmark::DoNotOptimize(container);
+    }
+    state.SetItemsProcessed(n * state.iterations());
 }
 
-static void BM_rawvector_ctor(benchmark::State& state) {
-    run_ctor_bench(state, [] { return raw::RawVector<int>(); });
+template <typename Ops>
+void run_shrink_to_fit_bench(benchmark::State& state) {
+    SCOPED_SET_CATCHED(true);
+    const int64_t n = state.range(0);
+    for (auto _ : state) {
+        state.PauseTiming();
+        auto container = Ops::make();
+        Ops::reserve(container, n);
+        Ops::resize(container, n / 2);
+        state.ResumeTiming();
+        Ops::shrink_to_fit(container);
+        benchmark::DoNotOptimize(container);
+    }
+    state.SetItemsProcessed(n * state.iterations());
 }
 
-static void BM_buffer_ctor_count(benchmark::State& state) {
-    run_ctor_count_bench(state, [](int64_t n) { return Buffer<int>(&memory::kDefaultAllocator, n); });
+template <typename Ops>
+void run_resize_grow_bench(benchmark::State& state) {
+    SCOPED_SET_CATCHED(true);
+    const int64_t n = state.range(0);
+    const int64_t base = n / 2;
+    for (auto _ : state) {
+        state.PauseTiming();
+        auto container = Ops::make();
+        if (base > 0) {
+            Ops::resize(container, base);
+        }
+        state.ResumeTiming();
+        Ops::resize(container, n);
+        benchmark::DoNotOptimize(container);
+    }
+    state.SetItemsProcessed((n - base) * state.iterations());
 }
 
-static void BM_vector_ctor_count(benchmark::State& state) {
-    run_ctor_count_bench(state, [](int64_t n) { return ColumnVector<int>(n); });
+template <typename Ops>
+void run_resize_grow_from_zero_bench(benchmark::State& state) {
+    SCOPED_SET_CATCHED(true);
+    const int64_t n = state.range(0);
+    for (auto _ : state) {
+        auto container = Ops::make();
+        Ops::resize(container, n);
+        benchmark::DoNotOptimize(container);
+    }
+    state.SetItemsProcessed(n * state.iterations());
 }
 
-static void BM_rawvector_ctor_count(benchmark::State& state) {
-    run_ctor_count_bench(state, [](int64_t n) { return raw::RawVector<int>(n); });
+template <typename Ops>
+void run_resize_shrink_bench(benchmark::State& state) {
+    SCOPED_SET_CATCHED(true);
+    const int64_t n = state.range(0);
+    const int64_t target = n / 2;
+    for (auto _ : state) {
+        state.PauseTiming();
+        auto container = Ops::make();
+        Ops::resize(container, n);
+        state.ResumeTiming();
+        Ops::resize(container, target);
+        benchmark::DoNotOptimize(container);
+    }
+    state.SetItemsProcessed((n - target) * state.iterations());
 }
 
-static void BM_buffer_ctor_count_value(benchmark::State& state) {
-    run_ctor_count_bench(state, [](int64_t n) { return Buffer<int>(&memory::kDefaultAllocator, n, 1); });
+template <typename Ops>
+void run_resize_value_grow_bench(benchmark::State& state) {
+    SCOPED_SET_CATCHED(true);
+    const int64_t n = state.range(0);
+    const int64_t base = n / 2;
+    const auto value = ValueFactory<typename Ops::ValueType>::make(1);
+    for (auto _ : state) {
+        state.PauseTiming();
+        auto container = Ops::make();
+        if (base > 0) {
+            Ops::resize(container, base);
+        }
+        state.ResumeTiming();
+        Ops::resize_value(container, n, value);
+        benchmark::DoNotOptimize(container);
+    }
+    state.SetItemsProcessed((n - base) * state.iterations());
 }
 
-static void BM_vector_ctor_count_value(benchmark::State& state) {
-    run_ctor_count_bench(state, [](int64_t n) { return ColumnVector<int>(n, 1); });
+template <typename Ops>
+void run_assign_bench(benchmark::State& state) {
+    SCOPED_SET_CATCHED(true);
+    const int64_t n = state.range(0);
+    const auto value = ValueFactory<typename Ops::ValueType>::make(1);
+    for (auto _ : state) {
+        auto container = Ops::make();
+        Ops::assign(container, n, value);
+        benchmark::DoNotOptimize(container);
+    }
+    state.SetItemsProcessed(n * state.iterations());
 }
 
-static void BM_rawvector_ctor_count_value(benchmark::State& state) {
-    run_ctor_count_bench(state, [](int64_t n) { return raw::RawVector<int>(n, 1); });
+template <typename Ops>
+void run_assign_range_bench(benchmark::State& state) {
+    SCOPED_SET_CATCHED(true);
+    const int64_t n = state.range(0);
+    std::vector<typename Ops::ValueType> values;
+    values.reserve(static_cast<size_t>(n));
+    for (int64_t i = 0; i < n; ++i) {
+        values.push_back(ValueFactory<typename Ops::ValueType>::make(i));
+    }
+    const auto* data = values.data();
+    for (auto _ : state) {
+        auto container = Ops::make();
+        Ops::assign_range(container, data, data + values.size());
+        benchmark::DoNotOptimize(container);
+    }
+    state.SetItemsProcessed(n * state.iterations());
 }
 
-static void BM_buffer_move_ctor(benchmark::State& state) {
-    run_ctor_bench(state, [] {
-        Buffer<int> src(&memory::kDefaultAllocator);
-        src.reserve(8);
-        src.push_back(1);
-        return Buffer<int>(std::move(src));
-    });
+template <typename Ops>
+void run_assign_init_list_bench(benchmark::State& state) {
+    SCOPED_SET_CATCHED(true);
+    const auto& values = InitListFactory<typename Ops::ValueType>::list();
+    const int64_t n = static_cast<int64_t>(values.size());
+    for (auto _ : state) {
+        auto container = Ops::make();
+        Ops::assign_init_list(container, values);
+        benchmark::DoNotOptimize(container);
+    }
+    state.SetItemsProcessed(n * state.iterations());
 }
 
-static void BM_buffer_move_assign(benchmark::State& state) {
-    run_ctor_bench(state, [] {
-        Buffer<int> src(&memory::kDefaultAllocator);
-        src.reserve(8);
-        src.push_back(1);
-        Buffer<int> dst(&memory::kDefaultAllocator);
-        dst = std::move(src);
-        return dst;
-    });
+template <typename Ops>
+void run_push_back_no_reserve_bench(benchmark::State& state) {
+    SCOPED_SET_CATCHED(true);
+    const int64_t n = state.range(0);
+    for (auto _ : state) {
+        auto container = Ops::make();
+        for (int64_t i = 0; i < n; ++i) {
+            Ops::push_back(container, i);
+        }
+        benchmark::DoNotOptimize(container);
+    }
+    state.SetItemsProcessed(n * state.iterations());
 }
 
-// Reserve
-static void BM_buffer_reserve(benchmark::State& state) {
-    run_reserve_bench(state, [&] { return Buffer<int>(&memory::kDefaultAllocator); },
-                      [](auto& c, int64_t n) { c.reserve(n); });
+template <typename Ops>
+void run_push_back_bench(benchmark::State& state) {
+    SCOPED_SET_CATCHED(true);
+    const int64_t n = state.range(0);
+    for (auto _ : state) {
+        state.PauseTiming();
+        auto container = Ops::make();
+        Ops::reserve(container, n);
+        state.ResumeTiming();
+        for (int64_t i = 0; i < n; ++i) {
+            Ops::push_back(container, i);
+        }
+        benchmark::DoNotOptimize(container);
+    }
+    state.SetItemsProcessed(n * state.iterations());
 }
 
-static void BM_vector_reserve(benchmark::State& state) {
-    run_reserve_bench(state, [] { return ColumnVector<int>(); }, [](auto& c, int64_t n) { c.reserve(n); });
+template <typename Ops>
+void run_emplace_back_no_reserve_bench(benchmark::State& state) {
+    SCOPED_SET_CATCHED(true);
+    const int64_t n = state.range(0);
+    for (auto _ : state) {
+        auto container = Ops::make();
+        for (int64_t i = 0; i < n; ++i) {
+            Ops::emplace_back(container, i);
+        }
+        benchmark::DoNotOptimize(container);
+    }
+    state.SetItemsProcessed(n * state.iterations());
 }
 
-static void BM_rawvector_reserve(benchmark::State& state) {
-    run_reserve_bench(state, [] { return raw::RawVector<int>(); }, [](auto& c, int64_t n) { c.reserve(n); });
+template <typename Ops>
+void run_emplace_back_bench(benchmark::State& state) {
+    SCOPED_SET_CATCHED(true);
+    const int64_t n = state.range(0);
+    for (auto _ : state) {
+        state.PauseTiming();
+        auto container = Ops::make();
+        Ops::reserve(container, n);
+        state.ResumeTiming();
+        for (int64_t i = 0; i < n; ++i) {
+            Ops::emplace_back(container, i);
+        }
+        benchmark::DoNotOptimize(container);
+    }
+    state.SetItemsProcessed(n * state.iterations());
 }
 
-static void BM_std_string_reserve(benchmark::State& state) {
-    run_reserve_bench(state, [] { return std::string(); }, [](auto& c, int64_t n) { c.reserve(n); });
+template <typename Ops>
+void run_insert_bench(benchmark::State& state) {
+    SCOPED_SET_CATCHED(true);
+    const int64_t n = state.range(0);
+    const auto value = ValueFactory<typename Ops::ValueType>::make(1);
+    for (auto _ : state) {
+        auto container = Ops::make();
+        Ops::insert(container, n, value);
+        benchmark::DoNotOptimize(container);
+    }
+    state.SetItemsProcessed(n * state.iterations());
 }
 
-static void BM_rawstring_reserve(benchmark::State& state) {
-    run_reserve_bench(state, [] { return raw::RawString(); }, [](auto& c, int64_t n) { c.reserve(n); });
+template <typename Ops>
+void run_insert_reserve_bench(benchmark::State& state) {
+    SCOPED_SET_CATCHED(true);
+    const int64_t n = state.range(0);
+    const auto value = ValueFactory<typename Ops::ValueType>::make(1);
+    for (auto _ : state) {
+        state.PauseTiming();
+        auto container = Ops::make();
+        Ops::reserve(container, n);
+        state.ResumeTiming();
+        Ops::insert(container, n, value);
+        benchmark::DoNotOptimize(container);
+    }
+    state.SetItemsProcessed(n * state.iterations());
 }
 
-// POD push_back
-static void BM_buffer_int_push_back_no_reserve(benchmark::State& state) {
-    run_push_bench(state,
-                   [] { return Buffer<int>(&memory::kDefaultAllocator); },
-                   []([[maybe_unused]] auto& c, [[maybe_unused]] int64_t n) {},
-                   [](auto& c, int64_t i) { c.push_back(static_cast<int>(i)); });
+template <typename Ops>
+void run_insert_range_bench(benchmark::State& state) {
+    SCOPED_SET_CATCHED(true);
+    const int64_t n = state.range(0);
+    std::vector<typename Ops::ValueType> values;
+    values.reserve(static_cast<size_t>(n));
+    for (int64_t i = 0; i < n; ++i) {
+        values.push_back(ValueFactory<typename Ops::ValueType>::make(i));
+    }
+    const auto* data = values.data();
+    for (auto _ : state) {
+        auto container = Ops::make();
+        Ops::insert_range(container, data, data + values.size());
+        benchmark::DoNotOptimize(container);
+    }
+    state.SetItemsProcessed(n * state.iterations());
 }
 
-static void BM_buffer_int_push_back_reserve(benchmark::State& state) {
-    run_push_bench_prepared(state,
-                            [] { return Buffer<int>(&memory::kDefaultAllocator); },
-                            [](auto& c, int64_t n) { c.reserve(n); },
-                            [](auto& c, int64_t i) { c.push_back(static_cast<int>(i)); });
+template <typename Ops>
+void run_insert_range_reserve_bench(benchmark::State& state) {
+    SCOPED_SET_CATCHED(true);
+    const int64_t n = state.range(0);
+    std::vector<typename Ops::ValueType> values;
+    values.reserve(static_cast<size_t>(n));
+    for (int64_t i = 0; i < n; ++i) {
+        values.push_back(ValueFactory<typename Ops::ValueType>::make(i));
+    }
+    const auto* data = values.data();
+    for (auto _ : state) {
+        state.PauseTiming();
+        auto container = Ops::make();
+        Ops::reserve(container, n);
+        state.ResumeTiming();
+        Ops::insert_range(container, data, data + values.size());
+        benchmark::DoNotOptimize(container);
+    }
+    state.SetItemsProcessed(n * state.iterations());
 }
 
-static void BM_vector_int_push_back_no_reserve(benchmark::State& state) {
-    run_push_bench(state, [] { return ColumnVector<int>(); },
-                   []([[maybe_unused]] auto& c, [[maybe_unused]] int64_t n) {},
-                   [](auto& c, int64_t i) { c.push_back(static_cast<int>(i)); });
+template <typename Ops>
+void run_insert_init_list_bench(benchmark::State& state) {
+    SCOPED_SET_CATCHED(true);
+    const auto& values = InitListFactory<typename Ops::ValueType>::list();
+    const int64_t n = static_cast<int64_t>(values.size());
+    for (auto _ : state) {
+        auto container = Ops::make();
+        Ops::insert_init_list(container, values);
+        benchmark::DoNotOptimize(container);
+    }
+    state.SetItemsProcessed(n * state.iterations());
 }
 
-static void BM_vector_int_push_back_reserve(benchmark::State& state) {
-    run_push_bench_prepared(state, [] { return ColumnVector<int>(); }, [](auto& c, int64_t n) { c.reserve(n); },
-                            [](auto& c, int64_t i) { c.push_back(static_cast<int>(i)); });
+void run_buffer_assign_zero_bench(benchmark::State& state) {
+    SCOPED_SET_CATCHED(true);
+    const int64_t n = state.range(0);
+    for (auto _ : state) {
+        Buffer<uint8_t> buffer(&memory::kDefaultAllocator);
+        buffer.assign(static_cast<size_t>(n), 0);
+        benchmark::DoNotOptimize(buffer);
+    }
+    state.SetItemsProcessed(n * state.iterations());
 }
 
-static void BM_rawvector_int_push_back_no_reserve(benchmark::State& state) {
-    run_push_bench(state, [] { return raw::RawVector<int>(); },
-                   []([[maybe_unused]] auto& c, [[maybe_unused]] int64_t n) {},
-                   [](auto& c, int64_t i) { c.push_back(static_cast<int>(i)); });
+void run_buffer_resize_memset_zero_bench(benchmark::State& state) {
+    SCOPED_SET_CATCHED(true);
+    const int64_t n = state.range(0);
+    for (auto _ : state) {
+        Buffer<uint8_t> buffer(&memory::kDefaultAllocator);
+        buffer.resize(static_cast<size_t>(n));
+        if (n > 0) {
+            std::memset(buffer.data(), 0, static_cast<size_t>(n));
+        }
+        benchmark::DoNotOptimize(buffer);
+    }
+    state.SetItemsProcessed(n * state.iterations());
 }
 
-static void BM_rawvector_int_push_back_reserve(benchmark::State& state) {
-    run_push_bench_prepared(state, [] { return raw::RawVector<int>(); }, [](auto& c, int64_t n) { c.reserve(n); },
-                            [](auto& c, int64_t i) { c.push_back(static_cast<int>(i)); });
-}
+#define REGISTER_OP_BENCH(op, type)            \
+    BENCHMARK_TEMPLATE(op, VectorOps<type>)    \
+            ->Apply(apply_counts);            \
+    BENCHMARK_TEMPLATE(op, BufferOps<type>)    \
+            ->Apply(apply_counts)
 
-// Non-POD push_back
-static void BM_buffer_nonpod_push_back_no_reserve(benchmark::State& state) {
-    run_push_bench(state,
-                   [] { return Buffer<SmallNonPod>(&memory::kDefaultAllocator); },
-                   []([[maybe_unused]] auto& c, [[maybe_unused]] int64_t n) {},
-                   [](auto& c, int64_t i) { c.push_back(SmallNonPod{i, 16}); });
-}
+#define REGISTER_INIT_LIST_BENCH(op, type)     \
+    BENCHMARK_TEMPLATE(op, BufferOps<type>)    \
+            ->Apply(apply_init_list);         \
+    BENCHMARK_TEMPLATE(op, VectorOps<type>)    \
+            ->Apply(apply_init_list)
 
-static void BM_buffer_nonpod_push_back_reserve(benchmark::State& state) {
-    run_push_bench_prepared(state, [] { return Buffer<SmallNonPod>(&memory::kDefaultAllocator); },
-                            [](auto& c, int64_t n) { c.reserve(n); },
-                            [](auto& c, int64_t i) { c.push_back(SmallNonPod{i, 16}); });
-}
+REGISTER_OP_BENCH(run_reserve_bench, int64_t);
+// REGISTER_OP_BENCH(run_reserve_bench, LargePod);
+// REGISTER_OP_BENCH(run_reserve_bench, SmallNonPod);
 
-static void BM_vector_nonpod_push_back_no_reserve(benchmark::State& state) {
-    run_push_bench(state, [] { return ColumnVector<SmallNonPod>(); },
-                   []([[maybe_unused]] auto& c, [[maybe_unused]] int64_t n) {},
-                   [](auto& c, int64_t i) { c.push_back(SmallNonPod{i, 16}); });
-}
+REGISTER_OP_BENCH(run_shrink_to_fit_bench, int64_t);
+// REGISTER_OP_BENCH(run_shrink_to_fit_bench, LargePod);
+// REGISTER_OP_BENCH(run_shrink_to_fit_bench, SmallNonPod);
 
-static void BM_vector_nonpod_push_back_reserve(benchmark::State& state) {
-    run_push_bench_prepared(state, [] { return ColumnVector<SmallNonPod>(); }, [](auto& c, int64_t n) { c.reserve(n); },
-                            [](auto& c, int64_t i) { c.push_back(SmallNonPod{i, 16}); });
-}
+REGISTER_OP_BENCH(run_resize_grow_bench, int64_t);
+// REGISTER_OP_BENCH(run_resize_grow_bench, LargePod);
+// REGISTER_OP_BENCH(run_resize_grow_bench, SmallNonPod);
 
-// RawVector cannot hold non-trivial types (RawAllocator requires trivial destructor), so skipped.
+REGISTER_OP_BENCH(run_resize_grow_from_zero_bench, int64_t);
+// REGISTER_OP_BENCH(run_resize_grow_from_zero_bench, LargePod);
+// REGISTER_OP_BENCH(run_resize_grow_from_zero_bench, SmallNonPod);
 
-// String push_back (character)
-static void BM_std_string_push_back_no_reserve(benchmark::State& state) {
-    run_push_bench(state, [] { return std::string(); },
-                   []([[maybe_unused]] auto& c, [[maybe_unused]] int64_t n) {},
-                   [](auto& c, [[maybe_unused]] int64_t i) { c.push_back('x'); });
-}
+REGISTER_OP_BENCH(run_resize_shrink_bench, int64_t);
+// REGISTER_OP_BENCH(run_resize_shrink_bench, LargePod);
+// REGISTER_OP_BENCH(run_resize_shrink_bench, SmallNonPod);
 
-static void BM_std_string_push_back_reserve(benchmark::State& state) {
-    run_push_bench_prepared(state, [] { return std::string(); }, [](auto& c, int64_t n) { c.reserve(n); },
-                            [](auto& c, [[maybe_unused]] int64_t i) { c.push_back('x'); });
-}
+REGISTER_OP_BENCH(run_resize_value_grow_bench, int64_t);
+// REGISTER_OP_BENCH(run_resize_value_grow_bench, LargePod);
+// REGISTER_OP_BENCH(run_resize_value_grow_bench, SmallNonPod);
 
-static void BM_rawstring_push_back_no_reserve(benchmark::State& state) {
-    run_push_bench(state, [] { return raw::RawString(); },
-                   []([[maybe_unused]] auto& c, [[maybe_unused]] int64_t n) {},
-                   [](auto& c, [[maybe_unused]] int64_t i) { c.push_back('x'); });
-}
+REGISTER_OP_BENCH(run_assign_bench, int64_t);
+// REGISTER_OP_BENCH(run_assign_bench, LargePod);
+// REGISTER_OP_BENCH(run_assign_bench, SmallNonPod);
 
-static void BM_rawstring_push_back_reserve(benchmark::State& state) {
-    run_push_bench_prepared(state, [] { return raw::RawString(); }, [](auto& c, int64_t n) { c.reserve(n); },
-                            [](auto& c, [[maybe_unused]] int64_t i) { c.push_back('x'); });
-}
+REGISTER_OP_BENCH(run_assign_range_bench, int64_t);
+// REGISTER_OP_BENCH(run_assign_range_bench, LargePod);
+// REGISTER_OP_BENCH(run_assign_range_bench, SmallNonPod);
 
-// Resize
-static void BM_buffer_resize(benchmark::State& state) {
-    run_resize_bench(state, [] { return Buffer<int>(&memory::kDefaultAllocator); },
-                     [](auto& c, int64_t n) { c.resize(n); });
-}
+REGISTER_INIT_LIST_BENCH(run_assign_init_list_bench, int64_t);
+// REGISTER_INIT_LIST_BENCH(run_assign_init_list_bench, LargePod);
+// REGISTER_INIT_LIST_BENCH(run_assign_init_list_bench, SmallNonPod);
 
-static void BM_vector_resize(benchmark::State& state) {
-    run_resize_bench(state, [] { return ColumnVector<int>(); }, [](auto& c, int64_t n) { c.resize(n); });
-}
+REGISTER_OP_BENCH(run_push_back_no_reserve_bench, int64_t);
+// REGISTER_OP_BENCH(run_push_back_no_reserve_bench, LargePod);
+// REGISTER_OP_BENCH(run_push_back_no_reserve_bench, SmallNonPod);
 
-static void BM_rawvector_resize(benchmark::State& state) {
-    run_resize_bench(state, [] { return raw::RawVector<int>(); }, [](auto& c, int64_t n) { c.resize(n); });
-}
+REGISTER_OP_BENCH(run_push_back_bench, int64_t);
+// REGISTER_OP_BENCH(run_push_back_bench, LargePod);
+// REGISTER_OP_BENCH(run_push_back_bench, SmallNonPod);
 
-static void BM_buffer_resize_value(benchmark::State& state) {
-    run_resize_bench(state, [] { return Buffer<int>(&memory::kDefaultAllocator); },
-                     [](auto& c, int64_t n) { c.resize(n, 1); });
-}
+REGISTER_OP_BENCH(run_emplace_back_no_reserve_bench, int64_t);
+// REGISTER_OP_BENCH(run_emplace_back_no_reserve_bench, LargePod);
+// REGISTER_OP_BENCH(run_emplace_back_no_reserve_bench, SmallNonPod);
 
-static void BM_vector_resize_value(benchmark::State& state) {
-    run_resize_bench(state, [] { return ColumnVector<int>(); }, [](auto& c, int64_t n) { c.resize(n, 1); });
-}
+REGISTER_OP_BENCH(run_emplace_back_bench, int64_t);
+// REGISTER_OP_BENCH(run_emplace_back_bench, LargePod);
+// REGISTER_OP_BENCH(run_emplace_back_bench, SmallNonPod);
 
-static void BM_rawvector_resize_value(benchmark::State& state) {
-    run_resize_bench(state, [] { return raw::RawVector<int>(); }, [](auto& c, int64_t n) { c.resize(n, 1); });
-}
+REGISTER_OP_BENCH(run_insert_bench, int64_t);
+// REGISTER_OP_BENCH(run_insert_bench, LargePod);
+// REGISTER_OP_BENCH(run_insert_bench, SmallNonPod);
 
-// Assign
-static void BM_buffer_assign(benchmark::State& state) {
-    run_assign_bench(state, [] { return Buffer<int>(&memory::kDefaultAllocator); },
-                     [](auto& c, int64_t n) { c.assign(n, 1); });
-}
+REGISTER_OP_BENCH(run_insert_reserve_bench, int64_t);
+// REGISTER_OP_BENCH(run_insert_reserve_bench, LargePod);
+// REGISTER_OP_BENCH(run_insert_reserve_bench, SmallNonPod);
 
-static void BM_vector_assign(benchmark::State& state) {
-    run_assign_bench(state, [] { return ColumnVector<int>(); }, [](auto& c, int64_t n) { c.assign(n, 1); });
-}
+REGISTER_OP_BENCH(run_insert_range_bench, int64_t);
+// REGISTER_OP_BENCH(run_insert_range_bench, LargePod);
+// REGISTER_OP_BENCH(run_insert_range_bench, SmallNonPod);
 
-static void BM_rawvector_assign(benchmark::State& state) {
-    run_assign_bench(state, [] { return raw::RawVector<int>(); }, [](auto& c, int64_t n) { c.assign(n, 1); });
-}
+REGISTER_OP_BENCH(run_insert_range_reserve_bench, int64_t);
+// REGISTER_OP_BENCH(run_insert_range_reserve_bench, LargePod);
+// REGISTER_OP_BENCH(run_insert_range_reserve_bench, SmallNonPod);
 
-// Shrink to fit
-static void BM_buffer_shrink_to_fit(benchmark::State& state) {
-    run_shrink_to_fit_bench(
-            state, [] { return Buffer<int>(&memory::kDefaultAllocator); },
-            [](auto& c, int64_t n) { c.reserve(n); }, [](auto& c, int64_t i) { c.push_back(static_cast<int>(i)); },
-            [](auto& c) { c.shrink_to_fit(); });
-}
+REGISTER_INIT_LIST_BENCH(run_insert_init_list_bench, int64_t);
+// REGISTER_INIT_LIST_BENCH(run_insert_init_list_bench, LargePod);
+// REGISTER_INIT_LIST_BENCH(run_insert_init_list_bench, SmallNonPod);
 
-static void BM_vector_shrink_to_fit(benchmark::State& state) {
-    run_shrink_to_fit_bench(
-            state, [] { return ColumnVector<int>(); }, [](auto& c, int64_t n) { c.reserve(n); },
-            [](auto& c, int64_t i) { c.push_back(static_cast<int>(i)); }, [](auto& c) { c.shrink_to_fit(); });
-}
+BENCHMARK(run_buffer_assign_zero_bench)->Apply(apply_counts);
+BENCHMARK(run_buffer_resize_memset_zero_bench)->Apply(apply_counts);
 
-static void BM_rawvector_shrink_to_fit(benchmark::State& state) {
-    run_shrink_to_fit_bench(
-            state, [] { return raw::RawVector<int>(); }, [](auto& c, int64_t n) { c.reserve(n); },
-            [](auto& c, int64_t i) { c.push_back(static_cast<int>(i)); }, [](auto& c) { c.shrink_to_fit(); });
-}
-
-// Iterate sum
-static void BM_buffer_iterate_sum(benchmark::State& state) {
-    run_iterate_sum_bench(
-            state,
-            [](int64_t n) {
-                Buffer<int> c(&memory::kDefaultAllocator);
-                c.reserve(n);
-                for (int64_t i = 0; i < n; ++i) {
-                    c.push_back(static_cast<int>(i));
-                }
-                return c;
-            },
-            [](auto& c, int64_t i) { return c[i]; });
-}
-
-static void BM_vector_iterate_sum(benchmark::State& state) {
-    run_iterate_sum_bench(
-            state,
-            [](int64_t n) {
-                ColumnVector<int> c;
-                c.reserve(n);
-                for (int64_t i = 0; i < n; ++i) {
-                    c.push_back(static_cast<int>(i));
-                }
-                return c;
-            },
-            [](auto& c, int64_t i) { return c[i]; });
-}
-
-static void BM_rawvector_iterate_sum(benchmark::State& state) {
-    run_iterate_sum_bench(
-            state,
-            [](int64_t n) {
-                raw::RawVector<int> c;
-                c.reserve(n);
-                for (int64_t i = 0; i < n; ++i) {
-                    c.push_back(static_cast<int>(i));
-                }
-                return c;
-            },
-            [](auto& c, int64_t i) { return c[i]; });
-}
+#undef REGISTER_OP_BENCH
+#undef REGISTER_INIT_LIST_BENCH
 
 } // namespace
-
-BENCHMARK(BM_buffer_default_ctor);
-BENCHMARK(BM_vector_default_ctor);
-BENCHMARK(BM_rawvector_ctor);
-BENCHMARK(BM_buffer_ctor_count)->Apply(apply_counts);
-BENCHMARK(BM_vector_ctor_count)->Apply(apply_counts);
-BENCHMARK(BM_rawvector_ctor_count)->Apply(apply_counts);
-BENCHMARK(BM_buffer_ctor_count_value)->Apply(apply_counts);
-BENCHMARK(BM_vector_ctor_count_value)->Apply(apply_counts);
-BENCHMARK(BM_rawvector_ctor_count_value)->Apply(apply_counts);
-BENCHMARK(BM_buffer_move_ctor);
-BENCHMARK(BM_buffer_move_assign);
-
-BENCHMARK(BM_buffer_reserve)->Apply(apply_counts);
-BENCHMARK(BM_vector_reserve)->Apply(apply_counts);
-BENCHMARK(BM_rawvector_reserve)->Apply(apply_counts);
-BENCHMARK(BM_std_string_reserve)->Apply(apply_counts);
-BENCHMARK(BM_rawstring_reserve)->Apply(apply_counts);
-
-BENCHMARK(BM_buffer_int_push_back_no_reserve)->Apply(apply_counts);
-BENCHMARK(BM_buffer_int_push_back_reserve)->Apply(apply_counts);
-BENCHMARK(BM_vector_int_push_back_no_reserve)->Apply(apply_counts);
-BENCHMARK(BM_vector_int_push_back_reserve)->Apply(apply_counts);
-BENCHMARK(BM_rawvector_int_push_back_no_reserve)->Apply(apply_counts);
-BENCHMARK(BM_rawvector_int_push_back_reserve)->Apply(apply_counts);
-
-BENCHMARK(BM_buffer_nonpod_push_back_no_reserve)->Apply(apply_counts);
-BENCHMARK(BM_buffer_nonpod_push_back_reserve)->Apply(apply_counts);
-BENCHMARK(BM_vector_nonpod_push_back_no_reserve)->Apply(apply_counts);
-BENCHMARK(BM_vector_nonpod_push_back_reserve)->Apply(apply_counts);
-
-BENCHMARK(BM_std_string_push_back_no_reserve)->Apply(apply_counts);
-BENCHMARK(BM_std_string_push_back_reserve)->Apply(apply_counts);
-BENCHMARK(BM_rawstring_push_back_no_reserve)->Apply(apply_counts);
-BENCHMARK(BM_rawstring_push_back_reserve)->Apply(apply_counts);
-
-BENCHMARK(BM_buffer_resize)->Apply(apply_counts);
-BENCHMARK(BM_vector_resize)->Apply(apply_counts);
-BENCHMARK(BM_rawvector_resize)->Apply(apply_counts);
-BENCHMARK(BM_buffer_resize_value)->Apply(apply_counts);
-BENCHMARK(BM_vector_resize_value)->Apply(apply_counts);
-BENCHMARK(BM_rawvector_resize_value)->Apply(apply_counts);
-
-BENCHMARK(BM_buffer_assign)->Apply(apply_counts);
-BENCHMARK(BM_vector_assign)->Apply(apply_counts);
-BENCHMARK(BM_rawvector_assign)->Apply(apply_counts);
-
-BENCHMARK(BM_buffer_shrink_to_fit)->Apply(apply_counts);
-BENCHMARK(BM_vector_shrink_to_fit)->Apply(apply_counts);
-BENCHMARK(BM_rawvector_shrink_to_fit)->Apply(apply_counts);
-
-BENCHMARK(BM_buffer_iterate_sum)->Apply(apply_counts);
-BENCHMARK(BM_vector_iterate_sum)->Apply(apply_counts);
-BENCHMARK(BM_rawvector_iterate_sum)->Apply(apply_counts);
-
 
 int main(int argc, char** argv) {
     benchmark::Initialize(&argc, argv);

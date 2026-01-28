@@ -434,6 +434,7 @@ Status SegmentIterator::ScanContext::read_columns(Chunk* chunk, const SparseRang
             pruned_cols.push_back(i);
             continue;
         }
+        // LOG(INFO) << "column_iterator: " << _column_iterators[i]->name();
         RETURN_IF_ERROR(_column_iterators[i]->next_batch(range, col));
         if (pruned_col_size == 0) {
             pruned_col_size = col->size();
@@ -1452,6 +1453,7 @@ Status SegmentIterator::_read_columns(const Schema& schema, Chunk* chunk, size_t
         ColumnId cid = schema.field(i)->id();
         auto* column = chunk->get_column_raw_ptr_by_index(i);
         size_t nread = nrows;
+        // LOG(INFO) << "column_iterator: " << _column_iterators[cid]->name();
         RETURN_IF_ERROR(_column_iterators[cid]->next_batch(&nread, column));
         may_has_del_row = may_has_del_row | (column->delete_state() != DEL_NOT_SATISFIED);
         DCHECK_EQ(nrows, nread);

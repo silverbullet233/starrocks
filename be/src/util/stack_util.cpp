@@ -108,6 +108,14 @@ struct StackTraceTask {
     }
 };
 
+std::string get_stack_trace(int64_t max_depth) {
+    StackTraceTask task;
+    task.depth = google::glog_internal_namespace_::GetStackTrace(task.addrs, max_depth, 2);
+    task.done = true;
+    task.id = std::this_thread::get_id();
+    return task.to_string();
+}
+
 struct StackTraceTaskHash {
     size_t operator()(const StackTraceTask& task) const {
         size_t hash = 0;

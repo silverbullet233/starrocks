@@ -1872,4 +1872,6 @@ CONF_mInt64(max_lookup_batch_request, "8");
 // For table schema service: max retry attempts for fetching schema from FE.
 CONF_mInt32(table_schema_service_max_retries, "3");
 CONF_Int64(mmap_bytes_threshold, "67108864"); // 64MB
+CONF_Bool(enable_mem_tracker_debug, "false");
+CONF_Bool(enable_buffer_realloc, "true");
 } // namespace starrocks::config

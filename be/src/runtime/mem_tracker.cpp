@@ -193,6 +193,14 @@ void MemTracker::Init() {
 }
 
 MemTracker::~MemTracker() {
+    if (config::enable_mem_tracker_debug) {
+        std::lock_guard<std::mutex> l(_alloc_record_mutex);
+        if (!_alloc_records.empty()) {
+            for (const auto& [ptr, record] : _alloc_records) {
+                LOG(WARNING) << "mem_tracker destroyed, ptr: " << ptr << ", size: " << record.size << ", label: " << record.stack << ", actual lable: " << label();
+            }
+        }
+    }
     // return memory to root mem_tracker
     release_without_root();
 
@@ -284,6 +292,31 @@ std::string MemTracker::err_msg(const std::string& msg, RuntimeState* state) con
         break;
     }
     return str.str();
+}
+
+void MemTracker::add_alloc_record(void* ptr, size_t size, [[maybe_unused]] std::string stack) {
+    std::lock_guard<std::mutex> l(_alloc_record_mutex);
+    auto iter = _alloc_records.find(ptr);
+    if (iter != _alloc_records.end()) {
+        LOG(WARNING) << "add_alloc_record failed, already exists, ptr: " << ptr << ", size: " << iter->second.size << ", stack: " << iter->second.stack << ", label: " << label();
+        return;
+    } else {
+        _alloc_records.emplace(ptr, AllocRecord{size, std::move(stack)});
+    }
+}
+
+void MemTracker::remove_alloc_record(void* ptr, size_t size) {
+    std::lock_guard<std::mutex> l(_alloc_record_mutex);
+    auto iter = _alloc_records.find(ptr);
+    if (iter == _alloc_records.end()) {
+        LOG(WARNING) << "remove_alloc_record failed, not found, ptr: " << ptr << ", label: " << label();
+        return;
+    } else if (iter->second.size != size) {
+        LOG(WARNING) << "remove_alloc_record failed, size mismatch, ptr: " << ptr << ", size: " << iter->second.size << ", expected: " << size << ", stack: " << iter->second.stack << ", label: " << label();
+        return;
+    } else {
+        _alloc_records.erase(iter);
+    }
 }
 
 } // end namespace starrocks

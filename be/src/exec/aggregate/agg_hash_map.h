@@ -188,7 +188,9 @@ struct AggHashMapWithKey {
         ExtraAggParam extra;
         extra.not_founds = not_founds;
         DCHECK(not_founds);
-        (*not_founds).assign(chunk_size, 0);
+        // @TODO pending fix
+        (*not_founds).resize(chunk_size);
+        memset(not_founds->data(), 0, chunk_size);
         static_cast<Impl*>(this)->template compute_agg_states<Func, HTBuildOp<false, true, false>>(
                 chunk_size, key_columns, pool, std::forward<Func>(allocate_func), agg_states, &extra);
         defer.cancel();
@@ -270,12 +272,15 @@ struct AggHashMapWithOneNumberKeyWithNullable
         const auto column = down_cast<const ColumnType*>(key_column);
 
         if constexpr (is_no_prefetch_map<HashMap>) {
+            // LOG(INFO) << "AggHashMapWithOneNumberKeyWithNullable::compute_agg_states_non_nullable, no prefetch";
             this->template compute_agg_noprefetch<Func, HTBuildOp>(column, agg_states,
                                                                    std::forward<Func>(allocate_func), extra);
         } else if (this->hash_map.bucket_count() < prefetch_threhold) {
+            // LOG(INFO) << "AggHashMapWithOneNumberKeyWithNullable::compute_agg_states_non_nullable, no prefetch, bucket count: " << this->hash_map.bucket_count();
             this->template compute_agg_noprefetch<Func, HTBuildOp>(column, agg_states,
                                                                    std::forward<Func>(allocate_func), extra);
         } else {
+            // LOG(INFO) << "AggHashMapWithOneNumberKeyWithNullable::compute_agg_states_non_nullable, prefetch";
             this->template compute_agg_prefetch<Func, HTBuildOp>(column, agg_states, std::forward<Func>(allocate_func),
                                                                  extra);
         }

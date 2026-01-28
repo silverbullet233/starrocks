@@ -28,6 +28,15 @@ struct AggStatistics {
         streaming_timer = ADD_TIMER(runtime_profile, "StreamingTime");
         expr_compute_timer = ADD_TIMER(runtime_profile, "ExprComputeTime");
         expr_release_timer = ADD_TIMER(runtime_profile, "ExprReleaseTime");
+        eval_group_by_exprs_timer = ADD_TIMER(runtime_profile, "AggEvalGroupByExprsTime");
+        eval_agg_input_timer = ADD_TIMER(runtime_profile, "AggEvalAggInputTime");
+        compute_single_state_timer = ADD_TIMER(runtime_profile, "AggComputeSingleStateTime");
+        compute_batch_state_timer = ADD_TIMER(runtime_profile, "AggComputeBatchStateTime");
+        compute_batch_state_with_selection_timer =
+                ADD_TIMER(runtime_profile, "AggComputeBatchStateWithSelectionTime");
+        build_hash_map_timer = ADD_TIMER(runtime_profile, "AggBuildHashMapTime");
+        build_hash_map_with_selection_timer = ADD_TIMER(runtime_profile, "AggBuildHashMapWithSelectionTime");
+        build_hash_map_with_limit_timer = ADD_TIMER(runtime_profile, "AggBuildHashMapWithLimitTime");
         input_row_count = ADD_COUNTER(runtime_profile, "InputRowCount", TUnit::UNIT);
         hash_table_size = ADD_COUNTER(runtime_profile, "HashTableSize", TUnit::UNIT);
         pass_through_row_count = ADD_COUNTER(runtime_profile, "PassThroughRowCount", TUnit::UNIT);
@@ -65,6 +74,22 @@ struct AggStatistics {
     RuntimeProfile::Counter* expr_compute_timer{};
     // timer for result input from hash table
     RuntimeProfile::Counter* expr_release_timer{};
+    // timer for group-by expression evaluation
+    RuntimeProfile::Counter* eval_group_by_exprs_timer{};
+    // timer for agg input expression evaluation
+    RuntimeProfile::Counter* eval_agg_input_timer{};
+    // timer for compute single agg state
+    RuntimeProfile::Counter* compute_single_state_timer{};
+    // timer for compute batch agg states
+    RuntimeProfile::Counter* compute_batch_state_timer{};
+    // timer for compute batch agg states with selection
+    RuntimeProfile::Counter* compute_batch_state_with_selection_timer{};
+    // timer for build hash map
+    RuntimeProfile::Counter* build_hash_map_timer{};
+    // timer for build hash map with selection
+    RuntimeProfile::Counter* build_hash_map_with_selection_timer{};
+    // timer for build hash map with limit
+    RuntimeProfile::Counter* build_hash_map_with_limit_timer{};
     RuntimeProfile::Counter* state_destroy_timer{};
     RuntimeProfile::Counter* allocate_state_timer{};
 

@@ -837,6 +837,7 @@ bool Aggregator::should_expand_preagg_hash_tables(size_t prev_row_returned, size
 
 Status Aggregator::evaluate_agg_input_column(Chunk* chunk, std::vector<ExprContext*>& agg_expr_ctxs, int i) {
     SCOPED_TIMER(_agg_stat->expr_compute_timer);
+    SCOPED_TIMER(_agg_stat->eval_agg_input_timer);
     for (size_t j = 0; j < agg_expr_ctxs.size(); j++) {
         // _agg_input_raw_columns[i][j] != nullptr means this column has been evaluated
         if (_agg_input_raw_columns[i][j] != nullptr) {
@@ -867,7 +868,9 @@ Status Aggregator::evaluate_agg_input_column(Chunk* chunk, std::vector<ExprConte
 }
 
 Status Aggregator::compute_single_agg_state(Chunk* chunk, size_t chunk_size) {
+    // LOG(INFO) << "compute_single_agg_state";
     SCOPED_TIMER(_agg_stat->agg_function_compute_timer);
+    SCOPED_TIMER(_agg_stat->compute_single_state_timer);
     bool use_intermediate = _use_intermediate_as_input();
     auto& agg_expr_ctxs = use_intermediate ? _intermediate_agg_expr_ctxs : _agg_expr_ctxs;
 
@@ -893,6 +896,7 @@ Status Aggregator::compute_single_agg_state(Chunk* chunk, size_t chunk_size) {
 
 Status Aggregator::compute_batch_agg_states(Chunk* chunk, size_t chunk_size) {
     SCOPED_TIMER(_agg_stat->agg_function_compute_timer);
+    SCOPED_TIMER(_agg_stat->compute_batch_state_timer);
     bool use_intermediate = _use_intermediate_as_input();
     auto& agg_expr_ctxs = use_intermediate ? _intermediate_agg_expr_ctxs : _agg_expr_ctxs;
 
@@ -917,6 +921,7 @@ Status Aggregator::compute_batch_agg_states(Chunk* chunk, size_t chunk_size) {
 
 Status Aggregator::compute_batch_agg_states_with_selection(Chunk* chunk, size_t chunk_size) {
     SCOPED_TIMER(_agg_stat->agg_function_compute_timer);
+    SCOPED_TIMER(_agg_stat->compute_batch_state_with_selection_timer);
     bool use_intermediate = _use_intermediate_as_input();
     auto& agg_expr_ctxs = use_intermediate ? _intermediate_agg_expr_ctxs : _agg_expr_ctxs;
 
@@ -1314,6 +1319,7 @@ void Aggregator::_reset_exprs() {
 
 Status Aggregator::_evaluate_group_by_exprs(Chunk* chunk) {
     SCOPED_TIMER(_agg_stat->expr_compute_timer);
+    SCOPED_TIMER(_agg_stat->eval_group_by_exprs_timer);
     // Compute group by columns
     for (size_t i = 0; i < _group_by_expr_ctxs.size(); i++) {
         ASSIGN_OR_RETURN(_group_by_columns[i], _group_by_expr_ctxs[i]->evaluate(chunk));
@@ -1584,12 +1590,14 @@ void Aggregator::_init_agg_hash_variant(HashVariantType& hash_variant) {
 }
 
 void Aggregator::build_hash_map(size_t chunk_size, bool agg_group_by_with_limit) {
+    SCOPED_TIMER(_agg_stat->build_hash_map_timer);
     if (agg_group_by_with_limit) {
         if (_hash_map_variant.size() >= _limit) {
             build_hash_map_with_selection(chunk_size);
             return;
         } else {
-            _streaming_selection.assign(chunk_size, 0);
+            _streaming_selection.resize(chunk_size);
+            memset(_streaming_selection.data(), 0, chunk_size);
         }
     }
 
@@ -1610,12 +1618,14 @@ void Aggregator::build_hash_map(size_t chunk_size, std::atomic<int64_t>& shared_
 }
 
 void Aggregator::_build_hash_map_with_shared_limit(size_t chunk_size, std::atomic<int64_t>& shared_limit_countdown) {
+    SCOPED_TIMER(_agg_stat->build_hash_map_with_limit_timer);
     auto start_size = _hash_map_variant.size();
     if (_hash_map_variant.size() >= _limit || shared_limit_countdown.load(std::memory_order_relaxed) <= 0) {
         build_hash_map_with_selection(chunk_size);
         return;
     } else {
         _streaming_selection.resize(chunk_size);
+        memset(_streaming_selection.data(), 0, chunk_size);
     }
     _hash_map_variant.visit([&](auto& hash_map_with_key) {
         using MapType = std::remove_reference_t<decltype(*hash_map_with_key)>;
@@ -1627,6 +1637,7 @@ void Aggregator::_build_hash_map_with_shared_limit(size_t chunk_size, std::atomi
 }
 
 void Aggregator::build_hash_map_with_selection(size_t chunk_size) {
+    SCOPED_TIMER(_agg_stat->build_hash_map_with_selection_timer);
     _hash_map_variant.visit([&](auto& hash_map_with_key) {
         using MapType = std::remove_reference_t<decltype(*hash_map_with_key)>;
         hash_map_with_key->build_hash_map_with_selection(chunk_size, _group_by_columns, _mem_pool.get(),

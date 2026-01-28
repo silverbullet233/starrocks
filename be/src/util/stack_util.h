@@ -27,6 +27,7 @@ namespace starrocks {
 // Note: there is a libc bug that causes this not to work on 64 bit machines
 // for recursive calls.
 std::string get_stack_trace();
+std::string get_stack_trace(int64_t max_depth);
 
 std::vector<int> get_thread_id_list();
 bool install_stack_trace_sighandler();
