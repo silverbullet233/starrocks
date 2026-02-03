@@ -60,6 +60,8 @@
 #include "storage/options.h"
 #include "storage/storage_engine.h"
 #include "util/cpu_info.h"
+#include "runtime/exec_env.h"
+#include "runtime/lookup_stream_mgr.h"
 #include "util/debug_util.h"
 #include "util/disk_info.h"
 #include "util/logging.h"
@@ -144,6 +146,11 @@ void calculate_metrics(void* arg_this) {
         }
 
         LOG(INFO) << dump_memory_tracker();
+        if (auto* exec_env = ExecEnv::GetInstance(); exec_env != nullptr) {
+            if (auto* lookup_mgr = exec_env->lookup_dispatcher_mgr(); lookup_mgr != nullptr) {
+                LOG(INFO) << lookup_mgr->debug_string();
+            }
+        }
 
         StarRocksMetrics::instance()->table_metrics_mgr()->cleanup();
         nap_sleep(15, [daemon] { return daemon->stopped(); });
