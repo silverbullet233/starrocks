@@ -1192,6 +1192,9 @@ Status Aggregator::output_chunk_by_streaming_with_selection(Chunk* input_chunk, 
 }
 
 void Aggregator::try_convert_to_two_level_map() {
+    if (_hash_map_variant.is_saha_string_type()) {
+        return;
+    }
     auto current_size = _hash_map_variant.reserved_memory_usage(mem_pool());
     if (current_size > get_two_level_threahold()) {
         _hash_map_variant.convert_to_two_level(_state);
@@ -1463,7 +1466,25 @@ typename HashVariantType::Type Aggregator::_get_hash_table_type() {
     if (_group_by_types.size() == 1) {
         bool nullable = _group_by_types[0].is_nullable;
         LogicalType type = _group_by_types[0].result_type.type;
-        return HashVariantResolver<HashVariantType>::instance().get_unary_type(_aggr_phase, type, nullable);
+        auto unary_type = HashVariantResolver<HashVariantType>::instance().get_unary_type(_aggr_phase, type, nullable);
+        if constexpr (std::is_same_v<HashVariantType, AggHashMapVariant>) {
+            if (_state != nullptr && _state->enable_saha_agg_hash_map() &&
+                (type == LogicalType::TYPE_CHAR || type == LogicalType::TYPE_VARCHAR)) {
+                if (unary_type == HashVariantType::Type::phase1_string) {
+                    return HashVariantType::Type::phase1_saha_string;
+                }
+                if (unary_type == HashVariantType::Type::phase2_string) {
+                    return HashVariantType::Type::phase2_saha_string;
+                }
+                if (unary_type == HashVariantType::Type::phase1_null_string) {
+                    return HashVariantType::Type::phase1_saha_null_string;
+                }
+                if (unary_type == HashVariantType::Type::phase2_null_string) {
+                    return HashVariantType::Type::phase2_saha_null_string;
+                }
+            }
+        }
+        return unary_type;
     }
     return type;
 }

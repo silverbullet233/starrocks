@@ -13,6 +13,8 @@
 // limitations under the License.
 package com.starrocks.qe;
 
+import com.starrocks.common.jmockit.Deencapsulation;
+import com.starrocks.thrift.TQueryOptions;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
 
@@ -111,5 +113,14 @@ public class SessionVariableTest {
         com.starrocks.common.jmockit.Deencapsulation.setField(sessionVariable, "connectorSinkShuffleMode", "never");
         Assertions.assertEquals(com.starrocks.connector.ConnectorSinkShuffleMode.NEVER,
                 sessionVariable.getConnectorSinkShuffleMode());
+    }
+
+    @Test
+    public void testEnableSahaAggHashMapToThrift() {
+        SessionVariable sessionVariable = new SessionVariable();
+
+        Deencapsulation.setField(sessionVariable, "enableSahaAggHashMap", true);
+        TQueryOptions queryOptions = sessionVariable.toThrift();
+        Assertions.assertTrue(queryOptions.isEnable_saha_agg_hash_map());
     }
 }

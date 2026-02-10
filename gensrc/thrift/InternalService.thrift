@@ -365,6 +365,7 @@ struct TQueryOptions {
   
   210: optional bool enable_global_late_materialization;
   211: optional bool enable_schedule_log;
+  212: optional bool enable_saha_agg_hash_map;
 
 }
 

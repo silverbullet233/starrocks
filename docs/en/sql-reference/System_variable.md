@@ -932,6 +932,14 @@ If a Join (other than Broadcast Join and Replicated Join) has multiple equi-join
 * **Data type**: boolean
 * **Introduced in**: v3.2.0
 
+### enable_saha_agg_hash_map
+
+* **Scope**: Session
+* **Description**: Controls whether single-column STRING `GROUP BY` can use the SAHA (String Adaptive Hash Map) implementation in the BE aggregation hash map path. When enabled, the BE can route eligible single-key STRING aggregation hash maps to SAHA. The option is guarded by runtime checks and only affects the aggregate hash map path for single string keys.
+* **Default**: `false`
+* **Data Type**: boolean
+* **Introduced in**: -
+
 ### enable_scan_datacache
 
 * **Description**: Specifies whether to enable the Data Cache feature. After this feature is enabled, StarRocks caches hot data read from external storage systems into blocks, which accelerates queries and analysis. For more information, see [Data Cache](../data_source/data_cache.md). In versions prior to 3.2, this variable was named as `enable_scan_block_cache`.

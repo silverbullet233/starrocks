@@ -79,6 +79,7 @@ void exec(HashMap& hash_map, std::vector<key_type> keys) {
 TEST(HashMapTest, Basic) {
     std::vector<AggHashMapVariant::Type> hash_map_types = {
             AggHashMapVariant::Type::phase1_string, AggHashMapVariant::Type::phase2_string,
+            AggHashMapVariant::Type::phase1_saha_string, AggHashMapVariant::Type::phase2_saha_string,
             AggHashMapVariant::Type::phase1_int32, AggHashMapVariant::Type::phase2_int32,
             AggHashMapVariant::Type::phase1_int32_two_level};
     for (const auto& hash_map_type : hash_map_types) {
@@ -315,6 +316,16 @@ TEST_F(AggHashMapKeyNotFoundsTest, TestAllocateAndComputeNonFounds_OneStringAggH
 
 TEST_F(AggHashMapKeyNotFoundsTest, TestAllocateAndComputeNonFounds_NullOneStringAggHashMap) {
     using TestAggHashMapKey = NullOneStringAggHashMap<PhmapSeed2>;
+    TestAggHashMapKeyWithStringType<TestAggHashMapKey>(true);
+}
+
+TEST_F(AggHashMapKeyNotFoundsTest, TestAllocateAndComputeNonFounds_SahaOneStringAggHashMap) {
+    using TestAggHashMapKey = SahaOneStringAggHashMap<PhmapSeed1>;
+    TestAggHashMapKeyWithStringType<TestAggHashMapKey>(false);
+}
+
+TEST_F(AggHashMapKeyNotFoundsTest, TestAllocateAndComputeNonFounds_SahaNullOneStringAggHashMap) {
+    using TestAggHashMapKey = SahaNullOneStringAggHashMap<PhmapSeed2>;
     TestAggHashMapKeyWithStringType<TestAggHashMapKey>(true);
 }
 

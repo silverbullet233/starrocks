@@ -770,6 +770,14 @@ ALTER USER 'jack' SET PROPERTIES ('session.query_timeout' = '600');
 * **数据类型**: boolean
 * **引入版本**: v3.2.0
 
+### enable_saha_agg_hash_map
+
+* **范围**: Session
+* **描述**: 控制单列 STRING `GROUP BY` 在 BE 聚合 HashMap 路径中是否可使用 SAHA（String Adaptive Hash Map）实现。开启后，BE 会在满足运行时条件时将单列字符串聚合哈希表路由到 SAHA 实现。该变量仅影响单字符串键的聚合 HashMap 路径。
+* **默认值**: `false`
+* **数据类型**: boolean
+* **引入版本**: -
+
 ### enable_scan_datacache
 
 * 描述：是否开启 Data Cache 特性。该特性开启之后，StarRocks 通过将外部存储系统中的热数据缓存成多个 block，加速数据查询和分析。更多信息，参见 [Data Cache](../data_source/data_cache.md)。该特性从 2.5 版本开始支持。在 3.2 之前各版本中，对应变量为 `enable_scan_block_cache`。

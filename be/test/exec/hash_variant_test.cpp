@@ -14,8 +14,12 @@
 
 #include <gtest/gtest.h>
 
+#include <type_traits>
+
 #include "exec/aggregate/agg_hash_variant.h"
+#include "runtime/runtime_state.h"
 #include "types/logical_type.h"
+#include "util/runtime_profile.h"
 
 namespace starrocks {
 TEST(HashVariantResolverTest, unary_assert) {
@@ -43,6 +47,30 @@ TEST(HashVariantResolverTest, unary_assert) {
 
     EXPECT_EQ(TYPE_RESULT(AggrPhase1, TYPE_FLOAT, true), AggHashMapVariant::Type::phase1_slice);
     EXPECT_EQ(TYPE_RESULT(AggrPhase2, TYPE_FLOAT, true), AggHashMapVariant::Type::phase2_slice);
+}
+
+TEST(HashVariantResolverTest, saha_variant_init) {
+    RuntimeState state;
+    RuntimeProfile profile("saha_variant_init");
+    AggStatistics statistics(&profile);
+
+    {
+        AggHashMapVariant variant;
+        variant.init(&state, AggHashMapVariant::Type::phase1_saha_string, &statistics);
+        variant.visit([](auto& hash_map_with_key) {
+            EXPECT_TRUE((std::is_same_v<std::decay_t<decltype(*hash_map_with_key)>,
+                                        SahaOneStringAggHashMap<PhmapSeed1>>));
+        });
+    }
+
+    {
+        AggHashMapVariant variant;
+        variant.init(&state, AggHashMapVariant::Type::phase2_saha_null_string, &statistics);
+        variant.visit([](auto& hash_map_with_key) {
+            EXPECT_TRUE((std::is_same_v<std::decay_t<decltype(*hash_map_with_key)>,
+                                        SahaNullOneStringAggHashMap<PhmapSeed2>>));
+        });
+    }
 }
 
 } // namespace starrocks

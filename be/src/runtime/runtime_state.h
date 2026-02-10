@@ -452,6 +452,10 @@ public:
                _query_options.enable_hash_join_serialize_fixed_size_string;
     }
 
+    bool enable_saha_agg_hash_map() const {
+        return _query_options.__isset.enable_saha_agg_hash_map && _query_options.enable_saha_agg_hash_map;
+    }
+
     const std::vector<TTabletCommitInfo>& tablet_commit_infos() const { return _tablet_commit_infos; }
 
     std::vector<TTabletCommitInfo>& tablet_commit_infos() { return _tablet_commit_infos; }

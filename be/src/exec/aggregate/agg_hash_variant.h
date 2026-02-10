@@ -20,6 +20,7 @@
 #include "exec/aggregate/agg_hash_map.h"
 #include "exec/aggregate/agg_hash_set.h"
 #include "exec/aggregate/agg_profile.h"
+#include "exec/aggregate/string_adaptive_hash_map.h"
 #include "types/logical_type.h"
 
 namespace starrocks {
@@ -90,6 +91,10 @@ template <PhmapSeed seed>
 using OneStringAggHashMap = AggHashMapWithOneStringKey<SliceAggHashMap<seed>>;
 template <PhmapSeed seed>
 using NullOneStringAggHashMap = AggHashMapWithOneNullableStringKey<SliceAggHashMap<seed>>;
+template <PhmapSeed seed>
+using SahaOneStringAggHashMap = AggHashMapWithOneStringKey<StringAdaptiveHashMap<AggDataPtr, seed>>;
+template <PhmapSeed seed>
+using SahaNullOneStringAggHashMap = AggHashMapWithOneNullableStringKey<StringAdaptiveHashMap<AggDataPtr, seed>>;
 template <PhmapSeed seed>
 using OneStringTwoLevelAggHashMap = AggHashMapWithOneStringKey<SliceAggTwoLevelHashMap<seed>>;
 template <PhmapSeed seed>
@@ -280,6 +285,7 @@ using AggHashMapWithKeyPtr = std::variant<
         std::unique_ptr<DateAggHashMapWithOneNumberKey<PhmapSeed1>>,
         std::unique_ptr<TimeStampAggHashMapWithOneNumberKey<PhmapSeed1>>,
         std::unique_ptr<OneStringAggHashMap<PhmapSeed1>>,
+        std::unique_ptr<SahaOneStringAggHashMap<PhmapSeed1>>,
         std::unique_ptr<NullUInt8AggHashMapWithOneNumberKey<PhmapSeed1>>,
         std::unique_ptr<NullInt8AggHashMapWithOneNumberKey<PhmapSeed1>>,
         std::unique_ptr<NullInt16AggHashMapWithOneNumberKey<PhmapSeed1>>,
@@ -292,7 +298,9 @@ using AggHashMapWithKeyPtr = std::variant<
         std::unique_ptr<NullDecimal256AggHashMapWithOneNumberKey<PhmapSeed1>>,
         std::unique_ptr<NullDateAggHashMapWithOneNumberKey<PhmapSeed1>>,
         std::unique_ptr<NullTimeStampAggHashMapWithOneNumberKey<PhmapSeed1>>,
-        std::unique_ptr<NullOneStringAggHashMap<PhmapSeed1>>, std::unique_ptr<SerializedKeyAggHashMap<PhmapSeed1>>,
+        std::unique_ptr<NullOneStringAggHashMap<PhmapSeed1>>,
+        std::unique_ptr<SahaNullOneStringAggHashMap<PhmapSeed1>>,
+        std::unique_ptr<SerializedKeyAggHashMap<PhmapSeed1>>,
         std::unique_ptr<SerializedKeyTwoLevelAggHashMap<PhmapSeed1>>,
         std::unique_ptr<Int32TwoLevelAggHashMapWithOneNumberKey<PhmapSeed1>>,
         std::unique_ptr<OneStringTwoLevelAggHashMap<PhmapSeed1>>,
@@ -317,6 +325,7 @@ using AggHashMapWithKeyPtr = std::variant<
         std::unique_ptr<DateAggHashMapWithOneNumberKey<PhmapSeed2>>,
         std::unique_ptr<TimeStampAggHashMapWithOneNumberKey<PhmapSeed2>>,
         std::unique_ptr<OneStringAggHashMap<PhmapSeed2>>,
+        std::unique_ptr<SahaOneStringAggHashMap<PhmapSeed2>>,
         std::unique_ptr<NullUInt8AggHashMapWithOneNumberKey<PhmapSeed2>>,
         std::unique_ptr<NullInt8AggHashMapWithOneNumberKey<PhmapSeed2>>,
         std::unique_ptr<NullInt16AggHashMapWithOneNumberKey<PhmapSeed2>>,
@@ -329,7 +338,9 @@ using AggHashMapWithKeyPtr = std::variant<
         std::unique_ptr<NullDecimal256AggHashMapWithOneNumberKey<PhmapSeed2>>,
         std::unique_ptr<NullDateAggHashMapWithOneNumberKey<PhmapSeed2>>,
         std::unique_ptr<NullTimeStampAggHashMapWithOneNumberKey<PhmapSeed2>>,
-        std::unique_ptr<NullOneStringAggHashMap<PhmapSeed2>>, std::unique_ptr<SerializedKeyAggHashMap<PhmapSeed2>>,
+        std::unique_ptr<NullOneStringAggHashMap<PhmapSeed2>>,
+        std::unique_ptr<SahaNullOneStringAggHashMap<PhmapSeed2>>,
+        std::unique_ptr<SerializedKeyAggHashMap<PhmapSeed2>>,
         std::unique_ptr<SerializedKeyTwoLevelAggHashMap<PhmapSeed2>>,
         std::unique_ptr<Int32TwoLevelAggHashMapWithOneNumberKey<PhmapSeed2>>,
         std::unique_ptr<OneStringTwoLevelAggHashMap<PhmapSeed2>>,
@@ -434,6 +445,7 @@ struct AggHashMapVariant {
         phase1_date,
         phase1_timestamp,
         phase1_string,
+        phase1_saha_string,
         phase1_null_uint8,
         phase1_null_int8,
         phase1_null_int16,
@@ -447,6 +459,7 @@ struct AggHashMapVariant {
         phase1_null_date,
         phase1_null_timestamp,
         phase1_null_string,
+        phase1_saha_null_string,
         phase1_slice,
         phase1_slice_two_level,
         phase1_int32_two_level,
@@ -475,6 +488,7 @@ struct AggHashMapVariant {
         phase2_date,
         phase2_timestamp,
         phase2_string,
+        phase2_saha_string,
         phase2_null_uint8,
         phase2_null_int8,
         phase2_null_int16,
@@ -488,6 +502,7 @@ struct AggHashMapVariant {
         phase2_null_date,
         phase2_null_timestamp,
         phase2_null_string,
+        phase2_saha_null_string,
         phase2_slice,
         phase2_slice_two_level,
         phase2_int32_two_level,
@@ -533,6 +548,8 @@ struct AggHashMapVariant {
     size_t reserved_memory_usage(const MemPool* pool) const;
 
     size_t allocated_memory_usage(const MemPool* pool) const;
+
+    bool is_saha_string_type() const;
 
 private:
     Type _type = Type::phase1_slice;
