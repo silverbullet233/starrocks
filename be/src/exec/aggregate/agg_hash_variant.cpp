@@ -18,6 +18,7 @@
 #include <variant>
 
 #include "base/phmap/phmap.h"
+#include "common/config.h"
 #include "runtime/runtime_state.h"
 
 #define APPLY_FOR_AGG_VARIANT_ALL(M) \
@@ -100,6 +101,13 @@
     M(phase2_slice_cx8)              \
     M(phase2_slice_cx16)
 
+// Map-only extension: original (non-SAHA) string variants for A/B testing
+#define APPLY_FOR_AGG_MAP_ORIG_STRING(M) \
+    M(phase1_orig_string)                \
+    M(phase1_null_orig_string)           \
+    M(phase2_orig_string)                \
+    M(phase2_null_orig_string)
+
 namespace starrocks {
 namespace detail {
 template <AggHashMapVariant::Type>
@@ -142,6 +150,8 @@ DEFINE_MAP_TYPE(AggHashMapVariant::Type::phase1_slice_two_level, SerializedKeyTw
 DEFINE_MAP_TYPE(AggHashMapVariant::Type::phase1_int32_two_level, Int32TwoLevelAggHashMapWithOneNumberKey<PhmapSeed1>);
 DEFINE_MAP_TYPE(AggHashMapVariant::Type::phase1_null_string_two_level, NullOneStringTwoLevelAggHashMap<PhmapSeed1>);
 DEFINE_MAP_TYPE(AggHashMapVariant::Type::phase1_string_two_level, OneStringTwoLevelAggHashMap<PhmapSeed1>);
+DEFINE_MAP_TYPE(AggHashMapVariant::Type::phase1_orig_string, OrigOneStringAggHashMap<PhmapSeed1>);
+DEFINE_MAP_TYPE(AggHashMapVariant::Type::phase1_null_orig_string, OrigNullOneStringAggHashMap<PhmapSeed1>);
 DEFINE_MAP_TYPE(AggHashMapVariant::Type::phase1_slice_fx4, SerializedKeyFixedSize4AggHashMap<PhmapSeed1>);
 DEFINE_MAP_TYPE(AggHashMapVariant::Type::phase1_slice_fx8, SerializedKeyFixedSize8AggHashMap<PhmapSeed1>);
 DEFINE_MAP_TYPE(AggHashMapVariant::Type::phase1_slice_fx16, SerializedKeyFixedSize16AggHashMap<PhmapSeed1>);
@@ -180,6 +190,8 @@ DEFINE_MAP_TYPE(AggHashMapVariant::Type::phase2_slice_two_level, SerializedKeyTw
 DEFINE_MAP_TYPE(AggHashMapVariant::Type::phase2_int32_two_level, Int32TwoLevelAggHashMapWithOneNumberKey<PhmapSeed2>);
 DEFINE_MAP_TYPE(AggHashMapVariant::Type::phase2_null_string_two_level, NullOneStringTwoLevelAggHashMap<PhmapSeed2>);
 DEFINE_MAP_TYPE(AggHashMapVariant::Type::phase2_string_two_level, OneStringTwoLevelAggHashMap<PhmapSeed2>);
+DEFINE_MAP_TYPE(AggHashMapVariant::Type::phase2_orig_string, OrigOneStringAggHashMap<PhmapSeed2>);
+DEFINE_MAP_TYPE(AggHashMapVariant::Type::phase2_null_orig_string, OrigNullOneStringAggHashMap<PhmapSeed2>);
 DEFINE_MAP_TYPE(AggHashMapVariant::Type::phase2_slice_fx4, SerializedKeyFixedSize4AggHashMap<PhmapSeed2>);
 DEFINE_MAP_TYPE(AggHashMapVariant::Type::phase2_slice_fx8, SerializedKeyFixedSize8AggHashMap<PhmapSeed2>);
 DEFINE_MAP_TYPE(AggHashMapVariant::Type::phase2_slice_fx16, SerializedKeyFixedSize16AggHashMap<PhmapSeed2>);
@@ -288,6 +300,7 @@ void AggHashMapVariant::init(RuntimeState* state, Type type, AggStatistics* agg_
                 state->chunk_size(), _agg_stat);                                                                   \
         break;
         APPLY_FOR_AGG_VARIANT_ALL(M)
+        APPLY_FOR_AGG_MAP_ORIG_STRING(M)
 #undef M
     }
 }
@@ -299,7 +312,8 @@ void AggHashMapVariant::init(RuntimeState* state, Type type, AggStatistics* agg_
         std::visit(                                                                                                   \
                 [&](auto& hash_map_with_key) {                                                                        \
                     if constexpr (std::is_same_v<typename decltype(hash_map_with_key->hash_map)::key_type,            \
-                                                 typename decltype(dst->hash_map)::key_type>) {                       \
+                                                 typename decltype(dst->hash_map)::key_type> &&                       \
+                                 requires { hash_map_with_key->hash_map.begin(); }) {                                 \
                         dst->hash_map.reserve(hash_map_with_key->hash_map.capacity());                                \
                         dst->hash_map.insert(hash_map_with_key->hash_map.begin(), hash_map_with_key->hash_map.end()); \
                         auto null_data_ptr = hash_map_with_key->get_null_key_data();                                  \
@@ -315,15 +329,59 @@ void AggHashMapVariant::init(RuntimeState* state, Type type, AggStatistics* agg_
         return;                                                                                                       \
     }
 
+// Drain a SAHA multi-map into a two-level Slice hash map.
+// The allocator stores KeyType=Slice at the beginning of each agg state,
+// so we recover the original Slice key from the AggDataPtr for S0-S3 sub-tables.
+// The L sub-table is transferred directly via its Slice keys.
+template <typename SAHAMap, typename TwoLevelMap>
+static void drain_saha_to_two_level(SAHAMap& src, TwoLevelMap& dst) {
+    dst.reserve(src.size());
+
+    // All sub-tables: extract Slice from AggDataPtr and insert into two-level map.
+    // for_each_value visits every entry across all sub-tables (S0, S1, S2, S3, L).
+    src.for_each_value([&](AggDataPtr agg_data) {
+        Slice key = *reinterpret_cast<Slice*>(agg_data);
+        dst.lazy_emplace(key, [&](const auto& ctor) { ctor(key, agg_data); });
+    });
+}
+
+#define CONVERT_SAHA_TO_TWO_LEVEL_MAP(DST, SRC)                                                                  \
+    if (_type == AggHashMapVariant::Type::SRC) {                                                                  \
+        auto dst = std::make_unique<detail::AggHashMapVariantTypeTraits<Type::DST>::HashMapWithKeyType>(           \
+                state->chunk_size(), _agg_stat);                                                                  \
+        std::visit(                                                                                               \
+                [&](auto& hash_map_with_key) {                                                                    \
+                    using SrcType = std::decay_t<decltype(*hash_map_with_key)>;                                    \
+                    if constexpr (requires { hash_map_with_key->hash_map.for_each_value(std::declval<void(*)(AggDataPtr&)>()); }) {                                  \
+                        drain_saha_to_two_level(hash_map_with_key->hash_map, dst->hash_map);                      \
+                        auto null_data_ptr = hash_map_with_key->get_null_key_data();                              \
+                        if (null_data_ptr != nullptr) {                                                           \
+                            dst->set_null_key_data(null_data_ptr);                                                \
+                        }                                                                                         \
+                    }                                                                                             \
+                },                                                                                                \
+                hash_map_with_key);                                                                               \
+                                                                                                                  \
+        _type = AggHashMapVariant::Type::DST;                                                                     \
+        hash_map_with_key = std::move(dst);                                                                       \
+        return;                                                                                                   \
+    }
+
 void AggHashMapVariant::convert_to_two_level(RuntimeState* state) {
     CONVERT_TO_TWO_LEVEL_MAP(phase1_slice_two_level, phase1_slice);
     CONVERT_TO_TWO_LEVEL_MAP(phase2_slice_two_level, phase2_slice);
 
-    CONVERT_TO_TWO_LEVEL_MAP(phase1_string_two_level, phase1_string);
-    CONVERT_TO_TWO_LEVEL_MAP(phase2_string_two_level, phase2_string);
+    CONVERT_SAHA_TO_TWO_LEVEL_MAP(phase1_string_two_level, phase1_string);
+    CONVERT_SAHA_TO_TWO_LEVEL_MAP(phase2_string_two_level, phase2_string);
 
-    CONVERT_TO_TWO_LEVEL_MAP(phase1_null_string_two_level, phase1_null_string);
-    CONVERT_TO_TWO_LEVEL_MAP(phase2_null_string_two_level, phase2_null_string);
+    CONVERT_SAHA_TO_TWO_LEVEL_MAP(phase1_null_string_two_level, phase1_null_string);
+    CONVERT_SAHA_TO_TWO_LEVEL_MAP(phase2_null_string_two_level, phase2_null_string);
+
+    // Original (non-SAHA) string maps use standard begin/end conversion
+    CONVERT_TO_TWO_LEVEL_MAP(phase1_string_two_level, phase1_orig_string);
+    CONVERT_TO_TWO_LEVEL_MAP(phase2_string_two_level, phase2_orig_string);
+    CONVERT_TO_TWO_LEVEL_MAP(phase1_null_string_two_level, phase1_null_orig_string);
+    CONVERT_TO_TWO_LEVEL_MAP(phase2_null_string_two_level, phase2_null_orig_string);
 }
 
 void AggHashMapVariant::reset() {

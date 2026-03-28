@@ -40,6 +40,13 @@ namespace starrocks::config {
 // Enable cow optimization for column operations, used to avoid the overhead of reference counting when accessing
 // columns.
 CONF_mBool(enable_cow_optimization, "true");
+
+// Enable SAHA (String Adaptive Hash Table) for string aggregation.
+// When true, GROUP BY on a single VARCHAR/CHAR column uses length-based dispatch
+// to specialized sub-hash-tables for better performance on short/medium strings.
+// When false, falls back to the standard Slice-based phmap::flat_hash_map.
+// This flag is mutable and can be toggled at runtime via HTTP API for A/B testing.
+CONF_mBool(enable_saha_string_hash_map, "true");
 // The diagnose level for cow optimization, 0 means no diagnose, 1 means diagnose when use_count > 1, 2 means
 // diagnose when use_count > 2.
 CONF_Int32(cow_optimization_diagnose_level, "0");

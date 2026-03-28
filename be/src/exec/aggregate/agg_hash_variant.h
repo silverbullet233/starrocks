@@ -20,6 +20,7 @@
 #include "exec/aggregate/agg_hash_map.h"
 #include "exec/aggregate/agg_hash_set.h"
 #include "exec/aggregate/agg_profile.h"
+#include "exec/aggregate/string_adaptive_hash_map.h"
 #include "types/logical_type.h"
 
 namespace starrocks {
@@ -85,11 +86,17 @@ template <PhmapSeed seed>
 using NullTimeStampAggHashMapWithOneNumberKey =
         AggHashMapWithOneNullableNumberKey<TYPE_DATETIME, TimeStampAggHashMap<seed>>;
 
-// For string type, we use slice type as hashmap key
+// SAHA (String Adaptive Hash Table) for optimized string aggregation.
+// Dispatches by length: S0(0-2), S1(3-8), S2(9-16), S3(17-24), L(>24).
 template <PhmapSeed seed>
-using OneStringAggHashMap = AggHashMapWithOneStringKey<SliceAggHashMap<seed>>;
+using OneStringAggHashMap = AggHashMapWithOneStringKeyAdaptive<seed, false>;
 template <PhmapSeed seed>
-using NullOneStringAggHashMap = AggHashMapWithOneNullableStringKey<SliceAggHashMap<seed>>;
+using NullOneStringAggHashMap = AggHashMapWithOneStringKeyAdaptive<seed, true>;
+// Original Slice-based string hash map (non-SAHA fallback, controlled by config).
+template <PhmapSeed seed>
+using OrigOneStringAggHashMap = AggHashMapWithOneStringKey<SliceAggHashMap<seed>>;
+template <PhmapSeed seed>
+using OrigNullOneStringAggHashMap = AggHashMapWithOneNullableStringKey<SliceAggHashMap<seed>>;
 template <PhmapSeed seed>
 using OneStringTwoLevelAggHashMap = AggHashMapWithOneStringKey<SliceAggTwoLevelHashMap<seed>>;
 template <PhmapSeed seed>
@@ -340,7 +347,11 @@ using AggHashMapWithKeyPtr = std::variant<
         std::unique_ptr<CompressedFixedSize1AggHashMap<PhmapSeed2>>,
         std::unique_ptr<CompressedFixedSize4AggHashMap<PhmapSeed2>>,
         std::unique_ptr<CompressedFixedSize8AggHashMap<PhmapSeed2>>,
-        std::unique_ptr<CompressedFixedSize16AggHashMap<PhmapSeed2>>>;
+        std::unique_ptr<CompressedFixedSize16AggHashMap<PhmapSeed2>>,
+        std::unique_ptr<OrigOneStringAggHashMap<PhmapSeed1>>,
+        std::unique_ptr<OrigNullOneStringAggHashMap<PhmapSeed1>>,
+        std::unique_ptr<OrigOneStringAggHashMap<PhmapSeed2>>,
+        std::unique_ptr<OrigNullOneStringAggHashMap<PhmapSeed2>>>;
 
 using AggHashSetWithKeyPtr = std::variant<
         std::unique_ptr<UInt8AggHashSetOfOneNumberKey<PhmapSeed1>>,
@@ -462,6 +473,10 @@ struct AggHashMapVariant {
         phase1_slice_cx8,
         phase1_slice_cx16,
 
+        // Original Slice-based string map (non-SAHA, for A/B testing)
+        phase1_orig_string,
+        phase1_null_orig_string,
+
         phase2_uint8,
         phase2_int8,
         phase2_int16,
@@ -502,6 +517,9 @@ struct AggHashMapVariant {
         phase2_slice_cx4,
         phase2_slice_cx8,
         phase2_slice_cx16,
+
+        phase2_orig_string,
+        phase2_null_orig_string,
     };
 
     detail::AggHashMapWithKeyPtr hash_map_with_key;
@@ -664,6 +682,10 @@ private:
     AggStatistics* _agg_stat = nullptr;
 };
 
+namespace config {
+extern bool enable_saha_string_hash_map;
+} // namespace config
+
 template <typename HashVariantType>
 class HashVariantResolver {
 public:
@@ -673,7 +695,21 @@ public:
 
     RetType get_unary_type(AggrPhase phase, LogicalType ltype, bool nullable) {
         if (auto iter = _types.find({phase, ltype, nullable}); iter != _types.end()) {
-            return iter->second;
+            auto type = iter->second;
+            // When SAHA is disabled, fall back to original Slice-based string hash map.
+            // The if constexpr guard prevents compilation errors for AggHashSetVariant
+            // which does not have phase1_orig_string enum values.
+            if constexpr (requires { RetType::phase1_orig_string; }) {
+                if (!config::enable_saha_string_hash_map) {
+                    using T = RetType;
+                    if (type == T::phase1_string || type == T::phase2_string) {
+                        type = phase == AggrPhase1 ? T::phase1_orig_string : T::phase2_orig_string;
+                    } else if (type == T::phase1_null_string || type == T::phase2_null_string) {
+                        type = phase == AggrPhase1 ? T::phase1_null_orig_string : T::phase2_null_orig_string;
+                    }
+                }
+            }
+            return type;
         }
         return phase == AggrPhase1 ? HashVariantType::Type::phase1_slice : HashVariantType::Type::phase2_slice;
     }

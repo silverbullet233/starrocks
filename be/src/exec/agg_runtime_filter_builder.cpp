@@ -46,12 +46,20 @@ struct AggInRuntimeFilterBuilderImpl {
             {
                 ResultVector result_vector;
                 result_vector.resize(hash_map_size);
-                auto it = hash_map.begin();
-                auto end = hash_map.end();
                 size_t read_index = 0;
-                while (it != end) {
-                    result_vector[read_index++] = it->first;
-                    ++it;
+                if constexpr (requires { hash_map.begin(); }) {
+                    auto it = hash_map.begin();
+                    auto end = hash_map.end();
+                    while (it != end) {
+                        result_vector[read_index++] = it->first;
+                        ++it;
+                    }
+                } else {
+                    // SAHAMultiMap: recover Slice keys from AggDataPtr
+                    hash_map.for_each_value([&](AggDataPtr& val) {
+                        result_vector[read_index++] =
+                                *reinterpret_cast<typename HashMapWithKey::KeyType*>(val);
+                    });
                 }
                 if (read_index > 0) {
                     hash_map_with_key.insert_keys_to_columns(result_vector, group_by_columns, read_index);
@@ -142,12 +150,19 @@ struct AggTopRuntimeFilterBuilderImpl {
             {
                 ResultVector result_vector;
                 result_vector.resize(hash_map_size);
-                auto it = hash_map.begin();
-                auto end = hash_map.end();
                 size_t read_index = 0;
-                while (it != end) {
-                    result_vector[read_index++] = it->first;
-                    ++it;
+                if constexpr (requires { hash_map.begin(); }) {
+                    auto it = hash_map.begin();
+                    auto end = hash_map.end();
+                    while (it != end) {
+                        result_vector[read_index++] = it->first;
+                        ++it;
+                    }
+                } else {
+                    hash_map.for_each_value([&](AggDataPtr& val) {
+                        result_vector[read_index++] =
+                                *reinterpret_cast<typename HashMapWithKey::KeyType*>(val);
+                    });
                 }
                 if (read_index > 0) {
                     hash_map_with_key.insert_keys_to_columns(result_vector, group_by_columns, read_index);
