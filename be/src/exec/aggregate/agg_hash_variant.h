@@ -682,10 +682,6 @@ private:
     AggStatistics* _agg_stat = nullptr;
 };
 
-namespace config {
-extern bool enable_saha_string_hash_map;
-} // namespace config
-
 template <typename HashVariantType>
 class HashVariantResolver {
 public:
@@ -693,14 +689,14 @@ public:
     HashVariantResolver();
     static HashVariantResolver& instance();
 
-    RetType get_unary_type(AggrPhase phase, LogicalType ltype, bool nullable) {
+    RetType get_unary_type(AggrPhase phase, LogicalType ltype, bool nullable, bool enable_saha = false) {
         if (auto iter = _types.find({phase, ltype, nullable}); iter != _types.end()) {
             auto type = iter->second;
             // When SAHA is disabled, fall back to original Slice-based string hash map.
             // The if constexpr guard prevents compilation errors for AggHashSetVariant
             // which does not have phase1_orig_string enum values.
             if constexpr (requires { RetType::phase1_orig_string; }) {
-                if (!config::enable_saha_string_hash_map) {
+                if (!enable_saha) {
                     using T = RetType;
                     if (type == T::phase1_string || type == T::phase2_string) {
                         type = phase == AggrPhase1 ? T::phase1_orig_string : T::phase2_orig_string;

@@ -1476,7 +1476,12 @@ typename HashVariantType::Type Aggregator::_get_hash_table_type() {
     if (_group_by_types.size() == 1) {
         bool nullable = _group_by_types[0].is_nullable;
         LogicalType type = _group_by_types[0].result_type.type;
-        return HashVariantResolver<HashVariantType>::instance().get_unary_type(_aggr_phase, type, nullable);
+        bool enable_saha = false;
+        if (_state != nullptr && _state->query_options().__isset.enable_string_adaptive_hash_map) {
+            enable_saha = _state->query_options().enable_string_adaptive_hash_map;
+        }
+        return HashVariantResolver<HashVariantType>::instance().get_unary_type(_aggr_phase, type, nullable,
+                                                                               enable_saha);
     }
     return type;
 }

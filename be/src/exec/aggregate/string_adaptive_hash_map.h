@@ -32,6 +32,7 @@
 
 #include <cstdint>
 #include <cstring>
+#include <vector>
 
 #include "base/phmap/phmap.h"
 #include "column/binary_column.h"
@@ -320,8 +321,13 @@ private:
     // bounds-check + jump for lengths >24 (the default case).
     // Dispatch using switch with case ranges. Each sub-table uses its own
     // optimized hash function (CRC-based for integer keys, SliceHash for long).
+    // Route strings with '\0' to _long (Slice-based) to avoid key collisions in S0-S3.
+    ALWAYS_INLINE bool _use_short_path(const Slice& key) {
+        return key.size <= 24 && memchr(key.data, '\0', key.size) == nullptr;
+    }
+
     ALWAYS_INLINE mapped_type* _dispatch_emplace(const Slice& key, bool* inserted) {
-        if (LIKELY(key.size <= 24)) {
+        if (LIKELY(_use_short_path(key))) {
             switch (key.size) {
             case 0 ... 2:
                 return _emplace_s0(key, inserted);
@@ -338,7 +344,7 @@ private:
 
     template <typename F>
     ALWAYS_INLINE mapped_type* _dispatch_lazy_emplace(const Slice& key, F&& f) {
-        if (LIKELY(key.size <= 24)) {
+        if (LIKELY(_use_short_path(key))) {
             switch (key.size) {
             case 0 ... 2:
                 return _lazy_emplace_s0(key, std::forward<F>(f));
@@ -359,7 +365,7 @@ private:
     }
 
     ALWAYS_INLINE mapped_type* _dispatch_find(const Slice& key) {
-        if (LIKELY(key.size <= 24)) {
+        if (LIKELY(_use_short_path(key))) {
             switch (key.size) {
             case 0 ... 2:
                 return _s0.find(slice_to_s0_key(key));
@@ -525,12 +531,17 @@ struct AggHashMapWithOneStringKeyAdaptive
     static constexpr uint8_t kBucketS3 = 3;
     static constexpr uint8_t kBucketL = 4;
 
-    static ALWAYS_INLINE uint8_t _classify(size_t len) {
-        if (len <= 2) return kBucketS0;
-        if (len <= 8) return kBucketS1;
-        if (len <= 16) return kBucketS2;
-        if (len <= 24) return kBucketS3;
-        return kBucketL;
+    // Classify a string key into the appropriate sub-table bucket.
+    // Strings containing '\0' are routed to L (Slice-based sub-map) because S0-S3
+    // use integer key representations where '\0' bytes are indistinguishable from
+    // zero-padding, which would cause key collisions between strings of different lengths.
+    static ALWAYS_INLINE uint8_t _classify(const Slice& s) {
+        if (s.size > 24) return kBucketL;
+        if (UNLIKELY(memchr(s.data, '\0', s.size) != nullptr)) return kBucketL;
+        if (s.size <= 2) return kBucketS0;
+        if (s.size <= 8) return kBucketS1;
+        if (s.size <= 16) return kBucketS2;
+        return kBucketS3;
     }
 
     template <AllocFunc<Self> Func, typename HTBuildOp>
@@ -564,10 +575,14 @@ struct AggHashMapWithOneStringKeyAdaptive
     ALWAYS_NOINLINE void _dispatch_loop_batched(size_t num_rows, const BinaryColumn* column, MemPool* pool,
                                                 Func&& allocate_func, Buffer<AggDataPtr>* agg_states,
                                                 ExtraAggParam* extra) {
-        // Phase 1: classify rows into buckets (reuse agg_states buffer temporarily)
-        auto* __restrict buckets = reinterpret_cast<uint8_t*>(agg_states->data());
+        // Phase 1: classify rows into buckets.
+        // Must NOT alias agg_states->data(): Phase 2 writes 8-byte AggDataPtr values which would
+        // corrupt bucket bytes at positions [i*8, i*8+7], causing later processors to see garbage
+        // bucket classifications and leave some agg_states[j] as null -> SIGSEGV.
+        _bucket_buf.resize(num_rows);
+        auto* __restrict buckets = _bucket_buf.data();
         for (size_t i = 0; i < num_rows; i++) {
-            buckets[i] = _classify(column->get_slice(i).size);
+            buckets[i] = _classify(column->get_slice(i));
         }
 
         // Phase 2: process each bucket in a tight loop
@@ -589,9 +604,11 @@ struct AggHashMapWithOneStringKeyAdaptive
                                                          Func&& allocate_func, Buffer<AggDataPtr>* agg_states,
                                                          ExtraAggParam* extra) {
         const auto& null_data = nullable_column->null_column_data();
-        auto* __restrict buckets = reinterpret_cast<uint8_t*>(agg_states->data());
+        // Same aliasing issue as non-nullable path: use a separate buffer.
+        _bucket_buf.resize(chunk_size);
+        auto* __restrict buckets = _bucket_buf.data();
         for (size_t i = 0; i < chunk_size; i++) {
-            buckets[i] = null_data[i] ? 0xFF : _classify(data_column->get_slice(i).size);
+            buckets[i] = null_data[i] ? 0xFF : _classify(data_column->get_slice(i));
         }
         // Handle nulls
         for (size_t i = 0; i < chunk_size; i++) {
@@ -848,6 +865,11 @@ struct AggHashMapWithOneStringKeyAdaptive
     static constexpr bool has_single_null_key = is_nullable;
     AggDataPtr null_key_data = nullptr;
     ResultVector results;
+
+private:
+    // Scratch buffer for bucket classification in batched dispatch.
+    // Stored as a member to avoid per-chunk allocation (resize is amortized O(1)).
+    std::vector<uint8_t> _bucket_buf;
 };
 
 } // namespace starrocks

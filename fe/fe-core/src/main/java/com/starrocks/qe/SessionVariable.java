@@ -627,6 +627,7 @@ public class SessionVariable implements Serializable, Writable, Cloneable {
     public static final String PARSE_TOKENS_LIMIT = "parse_tokens_limit";
 
     public static final String ENABLE_SORT_AGGREGATE = "enable_sort_aggregate";
+    public static final String ENABLE_STRING_ADAPTIVE_HASH_MAP = "enable_string_adaptive_hash_map";
     public static final String ENABLE_PER_BUCKET_OPTIMIZE = "enable_per_bucket_optimize";
     public static final String ENABLE_PARTITION_BUCKET_OPTIMIZE = "enable_partition_bucket_optimize";
     public static final String ENABLE_BUCKET_AWARE_EXECUTION_ON_LAKE = "enable_bucket_aware_execution_on_lake";
@@ -2011,6 +2012,9 @@ public class SessionVariable implements Serializable, Writable, Cloneable {
     @VarAttr(name = ENABLE_SORT_AGGREGATE)
     private boolean enableSortAggregate = false;
 
+    @VarAttr(name = ENABLE_STRING_ADAPTIVE_HASH_MAP)
+    private boolean enableStringAdaptiveHashMap = true;
+
     @VarAttr(name = ENABLE_PER_BUCKET_OPTIMIZE)
     private boolean enablePerBucketComputeOptimize = true;
 
@@ -2433,6 +2437,10 @@ public class SessionVariable implements Serializable, Writable, Cloneable {
         return enableSortAggregate;
     }
 
+    public boolean isEnableStringAdaptiveHashMap() {
+        return enableStringAdaptiveHashMap;
+    }
+
     public boolean isEnablePerBucketComputeOptimize() {
         return enablePerBucketComputeOptimize;
     }
@@ -2540,6 +2548,10 @@ public class SessionVariable implements Serializable, Writable, Cloneable {
 
     public void setEnableSortAggregate(boolean enableSortAggregate) {
         this.enableSortAggregate = enableSortAggregate;
+    }
+
+    public void setEnableStringAdaptiveHashMap(boolean enableStringAdaptiveHashMap) {
+        this.enableStringAdaptiveHashMap = enableStringAdaptiveHashMap;
     }
 
     public boolean isEnableParallelMerge() {
@@ -6216,6 +6228,7 @@ public class SessionVariable implements Serializable, Writable, Cloneable {
         tResult.setEnable_hash_join_range_direct_mapping_opt(enableHashJoinRangeDirectMappingOpt);
         tResult.setEnable_hash_join_linear_chained_opt(enableHashJoinLinearChainedOpt);
         tResult.setEnable_hash_join_serialize_fixed_size_string(enableHashJoinSerializeFixedSizeString);
+        tResult.setEnable_string_adaptive_hash_map(enableStringAdaptiveHashMap);
 
         return tResult;
     }
