@@ -38,6 +38,7 @@
 #include "column/column_builder.h"
 #include "column/column_helper.h"
 #include "column/column_viewer.h"
+#include "column/german_string_column.h"
 #include "column/json_converter.h"
 #include "column/nullable_column.h"
 #include "column/runtime_type_traits.h"
@@ -1182,6 +1183,32 @@ CUSTOMIZE_FN_CAST(TYPE_VARCHAR, TYPE_TIME, cast_from_string_to_time_fn);
     virtual Expr* clone(ObjectPool* pool) const override { return pool->add(new CLASS(*this)); }
 // clang-format on
 
+// Helper: convert a ColumnPtr that may contain a GermanStringColumn (possibly
+// inside NullableColumn or ConstColumn) to one containing a BinaryColumn.
+// Returns the original column unchanged if it is already a BinaryColumn.
+static ColumnPtr german_string_column_to_binary(const ColumnPtr& column) {
+    if (column->is_constant()) {
+        const auto* const_col = down_cast<const ConstColumn*>(column.get());
+        auto inner = german_string_column_to_binary(const_col->data_column());
+        if (inner.get() != const_col->data_column().get()) {
+            return ConstColumn::create(std::move(inner), column->size());
+        }
+        return column;
+    }
+    if (column->is_nullable()) {
+        const auto* nullable = down_cast<const NullableColumn*>(column.get());
+        if (nullable->data_column_raw_ptr()->is_german_string()) {
+            const auto* gs_col = down_cast<const GermanStringColumn*>(nullable->data_column_raw_ptr());
+            auto bin_col = gs_col->to_binary_column();
+            return NullableColumn::create(std::move(bin_col), nullable->null_column());
+        }
+    } else if (column->is_german_string()) {
+        const auto* gs_col = down_cast<const GermanStringColumn*>(column.get());
+        return gs_col->to_binary_column();
+    }
+    return column;
+}
+
 template <LogicalType FromType, LogicalType ToType, bool AllowThrowException>
 #ifdef STARROCKS_JIT_ENABLE
 class VectorizedCastExpr final : public Expr,
@@ -1194,6 +1221,13 @@ public:
     DEFINE_CAST_CONSTRUCT(VectorizedCastExpr);
     StatusOr<ColumnPtr> evaluate_checked(ExprContext* context, Chunk* ptr) override {
         ASSIGN_OR_RETURN(ColumnPtr column, _children[0]->evaluate_checked(context, ptr));
+
+        // When FromType is VARCHAR-like, the input may actually be a GermanStringColumn
+        // (from a STRING_V2 source that was type-normalized to VARCHAR for casting).
+        // Convert it to a BinaryColumn so downstream ColumnViewer/CastFn work correctly.
+        if constexpr (lt_is_string<FromType>) {
+            column = german_string_column_to_binary(column);
+        }
 
         size_t col_size = column->size();
         if (col_size != 0 && ColumnHelper::count_nulls(column) == col_size) {
@@ -1688,6 +1722,86 @@ private:
         }                                                                  \
     }
 
+// ---- STRING_V2 (GermanStringColumn) <-> VARCHAR (BinaryColumn) cast expressions ----
+
+// Cast STRING_V2 -> VARCHAR: convert GermanStringColumn to BinaryColumn.
+class CastStringV2ToVarcharExpr final : public Expr {
+public:
+    DEFINE_CAST_CONSTRUCT(CastStringV2ToVarcharExpr);
+
+    StatusOr<ColumnPtr> evaluate_checked(ExprContext* context, Chunk* ptr) override {
+        ASSIGN_OR_RETURN(ColumnPtr column, _children[0]->evaluate_checked(context, ptr));
+
+        size_t col_size = column->size();
+        if (col_size != 0 && ColumnHelper::count_nulls(column) == col_size) {
+            return ColumnHelper::create_const_null_column(col_size);
+        }
+
+        return german_string_column_to_binary(column);
+    }
+};
+
+// Cast VARCHAR -> STRING_V2: convert BinaryColumn to GermanStringColumn.
+class CastVarcharToStringV2Expr final : public Expr {
+public:
+    DEFINE_CAST_CONSTRUCT(CastVarcharToStringV2Expr);
+
+    StatusOr<ColumnPtr> evaluate_checked(ExprContext* context, Chunk* ptr) override {
+        ASSIGN_OR_RETURN(ColumnPtr column, _children[0]->evaluate_checked(context, ptr));
+
+        size_t col_size = column->size();
+        if (col_size != 0 && ColumnHelper::count_nulls(column) == col_size) {
+            return ColumnHelper::create_const_null_column(col_size);
+        }
+
+        return binary_column_to_german_string(column);
+    }
+
+private:
+    static ColumnPtr binary_column_to_german_string(const ColumnPtr& column) {
+        if (column->is_constant()) {
+            const auto* const_col = down_cast<const ConstColumn*>(column.get());
+            auto inner = binary_column_to_german_string(const_col->data_column());
+            return ConstColumn::create(std::move(inner), column->size());
+        }
+        if (column->is_nullable()) {
+            const auto* nullable = down_cast<const NullableColumn*>(column.get());
+            if (nullable->data_column_raw_ptr()->is_german_string()) {
+                // Already GermanStringColumn, pass through.
+                return column;
+            }
+            const auto* bin_col = down_cast<const BinaryColumn*>(nullable->data_column_raw_ptr());
+            auto gs_col = convert_binary_to_german(bin_col);
+            return NullableColumn::create(std::move(gs_col), nullable->null_column());
+        } else if (column->is_german_string()) {
+            return column;
+        } else {
+            const auto* bin_col = down_cast<const BinaryColumn*>(column.get());
+            return convert_binary_to_german(bin_col);
+        }
+    }
+
+    static ColumnPtr convert_binary_to_german(const BinaryColumn* bin_col) {
+        auto gs_col = GermanStringColumn::create();
+        auto* gs_ptr = down_cast<GermanStringColumn*>(gs_col.get());
+        gs_ptr->reserve(bin_col->size());
+        for (size_t i = 0; i < bin_col->size(); ++i) {
+            gs_ptr->append(bin_col->get_slice(i));
+        }
+        return ColumnPtr(std::move(gs_col));
+    }
+};
+
+// Cast STRING_V2 -> STRING_V2: identity (no-op).
+class CastStringV2IdentityExpr final : public Expr {
+public:
+    DEFINE_CAST_CONSTRUCT(CastStringV2IdentityExpr);
+
+    StatusOr<ColumnPtr> evaluate_checked(ExprContext* context, Chunk* ptr) override {
+        return _children[0]->evaluate_checked(context, ptr);
+    }
+};
+
 template <template <bool> class T, typename... Args>
 Expr* dispatch_throw_exception(bool throw_exception, Args&&... args) {
     if (throw_exception) {
@@ -1977,6 +2091,28 @@ Expr* VectorizedCastExprFactory::create_primitive_cast(ObjectPool* pool, const T
     if (from_type == TYPE_NULL) {
         // NULL TO OTHER TYPE, direct return
         from_type = to_type;
+    }
+    // STRING_V2 (GermanStringColumn) <-> VARCHAR (BinaryColumn) casts.
+    if (from_type == TYPE_STRING_V2 && to_type == TYPE_STRING_V2) {
+        return new CastStringV2IdentityExpr(node);
+    }
+    if (from_type == TYPE_STRING_V2 && to_type == TYPE_VARCHAR) {
+        return new CastStringV2ToVarcharExpr(node);
+    }
+    if (from_type == TYPE_VARCHAR && to_type == TYPE_STRING_V2) {
+        return new CastVarcharToStringV2Expr(node);
+    }
+    // For STRING_V2 -> other types, normalize to VARCHAR so existing varchar-based
+    // cast functions can work. VectorizedCastExpr::evaluate_checked transparently
+    // converts GermanStringColumn to BinaryColumn when the source type is string-like.
+    if (from_type == TYPE_STRING_V2) {
+        from_type = TYPE_VARCHAR;
+    }
+    // For other types -> STRING_V2, just cast to VARCHAR. The BinaryColumn result
+    // is valid for most consumers; a higher-level conversion to GermanStringColumn
+    // happens when needed.
+    if (to_type == TYPE_STRING_V2) {
+        to_type = TYPE_VARCHAR;
     }
     if (from_type == TYPE_VARCHAR && to_type == TYPE_HLL) {
         return dispatch_throw_exception<CastVarcharToHll>(allow_throw_exception, node);
