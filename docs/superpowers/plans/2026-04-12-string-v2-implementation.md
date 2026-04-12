@@ -835,21 +835,21 @@
 
 **Steps:**
 
-- [ ] **Step 1:** In `agg_hash_map.h`, create `AggHashMapWithOneGermanStringKeyWithNullable` class, following the pattern of `AggHashMapWithOneStringKeyWithNullable` but using GermanString keys:
+- [x] **Step 1:** In `agg_hash_map.h`, create `AggHashMapWithOneGermanStringKeyWithNullable` class, following the pattern of `AggHashMapWithOneStringKeyWithNullable` but using GermanString keys:
   - Key type: GermanString
   - Key extraction: `down_cast<const GermanStringColumn*>(key_column)->get_german_string(i)`
   - Key insertion: `make_hash_key(gs, pool)` — inline for short, MemPool copy for long
 
-- [ ] **Step 2:** Define hash map type aliases:
+- [x] **Step 2:** Define hash map type aliases:
   ```cpp
   template <PhmapSeed seed>
   using OneGermanStringAggHashMap = AggHashMapWithOneGermanStringKey<
       phmap::flat_hash_map<GermanString, AggDataPtr, GermanStringHashWithSeed<seed>, GermanStringEqual>>;
   ```
 
-- [ ] **Step 3:** In `agg_hash_variant.h`, add enum entries: `phase1_german_string`, `phase1_null_german_string`, `phase2_german_string`, `phase2_null_german_string`, and two-level variants.
+- [x] **Step 3:** In `agg_hash_variant.h`, add enum entries: `phase1_german_string`, `phase1_null_german_string`, `phase2_german_string`, `phase2_null_german_string`, and two-level variants.
 
-- [ ] **Step 4:** In `agg_hash_variant.cpp`:
+- [x] **Step 4:** In `agg_hash_variant.cpp`:
   - Add `DEFINE_MAP_TYPE` entries for all german_string variants
   - Add `ADD_VARIANT_PHASE1_TYPE(TYPE_STRING_V2, german_string)` and phase2
   - Add to `APPLY_FOR_AGG_VARIANT_ALL` macro
