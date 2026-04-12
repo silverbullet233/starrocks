@@ -284,7 +284,7 @@
 
 ---
 
-## Phase 2: GermanStringColumn Core
+## Phase 2: GermanStringColumn Core -- COMPLETED
 
 ### Task 2.1: GermanStringColumn — Skeleton and Basic Operations
 
@@ -580,7 +580,7 @@
 
 **Steps:**
 
-- [ ] **Step 1:** Write tests covering all cases listed in spec Section 7.1:
+- [x] **Step 1:** Write tests covering all cases listed in spec Section 7.1:
   - test_create_empty, test_append_short_string, test_append_long_string, test_append_mixed, test_append_empty_string
   - test_get_slice, test_get_german_string, test_compare_at
   - test_serialize_deserialize, test_clone, test_filter_range
@@ -590,9 +590,9 @@
   - test_swap_column, test_reset_column
   - test_compact, test_needs_compaction
 
-- [ ] **Step 2:** Add test to CMakeLists.txt (or the appropriate build target).
+- [x] **Step 2:** Add test to CMakeLists.txt (or the appropriate build target).
 
-- [ ] **Step 3:** Run tests:
+- [x] **Step 3:** Run tests:
   ```bash
   ./run-be-ut.sh --build-target column_test --module column_test --without-java-ext
   ```

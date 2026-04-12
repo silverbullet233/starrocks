@@ -1,0 +1,21 @@
+FROM 172.26.92.142:5000/starrocks/dev-env-ubuntu:latest
+
+ARG USERNAME=xujia
+ARG USER_ID=1000
+ARG GROUP_ID=1000
+
+# Create group and user with matching IDs
+RUN if [ $(getent group ${GROUP_ID}) ]; then \
+        groupmod -n ${USERNAME} $(getent group ${GROUP_ID} | cut -d: -f3); \
+    else \
+        groupadd -g ${GROUP_ID} ${USERNAME}; \
+    fi && \
+    if [ $(getent passwd ${USER_ID}) ]; then \
+        usermod -l ${USERNAME} -d /home/${USERNAME} $(getent passwd ${USER_ID} | cut -d: -f1); \
+    else \
+        useradd -u ${USER_ID} -g ${GROUP_ID} -m -s /bin/bash ${USERNAME}; \
+    fi && \
+    chown -R ${USERNAME}:${USERNAME} /home/${USERNAME}
+
+USER ${USERNAME}
+WORKDIR /home/${USERNAME}
