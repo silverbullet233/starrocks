@@ -965,13 +965,13 @@
 
 **Steps:**
 
-- [ ] **Step 1:** Update `STRING_TYPES` to include STRING_V2:
+- [x] **Step 1:** Update `STRING_TYPES` to include STRING_V2:
   ```java
   private static final ImmutableList<ScalarType> STRING_TYPES =
       ImmutableList.of(CharType.CHAR, VarcharType.VARCHAR, TypeFactory.createStringV2Type(ScalarType.DEFAULT_STRING_LENGTH));
   ```
 
-- [ ] **Step 2:** Audit functions that register STRING_TYPES in a loop — ensure they handle STRING_V2 correctly.
+- [x] **Step 2:** Audit functions that register STRING_TYPES in a loop — ensure they handle STRING_V2 correctly.
 
 **Acceptance Criteria:**
 - `length(STRING_V2) -> INT` is a valid function signature in the FE catalog
