@@ -10,6 +10,12 @@
 
 **Design Spec:** `docs/superpowers/specs/2026-04-12-string-v2-type-design.md`
 
+## Commit & Review Policy
+
+**Git Commit:** 每个 Task 完成并通过 Acceptance Criteria 后，必须创建一个 git commit。commit message 格式：`[Feature] STRING_V2: Task N.M — <简要描述>`。确保每个 commit 是可编译、可验证的自洽单元。
+
+**Code Review:** 每个 Phase 完成后，使用 `superpowers:code-reviewer` subagent 对该 Phase 的所有变更进行审查，对照 design spec 和 coding standards 验证实现完整性和正确性。
+
 ---
 
 ## Phase 1: Type Pipeline (Foundation)
