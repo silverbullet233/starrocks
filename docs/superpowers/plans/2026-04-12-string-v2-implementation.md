@@ -336,24 +336,24 @@
 
 **Steps:**
 
-- [ ] **Step 1:** Implement `append_datum(const Datum& datum)`:
+- [x] **Step 1:** Implement `append_datum(const Datum& datum)`:
   ```cpp
   void append_datum(const Datum& datum) override {
       append(datum.get_german_string());
   }
   ```
 
-- [ ] **Step 2:** Implement `append_strings(const Slice* data, size_t size)` — iterate and call `append(Slice)` for each. Return true.
+- [x] **Step 2:** Implement `append_strings(const Slice* data, size_t size)` — iterate and call `append(Slice)` for each. Return true.
 
-- [ ] **Step 3:** Implement `append_continuous_strings(const Slice* data, size_t size)` — same as append_strings but the caller guarantees contiguous memory. Can optimize by bulk-copying the contiguous bytes to arena, then constructing GermanStrings pointing into it.
+- [x] **Step 3:** Implement `append_continuous_strings(const Slice* data, size_t size)` — same as append_strings but the caller guarantees contiguous memory. Can optimize by bulk-copying the contiguous bytes to arena, then constructing GermanStrings pointing into it.
 
-- [ ] **Step 4:** Implement `append(const Column& src, size_t offset, size_t count)` — down_cast to GermanStringColumn, iterate and append each GermanString.
+- [x] **Step 4:** Implement `append(const Column& src, size_t offset, size_t count)` — down_cast to GermanStringColumn, iterate and append each GermanString.
 
-- [ ] **Step 5:** Implement `append_selective(const Column& src, const uint32_t* indexes, uint32_t from, uint32_t size)` — similar, using index array.
+- [x] **Step 5:** Implement `append_selective(const Column& src, const uint32_t* indexes, uint32_t from, uint32_t size)` — similar, using index array.
 
-- [ ] **Step 6:** Implement `append_value_multiple_times(const Column& src, uint32_t index, uint32_t size)`.
+- [x] **Step 6:** Implement `append_value_multiple_times(const Column& src, uint32_t index, uint32_t size)`.
 
-- [ ] **Step 7:** Implement `append_numbers()` returning -1, `append_nulls()` returning false.
+- [x] **Step 7:** Implement `append_numbers()` returning -1, `append_nulls()` returning false.
 
 **Acceptance Criteria:**
 - `append_strings()` with mixed short/long strings preserves data: roundtrip via get_slice()
@@ -373,7 +373,7 @@
 
 **Steps:**
 
-- [ ] **Step 1:** Implement `serialize(size_t idx, uint8_t* pos)` — write [uint32_t len][bytes] format (same as BinaryColumn):
+- [x] **Step 1:** Implement `serialize(size_t idx, uint8_t* pos)` — write [uint32_t len][bytes] format (same as BinaryColumn):
   ```cpp
   uint32_t serialize(size_t idx, uint8_t* pos) const override {
       const auto& gs = _german_strings[idx];
@@ -384,7 +384,7 @@
   }
   ```
 
-- [ ] **Step 2:** Implement `deserialize_and_append(const uint8_t* pos)`:
+- [x] **Step 2:** Implement `deserialize_and_append(const uint8_t* pos)`:
   ```cpp
   const uint8_t* deserialize_and_append(const uint8_t* pos) override {
       uint32_t len;
@@ -394,7 +394,7 @@
   }
   ```
 
-- [ ] **Step 3:** Implement `serialize_size(idx)`, `serialize_default()`, `max_one_element_serialize_size()`, `serialize_batch()`, `deserialize_and_append_batch()`, `serialize_batch_with_null_masks()`, `deserialize_and_append_batch_nullable()`.
+- [x] **Step 3:** Implement `serialize_size(idx)`, `serialize_default()`, `max_one_element_serialize_size()`, `serialize_batch()`, `deserialize_and_append_batch()`, `serialize_batch_with_null_masks()`, `deserialize_and_append_batch_nullable()`.
 
 **Acceptance Criteria:**
 - Serialize row → deserialize → get_slice() matches original data
@@ -413,9 +413,9 @@
 
 **Steps:**
 
-- [ ] **Step 1:** Implement `filter_range(const Filter& filter, size_t start, size_t to)` — only filter `_german_strings`, do NOT touch `_arena` (lazy compaction). Use the same algorithm as FixedLengthColumn::filter_range but on _german_strings buffer.
+- [x] **Step 1:** Implement `filter_range(const Filter& filter, size_t start, size_t to)` — only filter `_german_strings`, do NOT touch `_arena` (lazy compaction). Use the same algorithm as FixedLengthColumn::filter_range but on _german_strings buffer.
 
-- [ ] **Step 2:** Implement `compare_at(size_t left, size_t right, const Column& rhs, int nan_direction_hint)`:
+- [x] **Step 2:** Implement `compare_at(size_t left, size_t right, const Column& rhs, int nan_direction_hint)`:
   ```cpp
   int compare_at(size_t left, size_t right, const Column& rhs, int nan_direction_hint) const override {
       const auto& r = down_cast<const GermanStringColumn&>(rhs);
@@ -423,23 +423,23 @@
   }
   ```
 
-- [ ] **Step 3:** Implement `assign(size_t n, size_t idx)` — fill n copies of element at idx.
+- [x] **Step 3:** Implement `assign(size_t n, size_t idx)` — fill n copies of element at idx.
 
-- [ ] **Step 4:** Implement `remove_first_n_values(size_t count)` — erase first count elements from _german_strings. Arena untouched (lazy).
+- [x] **Step 4:** Implement `remove_first_n_values(size_t count)` — erase first count elements from _german_strings. Arena untouched (lazy).
 
-- [ ] **Step 5:** Implement `update_rows(const Column& src, const uint32_t* indexes)`.
+- [x] **Step 5:** Implement `update_rows(const Column& src, const uint32_t* indexes)`.
 
-- [ ] **Step 6:** Implement `fill_default(const Filter& filter)` — set filtered positions to empty GermanString.
+- [x] **Step 6:** Implement `fill_default(const Filter& filter)` — set filtered positions to empty GermanString.
 
-- [ ] **Step 7:** Implement `byte_size()`, `byte_size(from, size)`, `byte_size(idx)`, `raw_data()`, `reserve()`, `resize()`, `capacity()`.
+- [x] **Step 7:** Implement `byte_size()`, `byte_size(from, size)`, `byte_size(idx)`, `raw_data()`, `reserve()`, `resize()`, `capacity()`.
 
-- [ ] **Step 8:** Implement `get(size_t n)` returning `Datum(_german_strings[n])`.
+- [x] **Step 8:** Implement `get(size_t n)` returning `Datum(_german_strings[n])`.
 
-- [ ] **Step 9:** Implement `xor_checksum()`, `debug_item()`, `debug_string()`, `capacity_limit_reached()`.
+- [x] **Step 9:** Implement `xor_checksum()`, `debug_item()`, `debug_string()`, `capacity_limit_reached()`.
 
-- [ ] **Step 10:** Implement `swap_column()`, `reset_column()`.
+- [x] **Step 10:** Implement `swap_column()`, `reset_column()`.
 
-- [ ] **Step 11:** Implement `upgrade_if_overflow()` (return nullptr — no large variant), `downgrade()` (return nullptr), `has_large_column()` (return false).
+- [x] **Step 11:** Implement `upgrade_if_overflow()` (return nullptr — no large variant), `downgrade()` (return nullptr), `has_large_column()` (return false).
 
 **Acceptance Criteria:**
 - `filter_range` with filter [1,0,1,0] on 4-row column produces 2-row column; arena size unchanged
@@ -500,7 +500,7 @@
 
 **Steps:**
 
-- [ ] **Step 1:** Define `GermanStringImmContainer` class (can be in german_string_column.h):
+- [x] **Step 1:** Define `GermanStringImmContainer` class (can be in german_string_column.h):
   ```cpp
   class GermanStringImmContainer {
   public:
@@ -516,7 +516,7 @@
   };
   ```
 
-- [ ] **Step 2:** Ensure `GermanStringColumn::immutable_data()` returns `GermanStringImmContainer(*this)`.
+- [x] **Step 2:** Ensure `GermanStringColumn::immutable_data()` returns `GermanStringImmContainer(*this)`.
 
 **Acceptance Criteria:**
 - `ImmContainer ic(col); ic[0]` returns same GermanString as `col.get_german_string(0)`
@@ -538,17 +538,17 @@
 
 **Steps:**
 
-- [ ] **Step 1:** In `column_visitor.h`, add:
+- [x] **Step 1:** In `column_visitor.h`, add:
   ```cpp
   virtual Status visit(const GermanStringColumn& column);
   ```
 
-- [ ] **Step 2:** In `column_visitor_mutable.h`, add:
+- [x] **Step 2:** In `column_visitor_mutable.h`, add:
   ```cpp
   virtual Status visit(GermanStringColumn* column);
   ```
 
-- [ ] **Step 3:** In `column_visitor_adapter.h`, add to `ColumnVisitorAdapter`:
+- [x] **Step 3:** In `column_visitor_adapter.h`, add to `ColumnVisitorAdapter`:
   ```cpp
   Status visit(const GermanStringColumn& column) override { return _impl->do_visit(column); }
   ```
@@ -557,13 +557,13 @@
   Status visit(GermanStringColumn* column) override { return _impl->do_visit(column); }
   ```
 
-- [ ] **Step 4:** In `german_string_column.cpp`, implement:
+- [x] **Step 4:** In `german_string_column.cpp`, implement:
   ```cpp
   Status GermanStringColumn::accept(ColumnVisitor* visitor) const { return visitor->visit(*this); }
   Status GermanStringColumn::accept(ColumnVisitorMutable* visitor) { return visitor->visit(this); }
   ```
 
-- [ ] **Step 5:** Add default implementation in column_visitor.cpp (return Status::NotSupported) for the new visit methods.
+- [x] **Step 5:** Add default implementation in column_visitor.cpp (return Status::NotSupported) for the new visit methods.
 
 **Acceptance Criteria:**
 - `column->accept(&visitor)` dispatches to the correct `visit(const GermanStringColumn&)` overload
