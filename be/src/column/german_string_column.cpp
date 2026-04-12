@@ -18,6 +18,7 @@
 #include <sstream>
 
 #include "column/binary_column.h"
+#include "column/mysql_row_buffer.h"
 #include "gutil/strings/fastmem.h"
 
 namespace starrocks {
@@ -309,7 +310,8 @@ size_t GermanStringColumn::byte_size(size_t idx) const {
 
 void GermanStringColumn::put_mysql_row_buffer(MysqlRowBuffer* buf, size_t idx,
                                                bool is_binary_protocol) const {
-    // Stub: will be implemented in Task 4.1
+    const auto& gs = _german_strings[idx];
+    buf->push_string(gs.get_data(), gs.len);
 }
 
 // ---- Name / Debug / Get ----
