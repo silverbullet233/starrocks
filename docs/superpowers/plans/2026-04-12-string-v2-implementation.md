@@ -762,7 +762,7 @@
 
 **Steps:**
 
-- [ ] **Step 1:** Define `GermanStringEqual`:
+- [x] **Step 1:** Define `GermanStringEqual`:
   ```cpp
   struct GermanStringEqual {
       bool operator()(const GermanString& lhs, const GermanString& rhs) const {
@@ -771,7 +771,7 @@
   };
   ```
 
-- [ ] **Step 2:** Define `GermanStringHashWithSeed` templates (following SliceHashWithSeed pattern):
+- [x] **Step 2:** Define `GermanStringHashWithSeed` templates (following SliceHashWithSeed pattern):
   ```cpp
   template <PhmapSeed seed>
   struct GermanStringHashWithSeed;
