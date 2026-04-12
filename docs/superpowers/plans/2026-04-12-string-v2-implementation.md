@@ -459,9 +459,9 @@
 
 **Steps:**
 
-- [ ] **Step 1:** Implement `compact()` as defined in spec Section 2.3.
+- [x] **Step 1:** Implement `compact()` as defined in spec Section 2.3.
 
-- [ ] **Step 2:** Implement `live_arena_bytes()`:
+- [x] **Step 2:** Implement `live_arena_bytes()`:
   ```cpp
   size_t live_arena_bytes() const {
       size_t total = 0;
@@ -472,11 +472,11 @@
   }
   ```
 
-- [ ] **Step 3:** Implement `needs_compaction()`: `return arena_memory_usage() > 2 * live_arena_bytes();`
+- [x] **Step 3:** Implement `needs_compaction()`: `return arena_memory_usage() > 2 * live_arena_bytes();`
 
-- [ ] **Step 4:** Implement `to_binary_column()` as defined in spec Section 2.4.
+- [x] **Step 4:** Implement `to_binary_column()` as defined in spec Section 2.4.
 
-- [ ] **Step 5:** Implement `container_memory_usage()`:
+- [x] **Step 5:** Implement `container_memory_usage()`:
   ```cpp
   size_t container_memory_usage() const override {
       return _german_strings.capacity() * sizeof(GermanString) + _arena.total_allocated_bytes();
