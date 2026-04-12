@@ -64,6 +64,8 @@ public:
     GermanStringColumn(GermanStringColumn&& rhs) noexcept;
     GermanStringColumn& operator=(GermanStringColumn&& rhs) noexcept;
 
+    bool is_german_string() const override { return true; }
+
     // ---- Size / capacity ----
     size_t size() const override { return _german_strings.size(); }
     size_t capacity() const override { return _german_strings.capacity(); }
@@ -175,6 +177,10 @@ public:
     // ---- Swap / Reset ----
     void swap_column(Column& rhs) override;
     void reset_column() override;
+
+    // ---- Build slices (for join hash map compatibility) ----
+    // Populates a Slice buffer from the GermanString data, matching BinaryColumn::build_slices interface.
+    void build_slices(Buffer<Slice>& slices) const;
 
     // ---- Capacity limit ----
     Status capacity_limit_reached() const override;

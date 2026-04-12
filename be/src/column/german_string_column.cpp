@@ -361,6 +361,17 @@ void GermanStringColumn::reset_column() {
     _arena.free_all();
 }
 
+// ---- Build slices ----
+
+void GermanStringColumn::build_slices(Buffer<Slice>& slices) const {
+    const size_t n = _german_strings.size();
+    slices.resize(n);
+    for (size_t i = 0; i < n; i++) {
+        const auto& gs = _german_strings[i];
+        slices[i] = Slice(gs.get_data(), gs.len);
+    }
+}
+
 // ---- Capacity limit ----
 
 Status GermanStringColumn::capacity_limit_reached() const {

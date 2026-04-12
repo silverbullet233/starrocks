@@ -123,18 +123,16 @@ size_t JoinHashMapSelector::_get_binary_column_max_size(RuntimeState* state, con
         return 0;
     }
 
-    if (column->is_large_binary() || column->is_view()) {
+    if (column->is_large_binary() || column->is_view() || column->is_german_string()) {
         return 0;
     }
 
-    const BinaryColumn* binary_column = nullptr;
-    if (column->is_nullable()) {
-        auto* null_column = ColumnHelper::as_raw_column<NullableColumn>(column);
-        const auto data_column = null_column->data_column();
-        binary_column = down_cast<const BinaryColumn*>(data_column.get());
-    } else {
-        binary_column = down_cast<const BinaryColumn*>(column.get());
+    const Column* data_col = ColumnHelper::get_data_column(column.get());
+    if (data_col->is_large_binary() || data_col->is_view() || data_col->is_german_string()) {
+        return 0;
     }
+
+    const BinaryColumn* binary_column = down_cast<const BinaryColumn*>(data_col);
 
     const auto& offsets = binary_column->get_offset();
     auto bytes = binary_column->get_immutable_bytes();

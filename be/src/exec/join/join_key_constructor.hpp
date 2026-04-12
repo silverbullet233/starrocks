@@ -17,6 +17,7 @@
 #include <optional>
 
 #include "column/column.h"
+#include "column/german_string_column.h"
 #include "exec/join/join_key_constructor.h"
 
 namespace starrocks {
@@ -32,7 +33,9 @@ void BuildKeyConstructorForOneKey<LT>::build_key(RuntimeState* state, JoinHashTa
     // results, it provides only minor performance benefits in medium-cardinality scenarios.
     if constexpr (lt_is_string<LT>) {
         const auto* data_column = ColumnHelper::get_data_column(table_items->key_columns[0]);
-        if (UNLIKELY(data_column->is_large_binary())) {
+        if (UNLIKELY(data_column->is_german_string())) {
+            down_cast<const GermanStringColumn*>(data_column)->build_slices(table_items->build_slice);
+        } else if (UNLIKELY(data_column->is_large_binary())) {
             ColumnHelper::as_raw_column<LargeBinaryColumn>(data_column)->build_slices(table_items->build_slice);
         } else {
             ColumnHelper::as_raw_column<BinaryColumn>(data_column)->build_slices(table_items->build_slice);
@@ -72,8 +75,14 @@ void ProbeKeyConstructorForOneKey<LT>::build_key(const JoinHashTableItems& table
         probe_state->null_array = std::nullopt;
     }
     if constexpr (lt_is_string<LT>) {
-        const auto* data_column = ColumnHelper::get_data_column_by_type<LT>((*probe_state->key_columns)[0]);
-        data_column->build_slices(probe_state->probe_slice);
+        const auto* data_column = ColumnHelper::get_data_column((*probe_state->key_columns)[0]);
+        if (UNLIKELY(data_column->is_german_string())) {
+            down_cast<const GermanStringColumn*>(data_column)->build_slices(probe_state->probe_slice);
+        } else if (UNLIKELY(data_column->is_large_binary())) {
+            ColumnHelper::as_raw_column<LargeBinaryColumn>(data_column)->build_slices(probe_state->probe_slice);
+        } else {
+            ColumnHelper::as_raw_column<BinaryColumn>(data_column)->build_slices(probe_state->probe_slice);
+        }
     }
 }
 
