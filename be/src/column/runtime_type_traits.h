@@ -18,6 +18,7 @@
 
 #include "base/types/int256.h"
 #include "column/binary_column.h"
+#include "column/german_string.h"
 #include "column/decimalv3_column.h"
 #include "column/json_column.h"
 #include "column/nullable_column.h"
@@ -88,6 +89,8 @@ template <>
 inline constexpr bool isArithmeticLT<TYPE_VARBINARY> = false;
 template <>
 inline constexpr bool isArithmeticLT<TYPE_VARIANT> = false;
+template <>
+inline constexpr bool isArithmeticLT<TYPE_STRING_V2> = false;
 
 template <LogicalType logical_type>
 constexpr bool isSliceLT = false;
@@ -326,6 +329,14 @@ struct RunTimeTypeTraits<TYPE_VARBINARY> {
 };
 
 template <>
+struct RunTimeTypeTraits<TYPE_STRING_V2> {
+    using CppType = GermanString;
+    using ColumnType = GermanStringColumn;
+    using LargeColumnType = GermanStringColumn; // No large variant; needed by GetContainer template
+    using ImmContainerType = ColumnType::ImmContainer;
+};
+
+template <>
 struct RunTimeTypeTraits<TYPE_STRUCT> {
     using CppType = DatumStruct;
     using ColumnType = StructColumn;
@@ -433,6 +444,11 @@ struct ColumnTraits<DecimalV2Value> {
 template <>
 struct ColumnTraits<Slice> {
     using ColumnType = BinaryColumn;
+};
+
+template <>
+struct ColumnTraits<GermanString> {
+    using ColumnType = GermanStringColumn;
 };
 
 template <>
