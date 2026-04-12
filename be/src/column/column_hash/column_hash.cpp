@@ -396,7 +396,11 @@ public:
             }
             uint32_t* slot_ptr = slot(idx);
             const auto& gs = german_strings[idx];
-            *slot_ptr = HashFunction::hash(gs.get_data(), static_cast<int32_t>(gs.len), *slot_ptr);
+            // For empty strings, don't modify the hash (hash with 0 bytes preserves the seed)
+            // This matches BinaryColumnBase behavior for hash consistency.
+            if (gs.len > 0) {
+                *slot_ptr = HashFunction::hash(gs.get_data(), static_cast<int32_t>(gs.len), *slot_ptr);
+            }
         });
         return Status::OK();
     }

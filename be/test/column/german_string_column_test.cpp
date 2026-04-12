@@ -22,6 +22,7 @@
 #include "base/testutil/assert.h"
 #include "base/testutil/parallel_test.h"
 #include "column/binary_column.h"
+#include "column/column_hash/column_hash.h"
 #include "column/vectorized_fwd.h"
 #include "serde/column_array_serde.h"
 
@@ -1137,6 +1138,97 @@ PARALLEL_TEST(GermanStringColumnTest, test_serde_encode_levels) {
         for (size_t i = 0; i < gc->size(); i++) {
             ASSERT_EQ(gc->get_slice(i).to_string(), col2->get_slice(i).to_string())
                     << "mismatch at " << i << " encode_level=" << level;
+        }
+    }
+}
+
+// ---- test_hash_consistency_with_binary ----
+// Verifies that column hash visitor produces identical hash values for
+// GermanStringColumn and BinaryColumn containing the same string data.
+// This is critical for hash joins where one side is STRING_V2 and the other is STRING.
+PARALLEL_TEST(GermanStringColumnTest, test_hash_consistency_with_binary) {
+    auto gs_col = GermanStringColumn::create();
+    auto* gc = down_cast<GermanStringColumn*>(gs_col.get());
+    auto bin_col = BinaryColumn::create();
+
+    std::vector<std::string> strings = {
+            "",                                       // empty string
+            "abc",                                    // short (3 bytes)
+            "123456789012",                           // exactly 12 bytes (inline boundary)
+            "this is longer than twelve bytes",        // long string (>12 bytes)
+            "1234567890123",                           // exactly 13 bytes (first non-inline)
+            "another fairly long test string here!",   // another long string
+    };
+
+    for (const auto& s : strings) {
+        gc->append(Slice(s));
+        bin_col->append(Slice(s));
+    }
+
+    const uint32_t n = strings.size();
+    const uint32_t seed = 0x811C9DC5;  // typical FNV seed
+
+    // Test CRC32 hash consistency
+    {
+        std::vector<uint32_t> gs_hashes(n, seed);
+        std::vector<uint32_t> bin_hashes(n, seed);
+        crc32_hash_column(*gs_col, gs_hashes.data(), 0, n);
+        crc32_hash_column(*bin_col, bin_hashes.data(), 0, n);
+        for (uint32_t i = 0; i < n; ++i) {
+            ASSERT_EQ(gs_hashes[i], bin_hashes[i])
+                    << "CRC32 hash mismatch at index " << i << " for string \"" << strings[i] << "\"";
+        }
+    }
+
+    // Test FNV hash consistency
+    {
+        std::vector<uint32_t> gs_hashes(n, seed);
+        std::vector<uint32_t> bin_hashes(n, seed);
+        fnv_hash_column(*gs_col, gs_hashes.data(), 0, n);
+        fnv_hash_column(*bin_col, bin_hashes.data(), 0, n);
+        for (uint32_t i = 0; i < n; ++i) {
+            ASSERT_EQ(gs_hashes[i], bin_hashes[i])
+                    << "FNV hash mismatch at index " << i << " for string \"" << strings[i] << "\"";
+        }
+    }
+
+    // Test XXHash3 consistency
+    {
+        std::vector<uint32_t> gs_hashes(n, seed);
+        std::vector<uint32_t> bin_hashes(n, seed);
+        xxh3_64_column(*gs_col, gs_hashes.data(), 0, n);
+        xxh3_64_column(*bin_col, bin_hashes.data(), 0, n);
+        for (uint32_t i = 0; i < n; ++i) {
+            ASSERT_EQ(gs_hashes[i], bin_hashes[i])
+                    << "XXHash3 hash mismatch at index " << i << " for string \"" << strings[i] << "\"";
+        }
+    }
+
+    // Test with selective hash (subset of indices)
+    {
+        std::vector<uint16_t> sel = {0, 2, 4};  // empty, 12-byte, 13-byte
+        std::vector<uint32_t> gs_hashes(n, seed);
+        std::vector<uint32_t> bin_hashes(n, seed);
+        crc32_hash_column_selective(*gs_col, gs_hashes.data(), sel.data(), sel.size());
+        crc32_hash_column_selective(*bin_col, bin_hashes.data(), sel.data(), sel.size());
+        for (auto idx : sel) {
+            ASSERT_EQ(gs_hashes[idx], bin_hashes[idx])
+                    << "CRC32 selective hash mismatch at index " << idx << " for string \"" << strings[idx] << "\"";
+        }
+    }
+
+    // Test with selection bitmap
+    {
+        std::vector<uint8_t> selection = {1, 0, 1, 1, 0, 1};  // select indices 0,2,3,5
+        std::vector<uint32_t> gs_hashes(n, seed);
+        std::vector<uint32_t> bin_hashes(n, seed);
+        crc32_hash_column_with_selection(*gs_col, gs_hashes.data(), selection.data(), 0, n);
+        crc32_hash_column_with_selection(*bin_col, bin_hashes.data(), selection.data(), 0, n);
+        for (uint32_t i = 0; i < n; ++i) {
+            if (selection[i]) {
+                ASSERT_EQ(gs_hashes[i], bin_hashes[i])
+                        << "CRC32 selection hash mismatch at index " << i << " for string \"" << strings[i] << "\"";
+            }
         }
     }
 }
