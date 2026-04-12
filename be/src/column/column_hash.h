@@ -34,6 +34,7 @@
 #include "base/hash/hash.h"
 #include "base/string/slice.h"
 #include "column/runtime_type_traits.h"
+#include "types/german_string.h"
 #include "types/logical_type.h"
 
 namespace starrocks {
@@ -80,6 +81,25 @@ class SliceNormalEqual {
 public:
     bool operator()(const Slice& x, const Slice& y) const {
         return (x.size == y.size) && (memcmp(x.data, y.data, x.size) == 0);
+    }
+};
+
+class GermanStringEqual {
+public:
+    bool operator()(const GermanString& lhs, const GermanString& rhs) const { return lhs == rhs; }
+};
+
+template <>
+struct GermanStringHashWithSeed<PhmapSeed1> {
+    std::size_t operator()(const GermanString& gs) const {
+        return gs.crc32_hash(CRC_HASH_SEEDS::CRC_HASH_SEED1);
+    }
+};
+
+template <>
+struct GermanStringHashWithSeed<PhmapSeed2> {
+    std::size_t operator()(const GermanString& gs) const {
+        return gs.crc32_hash(CRC_HASH_SEEDS::CRC_HASH_SEED2);
     }
 };
 

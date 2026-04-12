@@ -37,6 +37,9 @@ struct Hash256WithSeed;
 template <PhmapSeed>
 class SliceHashWithSeed;
 
+template <PhmapSeed>
+struct GermanStringHashWithSeed;
+
 template <class T>
 class StdHash;
 } // namespace starrocks
