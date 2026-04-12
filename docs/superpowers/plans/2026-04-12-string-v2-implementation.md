@@ -907,7 +907,7 @@
 
 **Steps:**
 
-- [ ] **Step 1:** In `storage_type_traits.h`, add:
+- [x] **Step 1:** In `storage_type_traits.h`, add:
   ```cpp
   template <>
   struct StorageTypeTraits<TYPE_STRING_V2> {
@@ -915,17 +915,17 @@
   };
   ```
 
-- [ ] **Step 2:** In `olap_type_infra.h`, add `M(TYPE_STRING_V2)` to `APPLY_FOR_COLUMN_PREDICATE_TYPE`.
+- [x] **Step 2:** In `olap_type_infra.h`, add `M(TYPE_STRING_V2)` to `APPLY_FOR_COLUMN_PREDICATE_TYPE`.
 
-- [ ] **Step 3:** In `column_predicate_cmp.cpp`, create `GermanStringColumnPredicateCmpBase` (parallel to BinaryColumnPredicateCmpBase) that:
+- [x] **Step 3:** In `column_predicate_cmp.cpp`, create `GermanStringColumnPredicateCmpBase` (parallel to BinaryColumnPredicateCmpBase) that:
   - Stores comparison value as GermanString
   - Evaluates by down_casting to GermanStringColumn and comparing GermanStrings
 
-- [ ] **Step 4:** Create GermanStringColumnEqPredicate, GermanStringColumnNePredicate, GermanStringColumnLtPredicate, etc. — following the BinaryColumn predicate pattern.
+- [x] **Step 4:** Create GermanStringColumnEqPredicate, GermanStringColumnNePredicate, GermanStringColumnLtPredicate, etc. — following the BinaryColumn predicate pattern.
 
-- [ ] **Step 5:** In the predicate factory functions, add TYPE_STRING_V2 cases that create GermanString predicates.
+- [x] **Step 5:** In the predicate factory functions, add TYPE_STRING_V2 cases that create GermanString predicates.
 
-- [ ] **Step 6:** In `column_in_predicate.cpp`, create GermanStringColumnInPredicate using `phmap::flat_hash_set<GermanString, GermanStringHash, GermanStringEqual>`.
+- [x] **Step 6:** In `column_in_predicate.cpp`, create GermanStringColumnInPredicate using `phmap::flat_hash_set<GermanString, GermanStringHash, GermanStringEqual>`.
 
 **Acceptance Criteria:**
 - `SELECT * FROM test_sv2 WHERE val = 'hello'` uses GermanString predicate
