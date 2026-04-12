@@ -528,126 +528,209 @@ auto key = column->get_slice(i);
 
 TYPE_STRING_V2 的 ColumnType 是 GermanStringColumn（非 BinaryColumn），所以这些 `down_cast<BinaryColumn*>` 会崩溃。需要为 TYPE_STRING_V2 添加分支。
 
-### 6.2 适配策略：Slice 桥接
+### 6.2 适配策略：GermanString 原生特化
 
-**关键观察：** 这三个数据结构的核心操作都是基于 Slice 的 hash 和 memequal：
+**为什么不用 Slice 桥接：**
 
-| 数据结构 | Hash 方式 | Compare 方式 | Key 存储 |
-|----------|----------|-------------|---------|
-| AggHashVariant | CRC-32 on Slice bytes | `memequal_padded()` | 拷贝到 MemPool |
-| JoinHashMap | CRC-32 on Slice bytes | `memequal()` | 拷贝到 MemPool 或固定长度序列化 |
-| ColumnPredicate | N/A | `Slice::compare()` | 谓词自身持有 Slice |
+GermanString 对短字符串（≤12字节）有核心优势 — 数据 inline 在 16 字节结构体内，访问不需要指针解引用：
 
-GermanString 的优势在于**有序比较**（前缀短路），而非等值比较或 hash。在 hash-based 场景（join、aggregate），GermanString 没有额外优势。因此初始实现采用 **Slice 桥接**：从 GermanStringColumn 提取 Slice，复用现有的 Slice hash/compare 基础设施。
-
-### 6.3 统一 Slice 提取辅助函数
-
-```cpp
-// be/src/column/column_helper.h or a new utility header
-template <LogicalType LT>
-inline Slice get_string_column_slice(const Column* column, size_t idx) {
-    if constexpr (std::is_same_v<RunTimeColumnType<LT>, GermanStringColumn>) {
-        return down_cast<const GermanStringColumn*>(column)->get_slice(idx);
-    } else {
-        return down_cast<const BinaryColumn*>(column)->get_slice(idx);
-    }
-}
+```
+GermanString("hello"):  [len=5][h][e][l][l][o][0][0][0][0][0][0][0]  // 16 bytes, fully inline
+Slice("hello"):         [data=0x7fff...][size=5]                       // 16 bytes, data in external memory
 ```
 
-所有需要从 string 列提取 Slice 的模板代码都使用此辅助函数，避免散落的 `if constexpr` 分支。
+| 操作 | Slice | GermanString |
+|------|-------|-------------|
+| 等值比较 | 解引用 data 指针 + memcmp | 两次 8 字节整数比较，短路即返回 |
+| Hash | 解引用 data 指针 + CRC on bytes | 直接 CRC on inline bytes，无指针解引用 |
+| 有序比较 | 解引用 + memcompare | 4 字节 prefix 短路 + fallback memcompare |
+| Key 存储 | 16 bytes Slice + MemPool 拷贝数据 | 16 bytes GermanString（短字符串无需 MemPool） |
+
+对于短字符串占比较高的场景（如 country code、status enum、short ID），GermanString 在 hash 和 compare 上都有显著优势。因此三个核心数据结构都应添加 **GermanString 原生特化**，与其他 LogicalType 保持一致的模式。
+
+### 6.3 Datum 适配
+
+**文件：** `be/src/types/datum.h`
+
+Datum 是值传递的核心容器，基于 `std::variant`。STRING_V2 应使用 GermanString 而非 Slice。
+
+**变更：**
+
+1. 在 Datum 的内部 `Variant` 类型中添加 `GermanString`：
+   ```cpp
+   using Variant = std::variant<std::monostate, int8_t, ..., Slice, GermanString, ...>;
+   ```
+
+2. 添加访问方法：
+   ```cpp
+   const GermanString& get_german_string() const { return get<GermanString>(); }
+   void set_german_string(const GermanString& v) { set<decltype(v)>(v); }
+   ```
+
+3. 更新 `DatumKey`：添加 `GermanString` 到 variant（如果 STRING_V2 值需要作为 map key）
+
+4. **GermanStringColumn 的 Datum 交互：**
+   ```cpp
+   Datum GermanStringColumn::get(size_t n) const override {
+       return Datum(_german_strings[n]);  // 返回 GermanString，非 Slice
+   }
+   void GermanStringColumn::append_datum(const Datum& datum) override {
+       append(datum.get<GermanString>());  // 从 Datum 提取 GermanString
+   }
+   ```
+
+5. **注意：** GermanString 的 `long_rep.ptr` 指向列的 MemPool 内存。从列中取出的 GermanString 放入 Datum 后，Datum 的生命周期不能超过列。这与 Slice 的语义一致（Slice 也不拥有数据）。如果需要值语义（如在 constant expression 中持久化），需要将 GermanString 转换为拥有数据的形式（如 std::string → 再构造 GermanString）。
 
 ### 6.4 AggHashVariant 适配
 
 **文件：** `be/src/exec/aggregate/agg_hash_variant.h`, `agg_hash_variant.cpp`, `agg_hash_map.h`
 
-**变更：**
-1. 在 `ADD_VARIANT_PHASE1_TYPE` 注册中添加：
-   ```cpp
-   ADD_VARIANT_PHASE1_TYPE(TYPE_STRING_V2, string);  // 复用 "string" 变体
-   ```
-   这将 TYPE_STRING_V2 映射到与 TYPE_VARCHAR 相同的 `OneStringAggHashMap<SliceAggHashMap<seed>>`。
+**新增 GermanString 特化的 hash map：**
 
-2. 在 `AggHashMapWithOneStringKeyWithNullable::compute_agg_states()` 中，将：
-   ```cpp
-   const auto* column = down_cast<const BinaryColumn*>(key_column);
-   ```
-   替换为基于类型的分派，或使用统一的 Slice 提取方式。由于该类不按 LogicalType 模板化（只按 HashMap 类型），需要在运行时判断列类型：
-   ```cpp
-   auto get_key = [&](size_t i) -> Slice {
-       if (key_column->is_binary()) {
-           return down_cast<const BinaryColumn*>(key_column)->get_slice(i);
-       } else {
-           return down_cast<const GermanStringColumn*>(key_column)->get_slice(i);
-       }
-   };
-   ```
-   或者让 GermanStringColumn 提供 `is_german_string()` 虚方法用于判断。
+```cpp
+// Hash function
+struct GermanStringHashWithSeed {
+    std::size_t operator()(const GermanString& gs) const {
+        return gs.crc32_hash(CRC_HASH_SEED);
+    }
+};
+
+// Equality
+struct GermanStringEqual {
+    bool operator()(const GermanString& lhs, const GermanString& rhs) const {
+        return lhs == rhs;  // 利用 GermanString 的 8 字节整数快速比较
+    }
+};
+
+// Hash map 类型
+template <PhmapSeed seed>
+using GermanStringAggHashMap = phmap::flat_hash_map<GermanString, AggDataPtr,
+                                                     GermanStringHashWithSeed<seed>,
+                                                     GermanStringEqual>;
+
+template <PhmapSeed seed>
+using OneGermanStringAggHashMap = AggHashMapWithOneGermanStringKey<GermanStringAggHashMap<seed>>;
+```
+
+**Key 存储模型：**
+- **短字符串（≤12字节）**：GermanString 直接作为 key 存入 hash map。数据 inline，**无需 MemPool 分配**。这是核心优势 — VARCHAR 的 SliceAggHashMap 每个 key 都需要 MemPool 拷贝。
+- **长字符串（>12字节）**：在 MemPool 中分配数据，构造新的 GermanString 指向 MemPool 内存，存入 hash map。
+
+```cpp
+// Key 插入逻辑
+GermanString make_hash_key(const GermanString& gs, MemPool* pool) {
+    if (gs.is_inline()) {
+        return gs;  // 短字符串：直接拷贝 16 字节，零 MemPool 分配
+    }
+    // 长字符串：拷贝数据到 MemPool
+    auto* ptr = pool->allocate(gs.len);
+    memcpy(ptr, gs.get_data(), gs.len);
+    return GermanString(ptr, gs.len, ptr);
+}
+```
+
+**注册：**
+```cpp
+ADD_VARIANT_PHASE1_TYPE(TYPE_STRING_V2, german_string);  // 独立变体，非复用 "string"
+
+DEFINE_MAP_TYPE(AggHashMapVariant::Type::phase1_german_string,
+                OneGermanStringAggHashMap<PhmapSeed1>);
+```
+
+**列数据提取：**
+```cpp
+// 在 AggHashMapWithOneGermanStringKey::compute_agg_states() 中：
+const auto* column = down_cast<const GermanStringColumn*>(key_column);
+auto key = column->get_german_string(i);  // 直接返回 GermanString，无 Slice 转换
+```
 
 ### 6.5 JoinHashMap 适配
 
-**文件：** `be/src/exec/join/join_type_traits.h`, `join_key_constructor.hpp`
+**文件：** `be/src/exec/join/join_type_traits.h`, `join_key_constructor.hpp`, `join_hash_map_helper.h`
 
 **变更：**
-1. 注册 TYPE_STRING_V2 的 key constructor 和 method type：
+
+1. **Hash 特化：**
    ```cpp
-   REGISTER_KEY_CONSTRUCTOR(ONE_KEY, TYPE_STRING_V2, KeyConstructorForOneKey<TYPE_STRING_V2>, ONE_KEY_STRING_V2)
-   REGISTER_KEY_CONSTRUCTOR(SERIALIZED, TYPE_STRING_V2, KeyConstructorForSerialized, SERIALIZED_STRING_V2)
+   template <>
+   struct JoinKeyHash<GermanString> {
+       static const uint32_t CRC_SEED = 0x811C9DC5;
+       uint32_t operator()(const GermanString& gs, uint32_t num_buckets, uint32_t log) const {
+           return gs.crc32_hash(CRC_SEED) & (num_buckets - 1);
+       }
+   };
    ```
 
-2. 在 `join_key_constructor.hpp` 的 `lt_is_string<LT>` 分支中，STRING_V2 已通过 `StringLTGuard` 包含。但 `build_slices()` 调用需要适配 GermanStringColumn：
+2. **注册 key constructor 和 method type：**
    ```cpp
-   if constexpr (lt_is_string<LT>) {
-       // 已有的 BinaryColumn 分支
-       if constexpr (std::is_same_v<RunTimeColumnType<LT>, GermanStringColumn>) {
-           // 从 GermanStringColumn 构建 Slice 缓存
-       } else {
-           column->build_slices(slices);  // 现有 BinaryColumn 路径
+   REGISTER_KEY_CONSTRUCTOR(ONE_KEY, TYPE_STRING_V2,
+       KeyConstructorForOneKey<TYPE_STRING_V2>, ONE_KEY_STRING_V2)
+   ```
+
+3. **Key 构建：** 在 `join_key_constructor.hpp` 中，为 STRING_V2 构建 `Buffer<GermanString>` 而非 `Buffer<Slice>`：
+   ```cpp
+   if constexpr (std::is_same_v<RunTimeColumnType<LT>, GermanStringColumn>) {
+       const auto* gs_column = down_cast<const GermanStringColumn*>(data_column);
+       for (size_t i = 0; i < size; i++) {
+           keys[i] = gs_column->get_german_string(i);
        }
    }
    ```
 
-3. 在 `join_hash_table.cpp` 的 `_determine_key_constructor()` 中，TYPE_STRING_V2 需要与 TYPE_VARCHAR 走相同的路径（短字符串固定长度优化等）。
+4. **Key 相等比较：** 使用 `GermanString::operator==()` 替代 `memequal()`
+
+5. **短字符串固定长度优化：** 对于 STRING_V2 列，GermanString 本身就是 16 字节固定长度。可以直接作为固定长度 key 处理，而不需要 VARCHAR 那样的"检测最大长度 → 填充到固定宽度"逻辑。这是一个额外的结构优势。
 
 ### 6.6 ColumnPredicate 适配
 
-**文件：** `be/src/storage/olap_type_infra.h`, `be/src/storage/column_predicate_cmp.cpp`, `be/src/storage/column_in_predicate.cpp`
+**文件：** `be/src/storage/olap_type_infra.h`, `be/src/storage/column_predicate_cmp.cpp`
 
 **变更：**
+
 1. 在 `APPLY_FOR_COLUMN_PREDICATE_TYPE` 宏中添加 `M(TYPE_STRING_V2)`
 
 2. 在 `storage_type_traits.h` 中添加：
    ```cpp
    template <>
    struct StorageTypeTraits<TYPE_STRING_V2> {
-       using CppType = Slice;  // 存储层仍使用 Slice 作为比较类型
+       using CppType = GermanString;  // 原生 GermanString 类型
    };
    ```
 
-3. 在 `BinaryColumnPredicateCmpBase::t_evaluate()` 中，列类型判断需要兼容 GermanStringColumn：
+3. **新增 `GermanStringColumnPredicate` 系列：**
+   与 `BinaryColumnPredicate` 并行，评估逻辑直接操作 GermanString：
    ```cpp
-   // 现有代码：
-   auto* binary_column = down_cast<BinaryColumn*>(column);
-   Slice value = binary_column->get_slice(i);
-   // 需要适配为：
-   Slice value = column->is_binary()
-       ? down_cast<BinaryColumn*>(column)->get_slice(i)
-       : down_cast<GermanStringColumn*>(column)->get_slice(i);
+   template <LogicalType field_type>
+   class GermanStringColumnEqPredicate : public ColumnPredicate {
+       GermanString _value;  // 谓词比较值
+       void t_evaluate(const Column* column, ...) {
+           const auto* gs_column = down_cast<const GermanStringColumn*>(column);
+           for (size_t i = 0; i < size; i++) {
+               // GermanString::operator== 利用 8 字节整数快速比较
+               sel[i] = gs_column->get_german_string(i) == _value;
+           }
+       }
+   };
    ```
 
-4. 在谓词工厂函数的 switch 中添加 TYPE_STRING_V2 case，映射到 `BinaryColumnPredicate` 系列（复用 Slice 比较逻辑）。
+4. **IN 谓词：** 使用 `phmap::flat_hash_set<GermanString, GermanStringHash, GermanStringEqual>` 替代 `ItemHashSet<Slice>`。短字符串 key 无需额外内存分配。
 
-### 6.7 长期优化方向（当前不实现）
+5. 在谓词工厂的 switch 中：
+   ```cpp
+   case TYPE_STRING_V2:
+       return new GermanStringColumnEqPredicate<TYPE_STRING_V2>(type_info, id, operand_german_string);
+   ```
 
-初始实现通过 Slice 桥接复用现有基础设施。后续可以在以下场景引入 GermanString 原生优化：
+### 6.7 性能收益分析
 
-| 场景 | 优化方式 | 收益 |
-|------|---------|------|
-| 排序 Merge | GermanStringColumn 的 `compare_at()` 使用前缀短路 | ORDER BY 性能提升 |
-| Range 谓词 | GermanString 原生比较替代 Slice::compare | `WHERE col > 'xxx'` 性能提升 |
-| 排序聚合 | 有序 GROUP BY 使用 GermanString 比较 | 有序聚合场景性能提升 |
-| Join (Merge Join) | GermanString 原生比较 | Sort-Merge Join 性能提升 |
-
-Hash-based 操作（Hash Join、Hash Aggregate）不会从 GermanString 获益，因为其核心操作是 CRC hash + memequal，不涉及有序比较。
+| 场景 | VARCHAR (Slice) | STRING_V2 (GermanString) | 收益来源 |
+|------|----------------|-------------------------|---------|
+| Hash Aggregate (短 key) | Slice 解引用 + MemPool 拷贝 | inline 比较 + 零 MemPool 分配 | 内存带宽 + 分配开销 |
+| Hash Join (短 key) | Slice 解引用 + MemPool 拷贝 | inline 比较 + 16 字节固定 key | 分配 + cache 友好 |
+| Sort/ORDER BY | memcompare on Slice | 4 字节 prefix 短路 | 比较次数减少 |
+| EQ 谓词 | memequal on Slice | 两次 uint64 比较 | 指令数减少 |
+| Range 谓词 | memcompare on Slice | prefix 短路 | 比较次数减少 |
+| IN 谓词 | hash set of Slice + MemPool | hash set of GermanString (inline) | 内存分配减少 |
 
 ---
 
@@ -878,11 +961,15 @@ After implementation is complete, compare sorting and comparison performance:
 | `be/src/storage/olap_type_infra.h` | APPLY_FOR_COLUMN_PREDICATE_TYPE macro |
 | `be/src/storage/column_predicate_cmp.cpp` | Predicate factory + eval dispatch |
 | `be/src/storage/column_in_predicate.cpp` | IN predicate dispatch |
+| `be/src/types/datum.h` | Add GermanString to Variant + accessors |
 | `be/src/storage/storage_type_traits.h` | StorageTypeTraits for STRING_V2 |
-| `be/src/exec/aggregate/agg_hash_variant.h/.cpp` | Variant registration + column access |
-| `be/src/exec/aggregate/agg_hash_map.h` | String key extraction |
+| `be/src/exec/aggregate/agg_hash_variant.h/.cpp` | german_string variant registration + DEFINE_MAP_TYPE |
+| `be/src/exec/aggregate/agg_hash_map.h` | AggHashMapWithOneGermanStringKey + hash/equal |
+| `be/src/base/hash/hash.h` | GermanStringHashWithSeed |
+| `be/src/column/column_hash.h` | GermanStringEqual |
 | `be/src/exec/join/join_type_traits.h` | Key constructor + method type registration |
-| `be/src/exec/join/join_key_constructor.hpp` | Key building GermanStringColumn branch |
+| `be/src/exec/join/join_key_constructor.hpp` | GermanString key building |
+| `be/src/exec/join/join_hash_map_helper.h` | JoinKeyHash\<GermanString\> specialization |
 | `be/src/exec/join/join_hash_table.cpp` | Key type determination |
 | `fe/fe-type/.../PrimitiveType.java` | Enum, type lists, cast map |
 | `fe/fe-type/.../ScalarType.java` | Type display and matching |
@@ -945,6 +1032,8 @@ FE 优化器中有 48+ 处针对 STRING 类型的特殊判断。审计结果如�
 | Arena memory waste after repeated filter operations | Lazy compaction: `compact()` when `arena_usage > 2 * live_bytes`. Also compact before serialization (write/serde) to avoid transmitting dead data. |
 | MemPool memory tracking (embedded in Column) | MemPool already integrates with `memory_pool_bytes_total` metric. Monitor via `container_memory_usage()` override on GermanStringColumn. |
 | `isSliceLT<TYPE_STRING_V2>` is false, code expecting Slice may break | Audit all `isSliceLT` usage. STRING_V2 functions are separate implementations, so existing code paths don't encounter GermanString. |
+| Datum 中 GermanString 的生命周期 | GermanString 不拥有数据（同 Slice）。从列中取出的 GermanString 的 long_rep.ptr 指向列的 MemPool。Datum 生命周期不能超过源列。常量场景需通过 std::string 中转。 |
+| GermanString 作为 hash key 的长字符串处理 | 短字符串（≤12字节）零分配直接存 key；长字符串需拷贝到 MemPool 并构造新 GermanString。需确保 MemPool 生命周期覆盖 hash map。 |
 | Column visitor not implemented for all visitors | Initial implementation covers serde and hash visitors. Other visitors fall through to `Status::NotSupported`, which surfaces as clear errors. |
 | FE function resolution complexity | STRING_V2 added to STRING_TYPES ensures automatic registration. Manual audit for functions not in the loop. |
 | Optimizer hardcoded VARCHAR/CHAR checks | Audit identified 2 locations requiring manual update (ConstantOperator, PruneSubfieldRule). Verify with optimizer UT. |
