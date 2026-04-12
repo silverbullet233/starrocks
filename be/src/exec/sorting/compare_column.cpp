@@ -19,6 +19,7 @@
 #include "column/column_helper.h"
 #include "column/column_visitor_adapter.h"
 #include "column/const_column.h"
+#include "column/german_string_column.h"
 #include "column/json_column.h"
 #include "column/map_column.h"
 #include "column/nullable_column.h"
@@ -229,6 +230,16 @@ public:
         return Status::NotSupported("not support object column sort_and_tie");
     }
 
+    Status do_visit(const GermanStringColumn& column) {
+        auto rhs_column = column.clone_empty();
+        rhs_column->append_datum(_rhs_value);
+        auto cmp = [&](int lhs_index) {
+            return column.compare_at(lhs_index, 0, *rhs_column, _null_first) * _sort_order;
+        };
+        _equal_count = compare_column_helper(_cmp_vector, cmp);
+        return Status::OK();
+    }
+
     Status do_visit(const AdaptiveNullableColumn& column) {
         // TODO: supported later
         return Status::NotSupported("not support AdaptiveNullableColumn in ColumnCompare");
@@ -310,6 +321,20 @@ public:
         for (size_t i = 1; i < column.size(); i++) {
             if ((null_data.empty()) || (null_data[i - 1] != 1 && null_data[i] != 1)) {
                 (*_tie)[i] &= SorterComparator<T>::compare(data[i - 1], data[i]) == 0;
+            }
+        }
+        return Status::OK();
+    }
+
+    Status do_visit(const GermanStringColumn& column) {
+        const auto& gs_data = column.get_german_strings_container();
+        ImmutableNullData null_data;
+        if (_nullable_column != nullptr) {
+            null_data = _nullable_column->immutable_data();
+        }
+        for (size_t i = 1; i < column.size(); i++) {
+            if ((null_data.empty()) || (null_data[i - 1] != 1 && null_data[i] != 1)) {
+                (*_tie)[i] &= gs_data[i - 1] == gs_data[i];
             }
         }
         return Status::OK();

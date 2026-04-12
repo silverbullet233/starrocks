@@ -45,8 +45,8 @@ GermanStringColumn& GermanStringColumn::operator=(GermanStringColumn&& rhs) noex
 void GermanStringColumn::_append_to_arena(const char* data, size_t len) {
     auto* ptr = _arena.allocate(static_cast<int64_t>(len));
     strings::memcpy_inlined(ptr, data, len);
-    // Construct GermanString with arena-allocated data
-    _german_strings.emplace_back(reinterpret_cast<const char*>(ptr), len, ptr);
+    // Use 2-arg constructor: data is already in arena, just store the pointer.
+    _german_strings.emplace_back(static_cast<const void*>(ptr), len);
 }
 
 void GermanStringColumn::append(const Slice& str) {
@@ -139,7 +139,8 @@ void GermanStringColumn::assign(size_t n, size_t idx) {
         } else {
             auto* ptr = new_arena.allocate(static_cast<int64_t>(gs.len));
             strings::memcpy_inlined(ptr, gs.get_data(), gs.len);
-            new_gs.emplace_back(reinterpret_cast<const char*>(ptr), gs.len, ptr);
+            // Use 2-arg constructor: data is already in arena, just store the pointer.
+            new_gs.emplace_back(static_cast<const void*>(ptr), gs.len);
         }
     }
     _german_strings = std::move(new_gs);
@@ -218,7 +219,8 @@ void GermanStringColumn::update_rows(const Column& src, const uint32_t* indexes)
             // Need to copy long string data into our arena.
             auto* ptr = _arena.allocate(static_cast<int64_t>(gs.len));
             strings::memcpy_inlined(ptr, gs.get_data(), gs.len);
-            _german_strings[idx] = GermanString(reinterpret_cast<const char*>(ptr), gs.len, ptr);
+            // Use 2-arg constructor: data is already in arena, just store the pointer.
+            _german_strings[idx] = GermanString(static_cast<const void*>(ptr), gs.len);
         }
     }
 }
@@ -405,7 +407,8 @@ void GermanStringColumn::compact() {
         } else {
             auto* ptr = new_arena.allocate(static_cast<int64_t>(gs.len));
             strings::memcpy_inlined(ptr, gs.get_data(), gs.len);
-            new_gs.emplace_back(reinterpret_cast<const char*>(ptr), gs.len, ptr);
+            // Use 2-arg constructor: data is already in arena, just store the pointer.
+            new_gs.emplace_back(static_cast<const void*>(ptr), gs.len);
         }
     }
     _german_strings = std::move(new_gs);

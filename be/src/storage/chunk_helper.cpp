@@ -22,6 +22,7 @@
 #include "column/chunk.h"
 #include "column/column_helper.h"
 #include "column/column_visitor_adapter.h"
+#include "column/german_string_column.h"
 #include "column/json_column.h"
 #include "column/map_column.h"
 #include "column/runtime_type_traits.h"
@@ -803,6 +804,22 @@ public:
         (void)null_columns[0]->accept(&copy_null);
         _result = NullableColumn::create(copy_data.result(), ColumnHelper::as_column<NullColumn>(copy_null.result()));
 
+        return {};
+    }
+
+    Status do_visit(const GermanStringColumn& column) {
+        _result = column.clone_empty();
+        auto* output = down_cast<GermanStringColumn*>(_result->as_mutable_raw_ptr());
+        const size_t segment_size = _segment_column->segment_size();
+        output->reserve(_size);
+
+        auto columns = _segment_column->columns();
+        size_t from = _from;
+        for (size_t i = 0; i < _size; i++) {
+            size_t idx = _indexes[from + i];
+            auto [segment_id, segment_offset] = _segment_address(idx, segment_size);
+            output->append(*columns[segment_id], segment_offset, 1);
+        }
         return {};
     }
 

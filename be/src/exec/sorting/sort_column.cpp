@@ -25,6 +25,7 @@
 #include "column/column_visitor_adapter.h"
 #include "column/const_column.h"
 #include "column/fixed_length_column_base.h"
+#include "column/german_string_column.h"
 #include "column/json_column.h"
 #include "column/map_column.h"
 #include "column/nullable_column.h"
@@ -238,6 +239,24 @@ public:
                                    _build_tie);
     }
 
+    Status do_visit(const GermanStringColumn& column) {
+        if constexpr (!IS_RANGES) {
+            DCHECK_GE(column.size(), _permutation.size());
+        }
+
+        using ItemType = InlinePermuteItem<GermanString>;
+        auto cmp = [&](const ItemType& lhs, const ItemType& rhs) -> int {
+            return lhs.inline_value.compare(rhs.inline_value);
+        };
+
+        const auto& gs_container = column.get_german_strings_container();
+        auto inlined = create_inline_permutation<GermanString, IS_RANGES>(_permutation, gs_container);
+        RETURN_IF_ERROR(sort_and_tie_helper(_cancel, &column, _sort_desc.asc_order(), inlined, _tie, cmp,
+                                            _range_or_ranges, _build_tie));
+        restore_inline_permutation(inlined, _permutation);
+        return Status::OK();
+    }
+
     void use_german_string(bool flag) { _use_german_string = flag; }
 
 private:
@@ -426,6 +445,19 @@ public:
     }
 
     Status do_visit(const JsonColumn& column) {
+        auto cmp = [&](const PermutationItem& lhs, const PermutationItem& rhs) {
+            auto& lhs_col = _vertical_columns[lhs.chunk_index];
+            auto& rhs_col = _vertical_columns[rhs.chunk_index];
+            return lhs_col->compare_at(lhs.index_in_chunk, rhs.index_in_chunk, *rhs_col, _sort_desc.nan_direction());
+        };
+
+        RETURN_IF_ERROR(sort_and_tie_helper(_cancel, &column, _sort_desc.asc_order(), _permutation, _tie, cmp, _range,
+                                            _build_tie, _limit, &_pruned_limit));
+        _prune_limit();
+        return Status::OK();
+    }
+
+    Status do_visit(const GermanStringColumn& column) {
         auto cmp = [&](const PermutationItem& lhs, const PermutationItem& rhs) {
             auto& lhs_col = _vertical_columns[lhs.chunk_index];
             auto& rhs_col = _vertical_columns[rhs.chunk_index];

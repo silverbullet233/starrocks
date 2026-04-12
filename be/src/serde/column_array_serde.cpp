@@ -31,6 +31,7 @@
 #include "column/column_visitor_adapter.h"
 #include "column/const_column.h"
 #include "column/decimalv3_column.h"
+#include "column/german_string_column.h"
 #include "column/fixed_length_column.h"
 #include "column/json_column.h"
 #include "column/map_column.h"
@@ -935,6 +936,11 @@ public:
         return Status::OK();
     }
 
+    Status do_visit(const GermanStringColumn& column) {
+        // TODO: will be implemented in Task 3.3
+        return Status::NotSupported("GermanStringColumn serde is not yet implemented");
+    }
+
     Status do_visit(const AdaptiveNullableColumn& column) {
         // TODO: supported later
         return Status::NotSupported("AdaptiveNullableColumn is not supported");
@@ -1007,6 +1013,11 @@ public:
     Status do_visit(const VariantColumn& column) {
         _cur = VariantColumnSerde::serialize(column, _cur);
         return Status::OK();
+    }
+
+    Status do_visit(const GermanStringColumn& column) {
+        // TODO: will be implemented in Task 3.3
+        return Status::NotSupported("GermanStringColumn serde is not yet implemented");
     }
 
     Status do_visit(const AdaptiveNullableColumn& column) {
@@ -1092,6 +1103,11 @@ public:
     Status do_visit(VariantColumn* column) {
         ASSIGN_OR_RETURN(_cur, VariantColumnSerde::deserialize(_cur, _end, column));
         return Status::OK();
+    }
+
+    Status do_visit(GermanStringColumn* column) {
+        // TODO: will be implemented in Task 3.3
+        return Status::NotSupported("GermanStringColumn serde is not yet implemented");
     }
 
     Status do_visit(AdaptiveNullableColumn* column) {

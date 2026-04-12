@@ -24,6 +24,7 @@
 #include "column/array_column.h"
 #include "column/column_visitor_adapter.h"
 #include "column/const_column.h"
+#include "column/german_string_column.h"
 #include "column/decimalv3_column.h"
 #include "column/fixed_length_column_base.h"
 #include "column/json_column.h"
@@ -385,6 +386,20 @@ public:
     }
 
     Status do_visit(const VariantColumn& column) { return Status::NotSupported("VariantColumn is not supported"); }
+
+    Status do_visit(const GermanStringColumn& column) {
+        const auto& german_strings = column.get_german_strings_container();
+        const auto column_size = column.size();
+        _selector.for_each([&](uint32_t idx) {
+            if (idx >= column_size) {
+                return;
+            }
+            uint32_t* slot_ptr = slot(idx);
+            const auto& gs = german_strings[idx];
+            *slot_ptr = HashFunction::hash(gs.get_data(), static_cast<int32_t>(gs.len), *slot_ptr);
+        });
+        return Status::OK();
+    }
 
     Status do_visit(const AdaptiveNullableColumn& column) {
         // TODO: supported later
