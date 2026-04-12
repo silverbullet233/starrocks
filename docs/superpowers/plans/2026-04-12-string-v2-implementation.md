@@ -656,16 +656,16 @@
 
 **Steps:**
 
-- [ ] **Step 1:** Add `do_visit(const GermanStringColumn& column)` to `ColumnSerializedSizeVisitor`:
+- [x] **Step 1:** Add `do_visit(const GermanStringColumn& column)` to `ColumnSerializedSizeVisitor`:
   - Compute size: sum of all string lengths + offsets overhead (same formula as BinaryColumn)
 
-- [ ] **Step 2:** Add `do_visit(const GermanStringColumn& column)` to `ColumnSerializingVisitor`:
+- [x] **Step 2:** Add `do_visit(const GermanStringColumn& column)` to `ColumnSerializingVisitor`:
   - Write bytes+offsets format: iterate GermanStrings, write data sequentially, track offsets
 
-- [ ] **Step 3:** Add `do_visit(GermanStringColumn* column)` to `ColumnDeserializingVisitor`:
+- [x] **Step 3:** Add `do_visit(GermanStringColumn* column)` to `ColumnDeserializingVisitor`:
   - Read bytes+offsets format: for each string, call `column->append(Slice(data, len))`
 
-- [ ] **Step 4:** Add visitor adapter entries in the adapter classes for GermanStringColumn.
+- [x] **Step 4:** Add visitor adapter entries in the adapter classes for GermanStringColumn.
 
 **Acceptance Criteria:**
 - Serialize GermanStringColumn → deserialize to new GermanStringColumn → data matches
