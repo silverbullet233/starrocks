@@ -18,7 +18,9 @@
 
 ---
 
-## Phase 1: Type Pipeline (Foundation)
+## Phase 1: Type Pipeline (Foundation) -- COMPLETED
+
+**Review:** Code review passed. C1 (module boundary) fixed — moved german_string.h to types/. C2 (incomplete type) deferred to Task 2.1.
 
 ### Task 1.1: Thrift — Add STRING_V2 to TPrimitiveType
 
@@ -29,13 +31,13 @@
 
 **Steps:**
 
-- [ ] **Step 1:** In `gensrc/thrift/Types.thrift`, add `STRING_V2` after `VARIANT` in `enum TPrimitiveType`:
+- [x] **Step 1:** In `gensrc/thrift/Types.thrift`, add `STRING_V2` after `VARIANT` in `enum TPrimitiveType`:
   ```thrift
   VARIANT,
   STRING_V2
   ```
 
-- [ ] **Step 2:** Regenerate Thrift code by running the BE build (CMake regenerates automatically):
+- [x] **Step 2:** Regenerate Thrift code by running the BE build (CMake regenerates automatically):
   ```bash
   cd gensrc && make thrift
   ```
@@ -57,21 +59,21 @@
 
 **Steps:**
 
-- [ ] **Step 1:** In `be/src/types/logical_type.h`, add enum value and bump max:
+- [x] **Step 1:** In `be/src/types/logical_type.h`, add enum value and bump max:
   ```cpp
   TYPE_VARIANT = 55,
   TYPE_STRING_V2 = 56,
   TYPE_MAX_VALUE = 57
   ```
 
-- [ ] **Step 2:** In the same file, update `is_string_type()` to include TYPE_STRING_V2:
+- [x] **Step 2:** In the same file, update `is_string_type()` to include TYPE_STRING_V2:
   ```cpp
   constexpr bool is_string_type(LogicalType type) {
       return type == TYPE_CHAR || type == TYPE_VARCHAR || type == TYPE_STRING_V2;
   }
   ```
 
-- [ ] **Step 3:** In the same file, update `is_type_compatible()` — add STRING_V2 case alongside VARCHAR:
+- [x] **Step 3:** In the same file, update `is_type_compatible()` — add STRING_V2 case alongside VARCHAR:
   ```cpp
   if (lhs == TYPE_STRING_V2) {
       return rhs == TYPE_CHAR || rhs == TYPE_VARCHAR || rhs == TYPE_STRING_V2 || rhs == TYPE_HLL || rhs == TYPE_OBJECT;
@@ -79,19 +81,19 @@
   ```
   Also add TYPE_STRING_V2 to existing VARCHAR and CHAR cases as compatible type.
 
-- [ ] **Step 4:** In the same file, add TYPE_STRING_V2 to `is_scalar_logical_type()`, `support_column_expr_predicate()`, `type_estimated_overhead_bytes()` (return 128, same as VARCHAR).
+- [x] **Step 4:** In the same file, add TYPE_STRING_V2 to `is_scalar_logical_type()`, `support_column_expr_predicate()`, `type_estimated_overhead_bytes()` (return 128, same as VARCHAR).
 
-- [ ] **Step 5:** In the same file, update `StringLTGuard`:
+- [x] **Step 5:** In the same file, update `StringLTGuard`:
   ```cpp
   VALUE_GUARD(LogicalType, StringLTGuard, lt_is_string, TYPE_CHAR, TYPE_VARCHAR, TYPE_STRING_V2)
   ```
 
-- [ ] **Step 6:** In `be/src/types/logical_type_infra.h`, add TYPE_STRING_V2 to macros:
+- [x] **Step 6:** In `be/src/types/logical_type_infra.h`, add TYPE_STRING_V2 to macros:
   - `APPLY_FOR_ALL_STRING_TYPE`: add `M(TYPE_STRING_V2)`
   - `APPLY_FOR_ALL_SCALAR_TYPE`: add `M(TYPE_STRING_V2)`
   - `APPLY_FOR_SCALAR_THRIFT_TYPE`: add `M(STRING_V2)`
 
-- [ ] **Step 7:** In `be/src/types/logical_type.cpp`:
+- [x] **Step 7:** In `be/src/types/logical_type.cpp`:
   - `string_to_logical_type()`: add `if (upper_type_str == "STRING_V2") return TYPE_STRING_V2;`
   - `logical_type_to_string()`: add `case TYPE_STRING_V2: return "STRING_V2";`
   - `ScalarFieldTypeToLogicalTypeMapping` constructor: add `_data[TYPE_STRING_V2] = TYPE_STRING_V2;`
@@ -115,9 +117,9 @@
 
 **Steps:**
 
-- [ ] **Step 1:** Add `#include "column/german_string.h"` to datum.h includes.
+- [x] **Step 1:** Add `#include "column/german_string.h"` to datum.h includes.
 
-- [ ] **Step 2:** Add `GermanString` to the `Variant` type:
+- [x] **Step 2:** Add `GermanString` to the `Variant` type:
   ```cpp
   using Variant = std::variant<std::monostate, int8_t, uint8_t, int16_t, uint16_t, uint24_t, int32_t, uint32_t,
                                int64_t, uint64_t, int96_t, int128_t, int256_t, Slice, GermanString, decimal12_t,
@@ -125,20 +127,20 @@
                                PercentileValue*, JsonValue*, VariantRowValue*>;
   ```
 
-- [ ] **Step 3:** Add `GermanString` to `DatumKey`:
+- [x] **Step 3:** Add `GermanString` to `DatumKey`:
   ```cpp
   using DatumKey = std::variant<std::monostate, int8_t, uint8_t, int16_t, uint16_t, uint24_t, int32_t, uint32_t,
                                 int64_t, uint64_t, int96_t, int128_t, int256_t, Slice, GermanString, decimal12_t,
                                 DecimalV2Value, float, double>;
   ```
 
-- [ ] **Step 4:** Add accessors:
+- [x] **Step 4:** Add accessors:
   ```cpp
   const GermanString& get_german_string() const { return get<GermanString>(); }
   void set_german_string(const GermanString& v) { set<decltype(v)>(v); }
   ```
 
-- [ ] **Step 5:** In `convert2DatumKey()`, add GermanString visitor:
+- [x] **Step 5:** In `convert2DatumKey()`, add GermanString visitor:
   ```cpp
   [](const GermanString& arg) { return DatumKey(arg); },
   ```
@@ -159,12 +161,12 @@
 
 **Steps:**
 
-- [ ] **Step 1:** In `be/src/column/vectorized_fwd.h`, add forward declaration:
+- [x] **Step 1:** In `be/src/column/vectorized_fwd.h`, add forward declaration:
   ```cpp
   class GermanStringColumn;
   ```
 
-- [ ] **Step 2:** In `be/src/column/runtime_type_traits.h`, add include for german_string.h if not already present, and add the specialization after the TYPE_VARBINARY block:
+- [x] **Step 2:** In `be/src/column/runtime_type_traits.h`, add include for german_string.h if not already present, and add the specialization after the TYPE_VARBINARY block:
   ```cpp
   template <>
   struct RunTimeTypeTraits<TYPE_STRING_V2> {
@@ -175,7 +177,7 @@
   };
   ```
 
-- [ ] **Step 3:** In the same file, add:
+- [x] **Step 3:** In the same file, add:
   ```cpp
   template <>
   inline constexpr bool isArithmeticLT<TYPE_STRING_V2> = false;
@@ -201,38 +203,38 @@
 
 **Steps:**
 
-- [ ] **Step 1:** In `PrimitiveType.java`, add enum value after VARIANT:
+- [x] **Step 1:** In `PrimitiveType.java`, add enum value after VARIANT:
   ```java
   STRING_V2("STRING_V2", 16),
   ```
 
-- [ ] **Step 2:** Update `STRING_TYPE_LIST`:
+- [x] **Step 2:** Update `STRING_TYPE_LIST`:
   ```java
   public static final ImmutableList<PrimitiveType> STRING_TYPE_LIST =
           ImmutableList.of(CHAR, VARCHAR, STRING_V2);
   ```
 
-- [ ] **Step 3:** Update `isStringType()` (the PrimitiveType version, line ~456):
+- [x] **Step 3:** Update `isStringType()` (the PrimitiveType version, line ~456):
   ```java
   public boolean isStringType() {
       return (this == VARCHAR || this == CHAR || this == HLL || this == STRING_V2);
   }
   ```
 
-- [ ] **Step 4:** Update `isCharFamily()` (line ~476):
+- [x] **Step 4:** Update `isCharFamily()` (line ~476):
   ```java
   public boolean isCharFamily() {
       return (this == VARCHAR || this == CHAR || this == STRING_V2);
   }
   ```
 
-- [ ] **Step 5:** In the `IMPLICIT_CAST_MAP` static initializer, add STRING_V2 with the same cast targets as VARCHAR. Also add STRING_V2 as a valid cast target for existing types that can cast to VARCHAR.
+- [x] **Step 5:** In the `IMPLICIT_CAST_MAP` static initializer, add STRING_V2 with the same cast targets as VARCHAR. Also add STRING_V2 as a valid cast target for existing types that can cast to VARCHAR.
 
-- [ ] **Step 6:** Update `getTypeSize()` — add case returning 16 for STRING_V2. Update `getSlotSize()` similarly if needed.
+- [x] **Step 6:** Update `getTypeSize()` — add case returning 16 for STRING_V2. Update `getSlotSize()` similarly if needed.
 
-- [ ] **Step 7:** In `ScalarType.java`, add STRING_V2 handling in `toSql()`, `toString()`, `toMysqlDataTypeString()`, `toMysqlColumnTypeString()` methods — return `"STRING_V2"`.
+- [x] **Step 7:** In `ScalarType.java`, add STRING_V2 handling in `toSql()`, `toString()`, `toMysqlDataTypeString()`, `toMysqlColumnTypeString()` methods — return `"STRING_V2"`.
 
-- [ ] **Step 8:** In `TypeFactory.java`, add factory method:
+- [x] **Step 8:** In `TypeFactory.java`, add factory method:
   ```java
   public static ScalarType createStringV2Type(int len) {
       ScalarType type = new ScalarType(PrimitiveType.STRING_V2);
@@ -260,13 +262,13 @@
 
 **Steps:**
 
-- [ ] **Step 1:** In the SQL parser layer, add STRING_V2 as a recognized type keyword. Find where VARCHAR/STRING are mapped to PrimitiveType in the parser (likely in AstBuilder.java or a type resolution helper). Add a STRING_V2 mapping:
+- [x] **Step 1:** In the SQL parser layer, add STRING_V2 as a recognized type keyword. Find where VARCHAR/STRING are mapped to PrimitiveType in the parser (likely in AstBuilder.java or a type resolution helper). Add a STRING_V2 mapping:
   ```java
   case "STRING_V2":
       return TypeFactory.createStringV2Type(ScalarType.DEFAULT_STRING_LENGTH);
   ```
 
-- [ ] **Step 2:** In `CreateTableAnalyzer.java`, add validation that rejects STRING_V2 in non-Duplicate Key tables. Find the key type validation section and add:
+- [x] **Step 2:** In `CreateTableAnalyzer.java`, add validation that rejects STRING_V2 in non-Duplicate Key tables. Find the key type validation section and add:
   ```java
   if (column.getType().getPrimitiveType() == PrimitiveType.STRING_V2) {
       if (keysType != KeysType.DUP_KEYS) {
