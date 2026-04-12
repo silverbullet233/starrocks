@@ -802,7 +802,7 @@
 
 **Steps:**
 
-- [ ] **Step 1:** Add `do_visit(const GermanStringColumn& column)` to each hash visitor class (CrcHashVisitor, FnvHashVisitor, etc.):
+- [x] **Step 1:** Add `do_visit(const GermanStringColumn& column)` to each hash visitor class (CrcHashVisitor, FnvHashVisitor, etc.):
   ```cpp
   Status do_visit(const GermanStringColumn& column) {
       const auto column_size = column.size();
