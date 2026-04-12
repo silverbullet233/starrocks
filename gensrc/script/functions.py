@@ -466,6 +466,115 @@ vectorized_functions = [
          ]
      }],
 
+    # 31xxx: STRING_V2 (GermanString) bridge functions
+    # These mirror the 30xxx VARCHAR string functions but operate on STRING_V2 columns.
+    # They bridge through BinaryColumn conversion in the BE.
+
+    # substr / substring
+    [31010, 'substr', True, False, 'STRING_V2', ['STRING_V2', 'INT'], 'StringV2Functions::substring',
+     'StringV2Functions::sub_str_prepare', 'StringV2Functions::sub_str_close'],
+    [31011, 'substr', True, False, 'STRING_V2', ['STRING_V2', 'INT', 'INT'], 'StringV2Functions::substring',
+     'StringV2Functions::sub_str_prepare', 'StringV2Functions::sub_str_close'],
+    [31012, 'substring', True, False, 'STRING_V2', ['STRING_V2', 'INT'], 'StringV2Functions::substring',
+     'StringV2Functions::sub_str_prepare', 'StringV2Functions::sub_str_close'],
+    [31013, 'substring', True, False, 'STRING_V2', ['STRING_V2', 'INT', 'INT'], 'StringV2Functions::substring',
+     'StringV2Functions::sub_str_prepare', 'StringV2Functions::sub_str_close'],
+
+    # left / right
+    [31020, 'left', True, False, 'STRING_V2', ['STRING_V2', 'INT'], 'StringV2Functions::left',
+     'StringV2Functions::left_or_right_prepare', 'StringV2Functions::left_or_right_close'],
+    [31021, 'strleft', True, False, 'STRING_V2', ['STRING_V2', 'INT'], 'StringV2Functions::left',
+     'StringV2Functions::left_or_right_prepare', 'StringV2Functions::left_or_right_close'],
+    [31030, 'right', True, False, 'STRING_V2', ['STRING_V2', 'INT'], 'StringV2Functions::right',
+     'StringV2Functions::left_or_right_prepare', 'StringV2Functions::left_or_right_close'],
+    [31031, 'strright', True, False, 'STRING_V2', ['STRING_V2', 'INT'], 'StringV2Functions::right',
+     'StringV2Functions::left_or_right_prepare', 'StringV2Functions::left_or_right_close'],
+
+    # ends_with / starts_with
+    [31040, 'ends_with', True, False, 'BOOLEAN', ['STRING_V2', 'STRING_V2'], 'StringV2Functions::ends_with'],
+    [31050, 'starts_with', True, False, 'BOOLEAN', ['STRING_V2', 'STRING_V2'], 'StringV2Functions::starts_with'],
+
+    # null_or_empty
+    [31060, 'null_or_empty', True, False, 'BOOLEAN', ['STRING_V2'], 'StringV2Functions::null_or_empty'],
+
+    # repeat
+    [31080, 'repeat', True, True, 'STRING_V2', ['STRING_V2', 'INT'], 'StringV2Functions::repeat'],
+
+    # lpad / rpad
+    [31090, 'lpad', True, False, 'STRING_V2', ['STRING_V2', 'INT', 'STRING_V2'], 'StringV2Functions::lpad',
+     'StringV2Functions::pad_prepare', 'StringV2Functions::pad_close'],
+    [31100, 'rpad', True, False, 'STRING_V2', ['STRING_V2', 'INT', 'STRING_V2'], 'StringV2Functions::rpad',
+     'StringV2Functions::pad_prepare', 'StringV2Functions::pad_close'],
+
+    # length / char_length / character_length
+    [31120, 'length', True, False, 'INT', ['STRING_V2'], 'StringV2Functions::length'],
+    [31130, 'char_length', True, False, 'INT', ['STRING_V2'], 'StringV2Functions::utf8_length'],
+    [31131, 'character_length', True, False, 'INT', ['STRING_V2'], 'StringV2Functions::utf8_length'],
+
+    # lower / lcase
+    [31140, 'lower', True, False, 'STRING_V2', ['STRING_V2'], 'StringV2Functions::lower',
+     'StringV2Functions::lower_prepare', 'StringV2Functions::lower_close'],
+    [31141, 'lcase', True, False, 'STRING_V2', ['STRING_V2'], 'StringV2Functions::lower',
+     'StringV2Functions::lower_prepare', 'StringV2Functions::lower_close'],
+
+    # upper / ucase
+    [31150, 'upper', True, False, 'STRING_V2', ['STRING_V2'], 'StringV2Functions::upper',
+     'StringV2Functions::upper_prepare', 'StringV2Functions::upper_close'],
+    [31151, 'ucase', True, False, 'STRING_V2', ['STRING_V2'], 'StringV2Functions::upper',
+     'StringV2Functions::upper_prepare', 'StringV2Functions::upper_close'],
+
+    # reverse
+    [31160, 'reverse', True, False, 'STRING_V2', ['STRING_V2'], 'StringV2Functions::reverse'],
+
+    # trim / ltrim / rtrim
+    [31170, 'trim', True, False, 'STRING_V2', ['STRING_V2'], 'StringV2Functions::trim',
+     'StringV2Functions::trim_prepare', 'StringV2Functions::trim_close'],
+    [31171, 'trim', True, False, 'STRING_V2', ['STRING_V2', 'STRING_V2'], 'StringV2Functions::trim',
+     'StringV2Functions::trim_prepare', 'StringV2Functions::trim_close'],
+    [31180, 'ltrim', True, False, 'STRING_V2', ['STRING_V2'], 'StringV2Functions::ltrim',
+     'StringV2Functions::trim_prepare', 'StringV2Functions::trim_close'],
+    [31181, 'ltrim', True, False, 'STRING_V2', ['STRING_V2', 'STRING_V2'], 'StringV2Functions::ltrim',
+     'StringV2Functions::trim_prepare', 'StringV2Functions::trim_close'],
+    [31190, 'rtrim', True, False, 'STRING_V2', ['STRING_V2'], 'StringV2Functions::rtrim',
+     'StringV2Functions::trim_prepare', 'StringV2Functions::trim_close'],
+    [31191, 'rtrim', True, False, 'STRING_V2', ['STRING_V2', 'STRING_V2'], 'StringV2Functions::rtrim',
+     'StringV2Functions::trim_prepare', 'StringV2Functions::trim_close'],
+
+    # ascii
+    [31200, 'ascii', True, False, 'INT', ['STRING_V2'], 'StringV2Functions::ascii'],
+
+    # instr / locate / strpos
+    [31210, 'instr', True, False, 'INT', ['STRING_V2', 'STRING_V2'], 'StringV2Functions::instr'],
+    [31220, 'locate', True, False, 'INT', ['STRING_V2', 'STRING_V2'], 'StringV2Functions::locate'],
+    [31221, 'locate', True, False, 'INT', ['STRING_V2', 'STRING_V2', 'INT'], 'StringV2Functions::locate_pos'],
+
+    # concat
+    [31250, 'concat', True, True, 'STRING_V2', ['STRING_V2', '...'], 'StringV2Functions::concat',
+     'StringV2Functions::concat_prepare', 'StringV2Functions::concat_close'],
+
+    # concat_ws
+    [31260, 'concat_ws', True, True, 'STRING_V2', ['STRING_V2', 'STRING_V2', '...'], 'StringV2Functions::concat_ws'],
+
+    # find_in_set
+    [31270, 'find_in_set', True, False, 'INT', ['STRING_V2', 'STRING_V2'], 'StringV2Functions::find_in_set'],
+
+    # split_part
+    [31310, 'split_part', True, True, 'STRING_V2', ['STRING_V2', 'STRING_V2', 'INT'], 'StringV2Functions::split_part'],
+
+    # regexp_extract / regexp_replace
+    [31320, 'regexp_extract', True, False, 'STRING_V2', ['STRING_V2', 'STRING_V2', 'BIGINT'],
+     'StringV2Functions::regexp_extract',
+     'StringV2Functions::regexp_extract_prepare', 'StringV2Functions::regexp_close'],
+    [31330, 'regexp_replace', True, True, 'STRING_V2', ['STRING_V2', 'STRING_V2', 'STRING_V2'],
+     'StringV2Functions::regexp_replace',
+     'StringV2Functions::regexp_replace_prepare', 'StringV2Functions::regexp_close'],
+    [31332, 'replace', True, True, 'STRING_V2', ['STRING_V2', 'STRING_V2', 'STRING_V2'],
+     'StringV2Functions::replace',
+     'StringV2Functions::replace_prepare', 'StringV2Functions::replace_close'],
+
+    # strcmp
+    [31420, 'strcmp', True, False, 'INT', ['STRING_V2', 'STRING_V2'], 'StringV2Functions::strcmp'],
+
     # Binary Functions
     # to_binary
     [30600, 'to_binary', True, True, 'VARBINARY', ['VARCHAR', 'VARCHAR'], 'BinaryFunctions::to_binary',

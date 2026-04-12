@@ -114,6 +114,7 @@ set(EXPR_FILES
   split_part.cpp
   str_to_map.cpp
   string_functions.cpp
+  string_v2_functions.cpp
   utility_functions.cpp
   agg/java_udaf_function.cpp
   agg/java_window_function.cpp
