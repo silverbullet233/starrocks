@@ -20,6 +20,7 @@
 #include "base/failpoint/fail_point.h"
 #include "base/phmap/phmap.h"
 #include "base/utility/defer_op.h"
+#include "column/binary_column.h"
 #include "column/column_hash.h"
 #include "column/german_string_column.h"
 #include "column/hash_set.h"
@@ -530,7 +531,8 @@ struct AggHashSetOfOneGermanStringKey : public AggHashSet<HashSet, AggHashSetOfO
             not_founds->assign(chunk_size, 0);
         }
 
-        const auto* column = down_cast<const GermanStringColumn*>(key_columns[0].get());
+        MutableColumnPtr tmp_holder;
+        const auto* column = _get_gs_column(key_columns[0].get(), tmp_holder);
         for (size_t i = 0; i < chunk_size; ++i) {
             auto key = column->get_german_string(i);
             if constexpr (compute_and_allocate) {
@@ -543,12 +545,34 @@ struct AggHashSetOfOneGermanStringKey : public AggHashSet<HashSet, AggHashSetOfO
         }
     }
 
-    void insert_keys_to_columns(ResultVector& keys, MutableColumns& key_columns, size_t chunk_size) {
-        auto* column = down_cast<GermanStringColumn*>(key_columns[0].get());
+    // Helper: append GermanString keys to output column (may be BinaryColumn or GermanStringColumn).
+    static void _append_keys(Column* col, ResultVector& keys, size_t chunk_size) {
         keys.resize(chunk_size);
-        for (size_t i = 0; i < chunk_size; i++) {
-            column->append(keys[i]);
+        if (col->is_german_string()) {
+            auto* gs_col = down_cast<GermanStringColumn*>(col);
+            for (size_t i = 0; i < chunk_size; i++) {
+                gs_col->append(keys[i]);
+            }
+        } else {
+            auto* bc = down_cast<BinaryColumn*>(col);
+            for (size_t i = 0; i < chunk_size; i++) {
+                bc->append(Slice(keys[i].get_data(), keys[i].len));
+            }
         }
+    }
+
+    void insert_keys_to_columns(ResultVector& keys, MutableColumns& key_columns, size_t chunk_size) {
+        _append_keys(key_columns[0].get(), keys, chunk_size);
+    }
+
+    // Helper: get GermanStringColumn from a column, converting from BinaryColumn if needed.
+    static const GermanStringColumn* _get_gs_column(const Column* col, MutableColumnPtr& tmp_holder) {
+        if (col->is_german_string()) {
+            return down_cast<const GermanStringColumn*>(col);
+        }
+        DCHECK(col->is_binary());
+        tmp_holder = GermanStringColumn::from_binary_column(*down_cast<const BinaryColumn*>(col));
+        return down_cast<const GermanStringColumn*>(tmp_holder.get());
     }
 
     static GermanString _make_set_key(const GermanString& gs, MemPool* pool) {
@@ -587,7 +611,9 @@ struct AggHashSetOfOneNullableGermanStringKey
             has_null_key = true;
         } else {
             const auto* nullable_column = down_cast<const NullableColumn*>(key_columns[0].get());
-            const auto* data_column = down_cast<const GermanStringColumn*>(nullable_column->data_column().get());
+            MutableColumnPtr tmp_holder;
+            const auto* data_column = AggHashSetOfOneGermanStringKey<HashSet>::_get_gs_column(
+                    nullable_column->data_column().get(), tmp_holder);
             const auto& null_data = nullable_column->null_column_data();
 
             for (size_t i = 0; i < chunk_size; ++i) {
@@ -610,11 +636,8 @@ struct AggHashSetOfOneNullableGermanStringKey
     void insert_keys_to_columns(ResultVector& keys, MutableColumns& key_columns, size_t chunk_size) {
         DCHECK(key_columns[0]->is_nullable());
         auto* nullable_column = down_cast<NullableColumn*>(key_columns[0].get());
-        auto* column = down_cast<GermanStringColumn*>(nullable_column->data_column_raw_ptr());
-        keys.resize(chunk_size);
-        for (size_t i = 0; i < chunk_size; i++) {
-            column->append(keys[i]);
-        }
+        AggHashSetOfOneGermanStringKey<HashSet>::_append_keys(
+                nullable_column->data_column_raw_ptr(), keys, chunk_size);
         nullable_column->null_column_data().resize(chunk_size);
     }
 

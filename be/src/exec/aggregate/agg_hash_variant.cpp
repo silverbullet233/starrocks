@@ -491,12 +491,7 @@ HashVariantResolver<HashVariantType>::HashVariantResolver() {
     ADD_VARIANT_PHASE1_TYPE(TYPE_LARGEINT, int128);
     ADD_VARIANT_PHASE1_TYPE(TYPE_CHAR, string);
     ADD_VARIANT_PHASE1_TYPE(TYPE_VARCHAR, string);
-    // STRING_V2 uses the regular BinaryColumn-based `string` variant because the
-    // storage layer currently produces BinaryColumn for STRING_V2 (via
-    // StorageColumnTraits / field_type_dispatch_column mapping STRING_V2→VARCHAR).
-    // When storage is updated to produce GermanStringColumn natively, switch back
-    // to `german_string`.
-    ADD_VARIANT_PHASE1_TYPE(TYPE_STRING_V2, string);
+    ADD_VARIANT_PHASE1_TYPE(TYPE_STRING_V2, german_string);
 }
 
 template <typename HashVariantType>

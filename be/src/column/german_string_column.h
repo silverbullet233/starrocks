@@ -208,6 +208,9 @@ public:
     // Convert to a legacy BinaryColumn with identical data.
     ColumnPtr to_binary_column() const;
 
+    // Create a GermanStringColumn from a BinaryColumn.
+    static MutableColumnPtr from_binary_column(const BinaryColumn& bc);
+
 private:
     Container _german_strings;
     MemPool _arena;

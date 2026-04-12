@@ -469,4 +469,13 @@ ColumnPtr GermanStringColumn::to_binary_column() const {
     return bc;
 }
 
+MutableColumnPtr GermanStringColumn::from_binary_column(const BinaryColumn& bc) {
+    auto gs_col = GermanStringColumn::create();
+    gs_col->reserve(bc.size());
+    for (size_t i = 0; i < bc.size(); ++i) {
+        gs_col->append(bc.get_slice(i));
+    }
+    return gs_col;
+}
+
 } // namespace starrocks

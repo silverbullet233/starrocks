@@ -23,6 +23,7 @@
 #include "base/failpoint/fail_point.h"
 #include "base/phmap/phmap.h"
 #include "base/utility/defer_op.h"
+#include "column/binary_column.h"
 #include "column/column.h"
 #include "column/column_hash.h"
 #include "column/german_string_column.h"
@@ -709,12 +710,26 @@ struct AggHashMapWithOneGermanStringKeyWithNullable
         }
     }
 
+    // Helper: get GermanStringColumn from a column, converting from BinaryColumn if needed.
+    // If conversion is needed, the result is stored in tmp_holder to keep it alive.
+    static const GermanStringColumn* _get_german_string_column(const Column* col,
+                                                                MutableColumnPtr& tmp_holder) {
+        if (col->is_german_string()) {
+            return down_cast<const GermanStringColumn*>(col);
+        }
+        // Storage layer produces BinaryColumn for STRING_V2; convert on the fly.
+        DCHECK(col->is_binary());
+        tmp_holder = GermanStringColumn::from_binary_column(*down_cast<const BinaryColumn*>(col));
+        return down_cast<const GermanStringColumn*>(tmp_holder.get());
+    }
+
     // Non Nullable
     template <AllocFunc<Self> Func, typename HTBuildOp>
     ALWAYS_NOINLINE void compute_agg_states_non_nullable(size_t chunk_size, const Column* key_column, MemPool* pool,
                                                          Func&& allocate_func, Buffer<AggDataPtr>* agg_states,
                                                          ExtraAggParam* extra) {
-        const auto* column = down_cast<const GermanStringColumn*>(key_column);
+        MutableColumnPtr tmp_holder;
+        const auto* column = _get_german_string_column(key_column, tmp_holder);
         if (this->hash_map.bucket_count() < prefetch_threhold) {
             this->template compute_agg_noprefetch<Func, HTBuildOp>(column, agg_states, pool,
                                                                    std::forward<Func>(allocate_func), extra);
@@ -739,7 +754,9 @@ struct AggHashMapWithOneGermanStringKeyWithNullable
         } else {
             DCHECK(key_column->is_nullable());
             const auto* nullable_column = down_cast<const NullableColumn*>(key_column);
-            const auto* data_column = down_cast<const GermanStringColumn*>(nullable_column->data_column().get());
+            MutableColumnPtr tmp_holder;
+            const auto* data_column = _get_german_string_column(
+                    nullable_column->data_column().get(), tmp_holder);
 
             if (!nullable_column->has_null()) {
                 this->template compute_agg_states_non_nullable<Func, HTBuildOp>(
@@ -809,7 +826,9 @@ struct AggHashMapWithOneGermanStringKeyWithNullable
                                                        Func&& allocate_func, ExtraAggParam* extra) {
         [[maybe_unused]] size_t hash_table_size = this->hash_map.size();
         auto* __restrict not_founds = extra->not_founds;
-        const auto* data_column = down_cast<const GermanStringColumn*>(nullable_column->data_column().get());
+        MutableColumnPtr tmp_holder;
+        const auto* data_column = _get_german_string_column(
+                nullable_column->data_column().get(), tmp_holder);
         const auto& null_data = nullable_column->null_column_data();
 
         for (size_t i = 0; i < chunk_size; i++) {
@@ -882,23 +901,33 @@ struct AggHashMapWithOneGermanStringKeyWithNullable
         }
     }
 
+    // Helper: append GermanString keys to an output column which may be either
+    // GermanStringColumn or BinaryColumn (when ColumnHelper::create_column maps
+    // STRING_V2 -> VARCHAR).
+    static void _append_keys(Column* col, ResultVector& keys, size_t chunk_size) {
+        keys.resize(chunk_size);
+        if (col->is_german_string()) {
+            auto* gs_col = down_cast<GermanStringColumn*>(col);
+            for (size_t i = 0; i < chunk_size; i++) {
+                gs_col->append(keys[i]);
+            }
+        } else {
+            auto* bc = down_cast<BinaryColumn*>(col);
+            for (size_t i = 0; i < chunk_size; i++) {
+                bc->append(Slice(keys[i].get_data(), keys[i].len));
+            }
+        }
+    }
+
     void insert_keys_to_columns(ResultVector& keys, MutableColumns& key_columns, size_t chunk_size) {
         if constexpr (is_nullable) {
             DCHECK(key_columns[0]->is_nullable());
             auto* nullable_column = down_cast<NullableColumn*>(key_columns[0].get());
-            auto* column = down_cast<GermanStringColumn*>(nullable_column->data_column_raw_ptr());
-            keys.resize(chunk_size);
-            for (size_t i = 0; i < chunk_size; i++) {
-                column->append(keys[i]);
-            }
+            _append_keys(nullable_column->data_column_raw_ptr(), keys, chunk_size);
             nullable_column->null_column_data().resize(chunk_size);
         } else {
             DCHECK(!null_key_data);
-            auto* column = down_cast<GermanStringColumn*>(key_columns[0].get());
-            keys.resize(chunk_size);
-            for (size_t i = 0; i < chunk_size; i++) {
-                column->append(keys[i]);
-            }
+            _append_keys(key_columns[0].get(), keys, chunk_size);
         }
     }
 
