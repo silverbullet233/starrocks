@@ -131,7 +131,8 @@ namespace starrocks {
     M(TYPE_FLOAT)                          \
     M(TYPE_DOUBLE)                         \
     M(TYPE_CHAR)                           \
-    M(TYPE_VARCHAR)
+    M(TYPE_VARCHAR)                        \
+    M(TYPE_STRING_V2)
 
 #define _TYPE_DISPATCH_CASE(type) \
     case type:                    \
@@ -139,6 +140,8 @@ namespace starrocks {
 
 template <class Functor, class... Args>
 auto field_type_dispatch_basic(LogicalType ftype, Functor fun, Args&&... args) {
+    // STRING_V2 uses the same storage format (BinaryColumn) as VARCHAR.
+    if (ftype == TYPE_STRING_V2) ftype = TYPE_VARCHAR;
     switch (ftype) {
         APPLY_FOR_BASIC_LOGICAL_TYPE(_TYPE_DISPATCH_CASE)
     default:
@@ -150,6 +153,8 @@ auto field_type_dispatch_basic(LogicalType ftype, Functor fun, Args&&... args) {
 // Types could built into columns
 template <class Functor, class... Args>
 auto field_type_dispatch_column(LogicalType ftype, Functor fun, Args&&... args) {
+    // STRING_V2 uses the same storage format (BinaryColumn) as VARCHAR.
+    if (ftype == TYPE_STRING_V2) ftype = TYPE_VARCHAR;
     switch (ftype) {
         APPLY_FOR_BASIC_LOGICAL_TYPE(_TYPE_DISPATCH_CASE)
         APPLY_FOR_METRIC_FIELD_TYPE(_TYPE_DISPATCH_CASE)
@@ -165,6 +170,8 @@ auto field_type_dispatch_column(LogicalType ftype, Functor fun, Args&&... args) 
 
 template <class Functor, class... Args>
 auto field_type_dispatch_all_extra(LogicalType ftype, Functor fun, Args&&... args) {
+    // STRING_V2 uses the same storage format (BinaryColumn) as VARCHAR.
+    if (ftype == TYPE_STRING_V2) ftype = TYPE_VARCHAR;
     switch (ftype) {
         APPLY_FOR_BASIC_LOGICAL_TYPE(_TYPE_DISPATCH_CASE)
         APPLY_FOR_COMPLEX_LOGICAL_TYPE(_TYPE_DISPATCH_CASE)
@@ -205,6 +212,8 @@ auto field_type_dispatch_bloomfilter(LogicalType ftype, Functor fun, Args&&... a
 
 template <class Functor, class... Args>
 auto field_type_dispatch_zonemap_index(LogicalType ftype, Functor fun, Args&&... args) {
+    // STRING_V2 uses the same storage format (BinaryColumn) as VARCHAR.
+    if (ftype == TYPE_STRING_V2) ftype = TYPE_VARCHAR;
     switch (ftype) {
         APPLY_FOR_BASIC_LOGICAL_TYPE(_TYPE_DISPATCH_CASE)
     default:
@@ -215,6 +224,8 @@ auto field_type_dispatch_zonemap_index(LogicalType ftype, Functor fun, Args&&...
 
 template <class Functor, class... Args>
 auto field_type_dispatch_supported(LogicalType ftype, Functor fun, Args&&... args) {
+    // STRING_V2 uses the same storage format (BinaryColumn) as VARCHAR.
+    if (ftype == TYPE_STRING_V2) ftype = TYPE_VARCHAR;
     switch (ftype) {
         APPLY_FOR_SUPPORTED_FIELD_TYPE(_TYPE_DISPATCH_CASE)
     default:

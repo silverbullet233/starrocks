@@ -78,6 +78,16 @@ void GermanStringColumn::append_datum(const Datum& datum) {
 }
 
 void GermanStringColumn::append(const Column& src, size_t offset, size_t count) {
+    if (src.is_binary()) {
+        // Handle BinaryColumn source (e.g., from expression evaluation producing VARCHAR).
+        const auto& bin_col = down_cast<const BinaryColumn&>(src);
+        _german_strings.reserve(_german_strings.size() + count);
+        for (size_t i = 0; i < count; ++i) {
+            Slice s = bin_col.get_slice(offset + i);
+            append(s);
+        }
+        return;
+    }
     const auto& src_col = down_cast<const GermanStringColumn&>(src);
     _german_strings.reserve(_german_strings.size() + count);
     for (size_t i = 0; i < count; ++i) {
@@ -86,6 +96,15 @@ void GermanStringColumn::append(const Column& src, size_t offset, size_t count) 
 }
 
 void GermanStringColumn::append_selective(const Column& src, const uint32_t* indexes, uint32_t from, uint32_t size) {
+    if (src.is_binary()) {
+        const auto& bin_col = down_cast<const BinaryColumn&>(src);
+        _german_strings.reserve(_german_strings.size() + size);
+        for (uint32_t i = 0; i < size; ++i) {
+            Slice s = bin_col.get_slice(indexes[from + i]);
+            append(s);
+        }
+        return;
+    }
     const auto& src_col = down_cast<const GermanStringColumn&>(src);
     _german_strings.reserve(_german_strings.size() + size);
     for (uint32_t i = 0; i < size; ++i) {
@@ -94,6 +113,15 @@ void GermanStringColumn::append_selective(const Column& src, const uint32_t* ind
 }
 
 void GermanStringColumn::append_value_multiple_times(const Column& src, uint32_t index, uint32_t size) {
+    if (src.is_binary()) {
+        const auto& bin_col = down_cast<const BinaryColumn&>(src);
+        Slice s = bin_col.get_slice(index);
+        _german_strings.reserve(_german_strings.size() + size);
+        for (uint32_t i = 0; i < size; ++i) {
+            append(s);
+        }
+        return;
+    }
     const auto& src_col = down_cast<const GermanStringColumn&>(src);
     const auto& gs = src_col._german_strings[index];
     _german_strings.reserve(_german_strings.size() + size);

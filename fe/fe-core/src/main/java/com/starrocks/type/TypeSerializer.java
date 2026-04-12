@@ -101,6 +101,8 @@ public class TypeSerializer {
                 return TPrimitiveType.BINARY;
             case VARBINARY:
                 return TPrimitiveType.VARBINARY;
+            case STRING_V2:
+                return TPrimitiveType.STRING_V2;
             case UNKNOWN_TYPE:
                 return TPrimitiveType.INVALID_TYPE;
             default:
@@ -177,6 +179,7 @@ public class TypeSerializer {
             case CHAR:
             case VARCHAR:
             case VARBINARY:
+            case STRING_V2:
             case HLL: {
                 node.setType(TTypeNodeType.SCALAR);
                 TScalarType scalarType = new TScalarType();
@@ -220,6 +223,7 @@ public class TypeSerializer {
             case CHAR:
             case VARCHAR:
             case VARBINARY:
+            case STRING_V2:
             case HLL:
                 scalarType.len = type.getLength();
                 break;

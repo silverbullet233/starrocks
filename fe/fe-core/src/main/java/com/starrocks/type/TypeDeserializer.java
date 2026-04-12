@@ -70,6 +70,7 @@ public class TypeDeserializer {
             case DATETIME -> PrimitiveType.DATETIME;
             case TIME -> PrimitiveType.TIME;
             case VARBINARY -> PrimitiveType.VARBINARY;
+            case STRING_V2 -> PrimitiveType.STRING_V2;
             case JSON -> PrimitiveType.JSON;
             case FUNCTION -> PrimitiveType.FUNCTION;
             case VARIANT -> PrimitiveType.VARIANT;
@@ -141,6 +142,8 @@ public class TypeDeserializer {
             return TypeFactory.createVarcharType(scalarType.getLen());
         } else if (scalarType.getType() == TPrimitiveType.VARBINARY) {
             return TypeFactory.createVarbinary(scalarType.getLen());
+        } else if (scalarType.getType() == TPrimitiveType.STRING_V2) {
+            return TypeFactory.createStringV2Type(scalarType.isSetLen() ? scalarType.getLen() : 65533);
         } else if (scalarType.getType() == TPrimitiveType.HLL) {
             return HLLType.HLL;
         } else if (scalarType.getType() == TPrimitiveType.DECIMAL) {
@@ -225,6 +228,8 @@ public class TypeDeserializer {
                 return TypeFactory.createVarcharType(ptype.len);
             case VARBINARY:
                 return TypeFactory.createVarbinary(ptype.len);
+            case STRING_V2:
+                return TypeFactory.createStringV2Type(ptype.len != null ? ptype.len : 65533);
             case DECIMALV2:
                 return TypeFactory.createDecimalV2Type(ptype.precision, ptype.precision);
             case DECIMAL32:

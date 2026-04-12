@@ -17,6 +17,7 @@
 #include "base/simd/simd.h"
 #include "base/string/string_parser.hpp"
 #include "column/column.h"
+#include "column/german_string_column.h"
 #include "column/nullable_column.h"
 #include "gutil/casts.h"
 #include "olap_type_infra.h"
@@ -200,27 +201,38 @@ public:
 
     ~BinaryColumnNotInPredicate() override = default;
 
+    // Helper: extract the data column (unwrapping NullableColumn if needed)
+    static const Column* _extract_data_column(const Column* column) {
+        if (column->is_nullable()) {
+            return down_cast<const NullableColumn*>(column)->data_column().get();
+        }
+        return column;
+    }
+
+    // Helper: get a Slice at index from either BinaryColumn or GermanStringColumn
+    static Slice _get_slice(const Column* data_col, bool is_german, size_t idx) {
+        if (is_german) {
+            return down_cast<const GermanStringColumn*>(data_col)->get_slice(idx);
+        }
+        return down_cast<const BinaryColumn*>(data_col)->get_slice(idx);
+    }
+
     template <typename Op>
     inline void t_evaluate(const Column* column, uint8_t* sel, uint16_t from, uint16_t to) const {
-        // Get BinaryColumn
-        const BinaryColumn* binary_column;
-        if (column->is_nullable()) {
-            // This is NullableColumn, get its data_column
-            binary_column =
-                    down_cast<const BinaryColumn*>(down_cast<const NullableColumn*>(column)->data_column().get());
-        } else {
-            binary_column = down_cast<const BinaryColumn*>(column);
-        }
+        const Column* data_col = _extract_data_column(column);
+        const bool is_german = data_col->is_german_string();
+
         if (!column->has_null()) {
             for (size_t i = from; i < to; i++) {
-                sel[i] = Op::apply(sel[i], (uint8_t)(!(_slices.contains(binary_column->get_slice(i)))));
+                sel[i] = Op::apply(sel[i], (uint8_t)(!(_slices.contains(_get_slice(data_col, is_german, i)))));
             }
         } else {
             /* must use uint8_t* to make vectorized effect */
             const uint8_t* null_data = down_cast<const NullableColumn*>(column)->immutable_null_column_data().data();
             for (size_t i = from; i < to; i++) {
-                sel[i] =
-                        Op::apply(sel[i], (uint8_t)(!null_data[i] && !(_slices.contains(binary_column->get_slice(i)))));
+                sel[i] = Op::apply(
+                        sel[i],
+                        (uint8_t)(!null_data[i] && !(_slices.contains(_get_slice(data_col, is_german, i)))));
             }
         }
     }
@@ -241,22 +253,15 @@ public:
     }
 
     StatusOr<uint16_t> evaluate_branchless(const Column* column, uint16_t* sel, uint16_t sel_size) const override {
-        // Get BinaryColumn
-        const BinaryColumn* binary_column;
-        if (column->is_nullable()) {
-            // This is NullableColumn, get its data_column
-            binary_column =
-                    down_cast<const BinaryColumn*>(down_cast<const NullableColumn*>(column)->data_column().get());
-        } else {
-            binary_column = down_cast<const BinaryColumn*>(column);
-        }
+        const Column* data_col = _extract_data_column(column);
+        const bool is_german = data_col->is_german_string();
 
         uint16_t new_size = 0;
         if (!column->has_null()) {
             for (uint16_t i = 0; i < sel_size; ++i) {
                 uint16_t data_idx = sel[i];
                 sel[new_size] = data_idx;
-                new_size += !(_slices.contains(binary_column->get_slice(data_idx)));
+                new_size += !(_slices.contains(_get_slice(data_col, is_german, data_idx)));
             }
         } else {
             /* must use uint8_t* to make vectorized effect */
@@ -264,7 +269,7 @@ public:
             for (uint16_t i = 0; i < sel_size; ++i) {
                 uint16_t data_idx = sel[i];
                 sel[new_size] = data_idx;
-                new_size += !null_data[data_idx] && !(_slices.contains(binary_column->get_slice(data_idx)));
+                new_size += !null_data[data_idx] && !(_slices.contains(_get_slice(data_col, is_german, data_idx)));
             }
         }
         return new_size;
@@ -380,6 +385,9 @@ ColumnPredicate* new_column_not_in_predicate(const TypeInfoPtr& type_info, Colum
         return new BinaryColumnNotInPredicate<TYPE_CHAR>(type_info, id, strs);
     case TYPE_VARCHAR:
         return new BinaryColumnNotInPredicate<TYPE_VARCHAR>(type_info, id, strs);
+    case TYPE_STRING_V2:
+        // STRING_V2 reuses VARCHAR's BinaryColumnNotInPredicate; evaluation handles GermanStringColumn
+        return new BinaryColumnNotInPredicate<TYPE_VARCHAR>(type_info, id, strs);
     case TYPE_DATE_V1:
         return new ColumnNotInPredicate<TYPE_DATE_V1>(type_info, id, strs);
     case TYPE_DATE:
@@ -413,7 +421,6 @@ ColumnPredicate* new_column_not_in_predicate(const TypeInfoPtr& type_info, Colum
     case TYPE_BINARY:
     case TYPE_MAX_VALUE:
     case TYPE_VARBINARY:
-    case TYPE_STRING_V2:
     case TYPE_INT256:
         return nullptr;
         // No default to ensure newly added enumerator will be handled.

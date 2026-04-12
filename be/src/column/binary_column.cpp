@@ -21,6 +21,7 @@
 #include "base/container/raw_container.h"
 #include "base/hash/hash_util.hpp"
 #include "column/bytes.h"
+#include "column/german_string_column.h"
 #include "column/mysql_row_buffer.h"
 #include "column/vectorized_fwd.h"
 #include "common/config_local_io_fwd.h"
@@ -117,6 +118,16 @@ void BinaryColumnBase<T>::append(const Column& src, size_t offset, size_t count)
         }
     }
 
+    // GermanStringColumn -> BinaryColumn conversion (e.g., storage write path).
+    if (src.is_german_string()) {
+        const auto& gs_col = down_cast<const GermanStringColumn&>(src);
+        for (size_t i = 0; i < count; ++i) {
+            Slice s = gs_col.get_slice(offset + i);
+            append(s);
+        }
+        return;
+    }
+
     bool dst_is_large = std::is_same_v<T, uint64_t>;
     bool src_is_large_binary = src.is_large_binary();
     CHECK(false) << "BinaryColumnBase::append: incompatible column type"
@@ -128,6 +139,17 @@ void BinaryColumnBase<T>::append_selective(const Column& src, const uint32_t* in
                                            const uint32_t size) {
     if (src.is_binary_view()) {
         src.append_selective_to(*this, indexes, from, size);
+        return;
+    }
+
+    if (src.is_german_string()) {
+        // GermanStringColumn -> BinaryColumn conversion (e.g., storage write path).
+        const auto& gs_col = down_cast<const GermanStringColumn&>(src);
+        indexes += from;
+        for (uint32_t i = 0; i < size; ++i) {
+            Slice s = gs_col.get_slice(indexes[i]);
+            append(s);
+        }
         return;
     }
 

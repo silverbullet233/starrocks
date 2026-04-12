@@ -1111,6 +1111,8 @@ public:
 
     Status do_visit(GermanStringColumn* column) {
         // Deserialize from BinaryColumn wire format, then append strings.
+        // Clear the column first since it may have been pre-allocated with default rows.
+        column->reset_column();
         auto binary = BinaryColumn::create();
         ASSIGN_OR_RETURN(_cur, BinaryColumnSerde::deserialize(_cur, _end, binary.get(), _encode_level));
         for (size_t i = 0; i < binary->size(); i++) {

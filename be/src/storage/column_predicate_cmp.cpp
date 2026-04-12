@@ -18,6 +18,7 @@
 
 #include "base/string/string_parser.hpp"
 #include "column/column.h" // Column
+#include "column/german_string_column.h"
 #include "common/object_pool.h"
 #include "olap_type_infra.h"
 #include "storage/column_predicate.h"
@@ -172,6 +173,10 @@ static ColumnPredicate* new_column_predicate(const TypeInfoPtr& type_info, Colum
         return new BinaryPredicate<TYPE_CHAR>(type_info, id, operand);
     case TYPE_VARCHAR:
         return new BinaryPredicate<TYPE_VARCHAR>(type_info, id, operand);
+    case TYPE_STRING_V2:
+        // STRING_V2 uses the same BinaryPredicate as VARCHAR (Slice-based comparison).
+        // At evaluation time, BinaryColumnPredicateCmpBase handles GermanStringColumn transparently.
+        return new BinaryPredicate<TYPE_VARCHAR>(type_info, id, operand);
     case TYPE_STRUCT:
     case TYPE_ARRAY:
     case TYPE_MAP:
@@ -187,7 +192,6 @@ static ColumnPredicate* new_column_predicate(const TypeInfoPtr& type_info, Colum
     case TYPE_TIME:
     case TYPE_BINARY:
     case TYPE_VARBINARY:
-    case TYPE_STRING_V2:
     case TYPE_MAX_VALUE:
         return nullptr;
         // No default to ensure newly added enumerator will be handled.
@@ -602,20 +606,58 @@ public:
 
     ~BinaryColumnPredicateCmpBase() override = default;
 
+    // Helper: extract the data column (unwrapping NullableColumn if needed)
+    static const Column* _extract_data_column(const Column* column) {
+        if (column->is_nullable()) {
+            return down_cast<const NullableColumn*>(column)->data_column().get();
+        }
+        return column;
+    }
+
+    // Helper: get a Slice at index from either BinaryColumn or GermanStringColumn
+    static Slice _get_slice(const Column* data_col, bool is_german, size_t idx) {
+        if (is_german) {
+            return down_cast<const GermanStringColumn*>(data_col)->get_slice(idx);
+        }
+        return down_cast<const BinaryColumn*>(data_col)->get_slice(idx);
+    }
+
     template <typename Op>
     inline void t_evaluate(const Column* column, uint8_t* selection, uint16_t from, uint16_t to) const {
-        auto* v = reinterpret_cast<const ValueType*>(column->raw_data());
-        auto* sel = selection;
-        auto eval = Eval();
-        if (!column->has_null()) {
-            for (size_t i = from; i < to; i++) {
-                sel[i] = Op::apply(sel[i], (uint8_t)(eval(v[i], _value)));
+        const Column* data_col = _extract_data_column(column);
+        const bool is_german = data_col->is_german_string();
+
+        // For BinaryColumn with contiguous Slice layout, use the fast raw_data path
+        if (!is_german) {
+            auto* v = reinterpret_cast<const ValueType*>(column->raw_data());
+            auto* sel = selection;
+            auto eval = Eval();
+            if (!column->has_null()) {
+                for (size_t i = from; i < to; i++) {
+                    sel[i] = Op::apply(sel[i], (uint8_t)(eval(v[i], _value)));
+                }
+            } else {
+                const uint8_t* is_null =
+                        down_cast<const NullableColumn*>(column)->immutable_null_column_data().data();
+                for (size_t i = from; i < to; i++) {
+                    sel[i] = Op::apply(sel[i], (uint8_t)((!is_null[i]) && eval(v[i], _value)));
+                }
             }
         } else {
-            /* must use const uint8_t* to make vectorized effect, vector<uint8_t> not work */
-            const uint8_t* is_null = down_cast<const NullableColumn*>(column)->immutable_null_column_data().data();
-            for (size_t i = from; i < to; i++) {
-                sel[i] = Op::apply(sel[i], (uint8_t)((!is_null[i]) && eval(v[i], _value)));
+            // GermanStringColumn: use get_slice() per element
+            auto* sel = selection;
+            auto eval = Eval();
+            if (!column->has_null()) {
+                for (size_t i = from; i < to; i++) {
+                    sel[i] = Op::apply(sel[i], (uint8_t)(eval(_get_slice(data_col, true, i), _value)));
+                }
+            } else {
+                const uint8_t* is_null =
+                        down_cast<const NullableColumn*>(column)->immutable_null_column_data().data();
+                for (size_t i = from; i < to; i++) {
+                    sel[i] = Op::apply(sel[i],
+                                       (uint8_t)((!is_null[i]) && eval(_get_slice(data_col, true, i), _value)));
+                }
             }
         }
     }
@@ -636,15 +678,8 @@ public:
     }
 
     StatusOr<uint16_t> evaluate_branchless(const Column* column, uint16_t* sel, uint16_t sel_size) const override {
-        // Get BinaryColumn
-        const BinaryColumn* binary_column;
-        if (column->is_nullable()) {
-            // This is NullableColumn, get its data_column
-            binary_column =
-                    down_cast<const BinaryColumn*>(down_cast<const NullableColumn*>(column)->data_column().get());
-        } else {
-            binary_column = down_cast<const BinaryColumn*>(column);
-        }
+        const Column* data_col = _extract_data_column(column);
+        const bool is_german = data_col->is_german_string();
 
         uint16_t new_size = 0;
         auto eval = Eval();
@@ -652,15 +687,14 @@ public:
             for (uint16_t i = 0; i < sel_size; ++i) {
                 uint16_t data_idx = sel[i];
                 sel[new_size] = data_idx;
-                new_size += eval(binary_column->get_slice(data_idx), _value);
+                new_size += eval(_get_slice(data_col, is_german, data_idx), _value);
             }
         } else {
-            /* must use uint8_t* to make vectorized effect */
             const uint8_t* is_null = down_cast<const NullableColumn*>(column)->immutable_null_column_data().data();
             for (uint16_t i = 0; i < sel_size; ++i) {
                 uint16_t data_idx = sel[i];
                 sel[new_size] = data_idx;
-                new_size += !is_null[data_idx] && eval(binary_column->get_slice(data_idx), _value);
+                new_size += !is_null[data_idx] && eval(_get_slice(data_col, is_german, data_idx), _value);
             }
         }
         return new_size;
@@ -987,20 +1021,38 @@ public:
     // Optimized evaluate_branchless for empty string comparison
     StatusOr<uint16_t> evaluate_branchless(const Column* column, uint16_t* sel, uint16_t sel_size) const override {
         if (!_is_empty_string) {
-            // For non-empty string, use base class implementation
+            // For non-empty string, use base class implementation (handles GermanStringColumn)
             return Base::evaluate_branchless(column, sel, sel_size);
         }
 
         // Fast path for col != ''
         // Only need to check if length > 0, no need to compare actual data
-        const BinaryColumn* binary_column;
-        if (column->is_nullable()) {
-            binary_column =
-                    down_cast<const BinaryColumn*>(down_cast<const NullableColumn*>(column)->data_column().get());
-        } else {
-            binary_column = down_cast<const BinaryColumn*>(column);
+        const Column* data_col = Base::_extract_data_column(column);
+
+        // For GermanStringColumn, check GermanString::len directly
+        if (data_col->is_german_string()) {
+            const auto* german_col = down_cast<const GermanStringColumn*>(data_col);
+            uint16_t new_size = 0;
+            if (!column->has_null()) {
+                for (uint16_t i = 0; i < sel_size; ++i) {
+                    uint16_t data_idx = sel[i];
+                    sel[new_size] = data_idx;
+                    new_size += (german_col->get_german_string(data_idx).len != 0);
+                }
+            } else {
+                const uint8_t* is_null =
+                        down_cast<const NullableColumn*>(column)->immutable_null_column_data().data();
+                for (uint16_t i = 0; i < sel_size; ++i) {
+                    uint16_t data_idx = sel[i];
+                    sel[new_size] = data_idx;
+                    new_size += (!is_null[data_idx]) & (german_col->get_german_string(data_idx).len != 0);
+                }
+            }
+            return new_size;
         }
 
+        // BinaryColumn fast path
+        const BinaryColumn* binary_column = down_cast<const BinaryColumn*>(data_col);
         const auto& offsets = binary_column->get_offset();
         const uint32_t* offset_data = offsets.data();
         uint16_t new_size = 0;

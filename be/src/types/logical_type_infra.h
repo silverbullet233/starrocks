@@ -205,6 +205,9 @@ auto type_dispatch_basic_and_complex_types(LogicalType ltype, Functor fun, const
 
 template <class Functor, class... Args>
 auto type_dispatch_all(LogicalType ltype, Functor fun, Args... args) {
+    // STRING_V2 uses VARCHAR for aggregate/expression dispatch since both use
+    // Slice-based BinaryColumn in the expression layer after implicit cast.
+    if (ltype == TYPE_STRING_V2) ltype = TYPE_VARCHAR;
     switch (ltype) {
         APPLY_FOR_ALL_SCALAR_TYPE_WITH_NULL(_TYPE_DISPATCH_CASE)
         _TYPE_DISPATCH_CASE(TYPE_ARRAY)
@@ -222,6 +225,7 @@ auto type_dispatch_all(LogicalType ltype, Functor fun, Args... args) {
 // Types could build into columns
 template <class Functor, class... Args>
 auto type_dispatch_column(LogicalType ltype, Functor fun, const Args&... args) {
+    if (ltype == TYPE_STRING_V2) ltype = TYPE_VARCHAR;
     switch (ltype) {
         APPLY_FOR_ALL_SCALAR_TYPE_WITH_NULL(_TYPE_DISPATCH_CASE)
         _TYPE_DISPATCH_CASE(TYPE_HLL)
@@ -236,6 +240,7 @@ auto type_dispatch_column(LogicalType ltype, Functor fun, const Args&... args) {
 // Types which are sortable
 template <class Functor, class... Args>
 auto type_dispatch_sortable(LogicalType ltype, Functor fun, Args... args) {
+    if (ltype == TYPE_STRING_V2) ltype = TYPE_VARCHAR;
     switch (ltype) {
         APPLY_FOR_ALL_SCALAR_TYPE(_TYPE_DISPATCH_CASE)
     default:
@@ -246,6 +251,9 @@ auto type_dispatch_sortable(LogicalType ltype, Functor fun, Args... args) {
 
 template <class Ret, class Functor, class... Args>
 Ret type_dispatch_predicate(LogicalType ltype, bool assert, Functor fun, const Args&... args) {
+    // STRING_V2 uses VARCHAR for predicate dispatch since both use Slice-based BinaryColumn
+    // in the expression layer after implicit cast.
+    if (ltype == TYPE_STRING_V2) ltype = TYPE_VARCHAR;
     switch (ltype) {
         APPLY_FOR_ALL_SCALAR_TYPE(_TYPE_DISPATCH_CASE)
     default:

@@ -180,6 +180,11 @@ struct StorageColumnTraits<TYPE_VARBINARY> {
     using ColumnType = BinaryColumn;
 };
 
+template <>
+struct StorageColumnTraits<TYPE_STRING_V2> {
+    using ColumnType = BinaryColumn;
+};
+
 template <LogicalType Type>
 using StorageColumnType = typename StorageColumnTraits<Type>::ColumnType;
 

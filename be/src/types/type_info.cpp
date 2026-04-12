@@ -300,6 +300,8 @@ ScalarTypeInfoResolver::ScalarTypeInfoResolver() {
 ScalarTypeInfoResolver::~ScalarTypeInfoResolver() = default;
 
 TypeInfoPtr get_type_info(LogicalType field_type) {
+    // STRING_V2 uses the same storage layout as VARCHAR.
+    if (field_type == TYPE_STRING_V2) field_type = TYPE_VARCHAR;
     return ScalarTypeInfoResolver::instance()->get_type_info(field_type);
 }
 

@@ -112,6 +112,7 @@ public class Util {
         TYPE_STRING_MAP.put(PrimitiveType.PERCENTILE, "percentile");
         TYPE_STRING_MAP.put(PrimitiveType.JSON, "json");
         TYPE_STRING_MAP.put(PrimitiveType.VARBINARY, "varbinary(%d)");
+        TYPE_STRING_MAP.put(PrimitiveType.STRING_V2, "string_v2(%d)");
         TYPE_STRING_MAP.put(PrimitiveType.VARIANT, "variant");
     }
 
@@ -259,6 +260,7 @@ public class Util {
             switch (primitiveType) {
                 case CHAR:
                 case VARCHAR:
+                case STRING_V2:
                     return String.format(
                             TYPE_STRING_MAP.get(primitiveType), ((ScalarType) type).getLength());
                 case DECIMALV2:
