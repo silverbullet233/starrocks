@@ -74,6 +74,7 @@ import com.starrocks.type.StructType;
 import com.starrocks.type.Type;
 import com.starrocks.type.UnknownType;
 import com.starrocks.type.VarbinaryType;
+import com.starrocks.type.StringV2Type;
 import com.starrocks.type.VarcharType;
 import com.starrocks.type.VariantType;
 
@@ -648,7 +649,7 @@ public class FunctionSet {
             .addAll(DecimalType.DECIMAL_TYPES)
             .build();
 
-    public static final ImmutableList<ScalarType> STRING_TYPES = ImmutableList.of(CharType.CHAR, VarcharType.VARCHAR);
+    public static final ImmutableList<ScalarType> STRING_TYPES = ImmutableList.of(CharType.CHAR, VarcharType.VARCHAR, StringV2Type.STRING_V2);
 
     public static final ImmutableList<Type> SUPPORTED_TYPES = ImmutableList.<Type>builder()
             .add(NullType.NULL)
@@ -656,6 +657,7 @@ public class FunctionSet {
             .addAll(FloatType.FLOAT_TYPES)
             .addAll(DecimalType.DECIMAL_TYPES)
             .add(VarcharType.VARCHAR)
+            .add(StringV2Type.STRING_V2)
             .add(HLLType.HLL)
             .add(BitmapType.BITMAP)
             .add(PercentileType.PERCENTILE)
