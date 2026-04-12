@@ -182,6 +182,7 @@ auto type_dispatch_aggregate(LogicalType ltype, Functor fun, Args... args) {
 // type_dispatch_*:
 template <class Functor, class... Args>
 auto type_dispatch_basic(LogicalType ltype, Functor fun, Args... args) {
+    if (ltype == TYPE_STRING_V2) ltype = TYPE_VARCHAR;
     switch (ltype) {
         APPLY_FOR_ALL_SCALAR_TYPE_WITH_NULL(_TYPE_DISPATCH_CASE)
     default:
@@ -192,6 +193,7 @@ auto type_dispatch_basic(LogicalType ltype, Functor fun, Args... args) {
 
 template <class Functor, class... Args>
 auto type_dispatch_basic_and_complex_types(LogicalType ltype, Functor fun, const Args&... args) {
+    if (ltype == TYPE_STRING_V2) ltype = TYPE_VARCHAR;
     switch (ltype) {
         APPLY_FOR_ALL_SCALAR_TYPE_WITH_NULL(_TYPE_DISPATCH_CASE)
         _TYPE_DISPATCH_CASE(TYPE_ARRAY)
@@ -312,6 +314,7 @@ auto scalar_type_dispatch(LogicalType ltype, Functor fun, Args... args) {
 
 template <class Functor, class Ret, class... Args>
 auto type_dispatch_filter(LogicalType ltype, Ret default_value, Functor fun, const Args&... args) {
+    if (ltype == TYPE_STRING_V2) ltype = TYPE_VARCHAR;
     switch (ltype) {
         APPLY_FOR_ALL_SCALAR_TYPE(_TYPE_DISPATCH_CASE)
     default:

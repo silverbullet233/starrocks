@@ -197,7 +197,8 @@ JoinKeyConstructorUnaryType JoinHashMapSelector::_determine_key_constructor(Runt
         const LogicalType join_type = table_items->join_keys[i].type->type;
 
         size_t cur_key_bytes = _get_size_of_fixed_and_contiguous_type(join_type);
-        if (cur_key_bytes <= 0 && (join_type == TYPE_CHAR || join_type == TYPE_VARCHAR)) {
+        if (cur_key_bytes <= 0 &&
+            (join_type == TYPE_CHAR || join_type == TYPE_VARCHAR || join_type == TYPE_STRING_V2)) {
             cur_key_bytes = _get_binary_column_max_size(state, table_items->key_columns[i]);
         }
 

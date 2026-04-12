@@ -465,11 +465,10 @@ MutableColumnPtr ColumnHelper::create_column(const TypeDescriptor& type_desc, bo
             columns.emplace_back(std::move(field_column));
         }
         p = StructColumn::create(std::move(columns), type_desc.field_names);
-    } else if (type_desc.type == LogicalType::TYPE_STRING_V2) {
-        // STRING_V2 is excluded from APPLY_FOR_ALL_SCALAR_TYPE (GermanString != Slice),
-        // so type_dispatch_column cannot handle it.  Create GermanStringColumn directly.
-        p = GermanStringColumn::create(size);
     } else {
+        // STRING_V2 falls through to type_dispatch_column which maps it to VARCHAR
+        // (BinaryColumn), matching the storage layer's BinaryColumn output.
+        // GermanStringColumn will be used once the storage layer natively produces it.
         p = type_dispatch_column(type_desc.type, ColumnBuilder(), type_desc, size);
     }
 
