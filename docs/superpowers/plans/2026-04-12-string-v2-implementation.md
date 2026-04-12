@@ -1072,11 +1072,11 @@
 
 **Steps:**
 
-- [ ] **Step 1:** In BE cast expression factory, add STRING_V2 <-> VARCHAR cast:
+- [x] **Step 1:** In BE cast expression factory, add STRING_V2 <-> VARCHAR cast:
   - STRING_V2 → VARCHAR: extract Slice from GermanString, produce BinaryColumn
   - VARCHAR → STRING_V2: extract Slice from BinaryColumn, produce GermanStringColumn
 
-- [ ] **Step 2:** Ensure FE IMPLICIT_CAST_MAP (from Task 1.5) already covers this.
+- [x] **Step 2:** Ensure FE IMPLICIT_CAST_MAP (from Task 1.5) already covers this.
 
 **Acceptance Criteria:**
 - `SELECT sv2_col FROM t WHERE sv2_col = varchar_literal` works via implicit cast
