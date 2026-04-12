@@ -849,81 +849,101 @@ After implementation is complete, compare sorting and comparison performance:
 
 ### Phase 1: Type Pipeline (Foundation)
 
-**Goal:** TYPE_STRING_V2 recognized end-to-end, compiles successfully, no runtime support yet.
+**Goal:** TYPE_STRING_V2 端到端识别，编译通过，无运行时支持。
 
-1. Thrift: add STRING_V2 to TPrimitiveType
-2. BE: LogicalType enum, type predicates, dispatch macros, guards, conversion functions
-3. FE: PrimitiveType enum, ScalarType, TypeFactory, implicit cast rules
-4. FE: DDL validation — allow in Duplicate Key tables
-5. BE: RunTimeTypeTraits specialization (stub GermanStringColumn forward declaration)
-6. Build and verify compilation
+1. Thrift: 添加 STRING_V2 到 TPrimitiveType
+2. BE LogicalType: 枚举值、类型谓词（is_string_type 等）、dispatch 宏（APPLY_FOR_ALL_STRING_TYPE 等）、guards（StringLTGuard）、转换函数
+3. BE Datum: 在 std::variant 中添加 GermanString 类型，添加 get_german_string() / set_german_string() 访问方法
+4. BE RunTimeTypeTraits: TYPE_STRING_V2 特化（CppType=GermanString, ColumnType=GermanStringColumn, LargeColumnType=GermanStringColumn）
+5. FE PrimitiveType: 枚举值，更新 STRING_TYPE_LIST、isStringType()、isCharFamily()、IMPLICIT_CAST_MAP
+6. FE ScalarType / TypeFactory: STRING_V2 的 toSql()、matchesType()、工厂方法
+7. FE DDL: 允许 Duplicate Key Table 使用 STRING_V2，拒绝 PK/UK/AGG 表
+8. stub GermanStringColumn 前向声明，确保编译通过
 
 ### Phase 2: GermanStringColumn Core
 
-**Goal:** GermanStringColumn fully functional as a Column.
+**Goal:** GermanStringColumn 完整实现，可作为独立 Column 使用。
 
-1. Implement PageArena
-2. Implement GermanStringColumn with all Column virtual methods
-3. Implement GermanStringImmContainer
-4. Add column visitor integration
-5. Add to vectorized_fwd.h
-6. Unit tests: creation, append, access, clone, filter, serialize/deserialize
+1. GermanStringColumn 类实现：使用 MemPool 作为 arena（指针稳定，已集成内存追踪）
+2. 实现所有 Column 虚方法：append_strings()、append_continuous_strings()、serialize/deserialize、filter_range()、compare_at()、clone() 等
+3. filter_range() 实现 lazy compaction 语义：只更新 _german_strings，不调整 _arena
+4. 实现 compact() 方法：重建 column，只拷贝存活数据到新 MemPool
+5. 实现 to_binary_column() 转换方法（写入路径使用）
+6. 实现 GermanStringImmContainer（函数模板框架使用）
+7. Column visitor 集成：column_visitor.h / column_visitor_mutable.h / column_visitor_adapter.h
+8. vectorized_fwd.h 前向声明
+9. 单元测试：创建、追加、访问、clone、filter、serialize/deserialize、arena 稳定性、compact
 
-### Phase 3: Storage Integration
+### Phase 3: Storage & Network Integration
 
-**Goal:** Write and read STRING_V2 data to/from disk.
+**Goal:** STRING_V2 数据可读写磁盘，可跨节点传输。
 
-1. ColumnHelper::create_column() wiring (automatic via type dispatch)
-2. Storage schema recognition of TYPE_STRING_V2
-3. Read path: ScalarColumnIterator dictionary encoding support for TYPE_STRING_V2
-4. Write path: GermanStringColumn → BinaryColumn conversion at writer boundary
-5. Network serde: serialize/deserialize visitor for GermanStringColumn
-6. Storage round-trip tests
+1. ColumnHelper::create_column() 自动通过 type_dispatch_column() 解析到 GermanStringColumn::create()
+2. 存储 schema 识别 TYPE_STRING_V2 为字符串类型（encoding 选择等）
+3. 读取路径：ScalarColumnIterator 对 TYPE_STRING_V2 启用字典编码；page decoder 通过 Column 虚方法直接填充 GermanStringColumn
+4. 写入路径：column writer 入口检测 GermanStringColumn，调用 to_binary_column() 后复用现有管线
+5. 网络序列化（column_array_serde.cpp）：添加 GermanStringColumn 的 visitor 分支，wire format 与 BinaryColumn 相同（bytes + offsets）
+6. 存储 round-trip 测试：写入 → 读回 → 数据验证
+7. 网络 serde round-trip 测试
 
 ### Phase 4: FE DDL End-to-End
 
-**Goal:** CREATE TABLE with STRING_V2 and INSERT/SELECT work.
+**Goal:** CREATE TABLE + INSERT + SELECT 端到端跑通。
 
-1. SQL parser: STRING_V2 type keyword
-2. FE DDL analyzer: validation rules
-3. FE plan generation: correct type propagation
-4. End-to-end: CREATE TABLE → INSERT → SELECT
-5. SQL integration tests T1-T3
+1. SQL parser: STRING_V2 类型关键字解析
+2. FE DDL analyzer: 建表验证规则
+3. FE plan generation: 类型正确传播
+4. put_mysql_row_buffer()：结果输出到 MySQL 客户端
+5. End-to-end 验证：CREATE TABLE → INSERT → SELECT
+6. SQL 集成测试 T1-T3（基本 DDL、Insert/Select、长字符串）
 
-### Phase 5: Core Template Data Structures
+### Phase 5: Core Template Data Structures (GermanString 原生特化)
 
-**Goal:** AggHashVariant, JoinHashMap, ColumnPredicate 支持 STRING_V2.
+**Goal:** AggHashVariant、JoinHashMap、ColumnPredicate 使用 GermanString 原生特化。
 
-1. 实现 `get_string_column_slice<LT>()` 辅助函数
-2. AggHashVariant: 注册 TYPE_STRING_V2 → string 变体，适配列访问
-3. JoinHashMap: 注册 key constructor 和 method type，适配列访问
-4. ColumnPredicate: 注册 TYPE_STRING_V2，适配谓词评估
-5. storage_type_traits.h: 添加 TYPE_STRING_V2 映射
-6. SQL integration tests T7-T8 (aggregate + join)
+1. 实现 GermanStringHash（crc32_hash）和 GermanStringEqual（operator==）基础设施
+2. **AggHashVariant**: 
+   - 新增 GermanStringAggHashMap（GermanString key + GermanStringHash + GermanStringEqual）
+   - 注册 `ADD_VARIANT_PHASE1_TYPE(TYPE_STRING_V2, german_string)` 作为独立变体
+   - AggHashMapWithOneGermanStringKey：从 GermanStringColumn 直接提取 GermanString，短字符串零 MemPool 分配
+3. **JoinHashMap**:
+   - JoinKeyHash\<GermanString\> 特化
+   - REGISTER_KEY_CONSTRUCTOR for TYPE_STRING_V2
+   - join_key_constructor.hpp：从 GermanStringColumn 构建 Buffer\<GermanString\> key
+   - 16 字节固定长度 key 优势
+4. **ColumnPredicate**:
+   - APPLY_FOR_COLUMN_PREDICATE_TYPE 添加 TYPE_STRING_V2
+   - StorageTypeTraits\<TYPE_STRING_V2\>::CppType = GermanString
+   - 新增 GermanStringColumnPredicate 系列（EQ/NE/LT/LE/GT/GE/IN），直接 GermanString 比较
+   - IN 谓词：phmap::flat_hash_set\<GermanString\>，短字符串零分配
+5. column_hash visitor：GermanStringColumn 的 fnv_hash / crc32_hash 分支
+6. SQL 集成测试 T7-T8（aggregate + join）
 
 ### Phase 6: Core Functions
 
-**Goal:** Basic string functions work with STRING_V2.
+**Goal:** 基础字符串函数支持 STRING_V2。
 
-1. Comparison operators (P0): column compare_at, predicate evaluation
-2. Hash functions (P0): column_hash visitor
-3. put_mysql_row_buffer (P0): result output to client
-4. length(), concat(), substr() (P1)
-5. Register FE function signatures
-6. SQL integration tests T4-T6
+1. FE FunctionSet：STRING_TYPES 添加 STRING_V2，自动注册函数签名
+2. BE string_v2_functions.h/.cpp：独立的 STRING_V2 函数实现，直接操作 GermanStringColumn
+3. length()（P0）：从 GermanString.len 直接读取
+4. concat()（P1）：构造新 GermanString，结果可能 inline 或写入 arena
+5. substr() / substring()（P1）：从 GermanString 数据中截取
+6. upper() / lower()（P1）
+7. SQL 集成测试 T4-T6（函数、NULL、隐式 cast）
 
 ### Phase 7: Optimizer Adaptation & Validation
 
-**Goal:** Full test suite passes, optimizer treats STRING_V2 like STRING, edge cases handled.
+**Goal:** 优化器对 STRING_V2 和 STRING 行为一致，全量测试通过。
 
-1. FE optimizer: update hardcoded VARCHAR/CHAR checks (ConstantOperator, PruneSubfieldRule)
-2. FE optimizer: verify isStringType() / isCharFamily() propagation for all 48+ rule locations
-3. NULL handling in NullableColumn wrapper
-4. Implicit cast implementation (STRING <-> STRING_V2)
-5. Error handling: reject STRING_V2 in PK/UK/AGG tables
-6. Optimizer UT: duplicate VARCHAR test cases for STRING_V2, verify consistent behavior
-7. All SQL integration tests pass
-8. Performance benchmark
+1. FE optimizer 硬编码修复：ConstantOperator（VARCHAR/CHAR 判断）、PruneSubfieldRule（VARCHAR→jsonString 映射）
+2. FE optimizer 验证：isStringType() / isCharFamily() 对 48+ 处优化规则自动生效
+3. 低基数字典编码验证：STRING_V2 列可被 DecodeUtil/DecodeContext 字典编码优化
+4. NULL handling：NullableColumn 包装 GermanStringColumn 的正确性
+5. 隐式 CAST 实现：STRING ↔ STRING_V2 双向转换
+6. 错误处理验证：PK/UK/AGG 表拒绝 STRING_V2 列
+7. Optimizer UT：复制 VARCHAR 测试用例替换为 STRING_V2，验证一致行为
+8. 全量 SQL 集成测试通过（T1-T9）
+9. 性能基准测试：STRING_V2 vs STRING 的 ORDER BY / GROUP BY / JOIN 对比
 
 ---
 
