@@ -873,20 +873,20 @@
 
 **Steps:**
 
-- [ ] **Step 1:** In `join_hash_map_helper.h`, add `JoinKeyHash<GermanString>` specialization.
+- [x] **Step 1:** In `join_hash_map_helper.h`, add `JoinKeyHash<GermanString>` specialization.
 
-- [ ] **Step 2:** In `join_type_traits.h`, register:
+- [x] **Step 2:** In `join_type_traits.h`, register:
   ```cpp
   REGISTER_KEY_CONSTRUCTOR(ONE_KEY, TYPE_STRING_V2, KeyConstructorForOneKey<TYPE_STRING_V2>, ONE_KEY_STRING_V2)
   REGISTER_KEY_CONSTRUCTOR(SERIALIZED, TYPE_STRING_V2, KeyConstructorForSerialized, SERIALIZED_STRING_V2)
   ```
   Add to APPLY macros for dispatch.
 
-- [ ] **Step 3:** In `join_key_constructor.hpp`, add GermanStringColumn branch:
+- [x] **Step 3:** In `join_key_constructor.hpp`, add GermanStringColumn branch:
   - In `build_slices()` equivalent, extract GermanString from GermanStringColumn instead of Slice from BinaryColumn
   - Use `if constexpr (std::is_same_v<RunTimeColumnType<LT>, GermanStringColumn>)` to dispatch
 
-- [ ] **Step 4:** In `join_hash_table.cpp`, add TYPE_STRING_V2 to `_determine_key_constructor()` — follow the same logic as TYPE_VARCHAR but note that GermanString is already 16 bytes fixed.
+- [x] **Step 4:** In `join_hash_table.cpp`, add TYPE_STRING_V2 to `_determine_key_constructor()` — follow the same logic as TYPE_VARCHAR but note that GermanString is already 16 bytes fixed.
 
 **Acceptance Criteria:**
 - `SELECT ... FROM a JOIN b ON a.sv2_col = b.sv2_col` works correctly
