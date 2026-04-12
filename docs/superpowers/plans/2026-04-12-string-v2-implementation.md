@@ -637,9 +637,9 @@
 
 **Steps:**
 
-- [ ] **Step 1:** Find the column writer's `append_data()` or equivalent method where column data is consumed. Add a check: if the input column is GermanStringColumn (check via `dynamic_cast` or a new `is_german_string_column()` virtual method), call `to_binary_column()` and proceed with the BinaryColumn.
+- [x] **Step 1:** Find the column writer's `append_data()` or equivalent method where column data is consumed. Add a check: if the input column is GermanStringColumn (check via `dynamic_cast` or a new `is_german_string_column()` virtual method), call `to_binary_column()` and proceed with the BinaryColumn.
 
-- [ ] **Step 2:** This should be a one-point conversion — all downstream encoding (dict, plain, LZ4) works on BinaryColumn unchanged.
+- [x] **Step 2:** This should be a one-point conversion — all downstream encoding (dict, plain, LZ4) works on BinaryColumn unchanged.
 
 **Acceptance Criteria:**
 - Writing a GermanStringColumn to disk produces the same byte format as writing a BinaryColumn with the same data
