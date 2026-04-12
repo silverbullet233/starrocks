@@ -20,6 +20,7 @@
 #include "column/binary_column.h"
 #include "column/column_view/column_view_helper.h"
 #include "column/column_visitor_adapter.h"
+#include "column/german_string_column.h"
 #include "column/map_column.h"
 #include "column/struct_column.h"
 #include "column/vectorized_fwd.h"
@@ -463,6 +464,10 @@ MutableColumnPtr ColumnHelper::create_column(const TypeDescriptor& type_desc, bo
             columns.emplace_back(std::move(field_column));
         }
         p = StructColumn::create(std::move(columns), type_desc.field_names);
+    } else if (type_desc.type == LogicalType::TYPE_STRING_V2) {
+        // STRING_V2 is excluded from APPLY_FOR_ALL_SCALAR_TYPE (GermanString != Slice),
+        // so type_dispatch_column cannot handle it.  Create GermanStringColumn directly.
+        p = GermanStringColumn::create(size);
     } else {
         p = type_dispatch_column(type_desc.type, ColumnBuilder(), type_desc, size);
     }

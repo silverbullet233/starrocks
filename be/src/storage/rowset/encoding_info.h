@@ -75,7 +75,7 @@ inline bool numeric_types_support_dict_encoding(LogicalType type) {
 }
 
 inline bool supports_dict_encoding(LogicalType type) {
-    if (type == TYPE_VARCHAR || type == TYPE_CHAR || type == TYPE_JSON) {
+    if (type == TYPE_VARCHAR || type == TYPE_CHAR || type == TYPE_JSON || type == TYPE_STRING_V2) {
         return true;
     }
     return numeric_types_support_dict_encoding(type);

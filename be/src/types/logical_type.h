@@ -102,6 +102,9 @@ template <>
 inline constexpr LogicalType DelegateType<TYPE_DECIMAL128> = TYPE_LARGEINT;
 template <>
 inline constexpr LogicalType DelegateType<TYPE_DECIMAL256> = TYPE_INT256;
+// STRING_V2 shares VARCHAR's on-disk binary encoding; only the in-memory Column type differs.
+template <>
+inline constexpr LogicalType DelegateType<TYPE_STRING_V2> = TYPE_VARCHAR;
 
 inline LogicalType delegate_type(LogicalType type) {
     switch (type) {
@@ -113,6 +116,8 @@ inline LogicalType delegate_type(LogicalType type) {
         return TYPE_LARGEINT;
     case TYPE_DECIMAL256:
         return TYPE_INT256;
+    case TYPE_STRING_V2:
+        return TYPE_VARCHAR;
     default:
         return type;
     }
