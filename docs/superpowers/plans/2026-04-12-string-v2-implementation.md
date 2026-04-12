@@ -989,7 +989,7 @@
 
 **Steps:**
 
-- [ ] **Step 1:** Implement `length()` for STRING_V2:
+- [x] **Step 1:** Implement `length()` for STRING_V2:
   ```cpp
   struct StringV2LengthImpl {
       template <typename T, typename ResultT>
@@ -999,13 +999,13 @@
   };
   ```
 
-- [ ] **Step 2:** Implement `concat()` for STRING_V2 — concatenate GermanStrings, produce result GermanStringColumn.
+- [x] **Step 2:** Implement `concat()` for STRING_V2 — concatenate GermanStrings, produce result GermanStringColumn.
 
-- [ ] **Step 3:** Implement `substr()` / `substring()` for STRING_V2.
+- [x] **Step 3:** Implement `substr()` / `substring()` for STRING_V2.
 
-- [ ] **Step 4:** Implement `upper()` / `lower()` for STRING_V2.
+- [x] **Step 4:** Implement `upper()` / `lower()` for STRING_V2.
 
-- [ ] **Step 5:** Register these implementations in the BE function dispatch (connect FE function signatures to BE implementations).
+- [x] **Step 5:** Register these implementations in the BE function dispatch (connect FE function signatures to BE implementations).
 
 **Acceptance Criteria:**
 - `SELECT length(val) FROM test_sv2` returns correct lengths
