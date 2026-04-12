@@ -19,9 +19,11 @@
 #include <string>
 #include <vector>
 
+#include "base/testutil/assert.h"
 #include "base/testutil/parallel_test.h"
 #include "column/binary_column.h"
 #include "column/vectorized_fwd.h"
+#include "serde/column_array_serde.h"
 
 namespace starrocks {
 
@@ -962,6 +964,181 @@ PARALLEL_TEST(GermanStringColumnTest, test_append_german_string_object) {
     // Data should be independent: modifying tmp should not affect gc
     tmp_gc->reset_column();
     ASSERT_EQ(kLong, gc->get_slice(1).to_string());
+}
+
+// ---- Serde round-trip tests (ColumnArraySerde) ----
+
+// Basic round-trip: mixed short/long/empty strings.
+PARALLEL_TEST(GermanStringColumnTest, test_serde_roundtrip_basic) {
+    auto col = GermanStringColumn::create();
+    auto* gc = down_cast<GermanStringColumn*>(col.get());
+
+    gc->append(Slice("short"));
+    gc->append(Slice(""));
+    gc->append(Slice("this is a long string exceeding 12 bytes"));
+    gc->append(Slice("x"));
+    gc->append(Slice(kShortMax));
+    gc->append(Slice(kLongExact13));
+
+    // Serialize
+    auto size = serde::ColumnArraySerde::max_serialized_size(*gc);
+    ASSERT_GT(size, 0);
+    std::vector<uint8_t> buffer(size);
+    const auto* end = buffer.data() + buffer.size();
+    ASSIGN_OR_ABORT(auto p1, serde::ColumnArraySerde::serialize(*gc, buffer.data()));
+    ASSERT_EQ(end, p1);
+
+    // Deserialize into new GermanStringColumn
+    auto col2 = GermanStringColumn::create();
+    ASSIGN_OR_ABORT(auto p2, serde::ColumnArraySerde::deserialize(buffer.data(), end, col2.get()));
+    ASSERT_EQ(end, p2);
+
+    // Verify
+    ASSERT_EQ(gc->size(), col2->size());
+    for (size_t i = 0; i < gc->size(); i++) {
+        ASSERT_EQ(gc->get_slice(i).to_string(), col2->get_slice(i).to_string()) << "mismatch at " << i;
+    }
+}
+
+// Wire format should be identical to BinaryColumn.
+PARALLEL_TEST(GermanStringColumnTest, test_serde_wire_format_compatible) {
+    auto gs_col = GermanStringColumn::create();
+    auto bin_col = BinaryColumn::create();
+
+    std::vector<Slice> strings = {Slice("abc"), Slice(""), Slice("long string here!!!"),
+                                  Slice(kShortMax), Slice(kLong)};
+    for (auto& s : strings) {
+        down_cast<GermanStringColumn*>(gs_col.get())->append(s);
+        bin_col->append(s);
+    }
+
+    // Max serialized size should be the same
+    auto gs_size = serde::ColumnArraySerde::max_serialized_size(*gs_col);
+    auto bin_size = serde::ColumnArraySerde::max_serialized_size(*bin_col);
+    ASSERT_EQ(gs_size, bin_size);
+
+    // Serialize both
+    std::vector<uint8_t> gs_buf(gs_size), bin_buf(bin_size);
+    ASSIGN_OR_ABORT(auto gs_end, serde::ColumnArraySerde::serialize(*gs_col, gs_buf.data()));
+    ASSIGN_OR_ABORT(auto bin_end, serde::ColumnArraySerde::serialize(*bin_col, bin_buf.data()));
+
+    // Both should consume the full buffer
+    ASSERT_EQ(gs_end, gs_buf.data() + gs_buf.size());
+    ASSERT_EQ(bin_end, bin_buf.data() + bin_buf.size());
+
+    // Wire format should be byte-identical
+    ASSERT_EQ(gs_buf, bin_buf);
+}
+
+// Cross-deserialization: BinaryColumn wire bytes into GermanStringColumn and vice versa.
+PARALLEL_TEST(GermanStringColumnTest, test_serde_cross_deserialize) {
+    std::vector<Slice> strings = {Slice("hi"), Slice(kLong), Slice(""), Slice(kShortMax)};
+
+    // Serialize from BinaryColumn
+    auto bin_col = BinaryColumn::create();
+    for (auto& s : strings) {
+        bin_col->append(s);
+    }
+    auto buf_size = serde::ColumnArraySerde::max_serialized_size(*bin_col);
+    std::vector<uint8_t> buffer(buf_size);
+    const auto* end = buffer.data() + buffer.size();
+    ASSIGN_OR_ABORT(auto p1, serde::ColumnArraySerde::serialize(*bin_col, buffer.data()));
+    ASSERT_EQ(end, p1);
+
+    // Deserialize into GermanStringColumn
+    auto gs_col = GermanStringColumn::create();
+    ASSIGN_OR_ABORT(auto p2, serde::ColumnArraySerde::deserialize(buffer.data(), end, gs_col.get()));
+    ASSERT_EQ(end, p2);
+
+    ASSERT_EQ(strings.size(), gs_col->size());
+    for (size_t i = 0; i < strings.size(); i++) {
+        ASSERT_EQ(strings[i].to_string(), gs_col->get_slice(i).to_string()) << "mismatch at " << i;
+    }
+}
+
+// Round-trip an empty column.
+PARALLEL_TEST(GermanStringColumnTest, test_serde_empty_column) {
+    auto col = GermanStringColumn::create();
+
+    auto size = serde::ColumnArraySerde::max_serialized_size(*col);
+    ASSERT_GT(size, 0);  // Even empty columns have some header overhead
+    std::vector<uint8_t> buffer(size);
+    const auto* end = buffer.data() + buffer.size();
+    ASSIGN_OR_ABORT(auto p1, serde::ColumnArraySerde::serialize(*col, buffer.data()));
+    ASSERT_EQ(end, p1);
+
+    auto col2 = GermanStringColumn::create();
+    ASSIGN_OR_ABORT(auto p2, serde::ColumnArraySerde::deserialize(buffer.data(), end, col2.get()));
+    ASSERT_EQ(end, p2);
+    ASSERT_EQ(0, col2->size());
+}
+
+// Round-trip with 10K+ rows of mixed strings.
+PARALLEL_TEST(GermanStringColumnTest, test_serde_large_column) {
+    const size_t N = 10000;
+    auto col = GermanStringColumn::create();
+    auto* gc = down_cast<GermanStringColumn*>(col.get());
+
+    std::vector<std::string> expected;
+    expected.reserve(N);
+    for (size_t i = 0; i < N; i++) {
+        std::string s;
+        if (i % 4 == 0) {
+            s = "";  // empty
+        } else if (i % 4 == 1) {
+            s = std::to_string(i);  // short
+        } else if (i % 4 == 2) {
+            s = "long_prefix_for_serde_test_" + std::to_string(i) + "_suffix_data";  // long
+        } else {
+            s = "123456789012";  // exactly 12 bytes (inline boundary)
+        }
+        expected.push_back(s);
+        gc->append(Slice(s));
+    }
+    ASSERT_EQ(N, gc->size());
+
+    // Serialize
+    auto size = serde::ColumnArraySerde::max_serialized_size(*gc);
+    std::vector<uint8_t> buffer(size);
+    const auto* end = buffer.data() + buffer.size();
+    ASSIGN_OR_ABORT(auto p1, serde::ColumnArraySerde::serialize(*gc, buffer.data()));
+    ASSERT_EQ(end, p1);
+
+    // Deserialize
+    auto col2 = GermanStringColumn::create();
+    ASSIGN_OR_ABORT(auto p2, serde::ColumnArraySerde::deserialize(buffer.data(), end, col2.get()));
+    ASSERT_EQ(end, p2);
+
+    ASSERT_EQ(N, col2->size());
+    for (size_t i = 0; i < N; i++) {
+        ASSERT_EQ(expected[i], col2->get_slice(i).to_string()) << "mismatch at " << i;
+    }
+}
+
+// Round-trip with encode levels (compression).
+PARALLEL_TEST(GermanStringColumnTest, test_serde_encode_levels) {
+    auto col = GermanStringColumn::create();
+    auto* gc = down_cast<GermanStringColumn*>(col.get());
+
+    gc->append(Slice("abc"));
+    gc->append(Slice(kLong));
+    gc->append(Slice(""));
+    gc->append(Slice(kLong2));
+
+    for (int level = -1; level < 8; ++level) {
+        auto size = serde::ColumnArraySerde::max_serialized_size(*gc, level);
+        std::vector<uint8_t> buffer(size);
+        const auto* end = buffer.data() + buffer.size();
+        ASSERT_OK(serde::ColumnArraySerde::serialize(*gc, buffer.data(), false, level));
+        auto col2 = GermanStringColumn::create();
+        ASSERT_OK(serde::ColumnArraySerde::deserialize(buffer.data(), end, col2.get(), false, level));
+
+        ASSERT_EQ(gc->size(), col2->size()) << "encode_level=" << level;
+        for (size_t i = 0; i < gc->size(); i++) {
+            ASSERT_EQ(gc->get_slice(i).to_string(), col2->get_slice(i).to_string())
+                    << "mismatch at " << i << " encode_level=" << level;
+        }
+    }
 }
 
 } // namespace starrocks

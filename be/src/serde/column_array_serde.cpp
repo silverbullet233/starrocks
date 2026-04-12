@@ -937,8 +937,10 @@ public:
     }
 
     Status do_visit(const GermanStringColumn& column) {
-        // TODO: will be implemented in Task 3.3
-        return Status::NotSupported("GermanStringColumn serde is not yet implemented");
+        // Same wire format as BinaryColumn: convert and measure.
+        auto binary = column.to_binary_column();
+        _size += BinaryColumnSerde::max_serialized_size(down_cast<const BinaryColumn&>(*binary), _encode_level);
+        return Status::OK();
     }
 
     Status do_visit(const AdaptiveNullableColumn& column) {
@@ -1016,8 +1018,10 @@ public:
     }
 
     Status do_visit(const GermanStringColumn& column) {
-        // TODO: will be implemented in Task 3.3
-        return Status::NotSupported("GermanStringColumn serde is not yet implemented");
+        // Same wire format as BinaryColumn: convert and serialize.
+        auto binary = column.to_binary_column();
+        _cur = BinaryColumnSerde::serialize(down_cast<const BinaryColumn&>(*binary), _cur, _encode_level);
+        return Status::OK();
     }
 
     Status do_visit(const AdaptiveNullableColumn& column) {
@@ -1106,8 +1110,13 @@ public:
     }
 
     Status do_visit(GermanStringColumn* column) {
-        // TODO: will be implemented in Task 3.3
-        return Status::NotSupported("GermanStringColumn serde is not yet implemented");
+        // Deserialize from BinaryColumn wire format, then append strings.
+        auto binary = BinaryColumn::create();
+        ASSIGN_OR_RETURN(_cur, BinaryColumnSerde::deserialize(_cur, _end, binary.get(), _encode_level));
+        for (size_t i = 0; i < binary->size(); i++) {
+            column->append(binary->get_slice(i));
+        }
+        return Status::OK();
     }
 
     Status do_visit(AdaptiveNullableColumn* column) {

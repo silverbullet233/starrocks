@@ -48,6 +48,7 @@ set(COLUMN_TEST_FILES
 )
 
 set(COLUMN_TEST_LINK_LIBS
+    Serde
     RuntimeCore
     ChunkCore
     ColumnCore
