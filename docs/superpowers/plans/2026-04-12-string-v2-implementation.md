@@ -296,7 +296,7 @@
 
 **Steps:**
 
-- [ ] **Step 1:** Create `be/src/column/german_string_column.h` with the class skeleton as defined in spec Section 2.1. Include:
+- [x] **Step 1:** Create `be/src/column/german_string_column.h` with the class skeleton as defined in spec Section 2.1. Include:
   - Class inheriting from `CowFactory<ColumnFactory<Column, GermanStringColumn>, GermanStringColumn>`
   - `Container _german_strings` (Buffer<GermanString>)
   - `MemPool _arena`
@@ -308,12 +308,14 @@
   - `clone_empty()`, `clone()`
   - `get_name()` returning `"german-string"`
 
-- [ ] **Step 2:** Create `be/src/column/german_string_column.cpp` implementing:
+- [x] **Step 2:** Create `be/src/column/german_string_column.cpp` implementing:
   - `append(const Slice& str)`: if str.size <= 12, construct inline GermanString; else allocate in `_arena`, construct long GermanString with ptr
   - `get_slice(idx)`: return `Slice(gs.get_data(), gs.len)`
   - Other basic methods
 
-- [ ] **Step 3:** Verify compilation: `./build.sh --be` (may need stub implementations for pure virtual methods returning Status::NotSupported initially)
+- [x] **Step 3:** Verify compilation: `./build.sh --be` (may need stub implementations for pure virtual methods returning Status::NotSupported initially)
+
+**Note:** TYPE_STRING_V2 was removed from APPLY_FOR_ALL_SCALAR_TYPE and APPLY_FOR_ALL_STRING_TYPE macros because GermanString is not Slice-compatible. Created _WITH_STRING_V2 macro variants for incremental integration. Also added visitor stubs, std::hash<GermanString>, and fixed multiple switch fallthrough cases across the codebase.
 
 **Acceptance Criteria:**
 - `GermanStringColumn::create()` produces an empty column with size() == 0
