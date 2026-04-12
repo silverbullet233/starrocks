@@ -57,6 +57,18 @@ public class TypeFactory {
     }
 
     /**
+     * Create a STRING_V2 type with specified length.
+     *
+     * @param len the length of the STRING_V2 type
+     * @return the created STRING_V2 type
+     */
+    public static ScalarType createStringV2Type(int len) {
+        ScalarType type = new ScalarType(PrimitiveType.STRING_V2);
+        type.setLength(len);
+        return type;
+    }
+
+    /**
      * Get the maximum varchar length for OLAP tables.
      *
      * @return the maximum varchar length
@@ -320,6 +332,7 @@ public class TypeFactory {
                     // String types
                     .add(CharType.CHAR)
                     .add(VarcharType.VARCHAR)
+                    .add(StringV2Type.STRING_V2)
                     .add(VarbinaryType.VARBINARY)
                     // Date types
                     .add(DateType.DATE)

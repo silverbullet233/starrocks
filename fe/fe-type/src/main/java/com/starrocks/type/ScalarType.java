@@ -105,6 +105,11 @@ public class ScalarType extends Type implements Cloneable {
                 return "VARCHAR";
             }
             return "VARCHAR(" + len + ")";
+        } else if (type == PrimitiveType.STRING_V2) {
+            if (len == -1) {
+                return "STRING_V2";
+            }
+            return "STRING_V2(" + len + ")";
         } else if (type == PrimitiveType.VARBINARY) {
             if (len == -1) {
                 return "VARBINARY";
@@ -130,6 +135,13 @@ public class ScalarType extends Type implements Cloneable {
                     stringBuilder.append("varchar");
                 } else {
                     stringBuilder.append("varchar").append("(").append(len).append(")");
+                }
+                break;
+            case STRING_V2:
+                if (len == -1) {
+                    stringBuilder.append("STRING_V2");
+                } else {
+                    stringBuilder.append("STRING_V2").append("(").append(len).append(")");
                 }
                 break;
             case VARBINARY:
@@ -276,7 +288,7 @@ public class ScalarType extends Type implements Cloneable {
 
     @Override
     public boolean isWildcardVarchar() {
-        return (type == PrimitiveType.VARCHAR || type == PrimitiveType.HLL) && len == -1;
+        return (type == PrimitiveType.VARCHAR || type == PrimitiveType.HLL || type == PrimitiveType.STRING_V2) && len == -1;
     }
 
     @Override
@@ -376,6 +388,8 @@ public class ScalarType extends Type implements Cloneable {
             case DECIMAL256:
             case DECIMALV2:
                 return "decimal";
+            case STRING_V2:
+                return "varchar";
             default:
                 return type.toString().toLowerCase();
         }
@@ -388,6 +402,12 @@ public class ScalarType extends Type implements Cloneable {
                 return "tinyint(1)";
             case LARGEINT:
                 return "bigint(20) unsigned";
+            case STRING_V2:
+                if (len == -1) {
+                    return "varchar";
+                } else {
+                    return "varchar(" + len + ")";
+                }
             default:
                 return toSql();
         }

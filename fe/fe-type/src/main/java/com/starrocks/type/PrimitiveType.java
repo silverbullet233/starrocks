@@ -75,6 +75,7 @@ public enum PrimitiveType {
 
     JSON("JSON", 16),
     VARIANT("VARIANT", 16),
+    STRING_V2("STRING_V2", 16),
 
     FUNCTION("FUNCTION", 8),
 
@@ -104,7 +105,7 @@ public enum PrimitiveType {
                     .build();
 
     public static final ImmutableList<PrimitiveType> STRING_TYPE_LIST =
-            ImmutableList.of(CHAR, VARCHAR);
+            ImmutableList.of(CHAR, VARCHAR, STRING_V2);
 
     public static final ImmutableList<PrimitiveType> JSON_COMPATIBLE_TYPE =
             new ImmutableList.Builder<PrimitiveType>()
@@ -172,6 +173,7 @@ public enum PrimitiveType {
         builder.putAll(DATETIME, BASIC_TYPE_LIST);
         builder.putAll(VARCHAR, BASIC_TYPE_LIST);
         builder.putAll(CHAR, BASIC_TYPE_LIST);
+        builder.putAll(STRING_V2, BASIC_TYPE_LIST);
 
         // Decimal
         for (PrimitiveType decimalType : Arrays.asList(DECIMALV2, DECIMAL32, DECIMAL64, DECIMAL128, DECIMAL256)) {
@@ -379,6 +381,7 @@ public enum PrimitiveType {
                 break;
             case CHAR:
             case VARCHAR:
+            case STRING_V2:
             case VARBINARY:
                 // use 16 as char type estimate size
                 typeSize = 16;
@@ -414,6 +417,7 @@ public enum PrimitiveType {
         switch (this) {
             case CHAR:
             case VARCHAR:
+            case STRING_V2:
             case VARBINARY:
             case HLL:
                 return true;
@@ -454,7 +458,7 @@ public enum PrimitiveType {
     }
 
     public boolean isStringType() {
-        return (this == VARCHAR || this == CHAR || this == HLL);
+        return (this == VARCHAR || this == CHAR || this == HLL || this == STRING_V2);
     }
 
     public boolean isJsonType() {
@@ -474,7 +478,7 @@ public enum PrimitiveType {
     }
 
     public boolean isCharFamily() {
-        return (this == VARCHAR || this == CHAR);
+        return (this == VARCHAR || this == CHAR || this == STRING_V2);
     }
 
     public boolean isIntegerType() {
@@ -489,6 +493,7 @@ public enum PrimitiveType {
             case DATETIME:
                 return DATETIME_INDEX_LEN;
             case VARCHAR:
+            case STRING_V2:
                 return VARCHAR_INDEX_LEN;
             case CHAR:
                 // char index size is length

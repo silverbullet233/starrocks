@@ -580,6 +580,7 @@ public abstract class Type implements Cloneable {
         switch (t.getPrimitiveType()) {
             case CHAR:
             case VARCHAR:
+            case STRING_V2:
             case HLL:
                 return t.getLength();
             default:
