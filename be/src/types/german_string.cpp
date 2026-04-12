@@ -26,10 +26,6 @@ GermanString::GermanString() {
     std::fill(p, p + sizeof(GermanString), 0);
 }
 
-GermanString::GermanString(const starrocks::GermanString& rhs) {
-    strings::memcpy_inlined(this, &rhs, sizeof(GermanString));
-}
-
 GermanString::GermanString(const char* str, size_t len, void* ptr) {
     if (len <= INLINE_MAX_LENGTH) {
         auto* p = reinterpret_cast<char*>(this);

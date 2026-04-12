@@ -20,6 +20,7 @@
 #include "column/binary_column.h"
 #include "types/german_string.h"
 #include "column/decimalv3_column.h"
+#include "column/german_string_column.h"
 #include "column/json_column.h"
 #include "column/nullable_column.h"
 #include "column/object_column.h"
@@ -501,8 +502,20 @@ template <LogicalType ltype>
 struct RunTimeTypeLimits<ltype, StringLTGuard<ltype>> {
     using value_type = RunTimeCppType<ltype>;
 
-    static constexpr value_type min_value() { return Slice(&_min, 0); }
-    static constexpr value_type max_value() { return Slice(&_max, 1); }
+    static value_type min_value() {
+        if constexpr (ltype == TYPE_STRING_V2) {
+            return GermanString(static_cast<const void*>(&_min), 0);
+        } else {
+            return Slice(&_min, 0);
+        }
+    }
+    static value_type max_value() {
+        if constexpr (ltype == TYPE_STRING_V2) {
+            return GermanString(static_cast<const void*>(&_max), 1);
+        } else {
+            return Slice(&_max, 1);
+        }
+    }
 
 private:
     static inline char _min = 0x00;

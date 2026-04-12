@@ -189,6 +189,7 @@ Status MySQLDataSource::open(RuntimeState* state) {
             case TYPE_VARIANT:
             case TYPE_FUNCTION:
             case TYPE_VARBINARY:
+            case TYPE_STRING_V2:
             case TYPE_UNSIGNED_TINYINT:
             case TYPE_UNSIGNED_SMALLINT:
             case TYPE_UNSIGNED_INT:

@@ -63,7 +63,13 @@ namespace starrocks {
     M(TYPE_JSON)                     \
     M(TYPE_VARBINARY)                \
     M(TYPE_VARIANT)                  \
-    M(TYPE_BOOLEAN)                  \
+    M(TYPE_BOOLEAN)
+
+// STRING_V2 is intentionally excluded from APPLY_FOR_ALL_SCALAR_TYPE because GermanString
+// (its CppType) is not Slice-compatible. It will be added to specific dispatch sites
+// incrementally as each subsystem gains GermanString support.
+#define APPLY_FOR_ALL_SCALAR_TYPE_WITH_STRING_V2(M) \
+    APPLY_FOR_ALL_SCALAR_TYPE(M)                     \
     M(TYPE_STRING_V2)
 
 #define APPLY_FOR_COMPLEX_TYPE(M) \
@@ -75,7 +81,11 @@ namespace starrocks {
     M(TYPE_VARCHAR)                  \
     M(TYPE_CHAR)                     \
     M(TYPE_BINARY)                   \
-    M(TYPE_VARBINARY)                \
+    M(TYPE_VARBINARY)
+
+// Includes STRING_V2 for dispatch sites that have been made GermanString-aware.
+#define APPLY_FOR_ALL_STRING_TYPE_WITH_STRING_V2(M) \
+    APPLY_FOR_ALL_STRING_TYPE(M)                     \
     M(TYPE_STRING_V2)
 
 #define APPLY_FOR_ALL_SCALAR_TYPE_WITH_NULL(M) \

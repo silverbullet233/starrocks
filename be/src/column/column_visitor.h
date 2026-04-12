@@ -85,6 +85,8 @@ public:
     virtual Status visit(const FixedLengthColumnBase<decimal12_t>& column);
     virtual Status visit(const ObjectColumn<JsonValue>& column);
     virtual Status visit(const ObjectColumn<VariantRowValue>& column);
+    virtual Status visit(const GermanStringColumn& column);
+
     virtual Status visit(const ArrayViewColumn& column) {
         return Status::NotSupported("ArrayViewColumn is not supported");
     }

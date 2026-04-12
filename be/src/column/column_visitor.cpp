@@ -74,5 +74,6 @@ VISIT_IMPL(FixedLengthColumnBase<int96_t>)
 VISIT_IMPL(FixedLengthColumnBase<decimal12_t>)
 VISIT_IMPL(ObjectColumn<JsonValue>)
 VISIT_IMPL(ObjectColumn<VariantRowValue>)
+VISIT_IMPL(GermanStringColumn)
 
 } // namespace starrocks

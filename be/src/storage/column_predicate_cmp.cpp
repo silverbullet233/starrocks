@@ -187,6 +187,7 @@ static ColumnPredicate* new_column_predicate(const TypeInfoPtr& type_info, Colum
     case TYPE_TIME:
     case TYPE_BINARY:
     case TYPE_VARBINARY:
+    case TYPE_STRING_V2:
     case TYPE_MAX_VALUE:
         return nullptr;
         // No default to ensure newly added enumerator will be handled.

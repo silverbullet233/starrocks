@@ -40,7 +40,8 @@ public:
     GermanString(const char* str, size_t len, void* ptr);
     GermanString(const void* str, size_t len);
     GermanString(const GermanString& rhs, void* ptr);
-    GermanString(const GermanString& rhs);
+    GermanString(const GermanString& rhs) = default;
+    GermanString& operator=(const GermanString& rhs) = default;
 
     explicit GermanString(const Slice& slice) : GermanString(slice.data, slice.size){};
     GermanString& operator=(const Slice& slice);
@@ -135,5 +136,12 @@ namespace std {
 static inline std::string to_string(const starrocks::GermanString& gs) {
     return static_cast<std::string>(gs);
 }
+
+template <>
+struct hash<starrocks::GermanString> {
+    size_t operator()(const starrocks::GermanString& gs) const {
+        return static_cast<size_t>(gs.fnv_hash(0));
+    }
+};
 
 } // namespace std
