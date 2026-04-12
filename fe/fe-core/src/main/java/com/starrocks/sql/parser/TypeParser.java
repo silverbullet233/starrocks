@@ -33,6 +33,7 @@ import com.starrocks.type.PercentileType;
 import com.starrocks.type.PrimitiveType;
 import com.starrocks.type.ScalarType;
 import com.starrocks.type.StringType;
+import com.starrocks.type.StringV2Type;
 import com.starrocks.type.StructField;
 import com.starrocks.type.StructType;
 import com.starrocks.type.Type;
@@ -71,6 +72,8 @@ public class TypeParser {
         }
         if (context.STRING() != null || context.TEXT() != null) {
             return TypeFactory.createVarcharType(StringType.DEFAULT_STRING_LENGTH);
+        } else if (context.STRING_V2() != null) {
+            return TypeFactory.createStringV2Type(StringType.DEFAULT_STRING_LENGTH);
         } else if (context.VARCHAR() != null) {
             return TypeFactory.createVarcharType(length);
         } else if (context.CHAR() != null) {
@@ -195,6 +198,7 @@ public class TypeParser {
 
             // String types
             case "STRING" -> StringType.DEFAULT_STRING;
+            case "STRING_V2" -> StringV2Type.STRING_V2;
             case "CHAR" -> CharType.CHAR;
             case "VARCHAR" -> VarcharType.VARCHAR;
 
