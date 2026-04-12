@@ -17,6 +17,7 @@ set(COLUMN_TEST_FILES
     column_base_test.cpp
     mysql_row_buffer_test.cpp
     german_string_test.cpp
+    german_string_column_test.cpp
     object_column_core_test.cpp
     column_visitor_test.cpp
     raw_data_visitor_test.cpp
@@ -47,6 +48,8 @@ set(COLUMN_TEST_FILES
 )
 
 set(COLUMN_TEST_LINK_LIBS
+    RuntimeCore
+    ChunkCore
     ColumnCore
     TypesCore
     Common
