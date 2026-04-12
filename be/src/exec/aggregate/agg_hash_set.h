@@ -21,6 +21,7 @@
 #include "base/phmap/phmap.h"
 #include "base/utility/defer_op.h"
 #include "column/column_hash.h"
+#include "column/german_string_column.h"
 #include "column/hash_set.h"
 #include "column/runtime_type_traits.h"
 #include "column/vectorized_fwd.h"
@@ -72,6 +73,9 @@ using TimeStampAggHashSet = phmap::flat_hash_set<TimestampValue, StdHashWithSeed
 template <PhmapSeed seed>
 using SliceAggHashSet =
         phmap::flat_hash_set<TSliceWithHash<seed>, THashOnSliceWithHash<seed>, TEqualOnSliceWithHash<seed>>;
+template <PhmapSeed seed>
+using GermanStringAggHashSet =
+        phmap::flat_hash_set<GermanString, GermanStringHashWithSeed<seed>, GermanStringEqual>;
 
 // ==================
 // one level fixed size slice hash set
@@ -505,6 +509,118 @@ struct AggHashSetOfOneNullableStringKey : public AggHashSet<HashSet, AggHashSetO
     bool has_null_key = false;
     ResultVector results;
     std::vector<KeyType> cache;
+};
+
+// ==============================================================
+// handle one GermanString hash key for hash set
+template <typename HashSet>
+struct AggHashSetOfOneGermanStringKey : public AggHashSet<HashSet, AggHashSetOfOneGermanStringKey<HashSet>> {
+    using Base = AggHashSet<HashSet, AggHashSetOfOneGermanStringKey<HashSet>>;
+    using Iterator = typename HashSet::iterator;
+    using KeyType = typename HashSet::key_type;
+    using ResultVector = Buffer<GermanString>;
+
+    template <class... Args>
+    AggHashSetOfOneGermanStringKey(Args&&... args) : Base(std::forward<Args>(args)...) {}
+
+    template <bool compute_and_allocate>
+    void build_set(size_t chunk_size, const Columns& key_columns, MemPool* pool, Filter* not_founds) {
+        if constexpr (!compute_and_allocate) {
+            DCHECK(not_founds);
+            not_founds->assign(chunk_size, 0);
+        }
+
+        const auto* column = down_cast<const GermanStringColumn*>(key_columns[0].get());
+        for (size_t i = 0; i < chunk_size; ++i) {
+            auto key = column->get_german_string(i);
+            if constexpr (compute_and_allocate) {
+                this->hash_set.lazy_emplace(key, [&](const auto& ctor) {
+                    ctor(_make_set_key(key, pool));
+                });
+            } else {
+                (*not_founds)[i] = !this->hash_set.contains(key);
+            }
+        }
+    }
+
+    void insert_keys_to_columns(ResultVector& keys, MutableColumns& key_columns, size_t chunk_size) {
+        auto* column = down_cast<GermanStringColumn*>(key_columns[0].get());
+        keys.resize(chunk_size);
+        for (size_t i = 0; i < chunk_size; i++) {
+            column->append(keys[i]);
+        }
+    }
+
+    static GermanString _make_set_key(const GermanString& gs, MemPool* pool) {
+        if (gs.is_inline()) {
+            return gs;
+        }
+        auto* ptr = pool->allocate(gs.len);
+        memcpy(ptr, gs.get_data(), gs.len);
+        return GermanString(static_cast<const void*>(ptr), gs.len);
+    }
+
+    static constexpr bool has_single_null_key = false;
+    bool has_null_key = false;
+    ResultVector results;
+};
+
+template <typename HashSet>
+struct AggHashSetOfOneNullableGermanStringKey
+        : public AggHashSet<HashSet, AggHashSetOfOneNullableGermanStringKey<HashSet>> {
+    using Base = AggHashSet<HashSet, AggHashSetOfOneNullableGermanStringKey<HashSet>>;
+    using Iterator = typename HashSet::iterator;
+    using KeyType = typename HashSet::key_type;
+    using ResultVector = Buffer<GermanString>;
+
+    template <class... Args>
+    AggHashSetOfOneNullableGermanStringKey(Args&&... args) : Base(std::forward<Args>(args)...) {}
+
+    template <bool compute_and_allocate>
+    void build_set(size_t chunk_size, const Columns& key_columns, MemPool* pool, Filter* not_founds) {
+        DCHECK(key_columns[0]->is_nullable());
+        if constexpr (!compute_and_allocate) {
+            DCHECK(not_founds);
+            not_founds->assign(chunk_size, 0);
+        }
+        if (key_columns[0]->only_null()) {
+            has_null_key = true;
+        } else {
+            const auto* nullable_column = down_cast<const NullableColumn*>(key_columns[0].get());
+            const auto* data_column = down_cast<const GermanStringColumn*>(nullable_column->data_column().get());
+            const auto& null_data = nullable_column->null_column_data();
+
+            for (size_t i = 0; i < chunk_size; ++i) {
+                if (nullable_column->has_null() && null_data[i]) {
+                    has_null_key = true;
+                } else {
+                    auto key = data_column->get_german_string(i);
+                    if constexpr (compute_and_allocate) {
+                        this->hash_set.lazy_emplace(key, [&](const auto& ctor) {
+                            ctor(AggHashSetOfOneGermanStringKey<HashSet>::_make_set_key(key, pool));
+                        });
+                    } else {
+                        (*not_founds)[i] = !this->hash_set.contains(key);
+                    }
+                }
+            }
+        }
+    }
+
+    void insert_keys_to_columns(ResultVector& keys, MutableColumns& key_columns, size_t chunk_size) {
+        DCHECK(key_columns[0]->is_nullable());
+        auto* nullable_column = down_cast<NullableColumn*>(key_columns[0].get());
+        auto* column = down_cast<GermanStringColumn*>(nullable_column->data_column_raw_ptr());
+        keys.resize(chunk_size);
+        for (size_t i = 0; i < chunk_size; i++) {
+            column->append(keys[i]);
+        }
+        nullable_column->null_column_data().resize(chunk_size);
+    }
+
+    static constexpr bool has_single_null_key = true;
+    bool has_null_key = false;
+    ResultVector results;
 };
 
 template <typename HashSet>

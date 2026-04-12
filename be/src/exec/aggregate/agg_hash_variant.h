@@ -94,6 +94,11 @@ template <PhmapSeed seed>
 using OneStringTwoLevelAggHashMap = AggHashMapWithOneStringKey<SliceAggTwoLevelHashMap<seed>>;
 template <PhmapSeed seed>
 using NullOneStringTwoLevelAggHashMap = AggHashMapWithOneNullableStringKey<SliceAggTwoLevelHashMap<seed>>;
+// For STRING_V2 type, we use GermanString as native hashmap key
+template <PhmapSeed seed>
+using OneGermanStringAggHashMap = AggHashMapWithOneGermanStringKey<GermanStringAggHashMap<seed>>;
+template <PhmapSeed seed>
+using NullOneGermanStringAggHashMap = AggHashMapWithOneNullableGermanStringKey<GermanStringAggHashMap<seed>>;
 template <PhmapSeed seed>
 using SerializedKeyAggHashMap = AggHashMapWithSerializedKey<SliceAggHashMap<seed>>;
 template <PhmapSeed seed>
@@ -185,6 +190,11 @@ template <PhmapSeed seed>
 using NullOneStringTwoLevelAggHashSet = AggHashSetOfOneNullableStringKey<SliceAggTwoLevelHashSet<seed>>;
 template <PhmapSeed seed>
 using OneStringTwoLevelAggHashSet = AggHashSetOfOneStringKey<SliceAggTwoLevelHashSet<seed>>;
+// For STRING_V2 type, we use GermanString as native hash key
+template <PhmapSeed seed>
+using OneGermanStringAggHashSet = AggHashSetOfOneGermanStringKey<GermanStringAggHashSet<seed>>;
+template <PhmapSeed seed>
+using NullOneGermanStringAggHashSet = AggHashSetOfOneNullableGermanStringKey<GermanStringAggHashSet<seed>>;
 template <PhmapSeed seed>
 using SerializedKeyAggHashSet = AggHashSetOfSerializedKey<SliceAggHashSet<seed>>;
 template <PhmapSeed seed>
@@ -304,6 +314,8 @@ using AggHashMapWithKeyPtr = std::variant<
         std::unique_ptr<CompressedFixedSize4AggHashMap<PhmapSeed1>>,
         std::unique_ptr<CompressedFixedSize8AggHashMap<PhmapSeed1>>,
         std::unique_ptr<CompressedFixedSize16AggHashMap<PhmapSeed1>>,
+        std::unique_ptr<OneGermanStringAggHashMap<PhmapSeed1>>,
+        std::unique_ptr<NullOneGermanStringAggHashMap<PhmapSeed1>>,
         std::unique_ptr<UInt8AggHashMapWithOneNumberKey<PhmapSeed2>>,
         std::unique_ptr<Int8AggHashMapWithOneNumberKey<PhmapSeed2>>,
         std::unique_ptr<Int16AggHashMapWithOneNumberKey<PhmapSeed2>>,
@@ -340,7 +352,9 @@ using AggHashMapWithKeyPtr = std::variant<
         std::unique_ptr<CompressedFixedSize1AggHashMap<PhmapSeed2>>,
         std::unique_ptr<CompressedFixedSize4AggHashMap<PhmapSeed2>>,
         std::unique_ptr<CompressedFixedSize8AggHashMap<PhmapSeed2>>,
-        std::unique_ptr<CompressedFixedSize16AggHashMap<PhmapSeed2>>>;
+        std::unique_ptr<CompressedFixedSize16AggHashMap<PhmapSeed2>>,
+        std::unique_ptr<OneGermanStringAggHashMap<PhmapSeed2>>,
+        std::unique_ptr<NullOneGermanStringAggHashMap<PhmapSeed2>>>;
 
 using AggHashSetWithKeyPtr = std::variant<
         std::unique_ptr<UInt8AggHashSetOfOneNumberKey<PhmapSeed1>>,
@@ -373,6 +387,8 @@ using AggHashSetWithKeyPtr = std::variant<
         std::unique_ptr<OneStringTwoLevelAggHashSet<PhmapSeed1>>,
         std::unique_ptr<NullOneStringTwoLevelAggHashSet<PhmapSeed1>>,
         std::unique_ptr<Int32TwoLevelAggHashSetOfOneNumberKey<PhmapSeed1>>,
+        std::unique_ptr<OneGermanStringAggHashSet<PhmapSeed1>>,
+        std::unique_ptr<NullOneGermanStringAggHashSet<PhmapSeed1>>,
         std::unique_ptr<UInt8AggHashSetOfOneNumberKey<PhmapSeed2>>,
         std::unique_ptr<Int8AggHashSetOfOneNumberKey<PhmapSeed2>>,
         std::unique_ptr<Int16AggHashSetOfOneNumberKey<PhmapSeed2>>,
@@ -417,7 +433,9 @@ using AggHashSetWithKeyPtr = std::variant<
         std::unique_ptr<CompressedAggHashSetFixedSize1<PhmapSeed2>>,
         std::unique_ptr<CompressedAggHashSetFixedSize4<PhmapSeed2>>,
         std::unique_ptr<CompressedAggHashSetFixedSize8<PhmapSeed2>>,
-        std::unique_ptr<CompressedAggHashSetFixedSize16<PhmapSeed2>>>;
+        std::unique_ptr<CompressedAggHashSetFixedSize16<PhmapSeed2>>,
+        std::unique_ptr<OneGermanStringAggHashSet<PhmapSeed2>>,
+        std::unique_ptr<NullOneGermanStringAggHashSet<PhmapSeed2>>>;
 } // namespace detail
 struct AggHashMapVariant {
     enum class Type {
@@ -462,6 +480,9 @@ struct AggHashMapVariant {
         phase1_slice_cx8,
         phase1_slice_cx16,
 
+        phase1_german_string,
+        phase1_null_german_string,
+
         phase2_uint8,
         phase2_int8,
         phase2_int16,
@@ -502,6 +523,9 @@ struct AggHashMapVariant {
         phase2_slice_cx4,
         phase2_slice_cx8,
         phase2_slice_cx16,
+
+        phase2_german_string,
+        phase2_null_german_string,
     };
 
     detail::AggHashMapWithKeyPtr hash_map_with_key;
@@ -581,6 +605,9 @@ struct AggHashSetVariant {
         phase1_null_string_two_level,
         phase1_string_two_level,
 
+        phase1_german_string,
+        phase1_null_german_string,
+
         phase2_uint8,
         phase2_int8,
         phase2_int16,
@@ -612,6 +639,9 @@ struct AggHashSetVariant {
         phase2_int32_two_level,
         phase2_null_string_two_level,
         phase2_string_two_level,
+
+        phase2_german_string,
+        phase2_null_german_string,
 
         phase1_slice_fx4,
         phase1_slice_fx8,
