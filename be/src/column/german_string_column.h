@@ -187,8 +187,20 @@ public:
     // The default ColumnVisitor::visit(const GermanStringColumn&) returns NotSupported,
     // which is correct for the skeleton stage. No override needed here.
 
-    // ---- Arena ----
+    // ---- Arena / Compaction ----
     size_t arena_memory_usage() const { return _arena.total_allocated_bytes(); }
+
+    // Sum of long-string lengths actually referenced by live GermanStrings.
+    size_t live_arena_bytes() const;
+
+    // True when arena has >2x more allocated bytes than live data needs.
+    bool needs_compaction() const;
+
+    // Rebuild column with a fresh arena containing only live data.
+    void compact();
+
+    // Convert to a legacy BinaryColumn with identical data.
+    ColumnPtr to_binary_column() const;
 
 private:
     Container _german_strings;

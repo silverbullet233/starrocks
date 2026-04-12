@@ -17,6 +17,7 @@
 #include <cstring>
 #include <sstream>
 
+#include "column/binary_column.h"
 #include "gutil/strings/fastmem.h"
 
 namespace starrocks {
@@ -375,6 +376,53 @@ void GermanStringColumn::check_or_die() const {
             DCHECK(gs.get_data() != nullptr) << "GermanString at index " << i << " has null data pointer";
         }
     }
+}
+
+// ---- Compaction ----
+
+size_t GermanStringColumn::live_arena_bytes() const {
+    size_t total = 0;
+    for (const auto& gs : _german_strings) {
+        if (!gs.is_inline()) {
+            total += gs.len;
+        }
+    }
+    return total;
+}
+
+bool GermanStringColumn::needs_compaction() const {
+    return _arena.total_allocated_bytes() > 2 * static_cast<int64_t>(live_arena_bytes());
+}
+
+void GermanStringColumn::compact() {
+    MemPool new_arena;
+    Container new_gs;
+    new_gs.reserve(_german_strings.size());
+    for (size_t i = 0; i < _german_strings.size(); ++i) {
+        const auto& gs = _german_strings[i];
+        if (gs.is_inline()) {
+            new_gs.push_back(gs);
+        } else {
+            auto* ptr = new_arena.allocate(static_cast<int64_t>(gs.len));
+            strings::memcpy_inlined(ptr, gs.get_data(), gs.len);
+            new_gs.emplace_back(reinterpret_cast<const char*>(ptr), gs.len, ptr);
+        }
+    }
+    _german_strings = std::move(new_gs);
+    _arena.free_all();
+    _arena.acquire_data(&new_arena, false);
+}
+
+// ---- Conversion ----
+
+ColumnPtr GermanStringColumn::to_binary_column() const {
+    auto bc = BinaryColumn::create();
+    bc->reserve(size());
+    for (size_t i = 0; i < size(); ++i) {
+        const auto& gs = _german_strings[i];
+        bc->append(Slice(gs.get_data(), gs.len));
+    }
+    return bc;
 }
 
 } // namespace starrocks
