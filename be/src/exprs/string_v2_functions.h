@@ -21,17 +21,16 @@
 
 namespace starrocks {
 
-// Bridge functions for STRING_V2 (GermanStringColumn) that delegate to VARCHAR
-// (BinaryColumn) implementations.
+class GermanStringColumn;
+
+// Native STRING_V2 (GermanStringColumn) function implementations.
 //
-// Strategy: convert GermanStringColumn inputs to BinaryColumn, call the existing
-// VARCHAR function, and convert any BinaryColumn string result back to
-// GermanStringColumn.  This is not the final form — native GermanString
-// implementations will replace these wrappers once the hot-path functions are
-// profiled.
+// Every function operates directly on GermanStringColumn data via
+// GermanString::get_data()/len, avoiding any conversion to BinaryColumn.
+// String-returning functions produce GermanStringColumn output.
 class StringV2Functions {
 public:
-    // ---- Core string functions (MVP) ----
+    // ---- Core string functions ----
 
     DEFINE_VECTORIZED_FN(length);
     DEFINE_VECTORIZED_FN(utf8_length);
@@ -99,14 +98,15 @@ public:
 
     // ---- Helpers ----
 
-    // Convert all GermanStringColumn inputs to BinaryColumn in the Columns vector.
-    // Non-GermanStringColumn columns are left untouched.
-    static Columns convert_inputs(const Columns& columns);
+    // Unwrap Const/Nullable wrappers to get the underlying GermanStringColumn.
+    static const GermanStringColumn* get_gs_column(const ColumnPtr& col);
 
-    // If |result| contains a BinaryColumn (possibly wrapped in Nullable/Const),
-    // convert the BinaryColumn portion to GermanStringColumn and return.
-    // If the result does not contain a BinaryColumn, return it as-is (e.g. INT).
-    static ColumnPtr maybe_convert_result(const ColumnPtr& result);
+    // Get the Slice for row |idx| from a column that may be Const/Nullable/bare GermanStringColumn.
+    // Also returns whether the row is null via |is_null|.
+    static Slice get_gs_slice(const ColumnPtr& col, size_t idx, bool* is_null);
+
+    // Check if a given row in a column is null.
+    static bool is_row_null(const ColumnPtr& col, size_t idx);
 };
 
 } // namespace starrocks
