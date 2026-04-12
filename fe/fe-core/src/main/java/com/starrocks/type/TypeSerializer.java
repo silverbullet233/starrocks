@@ -21,6 +21,7 @@ import com.starrocks.proto.PScalarType;
 import com.starrocks.proto.PStructField;
 import com.starrocks.proto.PTypeDesc;
 import com.starrocks.proto.PTypeNode;
+import com.starrocks.qe.ConnectContext;
 import com.starrocks.thrift.TAggStateDesc;
 import com.starrocks.thrift.TFunctionVersion;
 import com.starrocks.thrift.TPrimitiveType;
@@ -70,8 +71,16 @@ public class TypeSerializer {
             case DATETIME:
                 return TPrimitiveType.DATETIME;
             case CHAR:
+                if (ConnectContext.get() != null &&
+                        ConnectContext.get().getSessionVariable().isEnableGermanString()) {
+                    return TPrimitiveType.STRING_V2;
+                }
                 return TPrimitiveType.CHAR;
             case VARCHAR:
+                if (ConnectContext.get() != null &&
+                        ConnectContext.get().getSessionVariable().isEnableGermanString()) {
+                    return TPrimitiveType.STRING_V2;
+                }
                 return TPrimitiveType.VARCHAR;
             case DECIMALV2:
                 return TPrimitiveType.DECIMALV2;

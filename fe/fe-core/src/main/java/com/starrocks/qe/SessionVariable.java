@@ -1161,6 +1161,8 @@ public class SessionVariable implements Serializable, Writable, Cloneable {
 
     public static final String ENABLE_FULL_SORT_USE_GERMAN_STRING = "enable_full_sort_use_german_string";
 
+    public static final String ENABLE_GERMAN_STRING = "enable_german_string";
+
     public static final String ENABLE_INSERT_SELECT_EXTERNAL_AUTO_REFRESH = "enable_insert_select_external_auto_refresh";
     public static final String ENABLE_PREDICATE_COL_LATE_MATERIALIZE = "enable_predicate_col_late_materialize";
 
@@ -2388,6 +2390,9 @@ public class SessionVariable implements Serializable, Writable, Cloneable {
 
     @VarAttr(name = ENABLE_FULL_SORT_USE_GERMAN_STRING)
     private boolean enableFullSortUseGermanString = true;
+
+    @VarAttr(name = ENABLE_GERMAN_STRING)
+    private boolean enableGermanString = false;
 
     @VarAttr(name = ENABLE_INSERT_SELECT_EXTERNAL_AUTO_REFRESH)
     private boolean enableInsertSelectExternalAutoRefresh = true;
@@ -6146,6 +6151,14 @@ public class SessionVariable implements Serializable, Writable, Cloneable {
 
     public boolean isEnableFullSortUseGermanString() {
         return this.enableFullSortUseGermanString;
+    }
+
+    public boolean isEnableGermanString() {
+        return enableGermanString;
+    }
+
+    public void setEnableGermanString(boolean value) {
+        this.enableGermanString = value;
     }
 
     public boolean isEnableInsertSelectExternalAutoRefresh() {
