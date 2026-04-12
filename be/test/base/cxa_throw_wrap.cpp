@@ -15,6 +15,12 @@
 #include <typeinfo>
 
 // TODO: remove this wrapper once base_test links the standard Util wrapper.
+// Provide __cxa_call_terminate for newer Clang/libc++ versions where the symbol
+// is referenced by libstdc++ headers but not provided by the runtime in ASAN builds.
+extern "C" [[noreturn]] void __cxa_call_terminate(void* exception_header) noexcept {
+    std::terminate();
+}
+
 extern "C" {
 #ifdef __clang__
 #ifdef __APPLE__
