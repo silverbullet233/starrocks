@@ -16,11 +16,10 @@
 
 #include "column/column.h"
 #include "common/statusor.h"
+#include "exprs/function_context.h"
 #include "exprs/function_helper.h"
 
 namespace starrocks {
-
-class FunctionContext;
 
 // Bridge functions for STRING_V2 (GermanStringColumn) that delegate to VARCHAR
 // (BinaryColumn) implementations.
