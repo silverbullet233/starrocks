@@ -1046,12 +1046,12 @@
 
 **Steps:**
 
-- [ ] **Step 1:** In `ConstantOperator.java` (line ~482), add STRING_V2:
+- [x] **Step 1:** In `ConstantOperator.java` (line ~482), add STRING_V2:
   ```java
   else if (t == PrimitiveType.CHAR || t == PrimitiveType.VARCHAR || t == PrimitiveType.STRING_V2)
   ```
 
-- [ ] **Step 2:** In `PruneSubfieldRule.java` (lines ~174-175), add:
+- [x] **Step 2:** In `PruneSubfieldRule.java` (lines ~174-175), add:
   ```java
   .put(PrimitiveType.STRING_V2, jsonString)
   ```
