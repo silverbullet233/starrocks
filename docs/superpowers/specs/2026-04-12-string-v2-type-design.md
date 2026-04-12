@@ -514,7 +514,144 @@ GermanString already implements `fnv_hash()` and `crc32_hash()`.
 
 ---
 
-## 6. Testing Plan
+## 6. 核心模板数据结构适配
+
+### 6.1 问题本质
+
+`ColumnPredicate`、`AggHashVariant`、`JoinHashMap` 这三个核心数据结构都按 LogicalType 进行模板实例化。它们当前对 VARCHAR 的处理模式是：
+
+```cpp
+// 通用模式：down_cast 到 BinaryColumn，提取 Slice
+const auto* column = down_cast<const BinaryColumn*>(key_column);
+auto key = column->get_slice(i);
+```
+
+TYPE_STRING_V2 的 ColumnType 是 GermanStringColumn（非 BinaryColumn），所以这些 `down_cast<BinaryColumn*>` 会崩溃。需要为 TYPE_STRING_V2 添加分支。
+
+### 6.2 适配策略：Slice 桥接
+
+**关键观察：** 这三个数据结构的核心操作都是基于 Slice 的 hash 和 memequal：
+
+| 数据结构 | Hash 方式 | Compare 方式 | Key 存储 |
+|----------|----------|-------------|---------|
+| AggHashVariant | CRC-32 on Slice bytes | `memequal_padded()` | 拷贝到 MemPool |
+| JoinHashMap | CRC-32 on Slice bytes | `memequal()` | 拷贝到 MemPool 或固定长度序列化 |
+| ColumnPredicate | N/A | `Slice::compare()` | 谓词自身持有 Slice |
+
+GermanString 的优势在于**有序比较**（前缀短路），而非等值比较或 hash。在 hash-based 场景（join、aggregate），GermanString 没有额外优势。因此初始实现采用 **Slice 桥接**：从 GermanStringColumn 提取 Slice，复用现有的 Slice hash/compare 基础设施。
+
+### 6.3 统一 Slice 提取辅助函数
+
+```cpp
+// be/src/column/column_helper.h or a new utility header
+template <LogicalType LT>
+inline Slice get_string_column_slice(const Column* column, size_t idx) {
+    if constexpr (std::is_same_v<RunTimeColumnType<LT>, GermanStringColumn>) {
+        return down_cast<const GermanStringColumn*>(column)->get_slice(idx);
+    } else {
+        return down_cast<const BinaryColumn*>(column)->get_slice(idx);
+    }
+}
+```
+
+所有需要从 string 列提取 Slice 的模板代码都使用此辅助函数，避免散落的 `if constexpr` 分支。
+
+### 6.4 AggHashVariant 适配
+
+**文件：** `be/src/exec/aggregate/agg_hash_variant.h`, `agg_hash_variant.cpp`, `agg_hash_map.h`
+
+**变更：**
+1. 在 `ADD_VARIANT_PHASE1_TYPE` 注册中添加：
+   ```cpp
+   ADD_VARIANT_PHASE1_TYPE(TYPE_STRING_V2, string);  // 复用 "string" 变体
+   ```
+   这将 TYPE_STRING_V2 映射到与 TYPE_VARCHAR 相同的 `OneStringAggHashMap<SliceAggHashMap<seed>>`。
+
+2. 在 `AggHashMapWithOneStringKeyWithNullable::compute_agg_states()` 中，将：
+   ```cpp
+   const auto* column = down_cast<const BinaryColumn*>(key_column);
+   ```
+   替换为基于类型的分派，或使用统一的 Slice 提取方式。由于该类不按 LogicalType 模板化（只按 HashMap 类型），需要在运行时判断列类型：
+   ```cpp
+   auto get_key = [&](size_t i) -> Slice {
+       if (key_column->is_binary()) {
+           return down_cast<const BinaryColumn*>(key_column)->get_slice(i);
+       } else {
+           return down_cast<const GermanStringColumn*>(key_column)->get_slice(i);
+       }
+   };
+   ```
+   或者让 GermanStringColumn 提供 `is_german_string()` 虚方法用于判断。
+
+### 6.5 JoinHashMap 适配
+
+**文件：** `be/src/exec/join/join_type_traits.h`, `join_key_constructor.hpp`
+
+**变更：**
+1. 注册 TYPE_STRING_V2 的 key constructor 和 method type：
+   ```cpp
+   REGISTER_KEY_CONSTRUCTOR(ONE_KEY, TYPE_STRING_V2, KeyConstructorForOneKey<TYPE_STRING_V2>, ONE_KEY_STRING_V2)
+   REGISTER_KEY_CONSTRUCTOR(SERIALIZED, TYPE_STRING_V2, KeyConstructorForSerialized, SERIALIZED_STRING_V2)
+   ```
+
+2. 在 `join_key_constructor.hpp` 的 `lt_is_string<LT>` 分支中，STRING_V2 已通过 `StringLTGuard` 包含。但 `build_slices()` 调用需要适配 GermanStringColumn：
+   ```cpp
+   if constexpr (lt_is_string<LT>) {
+       // 已有的 BinaryColumn 分支
+       if constexpr (std::is_same_v<RunTimeColumnType<LT>, GermanStringColumn>) {
+           // 从 GermanStringColumn 构建 Slice 缓存
+       } else {
+           column->build_slices(slices);  // 现有 BinaryColumn 路径
+       }
+   }
+   ```
+
+3. 在 `join_hash_table.cpp` 的 `_determine_key_constructor()` 中，TYPE_STRING_V2 需要与 TYPE_VARCHAR 走相同的路径（短字符串固定长度优化等）。
+
+### 6.6 ColumnPredicate 适配
+
+**文件：** `be/src/storage/olap_type_infra.h`, `be/src/storage/column_predicate_cmp.cpp`, `be/src/storage/column_in_predicate.cpp`
+
+**变更：**
+1. 在 `APPLY_FOR_COLUMN_PREDICATE_TYPE` 宏中添加 `M(TYPE_STRING_V2)`
+
+2. 在 `storage_type_traits.h` 中添加：
+   ```cpp
+   template <>
+   struct StorageTypeTraits<TYPE_STRING_V2> {
+       using CppType = Slice;  // 存储层仍使用 Slice 作为比较类型
+   };
+   ```
+
+3. 在 `BinaryColumnPredicateCmpBase::t_evaluate()` 中，列类型判断需要兼容 GermanStringColumn：
+   ```cpp
+   // 现有代码：
+   auto* binary_column = down_cast<BinaryColumn*>(column);
+   Slice value = binary_column->get_slice(i);
+   // 需要适配为：
+   Slice value = column->is_binary()
+       ? down_cast<BinaryColumn*>(column)->get_slice(i)
+       : down_cast<GermanStringColumn*>(column)->get_slice(i);
+   ```
+
+4. 在谓词工厂函数的 switch 中添加 TYPE_STRING_V2 case，映射到 `BinaryColumnPredicate` 系列（复用 Slice 比较逻辑）。
+
+### 6.7 长期优化方向（当前不实现）
+
+初始实现通过 Slice 桥接复用现有基础设施。后续可以在以下场景引入 GermanString 原生优化：
+
+| 场景 | 优化方式 | 收益 |
+|------|---------|------|
+| 排序 Merge | GermanStringColumn 的 `compare_at()` 使用前缀短路 | ORDER BY 性能提升 |
+| Range 谓词 | GermanString 原生比较替代 Slice::compare | `WHERE col > 'xxx'` 性能提升 |
+| 排序聚合 | 有序 GROUP BY 使用 GermanString 比较 | 有序聚合场景性能提升 |
+| Join (Merge Join) | GermanString 原生比较 | Sort-Merge Join 性能提升 |
+
+Hash-based 操作（Hash Join、Hash Aggregate）不会从 GermanString 获益，因为其核心操作是 CRC hash + memequal，不涉及有序比较。
+
+---
+
+## 7. Testing Plan
 
 ### 6.1 Unit Tests (BE)
 
@@ -670,18 +807,29 @@ After implementation is complete, compare sorting and comparison performance:
 4. End-to-end: CREATE TABLE → INSERT → SELECT
 5. SQL integration tests T1-T3
 
-### Phase 5: Core Functions
+### Phase 5: Core Template Data Structures
+
+**Goal:** AggHashVariant, JoinHashMap, ColumnPredicate 支持 STRING_V2.
+
+1. 实现 `get_string_column_slice<LT>()` 辅助函数
+2. AggHashVariant: 注册 TYPE_STRING_V2 → string 变体，适配列访问
+3. JoinHashMap: 注册 key constructor 和 method type，适配列访问
+4. ColumnPredicate: 注册 TYPE_STRING_V2，适配谓词评估
+5. storage_type_traits.h: 添加 TYPE_STRING_V2 映射
+6. SQL integration tests T7-T8 (aggregate + join)
+
+### Phase 6: Core Functions
 
 **Goal:** Basic string functions work with STRING_V2.
 
 1. Comparison operators (P0): column compare_at, predicate evaluation
-2. Hash functions (P0): column_hash visitor, join/aggregate support
+2. Hash functions (P0): column_hash visitor
 3. put_mysql_row_buffer (P0): result output to client
 4. length(), concat(), substr() (P1)
 5. Register FE function signatures
-6. SQL integration tests T4-T8
+6. SQL integration tests T4-T6
 
-### Phase 6: Optimizer Adaptation & Validation
+### Phase 7: Optimizer Adaptation & Validation
 
 **Goal:** Full test suite passes, optimizer treats STRING_V2 like STRING, edge cases handled.
 
@@ -727,6 +875,15 @@ After implementation is complete, compare sorting and comparison performance:
 | `be/src/serde/column_array_serde.cpp` | Network serde visitors |
 | `be/src/storage/rowset/scalar_column_iterator.cpp` | String type recognition |
 | `be/src/storage/rowset/column_writer.cpp` | Write path conversion |
+| `be/src/storage/olap_type_infra.h` | APPLY_FOR_COLUMN_PREDICATE_TYPE macro |
+| `be/src/storage/column_predicate_cmp.cpp` | Predicate factory + eval dispatch |
+| `be/src/storage/column_in_predicate.cpp` | IN predicate dispatch |
+| `be/src/storage/storage_type_traits.h` | StorageTypeTraits for STRING_V2 |
+| `be/src/exec/aggregate/agg_hash_variant.h/.cpp` | Variant registration + column access |
+| `be/src/exec/aggregate/agg_hash_map.h` | String key extraction |
+| `be/src/exec/join/join_type_traits.h` | Key constructor + method type registration |
+| `be/src/exec/join/join_key_constructor.hpp` | Key building GermanStringColumn branch |
+| `be/src/exec/join/join_hash_table.cpp` | Key type determination |
 | `fe/fe-type/.../PrimitiveType.java` | Enum, type lists, cast map |
 | `fe/fe-type/.../ScalarType.java` | Type display and matching |
 | `fe/fe-type/.../TypeFactory.java` | Factory method |
