@@ -66,6 +66,7 @@ LogicalType string_to_logical_type(const std::string& type_str) {
     if (upper_type_str == "ANY_STRUCT") return TYPE_STRUCT;
     if (upper_type_str == "ANY_MAP") return TYPE_MAP;
     if (upper_type_str == "VARIANT") return TYPE_VARIANT;
+    if (upper_type_str == "STRING_V2") return TYPE_STRING_V2;
     LOG(WARNING) << "invalid type string. [type='" << type_str << "']";
     return TYPE_UNKNOWN;
 }
@@ -156,6 +157,8 @@ const char* logical_type_to_string(LogicalType type) {
         return "VARBINARY";
     case TYPE_VARIANT:
         return "VARIANT";
+    case TYPE_STRING_V2:
+        return "STRING_V2";
     }
     return "";
 }
@@ -290,6 +293,7 @@ public:
         _data[TYPE_DECIMAL256] = TYPE_DECIMAL256;
         _data[TYPE_INT256] = TYPE_INT256;
         _data[TYPE_VARIANT] = TYPE_VARIANT;
+        _data[TYPE_STRING_V2] = TYPE_STRING_V2;
     }
     LogicalType get_logical_type(LogicalType field_type) { return _data[field_type]; }
 
@@ -309,7 +313,8 @@ const std::vector<LogicalType>& sortable_types() {
     const static std::vector<LogicalType> kTypes{TYPE_BOOLEAN,   TYPE_TINYINT,   TYPE_SMALLINT,  TYPE_INT,
                                                  TYPE_BIGINT,    TYPE_LARGEINT,  TYPE_FLOAT,     TYPE_DOUBLE,
                                                  TYPE_VARCHAR,   TYPE_CHAR,      TYPE_DATE,      TYPE_DATETIME,
-                                                 TYPE_DECIMALV2, TYPE_DECIMAL32, TYPE_DECIMAL64, TYPE_DECIMAL128};
+                                                 TYPE_DECIMALV2, TYPE_DECIMAL32, TYPE_DECIMAL64, TYPE_DECIMAL128,
+                                                 TYPE_STRING_V2};
     return kTypes;
 }
 

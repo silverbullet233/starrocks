@@ -63,7 +63,8 @@ namespace starrocks {
     M(TYPE_JSON)                     \
     M(TYPE_VARBINARY)                \
     M(TYPE_VARIANT)                  \
-    M(TYPE_BOOLEAN)
+    M(TYPE_BOOLEAN)                  \
+    M(TYPE_STRING_V2)
 
 #define APPLY_FOR_COMPLEX_TYPE(M) \
     M(TYPE_STRUCT)                \
@@ -74,7 +75,8 @@ namespace starrocks {
     M(TYPE_VARCHAR)                  \
     M(TYPE_CHAR)                     \
     M(TYPE_BINARY)                   \
-    M(TYPE_VARBINARY)
+    M(TYPE_VARBINARY)                \
+    M(TYPE_STRING_V2)
 
 #define APPLY_FOR_ALL_SCALAR_TYPE_WITH_NULL(M) \
     APPLY_FOR_ALL_SCALAR_TYPE(M)               \
@@ -113,7 +115,8 @@ namespace starrocks {
     M(BINARY)                           \
     M(VARBINARY)                        \
     M(JSON)                             \
-    M(VARIANT)
+    M(VARIANT)                          \
+    M(STRING_V2)
 
 #define APPLY_FOR_MIN_MAX_COMPRESSABLE_TYPE(M) \
     APPLY_FOR_ALL_INT_TYPE(M)                  \
