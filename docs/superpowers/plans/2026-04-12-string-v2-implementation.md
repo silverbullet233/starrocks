@@ -695,7 +695,7 @@
 
 ---
 
-## Phase 4: FE DDL End-to-End
+## Phase 4: FE DDL End-to-End -- COMPLETED
 
 ### Task 4.1: put_mysql_row_buffer — Result Output to Client
 
@@ -734,9 +734,9 @@
 
 **Steps:**
 
-- [ ] **Step 1:** Write SQL test file with test cases T1-T3 from spec Section 7.4.
+- [x] **Step 1:** Write SQL test file with test cases T1-T3 from spec Section 7.4.
 
-- [ ] **Step 2:** Run the integration test:
+- [x] **Step 2:** Run the integration test:
   ```bash
   cd test && python3 run.py -v test_string_v2
   ```
@@ -750,7 +750,7 @@
 
 ---
 
-## Phase 5: Core Template Data Structures (GermanString Native Specialization)
+## Phase 5: Core Template Data Structures -- COMPLETED
 
 ### Task 5.1: GermanStringHash and GermanStringEqual Infrastructure
 
@@ -945,7 +945,7 @@
 
 **Steps:**
 
-- [ ] **Step 1:** Write SQL test cases T7-T8 from spec Section 7.4.
+- [x] **Step 1:** Write SQL test cases T7-T8 from spec Section 7.4.
 
 **Acceptance Criteria:**
 - `SELECT val, COUNT(*) FROM test_sv2 GROUP BY val` returns correct counts
@@ -954,7 +954,7 @@
 
 ---
 
-## Phase 6: Core Functions
+## Phase 6: Core Functions -- COMPLETED
 
 ### Task 6.1: FE Function Registration — STRING_V2 in STRING_TYPES
 
@@ -1025,7 +1025,7 @@
 
 **Steps:**
 
-- [ ] **Step 1:** Write SQL test cases T4-T6 from spec Section 7.4.
+- [x] **Step 1:** Write SQL test cases T4-T6 from spec Section 7.4.
 
 **Acceptance Criteria:**
 - `SELECT length(val), concat(val, '_x'), substr(val, 1, 3) FROM test_sv2` returns correct results
@@ -1034,7 +1034,7 @@
 
 ---
 
-## Phase 7: Optimizer Adaptation & Validation
+## Phase 7: Optimizer Adaptation & Validation -- COMPLETED
 
 ### Task 7.1: FE Optimizer — Hardcoded VARCHAR/CHAR Fixes
 
@@ -1095,9 +1095,9 @@
 
 **Steps:**
 
-- [ ] **Step 1:** Write comprehensive test file combining all T1-T9 test cases from spec Section 7.4.
+- [x] **Step 1:** Write comprehensive test file combining all T1-T9 test cases from spec Section 7.4.
 
-- [ ] **Step 2:** Run:
+- [x] **Step 2:** Run:
   ```bash
   cd test && python3 run.py -v test_string_v2
   ```
@@ -1117,14 +1117,14 @@
 
 **Steps:**
 
-- [ ] **Step 1:** Create two tables with identical data (10M+ rows), one STRING and one STRING_V2:
+- [x] **Step 1:** Create two tables with identical data (10M+ rows), one STRING and one STRING_V2:
   ```sql
   CREATE TABLE bench_string (id INT, val STRING) DUPLICATE KEY(id) ...;
   CREATE TABLE bench_string_v2 (id INT, val STRING_V2) DUPLICATE KEY(id) ...;
   -- Load identical data into both
   ```
 
-- [ ] **Step 2:** Compare:
+- [x] **Step 2:** Compare:
   - `SELECT val FROM bench_* ORDER BY val LIMIT 100` (sorting)
   - `SELECT val, COUNT(*) FROM bench_* GROUP BY val` (aggregate)
   - `SELECT ... FROM bench_a JOIN bench_b ON a.val = b.val` (join)
