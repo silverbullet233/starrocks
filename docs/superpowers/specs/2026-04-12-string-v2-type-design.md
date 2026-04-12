@@ -141,11 +141,12 @@ Add enum value:
 STRING_V2("STRING_V2", 16),  // slot size 16, same as VARCHAR
 ```
 
-Update lists:
-- Add to `STRING_TYPE_LIST`: `ImmutableList.of(CHAR, VARCHAR, STRING_V2)`
+Update lists and methods:
+- Add to `STRING_TYPE_LIST`: `ImmutableList.of(CHAR, VARCHAR, STRING_V2)` — this makes `Type.isStringType()` (which checks `STRING_TYPE_LIST.contains()`) work automatically
+- Update `PrimitiveType.isStringType()` (line 456): add `|| this == STRING_V2` — this is a **separate** hardcoded check from `Type.isStringType()`
+- Update `PrimitiveType.isCharFamily()` (line 476): add `|| this == STRING_V2` — used by 48+ optimizer rules for string-specific logic
 - Add to `BASIC_TYPE_LIST` (via STRING_TYPE_LIST, automatic)
 - Add to `IMPLICIT_CAST_MAP`: STRING_V2 can cast to/from all types that VARCHAR can
-- `isStringType()`: returns true (automatic via STRING_TYPE_LIST membership)
 - `getTypeSize()`: return 16 (same as VARCHAR)
 
 ### 1.9 FE ScalarType
@@ -201,7 +202,7 @@ All string function signatures that iterate over `STRING_TYPES` will automatical
 ```
 GermanStringColumn
 ├── Buffer<GermanString> _german_strings   // 每行一个 GermanString (16 bytes each)
-├── RawVectorPad16<uint8_t> _arena         // 长字符串 (>12 bytes) 的 backing store
+├── MemPool _arena                         // 长字符串 (>12 bytes) 的 backing store
 └── Column base class virtual methods       // ~40+ methods
 ```
 
@@ -209,12 +210,31 @@ GermanStringColumn
 
 For a column with N rows:
 - `_german_strings`: N x 16 bytes = 16N bytes
-- `_arena`: total bytes of all long strings (those > 12 bytes)
+- `_arena` (MemPool): total bytes of all long strings (those > 12 bytes)
 - Short strings (<=12 bytes): data stored inline in `GermanString.short_rep.str`, zero _arena usage
 
-**Pointer Stability:**
+**Pointer Stability — 使用 MemPool:**
 
-GermanString for long strings stores a raw pointer (`long_rep.ptr`) to the string data. A resizable buffer (like `std::vector`) would invalidate these pointers on reallocation. To avoid this, use a **page-based arena** (linked list of fixed-size pages, e.g., 64KB each). Long string data is allocated sequentially within pages. Pages are never moved or freed until the column is destroyed, so GermanString pointers remain valid throughout the column's lifetime.
+GermanString for long strings stores a raw pointer (`long_rep.ptr`) to the string data. StarRocks BE 已有 `MemPool`（`be/src/runtime/mem_pool.h`）是一个页式内存池，天然保证指针稳定性：
+- 分配的内存块永不移动（`clear()` 只重置偏移量，不释放页）
+- 页从 4KB 开始，倍增至 512KB 上限
+- 已集成 StarRocks 内存追踪指标
+- 不支持单独释放（适合 arena 场景）
+
+直接使用 MemPool 而非自建 PageArena，减少重复实现。
+
+**Lazy Arena Compaction（延迟压缩）:**
+
+`_arena` 中的内存在 column 操作中遵循"写入不删除"策略：
+
+- **filter/select 操作**：只更新 `_german_strings`（移除/重排 GermanString 元素），不调整 `_arena`。被过滤掉的行的长字符串数据仍留在 `_arena` 中，成为"死数据"。这避免了 filter 时的内存拷贝开销。
+- **空间浪费**：经过多次 filter 后，`_arena` 中可能有大量死数据。
+- **压缩时机**：提供 `compact()` 方法，在合适的时机（如 arena 利用率低于阈值）重建 GermanStringColumn，只拷贝存活数据到新的 MemPool。
+- **触发条件**：可在以下场景触发 compact：
+  - `arena_memory_usage() > 2 * live_data_bytes()`（利用率低于 50%）
+  - Column 即将序列化（网络传输或写入磁盘前）
+  - 显式调用（如算子结束时）
+- **`live_data_bytes()`** 计算方式：遍历 `_german_strings`，累加所有长字符串的长度。
 
 ```cpp
 class GermanStringColumn final : public CowFactory<ColumnFactory<Column, GermanStringColumn>, GermanStringColumn> {
@@ -242,6 +262,15 @@ public:
     void append_default() override;  // Empty string
     void append_default(size_t count) override;
 
+    // Filter — only updates _german_strings, arena untouched (lazy compaction)
+    size_t filter_range(const Filter& filter, size_t start, size_t to) override;
+
+    // Arena compaction
+    void compact();  // Rebuild column with only live data
+    size_t arena_memory_usage() const { return _arena.total_allocated_bytes(); }
+    size_t live_arena_bytes() const;  // Sum of long string lengths in _german_strings
+    bool needs_compaction() const { return arena_memory_usage() > 2 * live_arena_bytes(); }
+
     // Conversion
     ColumnPtr to_binary_column() const;  // For write path reuse
 
@@ -257,7 +286,7 @@ public:
 
 private:
     Container _german_strings;
-    PageArena _arena;  // Page-based arena, pointers stable across growth
+    MemPool _arena;  // Page-based arena (be/src/runtime/mem_pool.h), pointers stable across growth
 };
 ```
 
@@ -279,35 +308,28 @@ private:
 };
 ```
 
-### 2.3 PageArena Design
-
-A simple page-based memory arena for stable pointers:
+### 2.3 compact() — Arena Compaction
 
 ```cpp
-class PageArena {
-public:
-    static constexpr size_t DEFAULT_PAGE_SIZE = 65536;  // 64KB pages
-
-    PageArena() = default;
-    ~PageArena() = default;
-
-    // Allocate n bytes, returns pointer that remains valid for arena lifetime
-    char* allocate(size_t n);
-
-    // Total bytes allocated
-    size_t memory_usage() const;
-
-    void reset();
-
-private:
-    struct Page {
-        std::unique_ptr<char[]> data;
-        size_t size;
-        size_t offset;
-    };
-    std::vector<Page> _pages;
-    // Strings larger than DEFAULT_PAGE_SIZE get their own dedicated page
-};
+void GermanStringColumn::compact() {
+    MemPool new_arena;
+    Container new_gs;
+    new_gs.reserve(_german_strings.size());
+    for (size_t i = 0; i < _german_strings.size(); ++i) {
+        const auto& gs = _german_strings[i];
+        if (gs.is_inline()) {
+            new_gs.push_back(gs);  // Inline data, no arena involved
+        } else {
+            // Allocate in new arena and copy data
+            auto* ptr = new_arena.allocate(gs.len);
+            memcpy(ptr, gs.get_data(), gs.len);
+            new_gs.emplace_back(ptr, gs.len, ptr);
+        }
+    }
+    _german_strings = std::move(new_gs);
+    _arena.free_all();
+    _arena = std::move(new_arena);
+}
 ```
 
 ### 2.4 to_binary_column() — Write Path Conversion
@@ -659,15 +681,18 @@ After implementation is complete, compare sorting and comparison performance:
 5. Register FE function signatures
 6. SQL integration tests T4-T8
 
-### Phase 6: Validation and Cleanup
+### Phase 6: Optimizer Adaptation & Validation
 
-**Goal:** Full test suite passes, edge cases handled.
+**Goal:** Full test suite passes, optimizer treats STRING_V2 like STRING, edge cases handled.
 
-1. NULL handling in NullableColumn wrapper
-2. Implicit cast implementation (STRING <-> STRING_V2)
-3. Error handling: reject STRING_V2 in PK/UK/AGG tables
-4. All SQL integration tests pass
-5. Performance benchmark
+1. FE optimizer: update hardcoded VARCHAR/CHAR checks (ConstantOperator, PruneSubfieldRule)
+2. FE optimizer: verify isStringType() / isCharFamily() propagation for all 48+ rule locations
+3. NULL handling in NullableColumn wrapper
+4. Implicit cast implementation (STRING <-> STRING_V2)
+5. Error handling: reject STRING_V2 in PK/UK/AGG tables
+6. Optimizer UT: duplicate VARCHAR test cases for STRING_V2, verify consistent behavior
+7. All SQL integration tests pass
+8. Performance benchmark
 
 ---
 
@@ -677,9 +702,8 @@ After implementation is complete, compare sorting and comparison performance:
 
 | File | Purpose |
 |------|---------|
-| `be/src/column/german_string_column.h` | GermanStringColumn class definition |
+| `be/src/column/german_string_column.h` | GermanStringColumn class definition (uses MemPool for arena) |
 | `be/src/column/german_string_column.cpp` | GermanStringColumn implementation |
-| `be/src/column/page_arena.h` | Page-based arena allocator |
 | `be/src/exprs/string_v2_functions.h` | STRING_V2 function declarations |
 | `be/src/exprs/string_v2_functions.cpp` | STRING_V2 function implementations |
 | `be/test/column/german_string_column_test.cpp` | Unit tests |
@@ -709,15 +733,62 @@ After implementation is complete, compare sorting and comparison performance:
 | `fe/fe-core/.../FunctionSet.java` | STRING_TYPES list, function registration |
 | `fe/fe-core/.../CreateTableAnalyzer.java` | DDL validation |
 | `fe/fe-core/.../AstBuilder.java` (or parser) | SQL type keyword |
+| `fe/fe-core/.../ConstantOperator.java` | Hardcoded VARCHAR/CHAR check |
+| `fe/fe-core/.../PruneSubfieldRule.java` | Hardcoded VARCHAR/CHAR to jsonString map |
 
 ---
 
-## 9. Risks and Mitigations
+## 9. FE Optimizer Rules Audit
+
+FE 优化器中有 48+ 处针对 STRING 类型的特殊判断。审计结果如下：
+
+### 9.1 自动兼容（通过 isStringType() / isCharFamily()）
+
+以下规则通过 `Type.isStringType()`（查 `STRING_TYPE_LIST`）或 `PrimitiveType.isCharFamily()` 判断，只要 STRING_V2 加入这两个入口即自动生效：
+
+| 分类 | 规则/文件 | 行为 |
+|------|----------|------|
+| 类型强转 | `ImplicitCastRule.java` | STRING→数值/日期/布尔 的隐式转换 |
+| 类型强转 | `ReduceCastRule.java` | 级联 CAST 优化 |
+| Range 提取 | `RangeExtractor.java` | 非 EQ 的 STRING 谓词不做 range 提取 |
+| Range Join | `DeriveRangeJoinPredicateRule.java` | STRING 排除在 range join 推导之外 |
+| 统计信息 | `PredicateStatisticsCalculator.java` | STRING IN 谓词用 NDV 估算选择率 |
+| 统计信息 | `HistogramStatisticsUtils.java` | STRING 类型使用简化行估算 |
+| 统计信息 | `ExpressionStatisticCalculator.java` | STRING 常量估算 |
+| 低基数字典 | `DecodeUtil/DecodeContext/DecodeCollector/DecodeRewriter` | STRING 列字典编码优化 |
+| MetaScan | `RewriteSimpleAggToMetaScanRule.java` | STRING 列不做 MetaScan 重写 |
+| TopN | `SplitTopNAggregateRule.java` | STRING 列不做 TopN 聚合优化 |
+| 分区裁剪 | `ExternalTablePredicateExtractor.java` | STRING 分区列仅支持等值裁剪 |
+| 列比较 | `ColumnRefOperator.java` | STRING 列匹配只看 isStringType() |
+| JSON 子字段 | `SubfieldExpressionCollector/PruneSubfieldRule` | JSON/Variant 路径提取需要 STRING 参数 |
+
+### 9.2 需要手动适配
+
+以下位置直接硬编码了 `PrimitiveType.VARCHAR` 或 `PrimitiveType.CHAR`，需要额外添加 `PrimitiveType.STRING_V2`：
+
+| 文件 | 位置 | 变更 |
+|------|------|------|
+| `ConstantOperator.java` (line 482) | `t == PrimitiveType.CHAR \|\| t == PrimitiveType.VARCHAR` | 添加 `\|\| t == PrimitiveType.STRING_V2` |
+| `PruneSubfieldRule.java` (lines 174-175) | `.put(PrimitiveType.VARCHAR, jsonString).put(PrimitiveType.CHAR, jsonString)` | 添加 `.put(PrimitiveType.STRING_V2, jsonString)` |
+
+### 9.3 验证策略
+
+在 Phase 6 中，运行现有 FE 优化器的 UT，将其中涉及 VARCHAR 的测试用例复制一份并替换为 STRING_V2，确保优化行为一致。重点验证：
+- 谓词下推（= / != / IN 对 STRING_V2 列生效）
+- 常量折叠（STRING_V2 常量表达式能正确折叠）
+- 统计信息估算（STRING_V2 列的选择率估算与 VARCHAR 一致）
+- 低基数字典编码（STRING_V2 列能被字典编码优化）
+
+---
+
+## 10. Risks and Mitigations
 
 | Risk | Mitigation |
 |------|-----------|
-| PageArena memory fragmentation with many small long strings | Pages are 64KB; internal fragmentation bounded at ~64KB per page. Monitor memory_usage() in tests. |
+| Arena memory waste after repeated filter operations | Lazy compaction: `compact()` when `arena_usage > 2 * live_bytes`. Also compact before serialization (write/serde) to avoid transmitting dead data. |
+| MemPool memory tracking (embedded in Column) | MemPool already integrates with `memory_pool_bytes_total` metric. Monitor via `container_memory_usage()` override on GermanStringColumn. |
 | `isSliceLT<TYPE_STRING_V2>` is false, code expecting Slice may break | Audit all `isSliceLT` usage. STRING_V2 functions are separate implementations, so existing code paths don't encounter GermanString. |
 | Column visitor not implemented for all visitors | Initial implementation covers serde and hash visitors. Other visitors fall through to `Status::NotSupported`, which surfaces as clear errors. |
 | FE function resolution complexity | STRING_V2 added to STRING_TYPES ensures automatic registration. Manual audit for functions not in the loop. |
-| GermanStringColumn append performance (arena allocation overhead) | Page arena is O(1) amortized. Benchmark against BinaryColumn to ensure no regression. |
+| Optimizer hardcoded VARCHAR/CHAR checks | Audit identified 2 locations requiring manual update (ConstantOperator, PruneSubfieldRule). Verify with optimizer UT. |
+| GermanStringColumn append performance | MemPool allocation is O(1) amortized (page-based, 4KB→512KB growth). Benchmark against BinaryColumn to ensure no regression. |
