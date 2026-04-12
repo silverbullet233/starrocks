@@ -615,11 +615,11 @@
 
 **Steps:**
 
-- [ ] **Step 1:** Verify `ColumnHelper::create_column()` works automatically: the `type_dispatch_column()` resolves TYPE_STRING_V2 to `GermanStringColumn::create()` via RunTimeTypeTraits. No code change needed — verify by reading the code path.
+- [x] **Step 1:** Verify `ColumnHelper::create_column()` works automatically: the `type_dispatch_column()` resolves TYPE_STRING_V2 to `GermanStringColumn::create()` via RunTimeTypeTraits. No code change needed — verify by reading the code path.
 
-- [ ] **Step 2:** In `scalar_column_iterator.cpp`, find the conditions that enable dictionary encoding for TYPE_VARCHAR (look for `type == TYPE_VARCHAR` or `is_string_type(type)`). Add TYPE_STRING_V2 to the same conditions. If `is_string_type()` is already used, this may already work.
+- [x] **Step 2:** In `scalar_column_iterator.cpp`, find the conditions that enable dictionary encoding for TYPE_VARCHAR (look for `type == TYPE_VARCHAR` or `is_string_type(type)`). Add TYPE_STRING_V2 to the same conditions. If `is_string_type()` is already used, this may already work.
 
-- [ ] **Step 3:** In storage schema recognition code (tablet_schema.h or similar), ensure TYPE_STRING_V2 is treated as a variable-length string type for encoding selection. Find where TYPE_VARCHAR encoding is determined and ensure TYPE_STRING_V2 follows the same path.
+- [x] **Step 3:** In storage schema recognition code (tablet_schema.h or similar), ensure TYPE_STRING_V2 is treated as a variable-length string type for encoding selection. Find where TYPE_VARCHAR encoding is determined and ensure TYPE_STRING_V2 follows the same path.
 
 **Acceptance Criteria:**
 - `ColumnHelper::create_column(TypeDescriptor(TYPE_STRING_V2), false)` returns a GermanStringColumn
