@@ -20,6 +20,7 @@
 #include <cstring>
 
 #include "base/string/utf8.h"
+#include "column/binary_column.h"
 #include "column/column_helper.h"
 #include "column/const_column.h"
 #include "column/fixed_length_column.h"
@@ -33,6 +34,66 @@ namespace starrocks {
 // ============================================================================
 // Helper functions
 // ============================================================================
+
+// Ensure the data column inside |col| is a GermanStringColumn.
+// When the storage layer produces BinaryColumn (which happens because
+// StorageColumnTraits<TYPE_STRING_V2> = BinaryColumn), convert it on the fly.
+// The returned ColumnPtr shares null/const wrappers with the original and only
+// replaces the innermost data column when necessary.
+static ColumnPtr ensure_german_string(const ColumnPtr& col) {
+    const Column* c = col.get();
+    // Already a GermanStringColumn at some layer — fast path.
+    if (c->is_german_string()) return col;
+
+    bool is_const = c->is_constant();
+    bool is_nullable = false;
+    NullColumnPtr null_col;
+    size_t const_size = 0;
+
+    if (is_const) {
+        const_size = col->size();
+        c = down_cast<const ConstColumn*>(c)->data_column().get();
+    }
+    if (c->is_nullable()) {
+        is_nullable = true;
+        const auto* nullable = down_cast<const NullableColumn*>(c);
+        null_col = nullable->null_column();
+        c = nullable->data_column().get();
+    }
+    if (c->is_german_string()) {
+        return col; // already correct
+    }
+    // Convert BinaryColumn -> GermanStringColumn
+    const auto* bc = down_cast<const BinaryColumn*>(c);
+    auto gs_col = GermanStringColumn::from_binary_column(*bc);
+    ColumnPtr result = std::move(gs_col);
+    if (is_nullable) {
+        result = NullableColumn::create(std::move(result), null_col);
+    }
+    if (is_const) {
+        result = ConstColumn::create(std::move(result), const_size);
+    }
+    return result;
+}
+
+// Ensure all columns in |columns| that are string-like (BinaryColumn) are
+// converted to GermanStringColumn. Non-string columns are left untouched.
+static Columns ensure_german_strings(const Columns& columns) {
+    Columns result;
+    result.reserve(columns.size());
+    for (const auto& col : columns) {
+        // Check if the innermost data column is a BinaryColumn (needs conversion).
+        const Column* c = col.get();
+        if (c->is_constant()) c = down_cast<const ConstColumn*>(c)->data_column().get();
+        if (c->is_nullable()) c = down_cast<const NullableColumn*>(c)->data_column().get();
+        if (dynamic_cast<const BinaryColumn*>(c) != nullptr) {
+            result.push_back(ensure_german_string(col));
+        } else {
+            result.push_back(col);
+        }
+    }
+    return result;
+}
 
 const GermanStringColumn* StringV2Functions::get_gs_column(const ColumnPtr& col) {
     const Column* c = col.get();
@@ -63,9 +124,14 @@ Slice StringV2Functions::get_gs_slice(const ColumnPtr& col, size_t idx, bool* is
         c = nullable->data_column().get();
     }
     *is_null = false;
-    const auto* gs_col = down_cast<const GermanStringColumn*>(c);
-    const auto& gs = gs_col->get_german_string(real_idx);
-    return Slice(gs.get_data(), gs.len);
+    // Handle both GermanStringColumn and BinaryColumn (from storage).
+    if (c->is_german_string()) {
+        const auto* gs_col = down_cast<const GermanStringColumn*>(c);
+        const auto& gs = gs_col->get_german_string(real_idx);
+        return Slice(gs.get_data(), gs.len);
+    }
+    const auto* bc = down_cast<const BinaryColumn*>(c);
+    return bc->get_slice(real_idx);
 }
 
 bool StringV2Functions::is_row_null(const ColumnPtr& col, size_t idx) {
@@ -178,7 +244,7 @@ BRIDGE_PREPARE(regexp_close, StringFunctions::regexp_close)
 StatusOr<ColumnPtr> StringV2Functions::length(FunctionContext* context, const Columns& columns) {
     RETURN_IF_COLUMNS_ONLY_NULL(columns);
 
-    const auto& col = columns[0];
+    const auto col = ensure_german_string(columns[0]);
     const auto num_rows = col->size();
     const auto* gs_col = get_gs_column(col);
 
@@ -212,7 +278,7 @@ StatusOr<ColumnPtr> StringV2Functions::length(FunctionContext* context, const Co
 StatusOr<ColumnPtr> StringV2Functions::utf8_length(FunctionContext* context, const Columns& columns) {
     RETURN_IF_COLUMNS_ONLY_NULL(columns);
 
-    const auto& col = columns[0];
+    const auto col = ensure_german_string(columns[0]);
     const auto num_rows = col->size();
     const auto* gs_col = get_gs_column(col);
 
@@ -248,8 +314,9 @@ StatusOr<ColumnPtr> StringV2Functions::utf8_length(FunctionContext* context, con
 StatusOr<ColumnPtr> StringV2Functions::substring(FunctionContext* context, const Columns& columns) {
     RETURN_IF_COLUMNS_ONLY_NULL(columns);
 
-    const auto num_rows = columns[0]->size();
-    const auto* gs_col = get_gs_column(columns[0]);
+    const auto gs_input = ensure_german_string(columns[0]);
+    const auto num_rows = gs_input->size();
+    const auto* gs_col = get_gs_column(gs_input);
     bool has_len_arg = columns.size() >= 3;
 
     auto result_col = GermanStringColumn::create();
@@ -257,10 +324,10 @@ StatusOr<ColumnPtr> StringV2Functions::substring(FunctionContext* context, const
     auto null_col = NullColumn::create(num_rows, 0);
     bool has_null = false;
 
-    bool col0_const = columns[0]->is_constant();
+    bool col0_const = gs_input->is_constant();
 
     for (size_t i = 0; i < num_rows; i++) {
-        if (is_row_null(columns[0], i) || is_row_null(columns[1], i) ||
+        if (is_row_null(gs_input, i) || is_row_null(columns[1], i) ||
             (has_len_arg && is_row_null(columns[2], i))) {
             has_null = true;
             null_col->get_data()[i] = 1;
@@ -363,18 +430,19 @@ StatusOr<ColumnPtr> StringV2Functions::left(FunctionContext* context, const Colu
 StatusOr<ColumnPtr> StringV2Functions::right(FunctionContext* context, const Columns& columns) {
     RETURN_IF_COLUMNS_ONLY_NULL(columns);
 
-    const auto num_rows = columns[0]->size();
-    const auto* gs_col = get_gs_column(columns[0]);
+    const auto gs_input = ensure_german_string(columns[0]);
+    const auto num_rows = gs_input->size();
+    const auto* gs_col = get_gs_column(gs_input);
 
     auto result_col = GermanStringColumn::create();
     result_col->reserve(num_rows);
     auto null_col = NullColumn::create(num_rows, 0);
     bool has_null = false;
 
-    bool col0_const = columns[0]->is_constant();
+    bool col0_const = gs_input->is_constant();
 
     for (size_t i = 0; i < num_rows; i++) {
-        if (is_row_null(columns[0], i) || is_row_null(columns[1], i)) {
+        if (is_row_null(gs_input, i) || is_row_null(columns[1], i)) {
             has_null = true;
             null_col->get_data()[i] = 1;
             result_col->append_default();
@@ -438,7 +506,8 @@ StatusOr<ColumnPtr> StringV2Functions::concat(FunctionContext* context, const Co
     }
     RETURN_IF_COLUMNS_ONLY_NULL(columns);
 
-    const auto num_rows = columns[0]->size();
+    const auto gs_columns = ensure_german_strings(columns);
+    const auto num_rows = gs_columns[0]->size();
     auto result_col = GermanStringColumn::create();
     result_col->reserve(num_rows);
     auto null_col = NullColumn::create(num_rows, 0);
@@ -448,13 +517,13 @@ StatusOr<ColumnPtr> StringV2Functions::concat(FunctionContext* context, const Co
     for (size_t i = 0; i < num_rows; i++) {
         tmp.clear();
         bool row_null = false;
-        for (size_t c = 0; c < columns.size(); c++) {
-            if (is_row_null(columns[c], i)) {
+        for (size_t c = 0; c < gs_columns.size(); c++) {
+            if (is_row_null(gs_columns[c], i)) {
                 row_null = true;
                 break;
             }
             bool dummy;
-            Slice s = get_gs_slice(columns[c], i, &dummy);
+            Slice s = get_gs_slice(gs_columns[c], i, &dummy);
             tmp.append(s.data, s.size);
         }
         if (row_null) {
@@ -475,11 +544,11 @@ StatusOr<ColumnPtr> StringV2Functions::concat(FunctionContext* context, const Co
     if (has_null) {
         auto result = NullableColumn::create(std::move(result_col), std::move(null_col));
         result->set_has_null(true);
-        return ColumnHelper::is_all_const(columns) ? ConstColumn::create(std::move(result), num_rows)
-                                                   : ColumnPtr(std::move(result));
+        return ColumnHelper::is_all_const(gs_columns) ? ConstColumn::create(std::move(result), num_rows)
+                                                      : ColumnPtr(std::move(result));
     }
-    return ColumnHelper::is_all_const(columns) ? ConstColumn::create(std::move(result_col), num_rows)
-                                               : ColumnPtr(std::move(result_col));
+    return ColumnHelper::is_all_const(gs_columns) ? ConstColumn::create(std::move(result_col), num_rows)
+                                                  : ColumnPtr(std::move(result_col));
 }
 
 // ============================================================================
@@ -561,7 +630,7 @@ StatusOr<ColumnPtr> StringV2Functions::concat_ws(FunctionContext* context, const
 StatusOr<ColumnPtr> StringV2Functions::lower(FunctionContext* context, const Columns& columns) {
     RETURN_IF_COLUMNS_ONLY_NULL(columns);
 
-    const auto& col = columns[0];
+    const auto col = ensure_german_string(columns[0]);
     const auto num_rows = col->size();
     const auto* gs_col = get_gs_column(col);
 
@@ -598,7 +667,7 @@ StatusOr<ColumnPtr> StringV2Functions::lower(FunctionContext* context, const Col
 StatusOr<ColumnPtr> StringV2Functions::upper(FunctionContext* context, const Columns& columns) {
     RETURN_IF_COLUMNS_ONLY_NULL(columns);
 
-    const auto& col = columns[0];
+    const auto col = ensure_german_string(columns[0]);
     const auto num_rows = col->size();
     const auto* gs_col = get_gs_column(col);
 
@@ -646,7 +715,7 @@ template <StringV2TrimType trim_type>
 static StatusOr<ColumnPtr> trim_impl_v2(FunctionContext* context, const Columns& columns) {
     RETURN_IF_COLUMNS_ONLY_NULL(columns);
 
-    const auto& col = columns[0];
+    const auto col = ensure_german_string(columns[0]);
     const auto num_rows = col->size();
     const auto* gs_col = StringV2Functions::get_gs_column(col);
 
@@ -715,7 +784,7 @@ StatusOr<ColumnPtr> StringV2Functions::rtrim(FunctionContext* context, const Col
 StatusOr<ColumnPtr> StringV2Functions::reverse(FunctionContext* context, const Columns& columns) {
     RETURN_IF_COLUMNS_ONLY_NULL(columns);
 
-    const auto& col = columns[0];
+    const auto col = ensure_german_string(columns[0]);
     const auto num_rows = col->size();
     const auto* gs_col = get_gs_column(col);
 
@@ -772,7 +841,7 @@ StatusOr<ColumnPtr> StringV2Functions::reverse(FunctionContext* context, const C
 StatusOr<ColumnPtr> StringV2Functions::ascii(FunctionContext* context, const Columns& columns) {
     RETURN_IF_COLUMNS_ONLY_NULL(columns);
 
-    const auto& col = columns[0];
+    const auto col = ensure_german_string(columns[0]);
     const auto num_rows = col->size();
     const auto* gs_col = get_gs_column(col);
 
@@ -899,7 +968,7 @@ StatusOr<ColumnPtr> StringV2Functions::ends_with(FunctionContext* context, const
 StatusOr<ColumnPtr> StringV2Functions::null_or_empty(FunctionContext* context, const Columns& columns) {
     DCHECK_EQ(columns.size(), 1);
 
-    const auto& col = columns[0];
+    const auto col = ensure_german_string(columns[0]);
     const auto num_rows = col->size();
 
     auto result = BooleanColumn::create();

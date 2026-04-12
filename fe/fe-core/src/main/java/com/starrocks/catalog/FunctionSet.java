@@ -68,6 +68,7 @@ import com.starrocks.type.IntegerType;
 import com.starrocks.type.JsonType;
 import com.starrocks.type.NullType;
 import com.starrocks.type.PercentileType;
+import com.starrocks.type.PrimitiveType;
 import com.starrocks.type.ScalarType;
 import com.starrocks.type.StructField;
 import com.starrocks.type.StructType;
@@ -1123,24 +1124,62 @@ public class FunctionSet {
         if (fns == null || fns.isEmpty()) {
             return null;
         }
-        // First check for identical
+        // First check for identical, preferring exact PrimitiveType match.
+        // matchesType() treats STRING_V2 and VARCHAR as interchangeable, so we need
+        // to break ties by preferring functions whose arg PrimitiveTypes match exactly.
+        Function identicalMatch = null;
         for (Function f : fns) {
             if (f.compare(desc, Function.CompareMode.IS_IDENTICAL)) {
-                return f;
+                if (hasExactPrimitiveTypeMatch(f, desc)) {
+                    return f;
+                }
+                if (identicalMatch == null) {
+                    identicalMatch = f;
+                }
             }
+        }
+        if (identicalMatch != null) {
+            return identicalMatch;
         }
 
         if (mode.ordinal() < Function.CompareMode.IS_INDISTINGUISHABLE.ordinal()) {
             return null;
         }
 
-        // Next check for indistinguishable
+        // Next check for indistinguishable, with same exact-type preference
+        Function indistinguishableMatch = null;
         for (Function f : fns) {
             if (f.compare(desc, Function.CompareMode.IS_INDISTINGUISHABLE)) {
-                return f;
+                if (hasExactPrimitiveTypeMatch(f, desc)) {
+                    return f;
+                }
+                if (indistinguishableMatch == null) {
+                    indistinguishableMatch = f;
+                }
             }
         }
-        return null;
+        return indistinguishableMatch;
+    }
+
+    /**
+     * Returns true if every argument of candidate has the same PrimitiveType as the
+     * corresponding argument of desc. This is used to break ties when matchesType()
+     * considers different string types (e.g. VARCHAR vs STRING_V2) as equivalent.
+     */
+    private boolean hasExactPrimitiveTypeMatch(Function candidate, Function desc) {
+        Type[] candidateArgs = candidate.getArgs();
+        Type[] descArgs = desc.getArgs();
+        int len = Math.min(candidateArgs.length, descArgs.length);
+        for (int i = 0; i < len; i++) {
+            if (candidateArgs[i].isScalarType() && descArgs[i].isScalarType()) {
+                PrimitiveType cpt = ((ScalarType) candidateArgs[i]).getPrimitiveType();
+                PrimitiveType dpt = ((ScalarType) descArgs[i]).getPrimitiveType();
+                if (cpt != dpt) {
+                    return false;
+                }
+            }
+        }
+        return true;
     }
 
     private Function matchPolymorphicFunction(Function desc, Function.CompareMode mode, List<Function> fns,

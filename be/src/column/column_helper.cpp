@@ -466,9 +466,6 @@ MutableColumnPtr ColumnHelper::create_column(const TypeDescriptor& type_desc, bo
         }
         p = StructColumn::create(std::move(columns), type_desc.field_names);
     } else {
-        // STRING_V2 falls through to type_dispatch_column which maps it to VARCHAR
-        // (BinaryColumn). The german_string hash map variants convert on the fly.
-        // GermanStringColumn will be the default once all pipeline code handles it.
         p = type_dispatch_column(type_desc.type, ColumnBuilder(), type_desc, size);
     }
 

@@ -16,10 +16,12 @@
 
 #include "base/simd/gather.h"
 #include "column/array_column.h"
+#include "column/binary_column.h"
 #include "column/chunk.h"
 #include "column/column_builder.h"
 #include "column/column_helper.h"
 #include "column/column_viewer.h"
+#include "column/german_string_column.h"
 #include "column/vectorized_fwd.h"
 #include "common/global_types.h"
 #include "common/statusor.h"
@@ -73,9 +75,11 @@ public:
         DCHECK_GE(_origin_expr.get_num_children(), 2);
         auto place = get_place_holder(_origin_expr.get_child(1));
         auto type = place->type();
-        if (type.type == LogicalType::TYPE_VARCHAR) {
+        if (type.type == LogicalType::TYPE_VARCHAR || type.type == LogicalType::TYPE_STRING_V2) {
             _input_type = LogicalType::TYPE_VARCHAR;
-        } else if (type.is_array_type() && type.children[0].type == LogicalType::TYPE_VARCHAR) {
+        } else if (type.is_array_type() &&
+                   (type.children[0].type == LogicalType::TYPE_VARCHAR ||
+                    type.children[0].type == LogicalType::TYPE_STRING_V2)) {
             _input_type = LogicalType::TYPE_ARRAY;
         }
     }

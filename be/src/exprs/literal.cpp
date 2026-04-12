@@ -98,7 +98,8 @@ VectorizedLiteral::VectorizedLiteral(const TExprNode& node) : Expr(node) {
         break;
     }
     case TYPE_CHAR:
-    case TYPE_VARCHAR: {
+    case TYPE_VARCHAR:
+    case TYPE_STRING_V2: {
         // @IMPORTANT: build slice though get_data, else maybe will cause multi-thread crash in scanner
         _value = ColumnHelper::create_const_column<TYPE_VARCHAR>(Slice(node.string_literal.value), 1);
         break;

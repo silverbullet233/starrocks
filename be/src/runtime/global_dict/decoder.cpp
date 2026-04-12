@@ -19,6 +19,7 @@
 #include "column/array_column.h"
 #include "column/column_builder.h"
 #include "column/const_column.h"
+#include "column/german_string_column.h"
 #include "column/nullable_column.h"
 #include "column/runtime_type_traits.h"
 #include "column/vectorized_fwd.h"
@@ -119,7 +120,6 @@ Status GlobalDictDecoderBase<Dict>::decode_string(const Column* in, Column* out)
     }
 
     if (!in->is_nullable()) {
-        auto* res_column = down_cast<StringColumnType*>(out);
         const auto* column = down_cast<const DictColumnType*>(in);
         const auto& dict_data = column->immutable_data();
 
@@ -133,7 +133,9 @@ Status GlobalDictDecoderBase<Dict>::decode_string(const Column* in, Column* out)
             }
             res_slices[i] = iter->second;
         }
-        res_column->append_strings(res_slices.data(), num_rows);
+        // Use virtual append_strings to support both BinaryColumn and GermanStringColumn.
+        [[maybe_unused]] bool ok = out->append_strings(res_slices.data(), num_rows);
+        DCHECK(ok);
 
         return Status::OK();
     }
@@ -142,7 +144,7 @@ Status GlobalDictDecoderBase<Dict>::decode_string(const Column* in, Column* out)
     auto* res_column = down_cast<NullableColumn*>(out);
     res_column->null_column_data().resize(in->size());
 
-    auto* res_data_column = down_cast<StringColumnType*>(res_column->data_column_raw_ptr());
+    auto* res_data_column = res_column->data_column_raw_ptr();
     const auto* data_column = down_cast<const DictColumnType*>(column->data_column().get());
     const auto& dict_data = data_column->immutable_data();
 
@@ -160,7 +162,9 @@ Status GlobalDictDecoderBase<Dict>::decode_string(const Column* in, Column* out)
             // res_slices[i] is an empty slice which is done by constructor, so do nothing here.
         }
     }
-    res_data_column->append_strings(res_slices.data(), num_rows);
+    // Use virtual append_strings to support both BinaryColumn and GermanStringColumn.
+    [[maybe_unused]] bool ok = res_data_column->append_strings(res_slices.data(), num_rows);
+    DCHECK(ok);
     strings::memcpy_inlined(res_column->null_column_data().data(), column->null_column_data().data(),
                             num_rows * sizeof(NullColumn::ValueType));
     res_column->set_has_null(column->has_null());
