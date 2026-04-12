@@ -17,6 +17,7 @@ set(LIBRARY_OUTPUT_PATH "${BUILD_DIR}/src/types")
 ADD_BE_LIB(TypesCore
     bitmap_value.cpp
     datum.cpp
+    german_string.cpp
     decimalv2_value.cpp
     int128_to_double.cpp
     hll.cpp

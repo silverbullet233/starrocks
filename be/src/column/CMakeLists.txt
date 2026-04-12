@@ -25,7 +25,6 @@ ADD_BE_LIB(ColumnCore
         column_visitor.cpp
         column_visitor_mutable.cpp
         mysql_row_buffer.cpp
-        german_string.cpp
         object_column.cpp
         variant_column.cpp
         variant_converter.cpp

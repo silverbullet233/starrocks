@@ -23,7 +23,7 @@
 #include "column/bytes.h"
 #include "column/column.h"
 #include "column/container_resource.h"
-#include "column/german_string.h"
+#include "types/german_string.h"
 #include "column/vectorized_fwd.h"
 #include "common/statusor.h"
 #include "gutil/strings/fastmem.h"

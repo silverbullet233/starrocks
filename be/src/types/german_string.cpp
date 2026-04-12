@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include "column/german_string.h"
+#include "types/german_string.h"
 
 #include "base/container/raw_container.h"
 #include "base/hash/hash_util.hpp"

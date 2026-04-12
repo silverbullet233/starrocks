@@ -18,7 +18,7 @@
 #include <concepts>
 #include <type_traits>
 
-#include "column/german_string.h"
+#include "types/german_string.h"
 #include "types/date_value.h"
 #include "types/timestamp_value.h"
 

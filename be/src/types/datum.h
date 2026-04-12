@@ -20,7 +20,7 @@
 
 #include "base/string/slice.h"
 #include "base/types/decimal12.h"
-#include "column/german_string.h"
+#include "types/german_string.h"
 #include "base/types/int256.h"
 #include "base/types/int96.h"
 #include "base/types/uint24.h"
