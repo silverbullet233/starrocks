@@ -40,6 +40,7 @@
 #include "base/simd/simd.h"
 #include "column/binary_column.h"
 #include "column/column_helper.h"
+#include "column/german_string_column.h"
 #include "column/nullable_column.h"
 #include "column/raw_data_visitor.h"
 #include "common/config_rowset_fwd.h"
@@ -90,6 +91,29 @@ ColumnWriterOptions::ColumnWriterOptions() : data_page_size(config::data_page_si
     } while (0)
 
 using strings::Substitute;
+
+// Convert a column containing GermanStringColumn to one containing BinaryColumn.
+// If the column is a NullableColumn wrapping a GermanStringColumn, the result is
+// a NullableColumn wrapping the converted BinaryColumn with the same null flags.
+// If the column is not a GermanStringColumn (or nullable-wrapped), returns nullptr
+// to indicate no conversion was needed.
+static ColumnPtr maybe_convert_german_string_column(const Column& column) {
+    if (column.is_nullable()) {
+        const auto& nullable = down_cast<const NullableColumn&>(column);
+        const auto* gs_col = dynamic_cast<const GermanStringColumn*>(nullable.data_column().get());
+        if (gs_col == nullptr) {
+            return nullptr;
+        }
+        auto binary_col = gs_col->to_binary_column();
+        auto null_col = nullable.null_column();
+        return NullableColumn::create(std::move(binary_col), null_col);
+    }
+    const auto* gs_col = dynamic_cast<const GermanStringColumn*>(&column);
+    if (gs_col == nullptr) {
+        return nullptr;
+    }
+    return gs_col->to_binary_column();
+}
 
 class ByteIterator {
 public:
@@ -703,6 +727,10 @@ Status ScalarColumnWriter::finish_current_page() {
 }
 
 Status ScalarColumnWriter::append(const Column& column) {
+    // If the column is a GermanStringColumn, convert to BinaryColumn first
+    if (auto converted = maybe_convert_german_string_column(column)) {
+        return append(*converted);
+    }
     _total_mem_footprint += column.byte_size();
     // Currently, ColumnWriter does not support null-only columns
     const uint8_t* null = ColumnHelper::get_null_data_ptr(&column);
@@ -862,6 +890,10 @@ StringColumnWriter::StringColumnWriter(const ColumnWriterOptions& opts, TypeInfo
           _scalar_column_writer(std::move(column_writer)) {}
 
 Status StringColumnWriter::append(const Column& column) {
+    // If the column is a GermanStringColumn, convert to BinaryColumn first
+    if (auto converted = maybe_convert_german_string_column(column)) {
+        return append(*converted);
+    }
     if (config::enable_check_string_lengths) {
         RETURN_IF_ERROR(check_string_lengths(column));
     }
@@ -985,6 +1017,10 @@ DictColumnWriter::DictColumnWriter(const ColumnWriterOptions& opts, TypeInfoPtr 
           _scalar_column_writer(std::move(column_writer)) {}
 
 Status DictColumnWriter::append(const Column& column) {
+    // If the column is a GermanStringColumn, convert to BinaryColumn first
+    if (auto converted = maybe_convert_german_string_column(column)) {
+        return append(*converted);
+    }
     if (_is_speculated) {
         return _scalar_column_writer->append(column);
     }
