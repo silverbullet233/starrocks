@@ -603,7 +603,7 @@
 
 ---
 
-## Phase 3: Storage & Network Integration
+## Phase 3: Storage & Network Integration -- COMPLETED
 
 ### Task 3.1: Storage Read Path — Column Creation and Dictionary Encoding
 
@@ -684,11 +684,11 @@
 
 **Steps:**
 
-- [ ] **Step 1:** Write storage roundtrip test: create GermanStringColumn with mixed short/long strings → write to segment → read back → verify data matches.
+- [x] **Step 1:** Write storage roundtrip test: create GermanStringColumn with mixed short/long strings → write to segment → read back → verify data matches.
 
-- [ ] **Step 2:** Write serde roundtrip test: create GermanStringColumn → serialize → deserialize → verify data matches.
+- [x] **Step 2:** Write serde roundtrip test: create GermanStringColumn → serialize → deserialize → verify data matches.
 
-- [ ] **Step 3:** Write cross-type test: create GermanStringColumn, convert to BinaryColumn, serialize BinaryColumn → deserialize as GermanStringColumn → verify data matches. (This validates wire format compatibility.)
+- [x] **Step 3:** Write cross-type test: create GermanStringColumn, convert to BinaryColumn, serialize BinaryColumn → deserialize as GermanStringColumn → verify data matches. (This validates wire format compatibility.)
 
 **Acceptance Criteria:**
 - All roundtrip tests pass with empty, short, long, and mixed strings
