@@ -54,7 +54,7 @@ struct HLLUnionBuilder {
 struct ApproxTopKBuilder {
     template <LogicalType lt>
     void operator()(AggregateFuncResolver* resolver) {
-        if constexpr (lt_is_integer<lt> || lt_is_decimal<lt> || lt_is_float<lt> || lt_is_string<lt> ||
+        if constexpr (lt_is_integer<lt> || lt_is_decimal<lt> || lt_is_float<lt> || lt_is_slice_string<lt> ||
                       lt_is_date_or_datetime<lt> || lt_is_boolean<lt>) {
             using ApproxTopKState = ApproxTopKState<lt>;
             resolver->add_aggregate_mapping<lt, TYPE_ARRAY, ApproxTopKState, AggregateFunctionPtr, false>(

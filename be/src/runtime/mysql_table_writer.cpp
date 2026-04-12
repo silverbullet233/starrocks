@@ -106,6 +106,9 @@ struct ViewerBuilder {
     void operator()(std::vector<MysqlTableWriter::VariantViewer>* _viewers, ColumnPtr* column) {
         if constexpr (ltype == LogicalType::TYPE_TIME) {
             *column = ColumnHelper::convert_time_column_from_double_to_str(*column);
+        } else if constexpr (ltype == LogicalType::TYPE_STRING_V2) {
+            // GermanStringColumn is viewed as VARCHAR for MySQL sink output.
+            _viewers->emplace_back(ColumnViewer<TYPE_VARCHAR>(*column));
         } else {
             _viewers->emplace_back(ColumnViewer<ltype>(*column));
         }

@@ -63,6 +63,11 @@ inline size_t difference<Slice>(const Slice& low, const Slice& high) {
 }
 
 template <>
+inline size_t difference<GermanString>(const GermanString& low, const GermanString& high) {
+    return 0;
+}
+
+template <>
 inline size_t difference<int256_t>(const int256_t& low, const int256_t& high) {
     DCHECK_LE(low, high);
     if (high - low > static_cast<int256_t>(SIZE_MAX)) {
@@ -89,6 +94,12 @@ inline void increase(T& value) {
 }
 
 template <>
+inline void increase(GermanString& value) {
+    // String types don't support increment; this is a no-op placeholder.
+    // ColumnValueRange for strings always uses fixed-value mode, not range mode.
+}
+
+template <>
 inline void increase(DateValue& value) {
     value = value.add<TimeUnit::DAY>(1);
 }
@@ -112,6 +123,11 @@ inline std::string cast_to_string<DateValue>(DateValue value) {
 
 template <>
 inline std::string cast_to_string<TimestampValue>(TimestampValue value) {
+    return value.to_string();
+}
+
+template <>
+inline std::string cast_to_string<GermanString>(GermanString value) {
     return value.to_string();
 }
 
@@ -806,6 +822,7 @@ InsitializeColumnValueRange(int64_t);
 InsitializeColumnValueRange(__int128);
 InsitializeColumnValueRange(int256_t);
 InsitializeColumnValueRange(Slice);
+InsitializeColumnValueRange(GermanString);
 InsitializeColumnValueRange(DecimalV2Value);
 InsitializeColumnValueRange(bool);
 InsitializeColumnValueRange(DateValue);

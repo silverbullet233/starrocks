@@ -359,7 +359,7 @@ auto dispatch_join_logical_type(LogicalType ltype, Ret default_value, Functor fu
         _TYPE_DISPATCH_CASE(TYPE_CHAR)
         _TYPE_DISPATCH_CASE(TYPE_VARCHAR)
     case TYPE_STRING_V2:
-        return fun.template operator()<TYPE_VARCHAR>(args...);
+        return fun.template operator()<TYPE_STRING_V2>(args...);
     default:
         return default_value;
     }

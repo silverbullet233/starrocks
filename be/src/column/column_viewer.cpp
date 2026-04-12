@@ -71,6 +71,7 @@ ColumnViewer<Type>::ColumnViewer(const ColumnPtr& column)
 #define M(TYPE) template class ColumnViewer<TYPE>;
 
 APPLY_FOR_ALL_SCALAR_TYPE_WITH_NULL(M);
+M(TYPE_STRING_V2);
 #undef M
 
 template class ColumnViewer<TYPE_HLL>;

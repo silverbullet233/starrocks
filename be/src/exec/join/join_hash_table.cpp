@@ -171,7 +171,7 @@ JoinKeyConstructorUnaryType JoinHashMapSelector::_determine_key_constructor(Runt
         return dispatch_join_logical_type(
                 table_items->join_keys[0].type->type, JoinKeyConstructorUnaryType::SERIALIZED_VARCHAR,
                 [&]<LogicalType LT>() {
-                    static constexpr auto MAPPING_LT = LT == TYPE_CHAR ? TYPE_VARCHAR : LT;
+                    static constexpr auto MAPPING_LT = (LT == TYPE_CHAR || LT == TYPE_STRING_V2) ? TYPE_VARCHAR : LT;
                     if constexpr (MAPPING_LT == TYPE_VARCHAR) {
                         const size_t max_size = _get_binary_column_max_size(state, table_items->key_columns[0]);
                         if (max_size > 0) {

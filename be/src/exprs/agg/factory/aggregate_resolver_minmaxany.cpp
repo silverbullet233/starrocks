@@ -76,7 +76,7 @@ struct MinMaxAnyDispatcher {
 struct MinNDispatcher {
     template <LogicalType lt>
     void operator()(AggregateFuncResolver* resolver) {
-        if constexpr (lt_is_integer<lt> || lt_is_decimal<lt> || lt_is_float<lt> || lt_is_string<lt> ||
+        if constexpr (lt_is_integer<lt> || lt_is_decimal<lt> || lt_is_float<lt> || lt_is_slice_string<lt> ||
                       lt_is_date_or_datetime<lt> || lt_is_boolean<lt>) {
             // min_n(value, n) returns array(value)
             AggregateFunctionPtr func = AggregateFactory::MakeMinNAggregateFunction<lt>();
@@ -90,7 +90,7 @@ struct MinNDispatcher {
 struct MaxNDispatcher {
     template <LogicalType lt>
     void operator()(AggregateFuncResolver* resolver) {
-        if constexpr (lt_is_integer<lt> || lt_is_decimal<lt> || lt_is_float<lt> || lt_is_string<lt> ||
+        if constexpr (lt_is_integer<lt> || lt_is_decimal<lt> || lt_is_float<lt> || lt_is_slice_string<lt> ||
                       lt_is_date_or_datetime<lt> || lt_is_boolean<lt>) {
             // max_n(value, n) returns array(value)
             AggregateFunctionPtr func = AggregateFactory::MakeMaxNAggregateFunction<lt>();

@@ -598,6 +598,7 @@ size_t RuntimeBitsetFilter<LT>::deserialize(int serialize_version, const uint8_t
     template class ComposedRuntimeFilter<LT, TRuntimeBloomFilter<LT>>;
 
 APPLY_FOR_ALL_SCALAR_TYPE(InstantiateRuntimeFilter)
+InstantiateRuntimeFilter(TYPE_STRING_V2)
 #undef InstantiateRuntimeFilter
 
 #define InstantiateRuntimeBitsetFilter(LT)  \

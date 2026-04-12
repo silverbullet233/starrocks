@@ -710,17 +710,10 @@ struct AggHashMapWithOneGermanStringKeyWithNullable
         }
     }
 
-    // Helper: get GermanStringColumn from a column, converting from BinaryColumn if needed.
-    // If conversion is needed, the result is stored in tmp_holder to keep it alive.
-    static const GermanStringColumn* _get_german_string_column(const Column* col,
-                                                                MutableColumnPtr& tmp_holder) {
-        if (col->is_german_string()) {
-            return down_cast<const GermanStringColumn*>(col);
-        }
-        // Storage layer produces BinaryColumn for STRING_V2; convert on the fly.
-        DCHECK(col->is_binary());
-        tmp_holder = GermanStringColumn::from_binary_column(*down_cast<const BinaryColumn*>(col));
-        return down_cast<const GermanStringColumn*>(tmp_holder.get());
+    // Column is natively GermanStringColumn now — just down_cast.
+    static const GermanStringColumn* _get_german_string_column(const Column* col) {
+        DCHECK(col->is_german_string());
+        return down_cast<const GermanStringColumn*>(col);
     }
 
     // Non Nullable
@@ -728,8 +721,7 @@ struct AggHashMapWithOneGermanStringKeyWithNullable
     ALWAYS_NOINLINE void compute_agg_states_non_nullable(size_t chunk_size, const Column* key_column, MemPool* pool,
                                                          Func&& allocate_func, Buffer<AggDataPtr>* agg_states,
                                                          ExtraAggParam* extra) {
-        MutableColumnPtr tmp_holder;
-        const auto* column = _get_german_string_column(key_column, tmp_holder);
+        const auto* column = _get_german_string_column(key_column);
         if (this->hash_map.bucket_count() < prefetch_threhold) {
             this->template compute_agg_noprefetch<Func, HTBuildOp>(column, agg_states, pool,
                                                                    std::forward<Func>(allocate_func), extra);
@@ -754,9 +746,8 @@ struct AggHashMapWithOneGermanStringKeyWithNullable
         } else {
             DCHECK(key_column->is_nullable());
             const auto* nullable_column = down_cast<const NullableColumn*>(key_column);
-            MutableColumnPtr tmp_holder;
             const auto* data_column = _get_german_string_column(
-                    nullable_column->data_column().get(), tmp_holder);
+                    nullable_column->data_column().get());
 
             if (!nullable_column->has_null()) {
                 this->template compute_agg_states_non_nullable<Func, HTBuildOp>(
@@ -826,9 +817,8 @@ struct AggHashMapWithOneGermanStringKeyWithNullable
                                                        Func&& allocate_func, ExtraAggParam* extra) {
         [[maybe_unused]] size_t hash_table_size = this->hash_map.size();
         auto* __restrict not_founds = extra->not_founds;
-        MutableColumnPtr tmp_holder;
         const auto* data_column = _get_german_string_column(
-                nullable_column->data_column().get(), tmp_holder);
+                nullable_column->data_column().get());
         const auto& null_data = nullable_column->null_column_data();
 
         for (size_t i = 0; i < chunk_size; i++) {

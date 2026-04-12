@@ -26,7 +26,7 @@ namespace starrocks {
 struct PercentileDiscDispatcher {
     template <LogicalType pt>
     void operator()(AggregateFuncResolver* resolver) {
-        if constexpr (lt_is_datetime<pt> || lt_is_date<pt> || lt_is_arithmetic<pt> || lt_is_string<pt> ||
+        if constexpr (lt_is_datetime<pt> || lt_is_date<pt> || lt_is_arithmetic<pt> || lt_is_slice_string<pt> ||
                       lt_is_decimal_of_any_version<pt>) {
             resolver->add_aggregate_mapping_variadic<pt, pt, PercentileState<pt>>(
                     "percentile_disc", false, AggregateFactory::MakePercentileDiscAggregateFunction<pt>());

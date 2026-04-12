@@ -216,6 +216,7 @@ using ColumnValueRangeType =  std::variant<
         ColumnValueRange<__int128>,
         ColumnValueRange<int256_t>,
         ColumnValueRange<Slice>,
+        ColumnValueRange<GermanString>,
         ColumnValueRange<DecimalV2Value>,
         ColumnValueRange<bool>,
         ColumnValueRange<DateValue>,

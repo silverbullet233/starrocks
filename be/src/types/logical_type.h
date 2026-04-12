@@ -334,6 +334,9 @@ VALUE_GUARD(LogicalType, SumDecimal64LTGuard, lt_is_sum_decimal64, TYPE_DECIMAL3
 VALUE_GUARD(LogicalType, HllLTGuard, lt_is_hll, TYPE_HLL)
 VALUE_GUARD(LogicalType, ObjectLTGuard, lt_is_object, TYPE_OBJECT)
 VALUE_GUARD(LogicalType, StringLTGuard, lt_is_string, TYPE_CHAR, TYPE_VARCHAR, TYPE_STRING_V2)
+// String types backed by Slice (BinaryColumn) — excludes TYPE_STRING_V2 (GermanString).
+// Used by aggregate templates that assume RunTimeCppType is Slice.
+VALUE_GUARD(LogicalType, SliceStringLTGuard, lt_is_slice_string, TYPE_CHAR, TYPE_VARCHAR)
 VALUE_GUARD(LogicalType, BinaryLTGuard, lt_is_binary, TYPE_BINARY, TYPE_VARBINARY)
 VALUE_GUARD(LogicalType, JsonGuard, lt_is_json, TYPE_JSON)
 VALUE_GUARD(LogicalType, VariantGuard, lt_is_variant, TYPE_VARIANT)
@@ -371,13 +374,13 @@ UNION_VALUE_GUARD(LogicalType, NumericLTGuard, lt_is_numeric, lt_is_number_struc
 UNION_VALUE_GUARD(LogicalType, FixedLengthLTGuard, lt_is_fixedlength, lt_is_arithmetic_struct, lt_is_decimalv2_struct,
                   lt_is_decimal_struct, lt_is_datetime_struct, lt_is_date_struct, lt_is_time_struct)
 UNION_VALUE_GUARD(LogicalType, AggregateLTGuard, lt_is_aggregate, lt_is_arithmetic_struct, lt_is_decimalv2_struct,
-                  lt_is_decimal_struct, lt_is_datetime_struct, lt_is_date_struct, lt_is_string_struct)
+                  lt_is_decimal_struct, lt_is_datetime_struct, lt_is_date_struct, lt_is_slice_string_struct)
 // TODO support more complex type as aggregate function
 UNION_VALUE_GUARD(LogicalType, AggregateComplexLTGuard, lt_is_complex_aggregate, lt_is_arithmetic_struct,
                   lt_is_decimalv2_struct, lt_is_decimal_struct, lt_is_datetime_struct, lt_is_date_struct,
                   lt_is_json_struct)
 
-UNION_VALUE_GUARD(LogicalType, StringOrBinaryGuard, lt_is_string_or_binary, lt_is_string_struct, lt_is_binary_struct)
+UNION_VALUE_GUARD(LogicalType, StringOrBinaryGuard, lt_is_string_or_binary, lt_is_slice_string_struct, lt_is_binary_struct)
 
 TExprOpcode::type to_in_opcode(LogicalType t);
 LogicalType thrift_to_type(TPrimitiveType::type ttype);

@@ -1075,15 +1075,18 @@ struct ColumnRangeBuilder {
             return Status::OK();
         } else {
             // Treat tinyint and boolean as int
-            constexpr LogicalType limit_type = ltype == TYPE_TINYINT || ltype == TYPE_BOOLEAN ? TYPE_INT : ltype;
-            // Map TYPE_CHAR to TYPE_VARCHAR
-            constexpr LogicalType mapping_type = ltype == TYPE_CHAR ? TYPE_VARCHAR : ltype;
+            constexpr LogicalType limit_type = ltype == TYPE_TINYINT || ltype == TYPE_BOOLEAN ? TYPE_INT
+                                             : ltype == TYPE_STRING_V2                        ? TYPE_VARCHAR
+                                                                                              : ltype;
+            // Map TYPE_CHAR and TYPE_STRING_V2 to TYPE_VARCHAR for predicate pushdown.
+            // TYPE_STRING_V2 shares on-disk encoding with VARCHAR and FE sends literals as Slices.
+            constexpr LogicalType mapping_type = (ltype == TYPE_CHAR || ltype == TYPE_STRING_V2) ? TYPE_VARCHAR : ltype;
             using value_type = typename RunTimeTypeLimits<limit_type>::value_type;
             using RangeType = ColumnValueRange<value_type>;
 
             const auto col_name = std::string(slot->col_name());
-            RangeType full_range(col_name, ltype, RunTimeTypeLimits<ltype>::min_value(),
-                                 RunTimeTypeLimits<ltype>::max_value());
+            RangeType full_range(col_name, ltype, RunTimeTypeLimits<limit_type>::min_value(),
+                                 RunTimeTypeLimits<limit_type>::max_value());
             if constexpr (lt_is_decimal<limit_type>) {
                 full_range.set_precision(slot->type().precision);
                 full_range.set_scale(slot->type().scale);
