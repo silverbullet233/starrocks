@@ -706,7 +706,7 @@
 
 **Steps:**
 
-- [ ] **Step 1:** Implement `put_mysql_row_buffer(MysqlRowBuffer* buf, size_t idx, bool is_binary_protocol)`:
+- [x] **Step 1:** Implement `put_mysql_row_buffer(MysqlRowBuffer* buf, size_t idx, bool is_binary_protocol)`:
   ```cpp
   void GermanStringColumn::put_mysql_row_buffer(MysqlRowBuffer* buf, size_t idx, bool is_binary_protocol) const override {
       auto slice = get_slice(idx);
