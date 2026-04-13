@@ -101,6 +101,12 @@ VectorizedLiteral::VectorizedLiteral(const TExprNode& node) : Expr(node) {
     case TYPE_VARCHAR:
     case TYPE_STRING_V2: {
         // @IMPORTANT: build slice though get_data, else maybe will cause multi-thread crash in scanner
+        // NOTE: TYPE_STRING_V2 literals are still emitted as BinaryColumn here — a full
+        // GermanStringColumn literal path requires ColumnViewer<TYPE_VARCHAR> in
+        // `DictOptimizeParser::_eval_and_rewrite` to accept GermanStringColumn inputs,
+        // which is its own refactor (see known-issues notes). At present no STRING_V2
+        // consumer exercises literal columns directly (predicate/min-max paths use the
+        // GermanString→Slice decoder), so the BinaryColumn literal remains safe.
         _value = ColumnHelper::create_const_column<TYPE_VARCHAR>(Slice(node.string_literal.value), 1);
         break;
     }
