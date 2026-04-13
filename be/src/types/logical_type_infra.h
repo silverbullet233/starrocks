@@ -312,20 +312,16 @@ template <class Functor, class Ret, class... Args>
 auto type_dispatch_filter(LogicalType ltype, Ret default_value, Functor fun, const Args&... args) {
     switch (ltype) {
         APPLY_FOR_ALL_SCALAR_TYPE(_TYPE_DISPATCH_CASE)
-    // NOTE: `TRuntimeBloomFilter<TYPE_STRING_V2>` and
-    // `MinMaxRuntimeFilter<TYPE_STRING_V2>` ARE compilable (Phase III
-    // groundwork) and `compute_hash` / wire-format are byte-portable with
-    // VARCHAR. We could `return fun.template operator()<TYPE_STRING_V2>(args...)`
-    // here to make the runtime filter STRING_V2-native end-to-end, but the
-    // storage-side scan scheduler / range pruner (`RuntimeColumnPredicateBuilder`,
-    // `RuntimeScanRangePruner`) still needs a GermanString→Slice translator
-    // before it can build correct storage predicates from a STRING_V2 filter.
-    // Without that translator the t1 OLAP_SCAN ends up with `MorselsCount: 0`
-    // and INNER JOIN returns empty. So for now we keep the boundary mapping
-    // and leave the STRING_V2-native filter dispatch as planned future work
-    // (see project memory: Phase III is partially landed).
     case TYPE_STRING_V2:
-        return fun.template operator()<TYPE_VARCHAR>(args...);
+        // STRING_V2-native runtime filter. `TRuntimeBloomFilter<TYPE_STRING_V2>`
+        // and `MinMaxRuntimeFilter<TYPE_STRING_V2>` use CppType=GermanString;
+        // `compute_hash` and wire format are byte-portable with VARCHAR so a
+        // STRING_V2 build side remains interoperable with VARCHAR (storage /
+        // legacy) consumers. The storage-side range pruner has a dedicated
+        // GermanString→Slice translator (see
+        // `RuntimeColumnPredicateBuilder::operator()<TYPE_STRING_V2>` in
+        // runtime_range_pruner.hpp) for the Slice-typed storage predicates.
+        return fun.template operator()<TYPE_STRING_V2>(args...);
     default:
         return default_value;
     }

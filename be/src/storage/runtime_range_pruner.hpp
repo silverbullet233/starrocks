@@ -42,6 +42,77 @@ struct RuntimeColumnPredicateBuilder {
                       lt_is_float<ltype> || lt_is_binary<ltype>) {
             DCHECK(false) << "unreachable path";
             return Status::NotSupported("unreachable path");
+        } else if constexpr (ltype == TYPE_STRING_V2) {
+            // Storage predicates are Slice-typed (on-disk is BinaryColumn), but the
+            // runtime filter is `<TYPE_STRING_V2>` (GermanString min/max). We build a
+            // `ColumnValueRange<Slice>` and feed it via `GermanStringToSliceDecoder`,
+            // which copies GermanString bytes into pool-owned std::string backings
+            // and returns Slices with stable lifetime. The rest of the pipeline
+            // (OlapCondition → ColumnPredicate) is identical to the VARCHAR path.
+            std::vector<const ColumnPredicate*> preds;
+            using RangeType = ColumnValueRange<Slice>;
+            const auto col_name = std::string(slot->col_name());
+            RangeType range(col_name, TYPE_VARCHAR, RunTimeTypeLimits<TYPE_VARCHAR>::min_value(),
+                            RunTimeTypeLimits<TYPE_VARCHAR>::max_value());
+            range.set_index_filter_only(true);
+
+            const RuntimeFilter* rf = desc->runtime_filter(driver_sequence);
+
+            // `build_minmax_range<RangeType, SlotType=TYPE_VARCHAR, mapping_type=TYPE_STRING_V2,
+            //  Decoder=GermanStringToSliceDecoder>` will:
+            //   - down_cast the filter as `MinMaxRuntimeFilter<TYPE_STRING_V2>*`
+            //   - read GermanString min/max via MinMaxParser
+            //   - run them through our decoder → Slice with pool-owned backing
+            //   - add Slice endpoints to the Slice-typed range
+            auto* minmax = rf->get_min_max_filter();
+            if (minmax) {
+                build_minmax_range<RangeType, TYPE_VARCHAR, TYPE_STRING_V2, GermanStringToSliceDecoder>(range, rf,
+                                                                                                        pool, pool);
+            }
+            // NOTE: `rf->get_in_filter()` is nullptr for ComposedRuntimeFilter (the HJ RF type),
+            // so we intentionally skip the in-filter branch here. Should an `InRuntimeFilter<TYPE_STRING_V2>`
+            // ever reach this path, extend with a dedicated in-range builder.
+
+            std::vector<OlapCondition> filters;
+            range.to_olap_filter(filters);
+
+            if (range.is_empty_value_range()) {
+                if (rf->has_null()) {
+                    std::vector<const ColumnPredicate*> new_preds;
+                    TypeInfoPtr type_info = get_type_info(TYPE_VARCHAR, slot->type().precision, slot->type().scale);
+                    auto column_id = parser->column_id(*slot);
+                    ColumnPredicate* null_pred =
+                            pool->add(new_column_null_predicate(type_info, column_id, true));
+                    new_preds.emplace_back(null_pred);
+                    return new_preds;
+                } else {
+                    return Status::EndOfFile("EOF, Filter by always false runtime filter");
+                }
+            }
+
+            for (auto& f : filters) {
+                ASSIGN_OR_RETURN(auto p, parser->parse_thrift_cond(f));
+                p = pool->add(p);
+                VLOG(2) << "build runtime predicate (STRING_V2 → VARCHAR boundary):" << p->debug_string();
+                p->set_index_filter_only(f.is_index_filter_only);
+                preds.emplace_back(p);
+            }
+
+            if (rf->has_null() && !preds.empty()) {
+                std::vector<const ColumnPredicate*> new_preds;
+                auto type = preds[0]->type_info_ptr();
+                auto column_id = preds[0]->column_id();
+
+                ColumnAndPredicate* and_pred = pool->add(new ColumnAndPredicate(type, column_id));
+                and_pred->add_child(preds.begin(), preds.end());
+                ColumnPredicate* null_pred = pool->add(new_column_null_predicate(type, column_id, true));
+                ColumnOrPredicate* or_pred = pool->add(new ColumnOrPredicate(type, column_id));
+                or_pred->add_child(and_pred);
+                or_pred->add_child(null_pred);
+                new_preds.emplace_back(or_pred);
+                return new_preds;
+            }
+            return preds;
         } else {
             std::vector<const ColumnPredicate*> preds;
 
@@ -167,6 +238,24 @@ struct RuntimeColumnPredicateBuilder {
 
     private:
         const GlobalDictMap* _dict_map;
+    };
+
+    // Bridges a STRING_V2 runtime filter to a Slice-typed storage predicate range.
+    // `MinMaxRuntimeFilter<TYPE_STRING_V2>::{min,max}_value(pool)` returns a
+    // GermanString that may be either inline (bytes in the struct itself) or long
+    // (long_rep.ptr into a pool-owned std::string). To hand storage a Slice whose
+    // data pointer outlives the temporary GermanString, we copy bytes into a
+    // fresh pool-owned std::string and point the Slice at that backing.
+    template <class InputType>
+    struct GermanStringToSliceDecoder {
+        explicit GermanStringToSliceDecoder(ObjectPool* pool) : _pool(pool) {}
+        Slice decode(const GermanString& gs) const {
+            auto* backing = _pool->template add<std::string>(new std::string(gs.get_data(), gs.len));
+            return Slice(backing->data(), backing->size());
+        }
+
+    private:
+        ObjectPool* _pool;
     };
 
     template <class RuntimeFilter, class Decoder>

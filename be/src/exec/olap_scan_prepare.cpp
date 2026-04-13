@@ -805,19 +805,42 @@ Status ChunkPredicateBuilder<E, Type>::normalize_join_runtime_filter(const SlotD
                     continue;
                 }
 
-                // When the slot is TYPE_STRING_V2, ColumnRangeBuilder maps it to TYPE_VARCHAR for
-                // predicate pushdown, but the actual runtime-filter predicate built by the HJ is a
-                // VectorizedInConstPredicate<TYPE_STRING_V2> (holding GermanString values).
-                // down_cast-ing it as <TYPE_VARCHAR> is undefined and reads GermanStrings as Slices,
-                // which leaves every probe row failing the pushdown check. Skip the RF pushdown for
-                // STRING_V2 expressions and let the (type-correct) operator-level RF do the work.
-                if (l->type().type == TYPE_STRING_V2 && MappingType != TYPE_STRING_V2) {
-                    continue;
-                }
-
                 std::vector<SlotId> slot_ids;
                 if (1 != l->get_slot_ids(&slot_ids) || slot_ids[0] != slot.id()) {
                     continue;
+                }
+
+                // STRING_V2 expr + VARCHAR MappingType: the plan-provided
+                // FILTER_IN expression is `VectorizedInConstPredicate<TYPE_STRING_V2>`
+                // (GermanString hash set) but the range is Slice-typed. Extract
+                // GermanStrings from the predicate's hash set, transcode to Slices
+                // via pool-owned backing, and add as fixed values to the range.
+                // Correctness is identical to the VARCHAR path (byte-level); only
+                // the types at the boundary translate.
+                if constexpr (SlotType == TYPE_VARCHAR) {
+                    if (l->type().type == TYPE_STRING_V2 && MappingType != TYPE_STRING_V2) {
+                        const auto* gs_pred =
+                                down_cast<const VectorizedInConstPredicate<TYPE_STRING_V2>*>(root_expr);
+                        if (!gs_pred->is_join_runtime_filter()) {
+                            continue;
+                        }
+                        _normalized_exprs[i] = true;
+                        if (gs_pred->is_not_in() || gs_pred->null_in_set() ||
+                            gs_pred->hash_set().size() > config::max_pushdown_conditions_per_column) {
+                            continue;
+                        }
+                        std::vector<RangeValueType> values;
+                        values.reserve(gs_pred->hash_set().size());
+                        for (const GermanString& gs : gs_pred->hash_set()) {
+                            auto* backing = _opts.obj_pool->template add<std::string>(
+                                    new std::string(gs.get_data(), gs.len));
+                            values.emplace_back(backing->data(), backing->size());
+                        }
+                        ::pdqsort(values.begin(), values.end());
+                        boost::container::flat_set<RangeValueType> value_set(values.begin(), values.end());
+                        (void)range->add_fixed_values(FILTER_IN, value_set);
+                        continue;
+                    }
                 }
 
                 const auto* pred = down_cast<const VectorizedInConstPredicate<MappingType>*>(root_expr);
@@ -899,6 +922,32 @@ Status ChunkPredicateBuilder<E, Type>::normalize_join_runtime_filter(const SlotD
             // If a scanner has finished building a runtime filter,
             // the rest of the runtime filters will be normalized here
 
+            // Compute/storage boundary for STRING_V2: the runtime filter is
+            // `<TYPE_STRING_V2>` (GermanString-typed) but ColumnRangeBuilder
+            // has already remapped the slot to TYPE_VARCHAR for predicate push-down
+            // (so `SlotType/MappingType = TYPE_VARCHAR`, `RangeType = ColumnValueRange<Slice>`).
+            // Detect that mismatch on the concrete filter and transcode via
+            // `GermanStringToSliceDecoder` instead of the DummyDecoder<Slice> the
+            // plain VARCHAR path would use (which would UB down_cast the filter).
+            // Guarded with `if constexpr (SlotType == TYPE_VARCHAR)` so we don't
+            // try to instantiate `create_const_column<TYPE_INT>(Slice)` etc. when
+            // the SlotType isn't string-shaped.
+            if constexpr (SlotType == TYPE_VARCHAR) {
+                const auto* membership = rf->get_membership_filter();
+                if (membership != nullptr && membership->logical_type() == TYPE_STRING_V2) {
+                    if (rf->has_null()) {
+                        normalized_rf_with_null<SlotType, TYPE_STRING_V2,
+                                                detail::RuntimeColumnPredicateBuilder::GermanStringToSliceDecoder>(
+                                rf, &slot, _opts.obj_pool);
+                    } else {
+                        detail::RuntimeColumnPredicateBuilder::build_minmax_range<
+                                RangeType, SlotType, TYPE_STRING_V2,
+                                detail::RuntimeColumnPredicateBuilder::GermanStringToSliceDecoder>(
+                                *range, rf, _opts.obj_pool, _opts.obj_pool);
+                    }
+                    continue;
+                }
+            }
             if (rf->has_null()) {
                 normalized_rf_with_null<SlotType, MappingType, Decoder>(rf, &slot, std::forward<Args>(args)...);
             } else {
