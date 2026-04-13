@@ -290,13 +290,6 @@ public class CreateTableAnalyzer {
                 throw new SemanticException("BITMAP_UNION must be used in AGG_KEYS", keysDesc.getPos());
             }
 
-            if (columnDef.getType().getPrimitiveType() == PrimitiveType.STRING_V2) {
-                if (keysDesc == null || keysDesc.getKeysType() != KeysType.DUP_KEYS) {
-                    throw new SemanticException("STRING_V2 type is only supported in Duplicate Key tables",
-                            columnDef.getPos());
-                }
-            }
-
             Column col;
             if (columnDef.getGeneratedColumnExpr() != null) {
                 col = ColumnBuilder.buildGeneratedColumn(null, columnDef);

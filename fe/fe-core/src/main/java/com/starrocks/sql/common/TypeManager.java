@@ -37,7 +37,6 @@ import com.starrocks.type.MapType;
 import com.starrocks.type.PrimitiveType;
 import com.starrocks.type.ScalarType;
 import com.starrocks.type.StringType;
-import com.starrocks.type.StringV2Type;
 import com.starrocks.type.StructField;
 import com.starrocks.type.StructType;
 import com.starrocks.type.Type;
@@ -667,15 +666,6 @@ public class TypeManager {
         }
 
         if (t1.isStringType() || t2.isStringType()) {
-            // If either side is STRING_V2, preserve STRING_V2 as the common type
-            boolean hasStringV2 = (t1.isScalarType() && ((ScalarType) t1).getPrimitiveType() == PrimitiveType.STRING_V2) ||
-                                  (t2.isScalarType() && ((ScalarType) t2).getPrimitiveType() == PrimitiveType.STRING_V2);
-            if (hasStringV2) {
-                if (t1.getLength() <= 0 || t2.getLength() <= 0) {
-                    return StringV2Type.STRING_V2;
-                }
-                return TypeFactory.createStringV2Type(Math.max(t1.getLength(), t2.getLength()));
-            }
             if (t1.getLength() <= 0 || t2.getLength() <= 0) {
                 return VarcharType.VARCHAR;
             }

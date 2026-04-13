@@ -479,7 +479,7 @@ public final class ConstantOperator extends ScalarOperator implements Comparable
             return getDatetime().compareTo(o.getDatetime());
         } else if (t.isDecimalOfAnyVersion()) {
             return getDecimal().compareTo(o.getDecimal());
-        } else if (t == PrimitiveType.CHAR || t == PrimitiveType.VARCHAR || t == PrimitiveType.STRING_V2) {
+        } else if (t == PrimitiveType.CHAR || t == PrimitiveType.VARCHAR) {
             return getVarchar().compareTo(o.getVarchar());
         }
 
