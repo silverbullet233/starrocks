@@ -75,6 +75,7 @@ public enum PrimitiveType {
 
     JSON("JSON", 16),
     VARIANT("VARIANT", 16),
+    STRING_V2("STRING_V2", 16),
 
     FUNCTION("FUNCTION", 8),
 

@@ -156,6 +156,39 @@ public:
                     return Status::InternalError("VectorizedInPredicate value not const");
                 }
 
+                // Special-case TYPE_STRING_V2 string literals: `_children[i]` typically
+                // evaluates to a (Const-wrapped) BinaryColumn (Slice bytes), but
+                // `ColumnViewer<TYPE_STRING_V2>` would down_cast it as GermanStringColumn
+                // — invalid UB that leaves `viewer.value(0)` returning a GermanString
+                // constructed from whatever bytes happen to be at the Slice's storage
+                // (the classic `GermanString::fnv_hash(0x9)` crash signature). Instead
+                // of viewing, pull the Slice bytes directly and construct a GermanString,
+                // keeping `value` alive in `_string_values` so inline/long pointers stay valid.
+                if constexpr (Type == TYPE_STRING_V2) {
+                    const auto* data_column = ColumnHelper::get_data_column(value.get());
+                    const bool is_only_null = value->only_null();
+                    if (is_only_null || (value->is_nullable() &&
+                                          down_cast<const NullableColumn*>(value.get())->is_null(0))) {
+                        _null_in_set = true;
+                        continue;
+                    }
+                    Slice s;
+                    if (data_column->is_german_string()) {
+                        s = down_cast<const GermanStringColumn*>(data_column)->get_slice(0);
+                    } else if (data_column->is_large_binary()) {
+                        s = down_cast<const LargeBinaryColumn*>(data_column)->get_slice(0);
+                    } else {
+                        s = down_cast<const BinaryColumn*>(data_column)->get_slice(0);
+                    }
+                    GermanString gs(s.data, s.size);
+                    if (_hash_set.emplace(gs).second) {
+                        // Keep the source column alive so any long-string pointer
+                        // (long_rep.ptr into source bytes) stays valid.
+                        _string_values.emplace_back(value);
+                    }
+                    continue;
+                }
+
                 ColumnViewer<Type> viewer(value);
                 if (viewer.is_null(0)) {
                     _null_in_set = true;
@@ -189,12 +222,20 @@ public:
 
         // input data
         auto lhs_data = lhs->is_constant() ? ColumnHelper::as_raw_column<ConstColumn>(lhs)->data_column() : lhs;
-        const auto& data = ColumnHelper::cast_to_raw<Type>(lhs_data)->immutable_data();
 
         // output data
         auto result = RunTimeColumnType<TYPE_BOOLEAN>::create();
         result->resize_uninitialized(size);
         uint8_t* data3 = result->get_data().data();
+
+        // Use `GetContainer<Type>::get_data()` instead of a direct
+        // `cast_to_raw<Type>` + `immutable_data()`: for TYPE_STRING_V2 the input may
+        // be a BinaryColumn (e.g. storage-layer dict words passed through
+        // `DictMappingExpr`) rather than a GermanStringColumn. GetContainer knows
+        // how to wrap every byte-string column type in a uniform container
+        // (returns GermanStringImmContainer that constructs GermanString per row
+        // from an underlying Slice if needed).
+        const auto data = GetContainer<Type>::get_data(lhs_data.get());
 
         if (!lhs->is_constant()) {
             if (filter) {
@@ -231,6 +272,91 @@ public:
     // equal_null: true means that 'null' in column and 'null' in set is equal.
     template <bool null_in_set, bool equal_null, bool use_array>
     ColumnPtr eval_on_chunk(const ColumnPtr& lhs, uint8_t* filter) {
+        // For TYPE_STRING_V2, the incoming `lhs` may be a BinaryColumn
+        // (e.g. dict-words from `DictMappingExpr`, or the compute/storage
+        // boundary) rather than a GermanStringColumn. `ColumnViewer<Type>`
+        // would down_cast as GermanStringColumn → UB. Route through
+        // `GetContainer<TYPE_STRING_V2>::get_data`, whose
+        // `GermanStringImmContainer` knows how to wrap every byte-string
+        // column kind (inline GermanString is bytes-in-struct; long one views
+        // into the source column; BinaryColumn wrapper constructs on the fly).
+        if constexpr (Type == TYPE_STRING_V2) {
+            const auto* inner = ColumnHelper::get_data_column(lhs.get());
+            const size_t size = lhs->size();
+            const NullColumn::ValueType* null_data_src = nullptr;
+            size_t null_mask = 0;
+            size_t not_const_mask = size_t(-1);
+            if (lhs->only_null()) {
+                static NullColumnPtr const_null_ones = NullColumn::create(1, 1);
+                null_data_src = const_null_ones->get_data().data();
+                null_mask = 0;
+                not_const_mask = 0;
+            } else if (lhs->is_constant()) {
+                static NullColumnPtr const_null_zeros = NullColumn::create(1, 0);
+                null_data_src = const_null_zeros->get_data().data();
+                null_mask = 0;
+                not_const_mask = 0;
+            } else if (lhs->is_nullable()) {
+                null_data_src = down_cast<const NullableColumn*>(lhs.get())
+                                        ->immutable_null_column_data().data();
+                null_mask = size_t(-1);
+            } else {
+                static NullColumnPtr const_null_zeros = NullColumn::create(1, 0);
+                null_data_src = const_null_zeros->get_data().data();
+                null_mask = 0;
+            }
+            const auto data = GetContainer<TYPE_STRING_V2>::get_data(inner);
+
+            ColumnBuilder<TYPE_BOOLEAN> builder(size);
+            builder.resize_uninitialized(size);
+            uint8_t* null_data = builder.null_column_raw_ptr()->get_data().data();
+            memset(null_data, 0x0, size);
+            uint8_t* output =
+                    ColumnHelper::cast_to_raw<TYPE_BOOLEAN>(builder.data_column_raw_ptr())->get_data().data();
+
+            auto update_row = [&](int row) {
+                if (null_data_src[row & null_mask]) {
+                    if constexpr (equal_null) {
+                        output[row] = 1;
+                    } else {
+                        null_data[row] = 1;
+                    }
+                    return;
+                }
+                if (check_value_existence<use_array>(data[row & not_const_mask])) {
+                    output[row] = 1;
+                    return;
+                }
+                if constexpr (!null_in_set || equal_null) {
+                    output[row] = 0;
+                } else {
+                    null_data[row] = 1;
+                }
+            };
+
+            if (filter != nullptr) {
+                memset(output, 0x0, size);
+                for (int row = 0; row < static_cast<int>(size); ++row) {
+                    if (filter[row]) update_row(row);
+                }
+            } else {
+                for (int row = 0; row < static_cast<int>(size); ++row) {
+                    update_row(row);
+                }
+            }
+            if (_is_not_in) {
+                for (int i = 0; i < static_cast<int>(size); i++) output[i] = 1 - output[i];
+            }
+            if (std::memchr(null_data, 0x1, size) != nullptr) {
+                builder.set_has_null(true);
+            }
+            auto result = builder.build(lhs->is_constant());
+            if (result->is_constant()) {
+                result->resize(lhs->size());
+            }
+            return result;
+        }
+
         ColumnViewer<Type> viewer(lhs);
         size_t size = viewer.size();
         ColumnBuilder<TYPE_BOOLEAN> builder(size);

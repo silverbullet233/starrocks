@@ -511,6 +511,48 @@ requires(!lt_is_date<SlotType>) Status ChunkPredicateBuilder<E, Type>::normalize
             return Status::OK();
         }
 
+        // Compute/storage boundary for STRING_V2 IN-lists: the expression is
+        // `VectorizedInConstPredicate<TYPE_STRING_V2>` (GermanString hash set) but
+        // `ColumnRangeBuilder` mapped the slot to TYPE_VARCHAR so the range is
+        // `ColumnValueRange<Slice>` with MappingType=TYPE_VARCHAR. A naive
+        // `down_cast<VectorizedInConstPredicate<TYPE_VARCHAR>*>(root_expr)` would be
+        // undefined and crash when the range's `insert_unique(Slice&&)` dereferences
+        // garbage. Pull GermanStrings out via the correct cast, copy bytes into
+        // pool-owned std::string backings, and add Slices to the range.
+        if constexpr (SlotType == TYPE_VARCHAR) {
+            if (l->type().type == TYPE_STRING_V2 && MappingType != TYPE_STRING_V2) {
+                const auto* gs_pred = down_cast<const VectorizedInConstPredicate<TYPE_STRING_V2>*>(root_expr);
+                if (gs_pred->is_join_runtime_filter()) {
+                    return Status::OK();
+                }
+                if (is_not_in<Negative>(gs_pred) ||
+                    gs_pred->hash_set().size() > config::max_pushdown_conditions_per_column) {
+                    return Status::OK();
+                }
+                if (gs_pred->null_in_set()) {
+                    if (gs_pred->is_eq_null()) {
+                        return Status::OK();
+                    }
+                    if constexpr (Negative) {
+                        _normalized_exprs[i] = true;
+                        return Status::OK();
+                    }
+                    // `in (..., NULL)` non-negative: NULL is eliminated, proceed with non-null values.
+                }
+                boost::container::flat_set<RangeValueType> values;
+                values.reserve(gs_pred->hash_set().size());
+                for (const GermanString& gs : gs_pred->hash_set()) {
+                    auto* backing = _opts.obj_pool->template add<std::string>(
+                            new std::string(gs.get_data(), gs.len));
+                    values.insert(Slice(backing->data(), backing->size()));
+                }
+                if (range->add_fixed_values(FILTER_IN, values).ok()) {
+                    _normalized_exprs[i] = true;
+                }
+                return Status::OK();
+            }
+        }
+
         const auto* pred = down_cast<const VectorizedInConstPredicate<MappingType>*>(root_expr);
         // join in runtime filter  will handle by `_normalize_join_runtime_filter`
         if (pred->is_join_runtime_filter()) {
@@ -1000,6 +1042,47 @@ Status ChunkPredicateBuilder<E, Type>::normalize_not_in_or_not_equal_predicate(
         if (1 != l->get_slot_ids(&slot_ids) || slot_ids[0] != slot.id()) {
             return Status::OK();
         }
+
+        // Mirror of the STRING_V2 translator in the IN-case above: `val NOT IN ('a','b')`
+        // with a STRING_V2 slot ends up as `VectorizedInConstPredicate<TYPE_STRING_V2>`
+        // but SlotType/MappingType were already remapped to TYPE_VARCHAR by
+        // `ColumnRangeBuilder`, so the naive down_cast is UB. Extract GermanStrings and
+        // transcode to pool-owned Slices for the Slice-typed range.
+        if constexpr (SlotType == TYPE_VARCHAR) {
+            if (l->type().type == TYPE_STRING_V2 && MappingType != TYPE_STRING_V2) {
+                const auto* gs_pred = down_cast<const VectorizedInConstPredicate<TYPE_STRING_V2>*>(root_expr);
+                if (gs_pred->is_join_runtime_filter()) {
+                    return Status::OK();
+                }
+                if (!is_not_in<Negative>(gs_pred) ||
+                    gs_pred->hash_set().size() > config::max_pushdown_conditions_per_column) {
+                    return Status::OK();
+                }
+                if (gs_pred->null_in_set()) {
+                    if (gs_pred->is_eq_null()) {
+                        return Status::OK();
+                    }
+                    if constexpr (!Negative) {
+                        range->clear_to_empty();
+                        _normalized_exprs[i] = true;
+                        return Status::OK();
+                    }
+                    // `or col in (..., NULL)`: keep the non-null values in the negative set below.
+                }
+                boost::container::flat_set<RangeValueType> values;
+                values.reserve(gs_pred->hash_set().size());
+                for (const GermanString& gs : gs_pred->hash_set()) {
+                    auto* backing = _opts.obj_pool->template add<std::string>(
+                            new std::string(gs.get_data(), gs.len));
+                    values.insert(Slice(backing->data(), backing->size()));
+                }
+                if (range->add_fixed_values(FILTER_NOT_IN, values).ok()) {
+                    _normalized_exprs[i] = true;
+                }
+                return Status::OK();
+            }
+        }
+
         const auto* pred = down_cast<const VectorizedInConstPredicate<MappingType>*>(root_expr);
 
         if (pred->is_join_runtime_filter()) {

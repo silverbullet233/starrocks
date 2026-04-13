@@ -40,6 +40,23 @@ class ResultNopCheck {
  * @param OP: the operations impl, like NullUnion
  */
 
+// String/binary columns can cross the VARCHAR <-> STRING_V2 compute-layer
+// boundary (e.g. dict-decode rewrites a STRING_V2 predicate to run against a
+// BinaryColumn of dict words, or a TYPE_VARCHAR predicate receives a
+// GermanStringColumn via the runtime-filter translator). `GetContainer<T>`
+// already performs the correct view adaptation (StringSliceView /
+// GermanStringImmContainer), so prefer it over the strict `cast_to_raw<T>`
+// for byte-string types. Non-byte-string types (object family, fixed-length)
+// keep the strict cast so JsonColumn / numeric containers behave as before.
+template <LogicalType T>
+static inline auto _binary_fn_immutable_data(const ColumnPtr& v) {
+    if constexpr (lt_is_string<T> || lt_is_binary<T>) {
+        return GetContainer<T>::get_data(v);
+    } else {
+        return ColumnHelper::cast_to_raw<T>(v)->immutable_data();
+    }
+}
+
 template <typename OP>
 class BaseBinaryFunction {
 public:
@@ -58,8 +75,8 @@ public:
 
         if constexpr (lt_is_string<LType> || lt_is_binary<LType> || lt_is_object_family<LType> ||
                       lt_is_object_family<RType>) {
-            const auto r1 = ColumnHelper::cast_to_raw<LType>(v1)->immutable_data();
-            const auto r2 = ColumnHelper::cast_to_raw<RType>(v2)->immutable_data();
+            const auto r1 = _binary_fn_immutable_data<LType>(v1);
+            const auto r2 = _binary_fn_immutable_data<RType>(v2);
             for (int i = 0; i < s; ++i) {
                 data3[i] = OP::template apply<LCppType, RCppType, ResultCppType>(r1[i], r2[i]);
             }
@@ -87,10 +104,10 @@ public:
         result->resize_uninitialized(size);
         auto* data3 = result->get_data().data();
 
-        const auto data1 = ColumnHelper::cast_to_raw<LType>(v1)->immutable_data()[0];
+        const auto data1 = _binary_fn_immutable_data<LType>(v1)[0];
         if constexpr (lt_is_string<LType> || lt_is_binary<LType> || lt_is_object_family<LType> ||
                       lt_is_object_family<RType>) {
-            const auto data2 = ColumnHelper::cast_to_raw<RType>(v2)->immutable_data();
+            const auto data2 = _binary_fn_immutable_data<RType>(v2);
             for (int i = 0; i < size; ++i) {
                 data3[i] = OP::template apply<LCppType, RCppType, ResultCppType>(data1, data2[i]);
             }
@@ -118,10 +135,10 @@ public:
         auto& r3 = result->get_data();
         auto* data3 = r3.data();
 
-        auto data2 = ColumnHelper::cast_to_raw<RType>(v2)->immutable_data()[0];
+        auto data2 = _binary_fn_immutable_data<RType>(v2)[0];
         if constexpr (lt_is_string<LType> || lt_is_binary<LType> || lt_is_object_family<LType> ||
                       lt_is_object_family<RType>) {
-            const auto data1 = ColumnHelper::cast_to_raw<LType>(v1)->immutable_data();
+            const auto data1 = _binary_fn_immutable_data<LType>(v1);
             for (int i = 0; i < size; ++i) {
                 data3[i] = OP::template apply<LCppType, RCppType, ResultCppType>(data1[i], data2);
             }
@@ -147,8 +164,8 @@ public:
         result->resize_uninitialized(1);
         auto& r3 = result->get_data();
 
-        const auto r1 = ColumnHelper::cast_to_raw<LType>(v1)->immutable_data();
-        const auto r2 = ColumnHelper::cast_to_raw<RType>(v2)->immutable_data();
+        const auto r1 = _binary_fn_immutable_data<LType>(v1);
+        const auto r2 = _binary_fn_immutable_data<RType>(v2);
         r3[0] = OP::template apply<LCppType, RCppType, ResultCppType>(r1[0], r2[0]);
 
         return result;
