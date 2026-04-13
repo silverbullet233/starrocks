@@ -28,18 +28,39 @@
 namespace starrocks {
 
 class GermanStringColumn;
+template <typename T>
+class BinaryColumnBase;
 
-// Immutable view for template-based function dispatch framework.
+// Immutable view that yields GermanString per row from any byte-string column:
+//   - GermanStringColumn (TYPE_STRING_V2 — native, zero overhead)
+//   - BinaryColumn / LargeBinaryColumn (compute/storage boundary — constructs a
+//     GermanString view per row; inline-copies for ≤12 bytes, long_rep.ptr =
+//     slice.data for >12 bytes so the lifetime depends on the column staying
+//     alive, which is the caller's responsibility).
+//
+// Used by `GetContainer<TYPE_STRING_V2>::get_data()` so a STRING_V2-typed
+// runtime filter, bloom filter or aggregator can probe a BinaryColumn at the
+// storage boundary without an explicit translation step.
 class GermanStringImmContainer {
 public:
     GermanStringImmContainer() = default;
     explicit GermanStringImmContainer(const GermanStringColumn& column);
 
+    template <typename T>
+    explicit GermanStringImmContainer(const BinaryColumnBase<T>& column) {
+        _init_from_binary(column);
+    }
+
     GermanString operator[](size_t index) const;
     size_t size() const;
 
 private:
-    const GermanStringColumn* _column = nullptr;
+    template <typename T>
+    void _init_from_binary(const BinaryColumnBase<T>& column);
+
+    const Column* _column = nullptr;
+    bool _is_german = true;
+    bool _is_large = false;
 };
 
 class GermanStringColumn final
@@ -220,14 +241,14 @@ private:
 };
 
 // ---- GermanStringImmContainer inline implementations ----
+//
+// Note: only `size()` is inline-defined here. `operator[]` and the
+// `BinaryColumnBase<T>`-accepting ctor live in german_string_column.cpp so we
+// can dispatch over BinaryColumn / LargeBinaryColumn without pulling
+// binary_column.h into every translation unit that uses this header.
 
 inline GermanStringImmContainer::GermanStringImmContainer(const GermanStringColumn& column)
-        : _column(&column) {}
-
-inline GermanString GermanStringImmContainer::operator[](size_t index) const {
-    DCHECK(_column != nullptr);
-    return _column->get_german_string(index);
-}
+        : _column(&column), _is_german(true), _is_large(false) {}
 
 inline size_t GermanStringImmContainer::size() const {
     return _column == nullptr ? 0 : _column->size();

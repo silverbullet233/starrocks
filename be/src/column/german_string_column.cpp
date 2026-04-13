@@ -478,4 +478,37 @@ MutableColumnPtr GermanStringColumn::from_binary_column(const BinaryColumn& bc) 
     return gs_col;
 }
 
+// ---- GermanStringImmContainer out-of-line definitions ----
+//
+// `_init_from_binary` and `operator[]` need to know about BinaryColumn /
+// LargeBinaryColumn, so we keep them in the .cpp to avoid forcing every
+// header-only consumer of german_string_column.h to drag in binary_column.h.
+
+template <typename T>
+void GermanStringImmContainer::_init_from_binary(const BinaryColumnBase<T>& column) {
+    _column = &column;
+    _is_german = false;
+    _is_large = std::is_same_v<T, uint64_t>;
+}
+
+template void GermanStringImmContainer::_init_from_binary<uint32_t>(const BinaryColumnBase<uint32_t>&);
+template void GermanStringImmContainer::_init_from_binary<uint64_t>(const BinaryColumnBase<uint64_t>&);
+
+GermanString GermanStringImmContainer::operator[](size_t index) const {
+    DCHECK(_column != nullptr);
+    if (_is_german) {
+        return down_cast<const GermanStringColumn*>(_column)->get_german_string(index);
+    }
+    // Construct a GermanString from the underlying Slice. For ≤12-byte strings
+    // the bytes are inline-copied into the GermanString struct; for >12 bytes
+    // long_rep.ptr = slice.data so the GermanString is a view into the column's
+    // bytes (kept alive by the caller's column ptr for the filter's lifetime).
+    if (_is_large) {
+        const Slice s = down_cast<const LargeBinaryColumn*>(_column)->get_slice(index);
+        return GermanString(s.data, s.size);
+    }
+    const Slice s = down_cast<const BinaryColumn*>(_column)->get_slice(index);
+    return GermanString(s.data, s.size);
+}
+
 } // namespace starrocks

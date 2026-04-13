@@ -715,7 +715,20 @@ struct GetContainer {
     using ColumnType = typename RunTimeTypeTraits<ltype>::ColumnType;
     static const auto get_data(const Column* column) {
         const auto* data_column = ColumnHelper::get_data_column(column);
-        if constexpr (lt_is_string_or_binary<ltype>) {
+        if constexpr (ltype == TYPE_STRING_V2) {
+            // STRING_V2-native: emit GermanString per row. The container handles all
+            // byte-string column types — when storage hands us a BinaryColumn
+            // (compute/storage boundary), it constructs a GermanString view per row;
+            // for ≤12 bytes that's an inline-byte copy, for >12 bytes it points
+            // long_rep.ptr at the column's bytes (which the caller keeps alive).
+            if (data_column->is_large_binary()) {
+                return GermanStringImmContainer(*down_cast<const LargeBinaryColumn*>(data_column));
+            }
+            if (data_column->is_german_string()) {
+                return GermanStringImmContainer(*down_cast<const GermanStringColumn*>(data_column));
+            }
+            return GermanStringImmContainer(*down_cast<const BinaryColumn*>(data_column));
+        } else if constexpr (lt_is_string_or_binary<ltype>) {
             using LargeColumnType = RunTimeLargeColumnType<ltype>;
             if (data_column->is_large_binary()) {
                 return down_cast<const LargeColumnType*>(data_column)->immutable_data();

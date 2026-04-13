@@ -580,12 +580,48 @@ struct WithModuloArg<ModuloOp, BucketAwareFullScanIterator> {
     };
 };
 
+// `kIsByteString<T>` is true for the value types whose min/max wire format is
+// "size + bytes" and whose backing storage must be owned by the filter (since
+// the source column may go away). Both Slice (TYPE_VARCHAR/TYPE_CHAR/TYPE_VARBINARY)
+// and GermanString (TYPE_STRING_V2) qualify; the wire layout is identical, so
+// a STRING_V2-built filter remains byte-portable to a VARCHAR-typed deserialize.
+template <typename T>
+constexpr bool kIsByteString = IsSlice<T> || std::is_same_v<T, GermanString>;
+
 template <LogicalType Type>
 class MinMaxRuntimeFilter final : public RuntimeFilter {
 public:
     using CppType = RunTimeCppType<Type>;
     using ColumnType = RunTimeColumnType<Type>;
     using ContainerType = RunTimeImmContainerType<Type>;
+
+    // Reconstruct a byte-string CppType (Slice or GermanString) pointing at the
+    // owned `_slice_min/_slice_max` backing. Used after we copy bytes into the
+    // backing so the public CppType _min/_max stay valid for the filter's lifetime.
+    static CppType _make_byte_string(const std::string& backing) {
+        if constexpr (IsSlice<CppType>) {
+            return Slice(backing.data(), backing.size());
+        } else if constexpr (std::is_same_v<CppType, GermanString>) {
+            // GermanString(const void*, size_t): inline-copies for ≤12 bytes,
+            // long_rep.ptr = backing.data() for >12 bytes (view, kept alive by us).
+            return GermanString(backing.data(), backing.size());
+        } else {
+            return CppType{};
+        }
+    }
+
+    // Extract (data, size) from a byte-string CppType. Slice exposes them directly;
+    // GermanString resolves get_data() to short_rep.str (inline) or long_rep.ptr
+    // (arena), both giving the underlying string bytes.
+    static std::pair<const char*, size_t> _byte_string_view(const CppType& v) {
+        if constexpr (IsSlice<CppType>) {
+            return {v.data, v.size};
+        } else if constexpr (std::is_same_v<CppType, GermanString>) {
+            return {v.get_data(), v.len};
+        } else {
+            return {nullptr, 0};
+        }
+    }
 
     MinMaxRuntimeFilter() { _init_min_max(); }
     MinMaxRuntimeFilter(const MinMaxRuntimeFilter& rhs)
@@ -640,13 +676,13 @@ public:
         auto* p = pool->add(new MinMaxRuntimeFilter());
         p->_init_full_range();
 
-        if constexpr (IsSlice<CppType>) {
+        if constexpr (kIsByteString<CppType>) {
             if constexpr (is_min) {
                 p->_slice_min = val.to_string();
-                val = Slice(p->_slice_min.data(), p->_slice_min.size());
+                val = _make_byte_string(p->_slice_min);
             } else {
                 p->_slice_max = val.to_string();
-                val = Slice(p->_slice_max.data(), p->_slice_max.size());
+                val = _make_byte_string(p->_slice_max);
             }
         }
 
@@ -682,6 +718,9 @@ public:
     bool is_full_range() const {
         if constexpr (IsSlice<CppType>) {
             return _min == Slice::min_value() && _max == Slice::max_value();
+        } else if constexpr (std::is_same_v<CppType, GermanString>) {
+            return _min == RunTimeTypeLimits<TYPE_STRING_V2>::min_value() &&
+                   _max == RunTimeTypeLimits<TYPE_STRING_V2>::max_value();
         } else if constexpr (std::is_integral_v<CppType> || std::is_floating_point_v<CppType>) {
             return _min == std::numeric_limits<CppType>::lowest() && _max == std::numeric_limits<CppType>::max();
         } else if constexpr (IsDate<CppType>) {
@@ -719,21 +758,21 @@ public:
 
     template <bool is_min>
     void update_min_max(CppType val) {
-        // now slice have not support update min/max
-        if constexpr (IsSlice<CppType>) {
+        // Byte-string values (Slice + GermanString) need an owned backing buffer because
+        // the source column may go away. We copy bytes into _slice_min/_slice_max and then
+        // reconstruct the CppType so it points at our own storage.
+        if constexpr (kIsByteString<CppType>) {
             std::lock_guard<std::mutex> lk(_slice_mutex);
             if constexpr (is_min) {
                 if (_min < val) {
                     _slice_min = val.to_string();
-                    _min.data = _slice_min.data();
-                    _min.size = _slice_min.size();
+                    _min = _make_byte_string(_slice_min);
                     _update_version();
                 }
             } else {
                 if (_max > val) {
                     _slice_max = val.to_string();
-                    _max.data = _slice_max.data();
-                    _max.size = _slice_max.size();
+                    _max = _make_byte_string(_slice_max);
                     _update_version();
                 }
             }
@@ -866,7 +905,7 @@ public:
     }
     void evaluate_min_max(const ContainerType& values, uint8_t* selection, size_t size) const {
         DCHECK(_has_min_max);
-        if constexpr (!IsSlice<CppType>) {
+        if constexpr (!kIsByteString<CppType>) {
             const auto& data = values;
             if (_left_close_interval) {
                 if (_right_close_interval) {
@@ -891,7 +930,7 @@ public:
     }
 
     ALWAYS_INLINE bool evaluate_min_max(const CppType& value) const {
-        if constexpr (!IsSlice<CppType>) {
+        if constexpr (!kIsByteString<CppType>) {
             bool left = _left_close_interval ? value >= _min : value > _min;
             bool right = _right_close_interval ? value <= _max : value < _max;
             return left && right;
@@ -900,7 +939,7 @@ public:
     }
 
     uint16_t evaluate_min_max(const ContainerType& values, uint16_t* sel, uint16_t sel_size, uint16_t* dst_sel) const {
-        if constexpr (!IsSlice<CppType>) {
+        if constexpr (!kIsByteString<CppType>) {
             const auto& data = values;
             uint16_t new_size = 0;
             for (int i = 0; i < sel_size; i++) {
@@ -918,7 +957,7 @@ public:
     }
 
     void evaluate_min_max(const ContainerType& values, uint8_t* selection, uint16_t from, uint16_t to) const {
-        if constexpr (!IsSlice<CppType>) {
+        if constexpr (!kIsByteString<CppType>) {
             for (uint16_t i = from; i < to; i++) {
                 if (selection[i]) {
                     selection[i] = evaluate_min_max(values[i]);
@@ -928,20 +967,22 @@ public:
     }
 
     CppType min_value(ObjectPool* pool) const {
-        if constexpr (IsSlice<CppType>) {
+        if constexpr (kIsByteString<CppType>) {
             std::lock_guard<std::mutex> lk(_slice_mutex);
-            auto* str = pool->template add<std::string>(new std::string(_min.get_data(), _min.get_size()));
-            return Slice(*str);
+            auto [data, size] = _byte_string_view(_min);
+            auto* str = pool->template add<std::string>(new std::string(data, size));
+            return _make_byte_string(*str);
         } else {
             return _min;
         }
     }
 
     CppType max_value(ObjectPool* pool) const {
-        if constexpr (IsSlice<CppType>) {
+        if constexpr (kIsByteString<CppType>) {
             std::lock_guard<std::mutex> lk(_slice_mutex);
-            auto* str = pool->template add<std::string>(new std::string(_max.get_data(), _max.get_size()));
-            return Slice(*str);
+            auto [data, size] = _byte_string_view(_max);
+            auto* str = pool->template add<std::string>(new std::string(data, size));
+            return _make_byte_string(*str);
         } else {
             return _max;
         }
@@ -981,6 +1022,8 @@ public:
             }
         } else if constexpr (IsSlice<CppType>) {
             ss << "_min/_max=slice";
+        } else if constexpr (std::is_same_v<CppType, GermanString>) {
+            ss << "_min/_max=german_string";
         } else if constexpr (IsDate<CppType> || IsTimestamp<CppType> || IsDecimal<CppType>) {
             ss << "_min=" << _min.to_string() << ", _max=" << _max.to_string();
         }
@@ -991,12 +1034,16 @@ public:
 
     size_t min_max_serialized_size() const {
         size_t size = 0;
-        if constexpr (!IsSlice<CppType>) {
+        if constexpr (!kIsByteString<CppType>) {
             size += sizeof(_min) + sizeof(_max);
         } else {
-            // slice format = | min_size | max_size | min_data | max_data |
-            size += sizeof(_min.size) + _min.size;
-            size += sizeof(_max.size) + _max.size;
+            // byte-string format = | min_size (uint32) | max_size (uint32) | min_data | max_data |
+            // Same wire layout for Slice and GermanString so a STRING_V2 build / VARCHAR
+            // probe (or vice-versa) can interoperate at the storage boundary.
+            const auto [min_data, min_size] = _byte_string_view(_min);
+            const auto [max_data, max_size] = _byte_string_view(_max);
+            size += sizeof(uint32_t) + min_size;
+            size += sizeof(uint32_t) + max_size;
         }
         return size;
     }
@@ -1005,25 +1052,28 @@ public:
         uint8_t* begin = dst;
         memcpy(dst, &_has_min_max, sizeof(_has_min_max));
         dst += sizeof(_has_min_max);
-        if constexpr (!IsSlice<CppType>) {
+        if constexpr (!kIsByteString<CppType>) {
             memcpy(dst, &_min, sizeof(_min));
             dst += sizeof(_min);
             memcpy(dst, &_max, sizeof(_max));
             dst += sizeof(_max);
         } else {
-            memcpy(dst, &_min.size, sizeof(_min.size));
-            dst += sizeof(_min.size);
-            memcpy(dst, &_max.size, sizeof(_max.size));
-            dst += sizeof(_max.size);
+            const auto [min_data, min_size_raw] = _byte_string_view(_min);
+            const auto [max_data, max_size_raw] = _byte_string_view(_max);
+            const uint32_t min_size = static_cast<uint32_t>(min_size_raw);
+            const uint32_t max_size = static_cast<uint32_t>(max_size_raw);
+            memcpy(dst, &min_size, sizeof(min_size));
+            dst += sizeof(min_size);
+            memcpy(dst, &max_size, sizeof(max_size));
+            dst += sizeof(max_size);
 
-            if (_min.size != 0) {
-                memcpy(dst, _min.data, _min.size);
-                dst += _min.size;
+            if (min_size != 0) {
+                memcpy(dst, min_data, min_size);
+                dst += min_size;
             }
-
-            if (_max.size != 0) {
-                memcpy(dst, _max.data, _max.size);
-                dst += _max.size;
+            if (max_size != 0) {
+                memcpy(dst, max_data, max_size);
+                dst += max_size;
             }
         }
         return dst - begin;
@@ -1031,32 +1081,25 @@ public:
 
     size_t deserialize_minmax(const uint8_t* dst) {
         const uint8_t* begin = dst;
-        if constexpr (!IsSlice<CppType>) {
+        if constexpr (!kIsByteString<CppType>) {
             memcpy(&_min, dst, sizeof(_min));
             dst += sizeof(_min);
             memcpy(&_max, dst, sizeof(_max));
             dst += sizeof(_max);
         } else {
-            _min.data = nullptr;
-            _max.data = nullptr;
-            memcpy(&_min.size, dst, sizeof(_min.size));
-            dst += sizeof(_min.size);
-            memcpy(&_max.size, dst, sizeof(_max.size));
-            dst += sizeof(_max.size);
+            uint32_t min_size = 0;
+            uint32_t max_size = 0;
+            memcpy(&min_size, dst, sizeof(min_size));
+            dst += sizeof(min_size);
+            memcpy(&max_size, dst, sizeof(max_size));
+            dst += sizeof(max_size);
 
-            if (_min.size != 0) {
-                _slice_min.resize(_min.size);
-                memcpy(_slice_min.data(), dst, _min.size);
-                dst += _min.size;
-                _min.data = _slice_min.data();
-            }
-
-            if (_max.size != 0) {
-                _slice_max.resize(_max.size);
-                memcpy(_slice_max.data(), dst, _max.size);
-                dst += _max.size;
-                _max.data = _slice_max.data();
-            }
+            _slice_min.assign(reinterpret_cast<const char*>(dst), min_size);
+            dst += min_size;
+            _slice_max.assign(reinterpret_cast<const char*>(dst), max_size);
+            dst += max_size;
+            _min = _make_byte_string(_slice_min);
+            _max = _make_byte_string(_slice_max);
         }
         return dst - begin;
     }
@@ -1078,6 +1121,9 @@ private:
         if constexpr (IsSlice<CppType>) {
             _min = Slice::max_value();
             _max = Slice::min_value();
+        } else if constexpr (std::is_same_v<CppType, GermanString>) {
+            _min = RunTimeTypeLimits<TYPE_STRING_V2>::max_value();
+            _max = RunTimeTypeLimits<TYPE_STRING_V2>::min_value();
         } else if constexpr (std::is_integral_v<CppType>) {
             _min = std::numeric_limits<CppType>::max();
             _max = std::numeric_limits<CppType>::lowest();
@@ -1105,6 +1151,9 @@ private:
         if constexpr (IsSlice<CppType>) {
             _max = Slice::max_value();
             _min = Slice::min_value();
+        } else if constexpr (std::is_same_v<CppType, GermanString>) {
+            _max = RunTimeTypeLimits<TYPE_STRING_V2>::max_value();
+            _min = RunTimeTypeLimits<TYPE_STRING_V2>::min_value();
         } else if constexpr (std::is_integral_v<CppType>) {
             _max = std::numeric_limits<CppType>::max();
             _min = std::numeric_limits<CppType>::lowest();
@@ -1134,19 +1183,23 @@ private:
             _min = std::min(_min, rf->_min);
             _max = std::max(_max, rf->_max);
 
-            if constexpr (IsSlice<CppType>) {
+            if constexpr (kIsByteString<CppType>) {
+                // After std::min/max we may now hold byte-string pointers into the
+                // OTHER runtime filter's storage. Copy them into our own backing.
                 std::lock_guard<std::mutex> lk(_slice_mutex);
-                // maybe we are refering to another runtime filter instance
-                // for security we have to copy that back to our instance.
-                if (_min.size != 0 && _min.data != _slice_min.data()) {
-                    _slice_min.resize(_min.size);
-                    memcpy(_slice_min.data(), _min.data, _min.size);
-                    _min.data = _slice_min.data();
+                {
+                    const auto [min_data, min_size] = _byte_string_view(_min);
+                    if (min_size != 0 && min_data != _slice_min.data()) {
+                        _slice_min.assign(min_data, min_size);
+                        _min = _make_byte_string(_slice_min);
+                    }
                 }
-                if (_max.size != 0 && _max.data != _slice_max.data()) {
-                    _slice_max.resize(_max.size);
-                    memcpy(_slice_max.data(), _max.data, _max.size);
-                    _max.data = _slice_max.data();
+                {
+                    const auto [max_data, max_size] = _byte_string_view(_max);
+                    if (max_size != 0 && max_data != _slice_max.data()) {
+                        _slice_max.assign(max_data, max_size);
+                        _max = _make_byte_string(_slice_max);
+                    }
                 }
             }
         }
@@ -1268,6 +1321,14 @@ public:
     size_t compute_hash(CppType value) const {
         if constexpr (IsSlice<CppType>) {
             return SliceHash()(value);
+        } else if constexpr (std::is_same_v<CppType, GermanString>) {
+            // Byte-consistent with `compute_hash(Slice)` so the bloom-filter bits remain
+            // portable across the compute/storage boundary: a STRING_V2 build side
+            // (GermanStringColumn → CppType=GermanString) and a VARCHAR storage probe
+            // (BinaryColumn → CppType=Slice) both hash the same input bytes to the same
+            // slot. `GermanString::get_data()` resolves to short_rep.str (inline) or
+            // long_rep.ptr (arena), both giving the raw string bytes.
+            return SliceHash()(Slice(value.get_data(), value.len));
         } else {
             return phmap_mix<sizeof(size_t)>()(std::hash<CppType>()(value));
         }
