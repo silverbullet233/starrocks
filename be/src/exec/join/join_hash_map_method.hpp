@@ -55,7 +55,7 @@ void BucketChainedJoinHashMap<LT>::construct_hash_table(JoinHashTableItems* tabl
     } else {
         const auto* __restrict is_nulls_data = is_nulls->data();
         auto need_calc_bucket_num = [&](const uint32_t index) {
-            if constexpr (!std::is_same_v<CppType, Slice>) {
+            if constexpr (!IsStringHashKey<CppType>) {
                 return true;
             } else {
                 return is_nulls_data[index] == 0;
@@ -103,7 +103,7 @@ void BucketChainedJoinHashMap<LT>::lookup_init(const JoinHashTableItems& table_i
     } else {
         const auto* is_nulls_data = is_nulls->data();
         auto need_calc_bucket_num = [&](const uint32_t index) {
-            if constexpr (!std::is_same_v<CppType, Slice>) {
+            if constexpr (!IsStringHashKey<CppType>) {
                 return true;
             } else {
                 return is_nulls_data[index] == 0;
@@ -190,7 +190,7 @@ void TLinearChainedJoinHashMap<LT, NeedBuildChained>::construct_hash_table(
             if constexpr (HasAsofTemporalNulls) {
                 if (asof_temporal_nulls[i] != 0) continue;
             }
-            if constexpr (std::is_same_v<CppType, Slice> && HasEquiJoinKeyNulls) {
+            if constexpr (IsStringHashKey<CppType> && HasEquiJoinKeyNulls) {
                 if (equi_join_key_nulls[i] != 0) continue;
             }
 
@@ -299,7 +299,7 @@ void TLinearChainedJoinHashMap<LT, NeedBuildChained>::lookup_init(const JoinHash
         const uint8_t* is_nulls_data = IsNullable ? is_nulls->data() : nullptr;
 
         auto need_calc_bucket_num = [&](const uint32_t index) {
-            if constexpr (!IsNullable || !std::is_same_v<CppType, Slice>) {
+            if constexpr (!IsNullable || !IsStringHashKey<CppType>) {
                 // Only check `is_nulls_data[i]` for the nullable slice type. The hash calculation overhead for
                 // fixed-size types is small, and thus we do not check it to allow vectorization of the hash calculation.
                 return true;
@@ -404,7 +404,7 @@ void LinearChainedAsofJoinHashMap<LT>::construct_hash_table(JoinHashTableItems* 
             auto* fingerprint_buffer = temp_fingerprints.data() + i;
             for (uint32_t j = 0; j < batch_count; j++) {
                 const uint32_t row_index = i + j;
-                if constexpr (HasEquiJoinKeyNulls && std::is_same_v<CppType, Slice>) {
+                if constexpr (HasEquiJoinKeyNulls && IsStringHashKey<CppType>) {
                     if (equi_join_key_nulls[row_index] != 0) continue;
                 }
                 if constexpr (HasAsofTemporalNulls) {
@@ -477,7 +477,7 @@ void LinearChainedAsofJoinHashMap<LT>::lookup_init(const JoinHashTableItems& tab
         const uint8_t* is_nulls_data = IsNullable && is_nulls.has_value() ? is_nulls->data() : nullptr;
 
         auto need_calc_bucket_num = [&](const uint32_t index) {
-            if constexpr (!IsNullable || !std::is_same_v<CppType, Slice>) {
+            if constexpr (!IsNullable || !IsStringHashKey<CppType>) {
                 // Only check `is_nulls_data[i]` for the nullable slice type. The hash calculation overhead for
                 // fixed-size types is small, and thus we do not check it to allow vectorization of the hash calculation.
                 return true;

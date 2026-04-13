@@ -127,6 +127,11 @@ struct JoinHashTableItems {
     Buffer<DenseGroup> dense_groups;
 
     Buffer<Slice> build_slice;
+    // STRING_V2-native path: when the build key column is a GermanStringColumn, the key
+    // constructor populates `build_german_strings` (zero-copy view into the column's own
+    // _german_strings buffer) instead of `build_slice`. Non-STRING_V2 string paths leave
+    // this empty.
+    Buffer<GermanString> build_german_strings;
     ColumnPtr build_key_column = nullptr;
     Buffer<uint8_t> build_key_nulls;
 
@@ -210,6 +215,11 @@ struct HashTableProbeState {
     Buffer<uint32_t> buckets;
     Buffer<uint32_t> next;
     Buffer<Slice> probe_slice;
+    // Mirrors `JoinHashTableItems::build_german_strings` on the probe side: when the
+    // probe key column is a GermanStringColumn, the probe key constructor fills this
+    // buffer (zero-copy view into the column's `_german_strings`) and it is the key
+    // source handed to `BucketChainedJoinHashMap<TYPE_STRING_V2>::lookup_init`.
+    Buffer<GermanString> probe_german_strings;
 
     std::optional<ImmBuffer<uint8_t>> null_array;
     ColumnPtr probe_key_column;
@@ -289,6 +299,7 @@ struct HashTableProbeState {
               buckets(rhs.buckets),
               next(rhs.next),
               probe_slice(rhs.probe_slice),
+              probe_german_strings(rhs.probe_german_strings),
               null_array(rhs.null_array),
               probe_key_column(rhs.probe_key_column == nullptr ? nullptr : rhs.probe_key_column->clone()),
               key_columns(rhs.key_columns),

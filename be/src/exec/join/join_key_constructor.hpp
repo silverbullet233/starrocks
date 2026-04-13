@@ -28,10 +28,39 @@ namespace starrocks {
 
 template <LogicalType LT>
 void BuildKeyConstructorForOneKey<LT>::build_key(RuntimeState* state, JoinHashTableItems* table_items) {
-    // TODO: Going forward, if system testing verifies that the slice cache has no impact on join performance
-    // in all scenarios, we will ultimately avoid building the slice cache. According to current simple benchmark
-    // results, it provides only minor performance benefits in medium-cardinality scenarios.
-    if constexpr (lt_is_string<LT>) {
+    if constexpr (LT == TYPE_STRING_V2) {
+        // STRING_V2-native path: populate Buffer<GermanString> so the JoinHashMap
+        // templates operate on GermanString keys with `JoinKeyHash<GermanString>`
+        // (see join_hash_map_helper.h) and the inline-byte fast path of
+        // `GermanString::operator==`. `table_items->key_columns[0]` is kept alive
+        // for the HJ lifetime, so long-string arena pointers stay valid.
+        const auto* data_column = ColumnHelper::get_data_column(table_items->key_columns[0]);
+        if (LIKELY(data_column->is_german_string())) {
+            // Zero-copy of the underlying bytes — we copy only the 16-byte GermanString
+            // struct per row; long-string pointers still reference the column's arena.
+            const auto& src = down_cast<const GermanStringColumn*>(data_column)->get_german_strings_container();
+            table_items->build_german_strings.assign(src.begin(), src.end());
+        } else if (UNLIKELY(data_column->is_large_binary())) {
+            const auto* bc = ColumnHelper::as_raw_column<LargeBinaryColumn>(data_column);
+            const size_t n = bc->size();
+            table_items->build_german_strings.resize(n);
+            for (size_t i = 0; i < n; ++i) {
+                const Slice s = bc->get_slice(i);
+                table_items->build_german_strings[i] = GermanString(s.data, s.size);
+            }
+        } else {
+            const auto* bc = ColumnHelper::as_raw_column<BinaryColumn>(data_column);
+            const size_t n = bc->size();
+            table_items->build_german_strings.resize(n);
+            for (size_t i = 0; i < n; ++i) {
+                const Slice s = bc->get_slice(i);
+                table_items->build_german_strings[i] = GermanString(s.data, s.size);
+            }
+        }
+    } else if constexpr (lt_is_string<LT>) {
+        // TODO: Going forward, if system testing verifies that the slice cache has no impact on join performance
+        // in all scenarios, we will ultimately avoid building the slice cache. According to current simple benchmark
+        // results, it provides only minor performance benefits in medium-cardinality scenarios.
         const auto* data_column = ColumnHelper::get_data_column(table_items->key_columns[0]);
         if (UNLIKELY(data_column->is_german_string())) {
             down_cast<const GermanStringColumn*>(data_column)->build_slices(table_items->build_slice);
@@ -45,7 +74,9 @@ void BuildKeyConstructorForOneKey<LT>::build_key(RuntimeState* state, JoinHashTa
 
 template <LogicalType LT>
 auto BuildKeyConstructorForOneKey<LT>::get_key_data(const JoinHashTableItems& table_items) -> const ImmBuffer<CppType> {
-    if constexpr (lt_is_string<LT>) {
+    if constexpr (LT == TYPE_STRING_V2) {
+        return table_items.build_german_strings;
+    } else if constexpr (lt_is_string<LT>) {
         return table_items.build_slice;
     } else {
         const auto* data_column = ColumnHelper::get_data_column(table_items.key_columns[0]);
@@ -74,7 +105,30 @@ void ProbeKeyConstructorForOneKey<LT>::build_key(const JoinHashTableItems& table
     } else {
         probe_state->null_array = std::nullopt;
     }
-    if constexpr (lt_is_string<LT>) {
+    if constexpr (LT == TYPE_STRING_V2) {
+        // Mirror of the STRING_V2-native build-side path in BuildKeyConstructorForOneKey.
+        const auto* data_column = ColumnHelper::get_data_column((*probe_state->key_columns)[0]);
+        if (LIKELY(data_column->is_german_string())) {
+            const auto& src = down_cast<const GermanStringColumn*>(data_column)->get_german_strings_container();
+            probe_state->probe_german_strings.assign(src.begin(), src.end());
+        } else if (UNLIKELY(data_column->is_large_binary())) {
+            const auto* bc = ColumnHelper::as_raw_column<LargeBinaryColumn>(data_column);
+            const size_t n = bc->size();
+            probe_state->probe_german_strings.resize(n);
+            for (size_t i = 0; i < n; ++i) {
+                const Slice s = bc->get_slice(i);
+                probe_state->probe_german_strings[i] = GermanString(s.data, s.size);
+            }
+        } else {
+            const auto* bc = ColumnHelper::as_raw_column<BinaryColumn>(data_column);
+            const size_t n = bc->size();
+            probe_state->probe_german_strings.resize(n);
+            for (size_t i = 0; i < n; ++i) {
+                const Slice s = bc->get_slice(i);
+                probe_state->probe_german_strings[i] = GermanString(s.data, s.size);
+            }
+        }
+    } else if constexpr (lt_is_string<LT>) {
         const auto* data_column = ColumnHelper::get_data_column((*probe_state->key_columns)[0]);
         if (UNLIKELY(data_column->is_german_string())) {
             down_cast<const GermanStringColumn*>(data_column)->build_slices(probe_state->probe_slice);
@@ -89,7 +143,9 @@ void ProbeKeyConstructorForOneKey<LT>::build_key(const JoinHashTableItems& table
 template <LogicalType LT>
 auto ProbeKeyConstructorForOneKey<LT>::get_key_data(const HashTableProbeState& probe_state)
         -> const ImmBuffer<CppType> {
-    if constexpr (lt_is_string<LT>) {
+    if constexpr (LT == TYPE_STRING_V2) {
+        return probe_state.probe_german_strings;
+    } else if constexpr (lt_is_string<LT>) {
         return probe_state.probe_slice;
     } else {
         const auto* data_column = ColumnHelper::get_data_column_by_type<LT>((*probe_state.key_columns)[0]);

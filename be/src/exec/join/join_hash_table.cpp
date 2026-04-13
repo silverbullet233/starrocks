@@ -171,7 +171,11 @@ JoinKeyConstructorUnaryType JoinHashMapSelector::_determine_key_constructor(Runt
         return dispatch_join_logical_type(
                 table_items->join_keys[0].type->type, JoinKeyConstructorUnaryType::SERIALIZED_VARCHAR,
                 [&]<LogicalType LT>() {
-                    static constexpr auto MAPPING_LT = (LT == TYPE_CHAR || LT == TYPE_STRING_V2) ? TYPE_VARCHAR : LT;
+                    // TYPE_CHAR still rides the TYPE_VARCHAR Slice-based instantiation
+                    // (we don't have a separate KeyConstructorForOneKey<TYPE_CHAR>).
+                    // TYPE_STRING_V2 uses its own STRING_V2-native template instance
+                    // (see join_type_traits.h) so the JOIN hash/key is GermanString-based.
+                    static constexpr auto MAPPING_LT = (LT == TYPE_CHAR) ? TYPE_VARCHAR : LT;
                     if constexpr (MAPPING_LT == TYPE_VARCHAR) {
                         const size_t max_size = _get_binary_column_max_size(state, table_items->key_columns[0]);
                         if (max_size > 0) {

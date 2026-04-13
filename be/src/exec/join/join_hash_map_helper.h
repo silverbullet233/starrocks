@@ -17,8 +17,16 @@
 #include "base/phmap/phmap.h"
 #include "exec/join/join_hash_map_helper.h"
 #include "exec/join/join_hash_table_descriptor.h"
+#include "types/german_string.h"
 
 namespace starrocks {
+
+// `IsStringHashKey<T>` marks the key CppTypes whose hash must be byte-based
+// (over the string contents, not over the struct bytes) and for which a null
+// row's key may have an invalid data pointer (so we must gate the hash call
+// behind a null check). Both Slice and GermanString share these properties.
+template <typename T>
+constexpr bool IsStringHashKey = std::is_same_v<T, Slice> || std::is_same_v<T, GermanString>;
 
 template <class T, size_t Size = sizeof(T)>
 struct JoinKeyHash {
@@ -58,6 +66,19 @@ struct JoinKeyHash<Slice> {
     static const uint32_t CRC_SEED = 0x811C9DC5;
     uint32_t operator()(const Slice& slice, uint32_t num_buckets, uint32_t num_log_buckets) const {
         const size_t hash = crc_hash_32(slice.data, slice.size, CRC_SEED);
+        return hash & (num_buckets - 1);
+    }
+};
+
+// `JoinKeyHash<GermanString>` hashes the string CONTENT, byte-consistent with `JoinKeyHash<Slice>`
+// so that the same input bytes produce the same bucket regardless of whether the key column is a
+// BinaryColumn or a GermanStringColumn. `GermanString::get_data()` transparently handles both the
+// inline (≤12 bytes) and long-string (arena pointer) layouts.
+template <>
+struct JoinKeyHash<GermanString> {
+    static constexpr uint32_t CRC_SEED = 0x811C9DC5;
+    uint32_t operator()(const GermanString& gs, uint32_t num_buckets, uint32_t num_log_buckets) const {
+        const size_t hash = crc_hash_32(gs.get_data(), gs.len, CRC_SEED);
         return hash & (num_buckets - 1);
     }
 };
