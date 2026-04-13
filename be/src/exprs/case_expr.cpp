@@ -680,6 +680,7 @@ private:
         CASE_WHEN_RESULT_TYPE(TYPE_DOUBLE, RESULT_TYPE);                                  \
         CASE_WHEN_RESULT_TYPE(TYPE_CHAR, RESULT_TYPE);                                    \
         CASE_WHEN_RESULT_TYPE(TYPE_VARCHAR, RESULT_TYPE);                                 \
+        CASE_WHEN_RESULT_TYPE(TYPE_STRING_V2, RESULT_TYPE);                               \
         CASE_WHEN_RESULT_TYPE(TYPE_DATE, RESULT_TYPE);                                    \
         CASE_WHEN_RESULT_TYPE(TYPE_DATETIME, RESULT_TYPE);                                \
         CASE_WHEN_RESULT_TYPE(TYPE_TIME, RESULT_TYPE);                                    \
@@ -713,6 +714,7 @@ Expr* VectorizedCaseExprFactory::from_thrift(const starrocks::TExprNode& node) {
 
     switch (resultType) {
         APPLY_FOR_ALL_SCALAR_TYPE(CASE_RESULT_TYPE)
+        CASE_RESULT_TYPE(TYPE_STRING_V2)
         APPLY_FOR_COMPLEX_TYPE(CASE_RESULT_TYPE)
         CASE_RESULT_TYPE(TYPE_OBJECT)
         CASE_RESULT_TYPE(TYPE_HLL)
@@ -732,6 +734,7 @@ Expr* VectorizedCaseExprFactory::from_thrift(const starrocks::TExprNode& node, L
 
     switch (resultType) {
         APPLY_FOR_ALL_SCALAR_TYPE(CASE_RESULT_TYPE)
+        CASE_RESULT_TYPE(TYPE_STRING_V2)
         APPLY_FOR_COMPLEX_TYPE(CASE_RESULT_TYPE)
         CASE_RESULT_TYPE(TYPE_OBJECT)
         CASE_RESULT_TYPE(TYPE_HLL)
