@@ -48,6 +48,7 @@ ADD_BE_LIB(ColumnCore
         variant_merger.cpp
         column_hash/column_hash.cpp
         german_string_column.cpp
+        string_slice_view.cpp
 )
 
 ADD_BE_LIB(ChunkCore

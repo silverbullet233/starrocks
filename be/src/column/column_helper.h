@@ -720,12 +720,13 @@ struct GetContainer {
             if (data_column->is_large_binary()) {
                 return down_cast<const LargeColumnType*>(data_column)->immutable_data();
             }
-            // With enable_german_string = true, a TYPE_VARCHAR column slot may actually
-            // carry GermanStringColumn. Wrap it in BinaryImmContainer so probe-side
-            // consumers (runtime filters, bloom filters, etc.) see Slice views without
-            // invalid BinaryColumn down_casts.
+            // Compute/storage boundary: with `enable_german_string = true`, a
+            // TYPE_VARCHAR-dispatched code path (runtime filter, bloom filter, ...) may
+            // receive a GermanStringColumn when the slot is actually STRING_V2. Wrap it
+            // in a neutral StringSliceView so downstream byte-level consumers see Slices
+            // without relying on an invalid BinaryColumn down_cast.
             if (data_column->is_german_string()) {
-                return BinaryImmContainer(*down_cast<const GermanStringColumn*>(data_column));
+                return StringSliceView(*down_cast<const GermanStringColumn*>(data_column));
             }
             return down_cast<const ColumnType*>(data_column)->immutable_data();
         } else {

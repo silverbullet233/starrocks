@@ -73,7 +73,7 @@ Status RuntimeFilterBuilder::fill(RuntimeFilter* filter, LogicalType type, const
     // NOTE: for TYPE_STRING_V2 `column` may be a GermanStringColumn. We used to convert it to a
     // temporary BinaryColumn here, but that left `MinMaxRuntimeFilter::_min/_max` Slices pointing
     // into that temporary's bytes, which were freed once `fill()` returned. With the
-    // BinaryImmContainer-wrapping path in `GetContainer<TYPE_VARCHAR>::get_data`, the filter can
+    // StringSliceView-wrapping path in `GetContainer<TYPE_VARCHAR>::get_data`, the filter can
     // read Slice views from the GermanStringColumn directly, and the original column — kept alive
     // by the caller (e.g. HashJoiner::_runtime_bloom_filter_build_params) — ensures those Slices
     // stay valid.
