@@ -33,6 +33,7 @@ namespace starrocks {
 
 template <typename T>
 class BinaryColumnBase;
+class GermanStringColumn;
 
 class BinaryImmContainer {
 public:
@@ -42,6 +43,10 @@ public:
     explicit BinaryImmContainer(const BinaryColumnBase<T>& column) {
         init(column);
     }
+
+    // Wrap a GermanStringColumn so that `GetContainer<TYPE_VARCHAR>::get_data()`
+    // can transparently return Slice views over GermanString data.
+    explicit BinaryImmContainer(const GermanStringColumn& column);
 
     Slice operator[](size_t index) const;
 
@@ -55,6 +60,7 @@ private:
 
     const Column* _column = nullptr;
     bool _is_large = false;
+    bool _is_german = false;
 };
 
 template <typename T>
@@ -442,26 +448,11 @@ private:
 using Offsets = BinaryColumnBase<uint32_t>::Offsets;
 using LargeOffsets = BinaryColumnBase<uint64_t>::Offsets;
 
-inline Slice BinaryImmContainer::operator[](size_t index) const {
-    DCHECK(_column != nullptr);
-    if (_is_large) {
-        return down_cast<const LargeBinaryColumn*>(_column)->get_slice(index);
-    }
-    return down_cast<const BinaryColumn*>(_column)->get_slice(index);
-}
-
+// Note: operator[], size(), immutable_bytes_size(), and the GermanStringColumn
+// constructor are defined out-of-line in binary_column.cpp to avoid pulling
+// german_string_column.h into this widely-included header.
 inline size_t BinaryImmContainer::size() const {
     return _column == nullptr ? 0 : _column->size();
-}
-
-inline size_t BinaryImmContainer::immutable_bytes_size() const {
-    if (_column == nullptr) {
-        return 0;
-    }
-    if (_is_large) {
-        return down_cast<const LargeBinaryColumn*>(_column)->get_immutable_bytes().size();
-    }
-    return down_cast<const BinaryColumn*>(_column)->get_immutable_bytes().size();
 }
 
 template <typename T>

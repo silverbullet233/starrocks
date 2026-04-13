@@ -1089,4 +1089,45 @@ Status BinaryColumnBase<T>::capacity_limit_reached() const {
 
 template class BinaryColumnBase<uint32_t>;
 template class BinaryColumnBase<uint64_t>;
+
+// ---- BinaryImmContainer out-of-line definitions ----
+
+BinaryImmContainer::BinaryImmContainer(const GermanStringColumn& column) {
+    _column = &column;
+    _is_large = false;
+    _is_german = true;
+}
+
+Slice BinaryImmContainer::operator[](size_t index) const {
+    DCHECK(_column != nullptr);
+    if (_is_german) {
+        return down_cast<const GermanStringColumn*>(_column)->get_slice(index);
+    }
+    if (_is_large) {
+        return down_cast<const LargeBinaryColumn*>(_column)->get_slice(index);
+    }
+    return down_cast<const BinaryColumn*>(_column)->get_slice(index);
+}
+
+size_t BinaryImmContainer::immutable_bytes_size() const {
+    if (_column == nullptr) {
+        return 0;
+    }
+    if (_is_german) {
+        // GermanStringColumn does not store a contiguous byte buffer; report the sum
+        // of live string lengths so callers that size buffers (e.g. group_concat)
+        // still see the right footprint.
+        const auto* gs = down_cast<const GermanStringColumn*>(_column);
+        size_t total = 0;
+        for (size_t i = 0, n = gs->size(); i < n; ++i) {
+            total += gs->get_slice(i).size;
+        }
+        return total;
+    }
+    if (_is_large) {
+        return down_cast<const LargeBinaryColumn*>(_column)->get_immutable_bytes().size();
+    }
+    return down_cast<const BinaryColumn*>(_column)->get_immutable_bytes().size();
+}
+
 } // namespace starrocks
