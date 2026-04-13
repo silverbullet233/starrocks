@@ -16,6 +16,7 @@
 
 #include "column/column.h"
 #include "column/column_helper.h"
+#include "column/german_string_column.h"
 #include "types/logical_type_infra.h"
 
 namespace starrocks {
@@ -60,6 +61,24 @@ struct FilterIniter {
     }
 };
 
+// Convert a column that may contain GermanStringColumn data to BinaryColumn.
+// This is needed because type_dispatch_filter maps TYPE_STRING_V2 to TYPE_VARCHAR,
+// so the filter infrastructure expects BinaryColumn (Slice data), not GermanStringColumn.
+static ColumnPtr maybe_convert_german_string_column(const ColumnPtr& column) {
+    if (column->is_nullable()) {
+        auto* nullable = down_cast<const NullableColumn*>(column.get());
+        if (nullable->data_column()->is_german_string()) {
+            auto* gs_col = down_cast<const GermanStringColumn*>(nullable->data_column().get());
+            auto binary_col = gs_col->to_binary_column();
+            return NullableColumn::create(std::move(binary_col), nullable->null_column());
+        }
+    } else if (column->is_german_string()) {
+        auto* gs_col = down_cast<const GermanStringColumn*>(column.get());
+        return gs_col->to_binary_column();
+    }
+    return column;
+}
+
 Status RuntimeFilterBuilder::fill(RuntimeFilter* filter, LogicalType type, const ColumnPtr& column,
                                   size_t column_offset, bool eq_null, bool is_skew_join) {
     if (column == nullptr || filter == nullptr) {
@@ -69,23 +88,27 @@ Status RuntimeFilterBuilder::fill(RuntimeFilter* filter, LogicalType type, const
         return Status::NotSupported("unsupported build runtime filter for large binary column");
     }
 
+    // For TYPE_STRING_V2, type_dispatch_filter maps to TYPE_VARCHAR, so the filter
+    // expects BinaryColumn. Convert any GermanStringColumn to BinaryColumn.
+    ColumnPtr effective_column = (type == TYPE_STRING_V2) ? maybe_convert_german_string_column(column) : column;
+
     switch (filter->type()) {
     case RuntimeFilterSerializeType::BLOOM_FILTER:
         if (is_skew_join) {
-            return type_dispatch_filter(type, Status::OK(), FilterIniter<ComposedRuntimeBloomFilter, true>(), column,
-                                        column_offset, filter, eq_null);
+            return type_dispatch_filter(type, Status::OK(), FilterIniter<ComposedRuntimeBloomFilter, true>(),
+                                        effective_column, column_offset, filter, eq_null);
         }
-        return type_dispatch_filter(type, Status::OK(), FilterIniter<ComposedRuntimeBloomFilter, false>(), column,
-                                    column_offset, filter, eq_null);
+        return type_dispatch_filter(type, Status::OK(), FilterIniter<ComposedRuntimeBloomFilter, false>(),
+                                    effective_column, column_offset, filter, eq_null);
     case RuntimeFilterSerializeType::BITSET_FILTER: {
         const auto error_status = Status::NotSupported("runtime bitset filter do not support the logical type: " +
                                                        std::string(logical_type_to_string(type)));
         return type_dispatch_bitset_filter(type, error_status, FilterIniter<ComposedRuntimeBitsetFilter, false>(),
-                                           column, column_offset, filter, eq_null);
+                                           effective_column, column_offset, filter, eq_null);
     }
     case RuntimeFilterSerializeType::EMPTY_FILTER:
-        return type_dispatch_filter(type, Status::OK(), FilterIniter<ComposedRuntimeEmptyFilter, false>(), column,
-                                    column_offset, filter, eq_null);
+        return type_dispatch_filter(type, Status::OK(), FilterIniter<ComposedRuntimeEmptyFilter, false>(),
+                                    effective_column, column_offset, filter, eq_null);
     case RuntimeFilterSerializeType::NONE:
     default:
         return Status::NotSupported("unsupported build runtime filter: " + filter->debug_string());

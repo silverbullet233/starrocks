@@ -312,7 +312,12 @@ template <class Functor, class Ret, class... Args>
 auto type_dispatch_filter(LogicalType ltype, Ret default_value, Functor fun, const Args&... args) {
     switch (ltype) {
         APPLY_FOR_ALL_SCALAR_TYPE(_TYPE_DISPATCH_CASE)
-        _TYPE_DISPATCH_CASE(TYPE_STRING_V2)
+    // Map TYPE_STRING_V2 to TYPE_VARCHAR for runtime filters.
+    // Runtime filters are evaluated in the storage layer against BinaryColumn (not GermanStringColumn),
+    // so they must use Slice-based (TYPE_VARCHAR) code paths. The build side also converts GermanStringColumn
+    // to BinaryColumn before inserting into the filter for hash consistency.
+    case TYPE_STRING_V2:
+        return fun.template operator()<TYPE_VARCHAR>(args...);
     default:
         return default_value;
     }
