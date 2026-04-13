@@ -805,6 +805,16 @@ Status ChunkPredicateBuilder<E, Type>::normalize_join_runtime_filter(const SlotD
                     continue;
                 }
 
+                // When the slot is TYPE_STRING_V2, ColumnRangeBuilder maps it to TYPE_VARCHAR for
+                // predicate pushdown, but the actual runtime-filter predicate built by the HJ is a
+                // VectorizedInConstPredicate<TYPE_STRING_V2> (holding GermanString values).
+                // down_cast-ing it as <TYPE_VARCHAR> is undefined and reads GermanStrings as Slices,
+                // which leaves every probe row failing the pushdown check. Skip the RF pushdown for
+                // STRING_V2 expressions and let the (type-correct) operator-level RF do the work.
+                if (l->type().type == TYPE_STRING_V2 && MappingType != TYPE_STRING_V2) {
+                    continue;
+                }
+
                 std::vector<SlotId> slot_ids;
                 if (1 != l->get_slot_ids(&slot_ids) || slot_ids[0] != slot.id()) {
                     continue;
