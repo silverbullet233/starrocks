@@ -851,6 +851,11 @@ if (APPLE)
     endif()
 else()
     set(STARROCKS_SYSTEM_LINK_LIBS -lresolv -liberty -lc -lm -ldl -rdynamic -pthread)
+    if ("${MAKE_TEST}" STREQUAL "ON" AND "${BUILD_FOR_SANITIZE}" STREQUAL "ON")
+        # Sanitized test builds don't use -static-libstdc++; explicitly pull in
+        # the GCC C++ ABI archive required by newer opentelemetry static libs.
+        list(APPEND STARROCKS_SYSTEM_LINK_LIBS -lsupc++)
+    endif()
 endif()
 
 set(STARROCKS_LINK_LIBS ${STARROCKS_LINK_LIBS}

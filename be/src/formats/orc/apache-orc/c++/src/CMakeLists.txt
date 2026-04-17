@@ -267,7 +267,7 @@ configure_file (
 
   if (NOT DEFINED ENV{STARROCKS_HOME}) # starrocks: no need to link liborc.a with other libs and install
   
-  target_link_libraries (orc
+  target_link_libraries(orc PRIVATE
     orc::protobuf
     orc::zlib
     orc::snappy
