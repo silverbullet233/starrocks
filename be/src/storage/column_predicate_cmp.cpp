@@ -19,6 +19,8 @@
 #include "base/string/string_parser.hpp"
 #include "column/column.h" // Column
 #include "column/column_helper.h"
+#include "column/german_string.h"
+#include "column/german_string_column.h"
 #include "column/raw_data_visitor.h"
 #include "common/object_pool.h"
 #include "olap_type_infra.h"
@@ -79,7 +81,8 @@ static Status predicate_convert_to(Predicate<field_type> const& input_predicate,
     return Status::OK();
 }
 
-template <template <LogicalType> typename Predicate, template <LogicalType> typename BinaryPredicate>
+template <template <LogicalType> typename Predicate, template <LogicalType> typename BinaryPredicate,
+          template <LogicalType> typename GermanStringPredicate>
 static ColumnPredicate* new_column_predicate(const TypeInfoPtr& type_info, ColumnId id, const Slice& operand) {
     auto type = type_info->type();
     switch (type) {
@@ -174,6 +177,8 @@ static ColumnPredicate* new_column_predicate(const TypeInfoPtr& type_info, Colum
         return new BinaryPredicate<TYPE_CHAR>(type_info, id, operand);
     case TYPE_VARCHAR:
         return new BinaryPredicate<TYPE_VARCHAR>(type_info, id, operand);
+    case TYPE_GERMAN_STRING:
+        return new GermanStringPredicate<TYPE_GERMAN_STRING>(type_info, id, operand);
     case TYPE_STRUCT:
     case TYPE_ARRAY:
     case TYPE_MAP:
@@ -196,7 +201,8 @@ static ColumnPredicate* new_column_predicate(const TypeInfoPtr& type_info, Colum
     return nullptr;
 }
 
-template <template <LogicalType> typename Predicate, template <LogicalType> typename BinaryPredicate>
+template <template <LogicalType> typename Predicate, template <LogicalType> typename BinaryPredicate,
+          template <LogicalType> typename GermanStringPredicate>
 static ColumnPredicate* new_column_predicate(const TypeInfoPtr& type_info, ColumnId id, const Datum& operand) {
     const auto type = type_info->type();
     return field_type_dispatch_column_predicate(
@@ -206,7 +212,9 @@ static ColumnPredicate* new_column_predicate(const TypeInfoPtr& type_info, Colum
                 constexpr auto MappingLogicalType = LT == TYPE_TINYINT || LT == TYPE_BOOLEAN ? TYPE_INT : LT;
                 using MappingCppType = StorageCppType<MappingLogicalType>;
 
-                if constexpr (lt_is_string<LT>) {
+                if constexpr (LT == TYPE_GERMAN_STRING) {
+                    return new GermanStringPredicate<LT>(type_info, id, operand.get_slice());
+                } else if constexpr (lt_is_string<LT>) {
                     return new BinaryPredicate<LT>(type_info, id, operand.get_slice());
                 } else {
                     const auto value = static_cast<CppType>(operand.get<MappingCppType>());
@@ -593,6 +601,9 @@ public:
 template <LogicalType field_type, class Eval>
 class BinaryColumnPredicateCmpBase : public ColumnPredicate {
     static_assert(lt_is_string_or_binary<field_type>, "BinaryColumnPredicateCmpBase only supports string/binary types");
+    static_assert(field_type != TYPE_GERMAN_STRING,
+                  "BinaryColumnPredicateCmpBase must not be instantiated for TYPE_GERMAN_STRING; "
+                  "use GermanStringColumnPredicateCmpBase instead");
     using ValueType = Slice;
 
 public:
@@ -1033,28 +1044,467 @@ private:
     const bool _is_empty_string;
 };
 
+// ----------------------------------------------------------------------------
+// GermanStringColumnPredicateCmpBase
+// ----------------------------------------------------------------------------
+//
+// Per-row predicate evaluation against a GermanStringColumn. The operand set
+// stays Slice-typed (coming from runtime filters / pushed-down constants); we
+// wrap it in a predicate-owned `GermanString` once at construction so each row
+// comparison can take advantage of GermanString's prefix fast path (4-byte
+// prefix + inline-vs-pointer dispatch) via operator== / compare().
+//
+// The zero-padded Slice (`_zero_padded_str`) is kept as well so index-boundary
+// paths (zone map, bloom filter, bitmap/inverted index) continue to operate on
+// Slice-typed stored index data.
+//
+// Note on arena lifetime: we construct the operand GermanString using the
+// two-arg ctor `GermanString(const void* str, size_t len)`, which *does not*
+// memcpy `str`. For long (>12 byte) operands the GermanString stores a raw
+// pointer into `_zero_padded_str.data()`, which lives as long as the predicate
+// itself — safe because the predicate owns the backing std::string.
+template <LogicalType field_type, class EvalGS>
+class GermanStringColumnPredicateCmpBase : public ColumnPredicate {
+    static_assert(field_type == TYPE_GERMAN_STRING,
+                  "GermanStringColumnPredicateCmpBase is only for TYPE_GERMAN_STRING");
+
+public:
+    GermanStringColumnPredicateCmpBase(PredicateType predicate_type, const TypeInfoPtr& type_info, ColumnId id,
+                                       const Slice& value)
+            : ColumnPredicate(type_info, id),
+              _predicate_type(predicate_type),
+              _zero_padded_str(value.data, value.size),
+              _value(Slice(_zero_padded_str)),
+              _gs_value(_zero_padded_str.data(), _zero_padded_str.size()) {}
+
+    ~GermanStringColumnPredicateCmpBase() override = default;
+
+    template <typename Op>
+    void t_evaluate(const Column* column, uint8_t* selection, uint16_t from, uint16_t to) const {
+        const GermanStringColumn* gs_column = _get_gs_column(column);
+        const auto& v = gs_column->get_data();
+        auto* sel = selection;
+        auto eval = EvalGS();
+        if (!column->has_null()) {
+            for (size_t i = from; i < to; i++) {
+                sel[i] = Op::apply(sel[i], (uint8_t)(eval(v[i], _gs_value)));
+            }
+        } else {
+            const uint8_t* is_null = down_cast<const NullableColumn*>(column)->immutable_null_column_data().data();
+            for (size_t i = from; i < to; i++) {
+                sel[i] = Op::apply(sel[i], (uint8_t)((!is_null[i]) && eval(v[i], _gs_value)));
+            }
+        }
+    }
+
+    Status evaluate(const Column* column, uint8_t* selection, uint16_t from, uint16_t to) const override {
+        t_evaluate<ColumnPredicateAssignOp>(column, selection, from, to);
+        return Status::OK();
+    }
+
+    Status evaluate_and(const Column* column, uint8_t* selection, uint16_t from, uint16_t to) const override {
+        t_evaluate<ColumnPredicateAndOp>(column, selection, from, to);
+        return Status::OK();
+    }
+
+    Status evaluate_or(const Column* column, uint8_t* selection, uint16_t from, uint16_t to) const override {
+        t_evaluate<ColumnPredicateOrOp>(column, selection, from, to);
+        return Status::OK();
+    }
+
+    StatusOr<uint16_t> evaluate_branchless(const Column* column, uint16_t* sel, uint16_t sel_size) const override {
+        const GermanStringColumn* gs_column = _get_gs_column(column);
+        const auto& v = gs_column->get_data();
+
+        uint16_t new_size = 0;
+        auto eval = EvalGS();
+        if (!column->has_null()) {
+            for (uint16_t i = 0; i < sel_size; ++i) {
+                uint16_t data_idx = sel[i];
+                sel[new_size] = data_idx;
+                new_size += eval(v[data_idx], _gs_value);
+            }
+        } else {
+            const uint8_t* is_null = down_cast<const NullableColumn*>(column)->immutable_null_column_data().data();
+            for (uint16_t i = 0; i < sel_size; ++i) {
+                uint16_t data_idx = sel[i];
+                sel[new_size] = data_idx;
+                new_size += !is_null[data_idx] && eval(v[data_idx], _gs_value);
+            }
+        }
+        return new_size;
+    }
+
+    PredicateType type() const override { return _predicate_type; }
+
+    Datum value() const override { return Datum(Slice(_zero_padded_str)); }
+
+    std::vector<Datum> values() const override { return std::vector<Datum>{Datum(_value)}; }
+
+    bool can_vectorized() const override { return false; }
+
+    bool support_original_bloom_filter() const override { return false; }
+
+    Status convert_to(const ColumnPredicate** output, const TypeInfoPtr& target_type_info,
+                      ObjectPool* obj_pool) const override {
+        const auto to_type = target_type_info->type();
+        if (to_type == field_type) {
+            *output = this;
+            return Status::OK();
+        }
+        CHECK(false) << "Not support, from_type=" << field_type << ", to_type=" << to_type;
+        return Status::OK();
+    }
+
+    std::string debug_string() const override {
+        std::stringstream ss;
+        ss << "(columnId(" << _column_id << ")" << _predicate_type << _zero_padded_str << ")";
+        return ss.str();
+    }
+
+    bool padding_zeros(size_t len) override {
+        size_t old_sz = _zero_padded_str.size();
+        _zero_padded_str.append(len > old_sz ? len - old_sz : 0, '\0');
+        _value = Slice(_zero_padded_str.data(), old_sz);
+        // Rebuild the GermanString over the now-stable padded buffer. We still
+        // only compare the semantic (non-padded) prefix `old_sz` bytes, so keep
+        // _gs_value at len == old_sz.
+        _gs_value = GermanString(_zero_padded_str.data(), old_sz);
+        return true;
+    }
+
+protected:
+    static const GermanStringColumn* _get_gs_column(const Column* column) {
+        const Column* data_column = column;
+        if (column->is_nullable()) {
+            data_column = down_cast<const NullableColumn*>(column)->data_column().get();
+        }
+        return down_cast<const GermanStringColumn*>(data_column);
+    }
+
+    PredicateType _predicate_type;
+    std::string _zero_padded_str;
+    Slice _value;
+    GermanString _gs_value;
+};
+
+// Comparator functors over GermanString.
+struct GermanStringEq {
+    bool operator()(const GermanString& a, const GermanString& b) const { return a == b; }
+};
+struct GermanStringNe {
+    bool operator()(const GermanString& a, const GermanString& b) const { return a != b; }
+};
+struct GermanStringLt {
+    bool operator()(const GermanString& a, const GermanString& b) const { return a.compare(b) < 0; }
+};
+struct GermanStringLe {
+    bool operator()(const GermanString& a, const GermanString& b) const { return a.compare(b) <= 0; }
+};
+struct GermanStringGt {
+    bool operator()(const GermanString& a, const GermanString& b) const { return a.compare(b) > 0; }
+};
+struct GermanStringGe {
+    bool operator()(const GermanString& a, const GermanString& b) const { return a.compare(b) >= 0; }
+};
+
+template <LogicalType field_type>
+class GermanStringColumnEqPredicate final : public GermanStringColumnPredicateCmpBase<field_type, GermanStringEq> {
+    using Base = GermanStringColumnPredicateCmpBase<field_type, GermanStringEq>;
+
+public:
+    GermanStringColumnEqPredicate(const TypeInfoPtr& type_info, ColumnId id, const Slice& value)
+            : Base(PredicateType::kEQ, type_info, id, value) {}
+
+    bool zone_map_filter(const ZoneMapDetail& detail) const override {
+        const auto& min = detail.min_or_null_value();
+        const auto& max = detail.max_value();
+        const auto type_info = this->type_info();
+        return type_info->cmp(Datum(this->_value), min) >= 0 && type_info->cmp(Datum(this->_value), max) <= 0;
+    }
+
+    bool support_original_bloom_filter() const override { return true; }
+
+    bool original_bloom_filter(const BloomFilter* bf) const override {
+        Slice padded(Base::_zero_padded_str);
+        return bf->test_bytes(padded.data, padded.size);
+    }
+
+    bool support_bitmap_filter() const override { return true; }
+
+    Status seek_bitmap_dictionary(BitmapIndexIterator* iter, SparseRange<>* range) const override {
+        Slice padded_value(Base::_zero_padded_str);
+        range->clear();
+        bool exact_match = false;
+        Status s = iter->seek_dictionary(&padded_value, &exact_match);
+        if (s.ok()) {
+            if (exact_match) {
+                rowid_t ordinal = iter->current_ordinal();
+                range->add(Range<>(ordinal, ordinal + 1));
+            }
+        } else if (!s.is_not_found()) {
+            return s;
+        }
+        return Status::OK();
+    }
+
+    Status seek_inverted_index(const std::string& column_name, InvertedIndexIterator* iterator,
+                               roaring::Roaring* row_bitmap) const override {
+#ifndef __APPLE__
+        Slice padded_value(Base::_zero_padded_str);
+        InvertedIndexQueryType query_type = InvertedIndexQueryType::EQUAL_QUERY;
+        roaring::Roaring roaring;
+        RETURN_IF_ERROR(iterator->read_from_inverted_index(column_name, &padded_value, query_type, &roaring));
+        *row_bitmap &= roaring;
+        return Status::OK();
+#else
+        return Status::OK();
+#endif
+    }
+};
+
+template <LogicalType field_type>
+class GermanStringColumnNePredicate final : public GermanStringColumnPredicateCmpBase<field_type, GermanStringNe> {
+    using Base = GermanStringColumnPredicateCmpBase<field_type, GermanStringNe>;
+
+public:
+    GermanStringColumnNePredicate(const TypeInfoPtr& type_info, ColumnId id, const Slice& value)
+            : Base(PredicateType::kNE, type_info, id, value) {}
+
+    bool zone_map_filter(const ZoneMapDetail& detail) const override { return true; }
+
+    bool support_bitmap_filter() const override { return false; }
+
+    Status seek_bitmap_dictionary(BitmapIndexIterator* iter, SparseRange<>* range) const override {
+        return Status::Cancelled("not-equal predicate not support bitmap index");
+    }
+
+    Status seek_inverted_index(const std::string& column_name, InvertedIndexIterator* iterator,
+                               roaring::Roaring* row_bitmap) const override {
+#ifndef __APPLE__
+        Slice padded_value(Base::_zero_padded_str);
+        InvertedIndexQueryType query_type = InvertedIndexQueryType::EQUAL_QUERY;
+        roaring::Roaring roaring;
+        RETURN_IF_ERROR(iterator->read_from_inverted_index(column_name, &padded_value, query_type, &roaring));
+        *row_bitmap -= roaring;
+        return Status::OK();
+#else
+        return Status::OK();
+#endif
+    }
+};
+
+template <LogicalType field_type>
+class GermanStringColumnGePredicate final : public GermanStringColumnPredicateCmpBase<field_type, GermanStringGe> {
+    using Base = GermanStringColumnPredicateCmpBase<field_type, GermanStringGe>;
+
+public:
+    GermanStringColumnGePredicate(const TypeInfoPtr& type_info, ColumnId id, const Slice& value)
+            : Base(PredicateType::kGE, type_info, id, value) {}
+
+    bool zone_map_filter(const ZoneMapDetail& detail) const override {
+        const auto& max = detail.max_value();
+        return this->type_info()->cmp(Datum(this->_value), max) <= 0;
+    }
+
+    bool support_bitmap_filter() const override { return true; }
+
+    Status seek_bitmap_dictionary(BitmapIndexIterator* iter, SparseRange<>* range) const override {
+        Slice padded_value(Base::_zero_padded_str);
+        range->clear();
+        bool exact_match;
+        Status s = iter->seek_dictionary(&padded_value, &exact_match);
+        if (s.ok()) {
+            rowid_t seeked_ordinal = iter->current_ordinal();
+            rowid_t ordinal_limit = iter->bitmap_nums() - iter->has_null_bitmap();
+            range->add(Range<>(seeked_ordinal, ordinal_limit));
+        } else if (!s.is_not_found()) {
+            return s;
+        }
+        return Status::OK();
+    }
+
+    Status seek_inverted_index(const std::string& column_name, InvertedIndexIterator* iterator,
+                               roaring::Roaring* row_bitmap) const override {
+#ifndef __APPLE__
+        Slice padded_value(Base::_zero_padded_str);
+        InvertedIndexQueryType query_type = InvertedIndexQueryType::GREATER_EQUAL_QUERY;
+        roaring::Roaring roaring;
+        RETURN_IF_ERROR(iterator->read_from_inverted_index(column_name, &padded_value, query_type, &roaring));
+        *row_bitmap &= roaring;
+        return Status::OK();
+#else
+        return Status::OK();
+#endif
+    }
+};
+
+template <LogicalType field_type>
+class GermanStringColumnGtPredicate final : public GermanStringColumnPredicateCmpBase<field_type, GermanStringGt> {
+    using Base = GermanStringColumnPredicateCmpBase<field_type, GermanStringGt>;
+
+public:
+    GermanStringColumnGtPredicate(const TypeInfoPtr& type_info, ColumnId id, const Slice& value)
+            : Base(PredicateType::kGT, type_info, id, value) {}
+
+    bool zone_map_filter(const ZoneMapDetail& detail) const override {
+        const auto& max = detail.max_value();
+        return this->type_info()->cmp(Datum(this->_value), max) < 0;
+    }
+
+    bool support_bitmap_filter() const override { return true; }
+
+    Status seek_bitmap_dictionary(BitmapIndexIterator* iter, SparseRange<>* range) const override {
+        Slice padded_value(Base::_zero_padded_str);
+        range->clear();
+        bool exact_match = false;
+        Status s = iter->seek_dictionary(&padded_value, &exact_match);
+        if (s.ok()) {
+            rowid_t seeked_ordinal = iter->current_ordinal() + exact_match;
+            rowid_t ordinal_limit = iter->bitmap_nums() - iter->has_null_bitmap();
+            range->add(Range<>(seeked_ordinal, ordinal_limit));
+        } else if (!s.is_not_found()) {
+            return s;
+        }
+        return Status::OK();
+    }
+
+    Status seek_inverted_index(const std::string& column_name, InvertedIndexIterator* iterator,
+                               roaring::Roaring* row_bitmap) const override {
+#ifndef __APPLE__
+        Slice padded_value(Base::_zero_padded_str);
+        InvertedIndexQueryType query_type = InvertedIndexQueryType::GREATER_THAN_QUERY;
+        roaring::Roaring roaring;
+        RETURN_IF_ERROR(iterator->read_from_inverted_index(column_name, &padded_value, query_type, &roaring));
+        *row_bitmap &= roaring;
+        return Status::OK();
+#else
+        return Status::OK();
+#endif
+    }
+};
+
+template <LogicalType field_type>
+class GermanStringColumnLePredicate final : public GermanStringColumnPredicateCmpBase<field_type, GermanStringLe> {
+    using Base = GermanStringColumnPredicateCmpBase<field_type, GermanStringLe>;
+
+public:
+    GermanStringColumnLePredicate(const TypeInfoPtr& type_info, ColumnId id, const Slice& value)
+            : Base(PredicateType::kLE, type_info, id, value) {}
+
+    bool zone_map_filter(const ZoneMapDetail& detail) const override {
+        const auto& min = detail.min_or_null_value();
+        const auto& max = detail.max_value();
+        return (this->type_info()->cmp(Datum(this->_value), min) >= 0) & !max.is_null();
+    }
+
+    bool support_bitmap_filter() const override { return true; }
+
+    Status seek_bitmap_dictionary(BitmapIndexIterator* iter, SparseRange<>* range) const override {
+        Slice padded_value(Base::_zero_padded_str);
+        range->clear();
+        bool exact_match = false;
+        Status st = iter->seek_dictionary(&padded_value, &exact_match);
+        if (st.ok()) {
+            rowid_t seeked_ordinal = iter->current_ordinal() + exact_match;
+            range->add(Range<>(0, seeked_ordinal));
+        } else if (st.is_not_found()) {
+            range->add(Range<>(0, iter->bitmap_nums() - iter->has_null_bitmap()));
+            st = Status::OK();
+        }
+        return st;
+    }
+
+    Status seek_inverted_index(const std::string& column_name, InvertedIndexIterator* iterator,
+                               roaring::Roaring* row_bitmap) const override {
+#ifndef __APPLE__
+        Slice padded_value(Base::_zero_padded_str);
+        InvertedIndexQueryType query_type = InvertedIndexQueryType::LESS_EQUAL_QUERY;
+        roaring::Roaring roaring;
+        RETURN_IF_ERROR(iterator->read_from_inverted_index(column_name, &padded_value, query_type, &roaring));
+        *row_bitmap &= roaring;
+        return Status::OK();
+#else
+        return Status::OK();
+#endif
+    }
+};
+
+template <LogicalType field_type>
+class GermanStringColumnLtPredicate final : public GermanStringColumnPredicateCmpBase<field_type, GermanStringLt> {
+    using Base = GermanStringColumnPredicateCmpBase<field_type, GermanStringLt>;
+
+public:
+    GermanStringColumnLtPredicate(const TypeInfoPtr& type_info, ColumnId id, const Slice& value)
+            : Base(PredicateType::kLT, type_info, id, value) {}
+
+    bool zone_map_filter(const ZoneMapDetail& detail) const override {
+        const auto& min = detail.min_or_null_value();
+        const auto& max = detail.max_value();
+        const auto type_info = this->type_info();
+        return (type_info->cmp(Datum(this->_value), min) > 0) & !max.is_null();
+    }
+
+    bool support_bitmap_filter() const override { return true; }
+
+    Status seek_bitmap_dictionary(BitmapIndexIterator* iter, SparseRange<>* range) const override {
+        Slice padded_value(Base::_zero_padded_str);
+        range->clear();
+        bool exact_match = false;
+        Status st = iter->seek_dictionary(&padded_value, &exact_match);
+        if (st.ok()) {
+            rowid_t seeked_ordinal = iter->current_ordinal();
+            range->add(Range<>(0, seeked_ordinal));
+        } else if (st.is_not_found()) {
+            range->add(Range<>(0, iter->bitmap_nums() - iter->has_null_bitmap()));
+            st = Status::OK();
+        }
+        return st;
+    }
+
+    Status seek_inverted_index(const std::string& column_name, InvertedIndexIterator* iterator,
+                               roaring::Roaring* row_bitmap) const override {
+#ifndef __APPLE__
+        Slice padded_value(Base::_zero_padded_str);
+        InvertedIndexQueryType query_type = InvertedIndexQueryType::LESS_THAN_QUERY;
+        roaring::Roaring roaring;
+        RETURN_IF_ERROR(iterator->read_from_inverted_index(column_name, &padded_value, query_type, &roaring));
+        *row_bitmap &= roaring;
+        return Status::OK();
+#else
+        return Status::OK();
+#endif
+    }
+};
+
 ColumnPredicate* new_column_ne_predicate(const TypeInfoPtr& type_info, ColumnId id, const Slice& operand) {
-    return new_column_predicate<ColumnNePredicate, BinaryColumnNePredicate>(type_info, id, operand);
+    return new_column_predicate<ColumnNePredicate, BinaryColumnNePredicate, GermanStringColumnNePredicate>(
+            type_info, id, operand);
 }
 
 ColumnPredicate* new_column_eq_predicate(const TypeInfoPtr& type_info, ColumnId id, const Slice& operand) {
-    return new_column_predicate<ColumnEqPredicate, BinaryColumnEqPredicate>(type_info, id, operand);
+    return new_column_predicate<ColumnEqPredicate, BinaryColumnEqPredicate, GermanStringColumnEqPredicate>(
+            type_info, id, operand);
 }
 
 ColumnPredicate* new_column_lt_predicate(const TypeInfoPtr& type_info, ColumnId id, const Slice& operand) {
-    return new_column_predicate<ColumnLtPredicate, BinaryColumnLtPredicate>(type_info, id, operand);
+    return new_column_predicate<ColumnLtPredicate, BinaryColumnLtPredicate, GermanStringColumnLtPredicate>(
+            type_info, id, operand);
 }
 
 ColumnPredicate* new_column_le_predicate(const TypeInfoPtr& type_info, ColumnId id, const Slice& operand) {
-    return new_column_predicate<ColumnLePredicate, BinaryColumnLePredicate>(type_info, id, operand);
+    return new_column_predicate<ColumnLePredicate, BinaryColumnLePredicate, GermanStringColumnLePredicate>(
+            type_info, id, operand);
 }
 
 ColumnPredicate* new_column_gt_predicate(const TypeInfoPtr& type_info, ColumnId id, const Slice& operand) {
-    return new_column_predicate<ColumnGtPredicate, BinaryColumnGtPredicate>(type_info, id, operand);
+    return new_column_predicate<ColumnGtPredicate, BinaryColumnGtPredicate, GermanStringColumnGtPredicate>(
+            type_info, id, operand);
 }
 
 ColumnPredicate* new_column_ge_predicate(const TypeInfoPtr& type_info, ColumnId id, const Slice& operand) {
-    return new_column_predicate<ColumnGePredicate, BinaryColumnGePredicate>(type_info, id, operand);
+    return new_column_predicate<ColumnGePredicate, BinaryColumnGePredicate, GermanStringColumnGePredicate>(
+            type_info, id, operand);
 }
 
 ColumnPredicate* new_column_cmp_predicate(PredicateType predicate, const TypeInfoPtr& type, ColumnId id,
@@ -1078,27 +1528,33 @@ ColumnPredicate* new_column_cmp_predicate(PredicateType predicate, const TypeInf
 }
 
 ColumnPredicate* new_column_ne_predicate_from_datum(const TypeInfoPtr& type_info, ColumnId id, const Datum& operand) {
-    return new_column_predicate<ColumnNePredicate, BinaryColumnNePredicate>(type_info, id, operand);
+    return new_column_predicate<ColumnNePredicate, BinaryColumnNePredicate, GermanStringColumnNePredicate>(
+            type_info, id, operand);
 }
 
 ColumnPredicate* new_column_eq_predicate_from_datum(const TypeInfoPtr& type_info, ColumnId id, const Datum& operand) {
-    return new_column_predicate<ColumnEqPredicate, BinaryColumnEqPredicate>(type_info, id, operand);
+    return new_column_predicate<ColumnEqPredicate, BinaryColumnEqPredicate, GermanStringColumnEqPredicate>(
+            type_info, id, operand);
 }
 
 ColumnPredicate* new_column_lt_predicate_from_datum(const TypeInfoPtr& type_info, ColumnId id, const Datum& operand) {
-    return new_column_predicate<ColumnLtPredicate, BinaryColumnLtPredicate>(type_info, id, operand);
+    return new_column_predicate<ColumnLtPredicate, BinaryColumnLtPredicate, GermanStringColumnLtPredicate>(
+            type_info, id, operand);
 }
 
 ColumnPredicate* new_column_le_predicate_from_datum(const TypeInfoPtr& type_info, ColumnId id, const Datum& operand) {
-    return new_column_predicate<ColumnLePredicate, BinaryColumnLePredicate>(type_info, id, operand);
+    return new_column_predicate<ColumnLePredicate, BinaryColumnLePredicate, GermanStringColumnLePredicate>(
+            type_info, id, operand);
 }
 
 ColumnPredicate* new_column_gt_predicate_from_datum(const TypeInfoPtr& type_info, ColumnId id, const Datum& operand) {
-    return new_column_predicate<ColumnGtPredicate, BinaryColumnGtPredicate>(type_info, id, operand);
+    return new_column_predicate<ColumnGtPredicate, BinaryColumnGtPredicate, GermanStringColumnGtPredicate>(
+            type_info, id, operand);
 }
 
 ColumnPredicate* new_column_ge_predicate_from_datum(const TypeInfoPtr& type_info, ColumnId id, const Datum& operand) {
-    return new_column_predicate<ColumnGePredicate, BinaryColumnGePredicate>(type_info, id, operand);
+    return new_column_predicate<ColumnGePredicate, BinaryColumnGePredicate, GermanStringColumnGePredicate>(
+            type_info, id, operand);
 }
 
 std::ostream& operator<<(std::ostream& os, PredicateType p) {

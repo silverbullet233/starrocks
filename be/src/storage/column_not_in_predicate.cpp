@@ -17,6 +17,8 @@
 #include "base/simd/simd.h"
 #include "base/string/string_parser.hpp"
 #include "column/column.h"
+#include "column/german_string.h"
+#include "column/german_string_column.h"
 #include "column/nullable_column.h"
 #include "column/raw_data_visitor.h"
 #include "gutil/casts.h"
@@ -336,6 +338,142 @@ private:
     ItemHashSet<Slice> _slices;
 };
 
+// Per-row NOT IN predicate specialization for GermanStringColumn.
+// See GermanStringColumnInPredicate for the shape of the bridge.
+template <LogicalType field_type>
+class GermanStringColumnNotInPredicate final : public ColumnPredicate {
+    static_assert(field_type == TYPE_GERMAN_STRING,
+                  "GermanStringColumnNotInPredicate is only for TYPE_GERMAN_STRING");
+
+public:
+    GermanStringColumnNotInPredicate(const TypeInfoPtr& type_info, ColumnId id, std::vector<std::string> strings)
+            : ColumnPredicate(type_info, id), _zero_padded_strs(std::move(strings)) {
+        for (const std::string& s : _zero_padded_strs) {
+            _slices.emplace(Slice(s));
+        }
+    }
+
+    ~GermanStringColumnNotInPredicate() override = default;
+
+    template <typename Op>
+    inline void t_evaluate(const Column* column, uint8_t* sel, uint16_t from, uint16_t to) const {
+        const GermanStringColumn* gs_column = _get_gs_column(column);
+        if (!column->has_null()) {
+            for (size_t i = from; i < to; i++) {
+                sel[i] = Op::apply(sel[i], (uint8_t)(!(_slices.contains(gs_column->get_slice(i)))));
+            }
+        } else {
+            const uint8_t* null_data = down_cast<const NullableColumn*>(column)->immutable_null_column_data().data();
+            for (size_t i = from; i < to; i++) {
+                sel[i] = Op::apply(sel[i], (uint8_t)(!null_data[i] && !(_slices.contains(gs_column->get_slice(i)))));
+            }
+        }
+    }
+
+    Status evaluate(const Column* column, uint8_t* selection, uint16_t from, uint16_t to) const override {
+        t_evaluate<ColumnPredicateAssignOp>(column, selection, from, to);
+        return Status::OK();
+    }
+
+    Status evaluate_and(const Column* column, uint8_t* selection, uint16_t from, uint16_t to) const override {
+        t_evaluate<ColumnPredicateAndOp>(column, selection, from, to);
+        return Status::OK();
+    }
+
+    Status evaluate_or(const Column* column, uint8_t* selection, uint16_t from, uint16_t to) const override {
+        t_evaluate<ColumnPredicateOrOp>(column, selection, from, to);
+        return Status::OK();
+    }
+
+    StatusOr<uint16_t> evaluate_branchless(const Column* column, uint16_t* sel, uint16_t sel_size) const override {
+        const GermanStringColumn* gs_column = _get_gs_column(column);
+        uint16_t new_size = 0;
+        if (!column->has_null()) {
+            for (uint16_t i = 0; i < sel_size; ++i) {
+                uint16_t data_idx = sel[i];
+                sel[new_size] = data_idx;
+                new_size += !(_slices.contains(gs_column->get_slice(data_idx)));
+            }
+        } else {
+            const uint8_t* null_data = down_cast<const NullableColumn*>(column)->immutable_null_column_data().data();
+            for (uint16_t i = 0; i < sel_size; ++i) {
+                uint16_t data_idx = sel[i];
+                sel[new_size] = data_idx;
+                new_size += !null_data[data_idx] && !(_slices.contains(gs_column->get_slice(data_idx)));
+            }
+        }
+        return new_size;
+    }
+
+    bool zone_map_filter(const ZoneMapDetail& detail) const override { return true; }
+
+    bool support_bitmap_filter() const override { return false; }
+
+    Status seek_bitmap_dictionary(BitmapIndexIterator* iter, SparseRange<>* range) const override {
+        return Status::Cancelled("not-equal predicate not support bitmap index");
+    }
+
+    Status seek_inverted_index(const std::string& column_name, InvertedIndexIterator* iterator,
+                               roaring::Roaring* row_bitmap) const override {
+        InvertedIndexQueryType query_type = InvertedIndexQueryType::EQUAL_QUERY;
+        roaring::Roaring indices;
+        for (const std::string& s : _zero_padded_strs) {
+            Slice padded_value(s);
+            roaring::Roaring index;
+            RETURN_IF_ERROR(iterator->read_from_inverted_index(column_name, &padded_value, query_type, &index));
+            indices |= index;
+        }
+        *row_bitmap -= indices;
+        return Status::OK();
+    }
+
+    bool can_vectorized() const override { return false; }
+
+    PredicateType type() const override { return PredicateType::kNotInList; }
+
+    std::vector<Datum> values() const override {
+        std::vector<Datum> ret;
+        ret.reserve(_slices.size());
+        for (const std::string& s : _zero_padded_strs) {
+            ret.emplace_back(Slice(s));
+        }
+        return ret;
+    }
+
+    Status convert_to(const ColumnPredicate** output, const TypeInfoPtr& target_type_info,
+                      ObjectPool* obj_pool) const override {
+        const auto to_type = target_type_info->type();
+        if (to_type == field_type) {
+            *output = this;
+            return Status::OK();
+        }
+        CHECK(false) << "Not support, from_type=" << field_type << ", to_type=" << to_type;
+        return Status::OK();
+    }
+
+    bool padding_zeros(size_t len) override {
+        _slices.clear();
+        for (auto& str : _zero_padded_strs) {
+            size_t old_sz = str.size();
+            str.append(len > old_sz ? len - old_sz : 0, '\0');
+            _slices.emplace(str.data(), old_sz);
+        }
+        return true;
+    }
+
+private:
+    static const GermanStringColumn* _get_gs_column(const Column* column) {
+        const Column* data_column = column;
+        if (column->is_nullable()) {
+            data_column = down_cast<const NullableColumn*>(column)->data_column().get();
+        }
+        return down_cast<const GermanStringColumn*>(data_column);
+    }
+
+    std::vector<std::string> _zero_padded_strs;
+    ItemHashSet<Slice> _slices;
+};
+
 ColumnPredicate* new_column_not_in_predicate(const TypeInfoPtr& type_info, ColumnId id,
                                              const std::vector<std::string>& strs) {
     auto type = type_info->type();
@@ -384,6 +522,8 @@ ColumnPredicate* new_column_not_in_predicate(const TypeInfoPtr& type_info, Colum
         return new BinaryColumnNotInPredicate<TYPE_CHAR>(type_info, id, strs);
     case TYPE_VARCHAR:
         return new BinaryColumnNotInPredicate<TYPE_VARCHAR>(type_info, id, strs);
+    case TYPE_GERMAN_STRING:
+        return new GermanStringColumnNotInPredicate<TYPE_GERMAN_STRING>(type_info, id, strs);
     case TYPE_DATE_V1:
         return new ColumnNotInPredicate<TYPE_DATE_V1>(type_info, id, strs);
     case TYPE_DATE:
@@ -429,7 +569,14 @@ ColumnPredicate* new_column_not_in_predicate_from_datum(const TypeInfoPtr& type_
     const auto type = type_info->type();
     return field_type_dispatch_column_predicate(
             type, static_cast<ColumnPredicate*>(nullptr), [&]<LogicalType LT>() -> ColumnPredicate* {
-                if constexpr (lt_is_string<LT>) {
+                if constexpr (LT == TYPE_GERMAN_STRING) {
+                    std::vector<std::string> strings;
+                    strings.reserve(operands.size());
+                    for (const auto& v : operands) {
+                        strings.emplace_back(v.get_slice().to_string());
+                    }
+                    return new GermanStringColumnNotInPredicate<LT>(type_info, id, std::move(strings));
+                } else if constexpr (lt_is_string<LT>) {
                     std::vector<std::string> strings;
                     strings.reserve(operands.size());
                     for (const auto& v : operands) {

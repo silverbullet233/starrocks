@@ -152,6 +152,15 @@ struct StorageColumnTraits<TYPE_VARCHAR> {
     using LargeColumnType = LargeBinaryColumn;
 };
 
+// TYPE_GERMAN_STRING's on-disk storage stays VARCHAR, but the runtime column
+// carrying rows into predicates is GermanStringColumn. No large variant: the
+// existing long-rep arena inside GermanStringColumn covers unbounded payloads.
+template <>
+struct StorageColumnTraits<TYPE_GERMAN_STRING> {
+    using ColumnType = GermanStringColumn;
+    using LargeColumnType = GermanStringColumn;
+};
+
 template <>
 struct StorageColumnTraits<TYPE_HLL> {
     using ColumnType = HyperLogLogColumn;

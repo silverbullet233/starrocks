@@ -2337,6 +2337,185 @@ TEST(ColumnPredicateTest, test_convert_cmp_predicate) {
 }
 
 // NOLINTNEXTLINE
+// ----------------------------------------------------------------------------
+// TYPE_GERMAN_STRING predicate evaluation tests.
+//
+// These tests exercise per-row predicate evaluation against a
+// `GermanStringColumn`, covering:
+//   - eq / ne / lt / le / gt / ge cmp predicates,
+//   - IN / NOT IN predicates,
+//   - the 4-byte-prefix fast path (two strings sharing the first 4 bytes must
+//     not collapse to equal),
+//   - inline (<=12 byte) vs long (>12 byte) values in the same column.
+// ----------------------------------------------------------------------------
+
+// NOLINTNEXTLINE
+TEST(ColumnPredicateTest, test_eq_german_string) {
+    std::unique_ptr<ColumnPredicate> p(
+            new_column_eq_predicate(get_type_info(TYPE_GERMAN_STRING), 0, "abcdef"));
+    auto c = ChunkHelper::column_from_field_type(TYPE_GERMAN_STRING, false);
+    c->append_datum(Datum(Slice("abcdef")));
+    c->append_datum(Datum(Slice("abcdeg"))); // shares 5-byte prefix with operand, tail diff
+    c->append_datum(Datum(Slice("zzzzzz")));
+    c->append_datum(Datum(Slice("this_is_a_long_string_exceeding_twelve_bytes")));
+    c->append_datum(Datum(Slice("abcdef"))); // duplicate match
+
+    ASSERT_EQ(PredicateType::kEQ, p->type());
+    ASSERT_FALSE(p->can_vectorized());
+    ASSERT_EQ("abcdef", p->value().get_slice());
+
+    std::vector<uint8_t> buff(c->size());
+    ASSERT_OK(p->evaluate(c.get(), buff.data(), 0, c->size()));
+    ASSERT_EQ("1,0,0,0,1", to_string(buff));
+
+    buff.assign(c->size(), 0);
+    ASSERT_OK(p->evaluate_and(c.get(), buff.data(), 0, c->size()));
+    ASSERT_EQ("0,0,0,0,0", to_string(buff));
+
+    buff.assign(c->size(), 1);
+    ASSERT_OK(p->evaluate_or(c.get(), buff.data(), 0, c->size()));
+    ASSERT_EQ("1,1,1,1,1", to_string(buff));
+}
+
+// Prefix fast-path correctness: strings sharing the first 4 bytes but differing
+// in the tail must compare as not equal / ordered by the differing bytes.
+// NOLINTNEXTLINE
+TEST(ColumnPredicateTest, test_eq_german_string_prefix_collision) {
+    // Long operand: 4-byte prefix "abcd", payload 16 bytes total.
+    std::unique_ptr<ColumnPredicate> p(
+            new_column_eq_predicate(get_type_info(TYPE_GERMAN_STRING), 0, "abcd123456789012"));
+    auto c = ChunkHelper::column_from_field_type(TYPE_GERMAN_STRING, false);
+    c->append_datum(Datum(Slice("abcd123456789012"))); // exact
+    c->append_datum(Datum(Slice("abcd123456789013"))); // same prefix, last byte diff
+    c->append_datum(Datum(Slice("abcdXXXXXXXXXXXX"))); // same prefix, middle diff
+    c->append_datum(Datum(Slice("abce123456789012"))); // prefix differs at byte 3
+
+    std::vector<uint8_t> buff(c->size());
+    ASSERT_OK(p->evaluate(c.get(), buff.data(), 0, c->size()));
+    ASSERT_EQ("1,0,0,0", to_string(buff));
+}
+
+// NOLINTNEXTLINE
+TEST(ColumnPredicateTest, test_ne_german_string) {
+    std::unique_ptr<ColumnPredicate> p(
+            new_column_ne_predicate(get_type_info(TYPE_GERMAN_STRING), 0, "abc"));
+    auto c = ChunkHelper::column_from_field_type(TYPE_GERMAN_STRING, false);
+    c->append_datum(Datum(Slice("abc")));
+    c->append_datum(Datum(Slice("abd")));
+    c->append_datum(Datum(Slice("abc")));
+
+    std::vector<uint8_t> buff(c->size());
+    ASSERT_OK(p->evaluate(c.get(), buff.data(), 0, c->size()));
+    ASSERT_EQ("0,1,0", to_string(buff));
+}
+
+// NOLINTNEXTLINE
+TEST(ColumnPredicateTest, test_cmp_german_string_inline_and_long) {
+    // Mixed inline (<=12) and long (>12) values.
+    auto c = ChunkHelper::column_from_field_type(TYPE_GERMAN_STRING, false);
+    c->append_datum(Datum(Slice("abc")));                                    // inline, <
+    c->append_datum(Datum(Slice("abcde")));                                  // inline
+    c->append_datum(Datum(Slice("abcdf")));                                  // inline, prefix-collide with row 1 last byte
+    c->append_datum(Datum(Slice("xyz_abcdefghij_long_string_payload")));     // long
+    c->append_datum(Datum(Slice("abcde")));                                  // inline, equal to operand
+
+    // LT "abcde": rows with value < "abcde" => row 0 ("abc") only.
+    {
+        std::unique_ptr<ColumnPredicate> p(
+                new_column_lt_predicate(get_type_info(TYPE_GERMAN_STRING), 0, "abcde"));
+        std::vector<uint8_t> buff(c->size());
+        ASSERT_OK(p->evaluate(c.get(), buff.data(), 0, c->size()));
+        ASSERT_EQ("1,0,0,0,0", to_string(buff));
+    }
+
+    // LE "abcde": rows 0, 1, 4.
+    {
+        std::unique_ptr<ColumnPredicate> p(
+                new_column_le_predicate(get_type_info(TYPE_GERMAN_STRING), 0, "abcde"));
+        std::vector<uint8_t> buff(c->size());
+        ASSERT_OK(p->evaluate(c.get(), buff.data(), 0, c->size()));
+        ASSERT_EQ("1,1,0,0,1", to_string(buff));
+    }
+
+    // GT "abcde": rows 2 ("abcdf") and 3 (long starts with 'x').
+    {
+        std::unique_ptr<ColumnPredicate> p(
+                new_column_gt_predicate(get_type_info(TYPE_GERMAN_STRING), 0, "abcde"));
+        std::vector<uint8_t> buff(c->size());
+        ASSERT_OK(p->evaluate(c.get(), buff.data(), 0, c->size()));
+        ASSERT_EQ("0,0,1,1,0", to_string(buff));
+    }
+
+    // GE "abcde": rows 1, 2, 3, 4.
+    {
+        std::unique_ptr<ColumnPredicate> p(
+                new_column_ge_predicate(get_type_info(TYPE_GERMAN_STRING), 0, "abcde"));
+        std::vector<uint8_t> buff(c->size());
+        ASSERT_OK(p->evaluate(c.get(), buff.data(), 0, c->size()));
+        ASSERT_EQ("0,1,1,1,1", to_string(buff));
+    }
+}
+
+// NOLINTNEXTLINE
+TEST(ColumnPredicateTest, test_in_german_string) {
+    std::unique_ptr<ColumnPredicate> in_p(
+            new_column_in_predicate(get_type_info(TYPE_GERMAN_STRING), 0, {"abc", "longer_than_twelve_bytes"}));
+    std::unique_ptr<ColumnPredicate> not_in_p(
+            new_column_not_in_predicate(get_type_info(TYPE_GERMAN_STRING), 0, {"abc", "longer_than_twelve_bytes"}));
+    auto c = ChunkHelper::column_from_field_type(TYPE_GERMAN_STRING, false);
+    c->append_datum(Datum(Slice("abc")));                        // match inline operand
+    c->append_datum(Datum(Slice("abd")));                        // miss
+    c->append_datum(Datum(Slice("longer_than_twelve_bytes")));   // match long operand
+    c->append_datum(Datum(Slice("longer_than_twelve_byteZ")));   // prefix collide with long operand, tail diff
+
+    ASSERT_EQ(PredicateType::kInList, in_p->type());
+    ASSERT_EQ(PredicateType::kNotInList, not_in_p->type());
+
+    std::vector<uint8_t> buff(c->size());
+    ASSERT_OK(in_p->evaluate(c.get(), buff.data(), 0, c->size()));
+    ASSERT_EQ("1,0,1,0", to_string(buff));
+
+    std::vector<uint8_t> buff2(c->size());
+    ASSERT_OK(not_in_p->evaluate(c.get(), buff2.data(), 0, c->size()));
+    ASSERT_EQ("0,1,0,1", to_string(buff2));
+}
+
+// NOLINTNEXTLINE
+TEST(ColumnPredicateTest, test_null_predicate_german_string) {
+    auto c = ChunkHelper::column_from_field_type(TYPE_GERMAN_STRING, true);
+    c->append_datum(Datum(Slice("abc")));
+    (void)c->append_nulls(1);
+    c->append_datum(Datum(Slice("xyz")));
+
+    std::unique_ptr<ColumnPredicate> is_null_p(
+            new_column_null_predicate(get_type_info(TYPE_GERMAN_STRING), 0, true));
+    std::unique_ptr<ColumnPredicate> not_null_p(
+            new_column_null_predicate(get_type_info(TYPE_GERMAN_STRING), 0, false));
+
+    std::vector<uint8_t> buff(c->size());
+    ASSERT_OK(is_null_p->evaluate(c.get(), buff.data(), 0, c->size()));
+    ASSERT_EQ("0,1,0", to_string(buff));
+
+    ASSERT_OK(not_null_p->evaluate(c.get(), buff.data(), 0, c->size()));
+    ASSERT_EQ("1,0,1", to_string(buff));
+}
+
+// Nullable column + eq to verify null rows stay filtered.
+// NOLINTNEXTLINE
+TEST(ColumnPredicateTest, test_eq_german_string_nullable) {
+    std::unique_ptr<ColumnPredicate> p(
+            new_column_eq_predicate(get_type_info(TYPE_GERMAN_STRING), 0, "abc"));
+    auto c = ChunkHelper::column_from_field_type(TYPE_GERMAN_STRING, true);
+    c->append_datum(Datum(Slice("abc")));
+    c->append_datum(Datum(Slice("ab")));
+    (void)c->append_nulls(1);
+    c->append_datum(Datum(Slice("abc")));
+
+    std::vector<uint8_t> buff(c->size());
+    ASSERT_OK(p->evaluate(c.get(), buff.data(), 0, c->size()));
+    ASSERT_EQ("1,0,0,1", to_string(buff));
+}
+
 TEST(ColumnPredicateTest, test_convert_cmp_binary_predicate) {
     // clang-format off
     std::vector<PredicateType> testcases = {

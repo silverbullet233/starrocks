@@ -295,6 +295,11 @@ ScalarTypeInfoResolver::ScalarTypeInfoResolver() {
     APPLY_FOR_SUPPORTED_FIELD_TYPE(M)
 #undef M
     add_mapping<TYPE_NONE>();
+    // TYPE_GERMAN_STRING is not part of APPLY_FOR_SUPPORTED_FIELD_TYPE (it is
+    // a query-runtime type only; storage catalog stays VARCHAR). Register its
+    // TypeInfo here so predicate zone map / bloom filter / bitmap index
+    // comparisons over Slice operands resolve correctly.
+    add_mapping<TYPE_GERMAN_STRING>();
 }
 
 ScalarTypeInfoResolver::~ScalarTypeInfoResolver() = default;
@@ -857,6 +862,16 @@ struct ScalarTypeInfoImpl<TYPE_VARCHAR> : ScalarTypeInfoImpl<TYPE_CHAR> {
         const Slice& v2 = right.get_slice();
         return v1.compare(v2);
     }
+};
+
+// TYPE_GERMAN_STRING shares VARCHAR's wire storage semantics at the TypeInfo
+// boundary (zone map / bloom filter / bitmap index compare Slice bytes). The
+// runtime column is different, but the index-boundary TypeInfo can reuse the
+// VARCHAR comparison + serialization logic.
+template <>
+struct ScalarTypeInfoImpl<TYPE_GERMAN_STRING> : ScalarTypeInfoImpl<TYPE_VARCHAR> {
+    static constexpr LogicalType type = TYPE_GERMAN_STRING;
+    static constexpr int32_t size = StorageCppTypeSize<TYPE_GERMAN_STRING>;
 };
 
 template <>

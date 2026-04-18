@@ -186,6 +186,14 @@ template <>
 struct StorageTypeTraits<TYPE_VARCHAR> {
     using CppType = Slice;
 };
+// TYPE_GERMAN_STRING reuses the Slice storage view at the predicate/index
+// boundary: bloom filters, zone maps, and bitmap indexes stay Slice-based.
+// Per-row predicate evaluation against GermanStringColumn is handled by a
+// dedicated GermanString-aware predicate class in column_predicate_cmp.cpp.
+template <>
+struct StorageTypeTraits<TYPE_GERMAN_STRING> {
+    using CppType = Slice;
+};
 template <>
 struct StorageTypeTraits<TYPE_HLL> {
     using CppType = Slice;

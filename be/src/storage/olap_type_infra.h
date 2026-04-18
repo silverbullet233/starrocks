@@ -131,7 +131,8 @@ namespace starrocks {
     M(TYPE_FLOAT)                          \
     M(TYPE_DOUBLE)                         \
     M(TYPE_CHAR)                           \
-    M(TYPE_VARCHAR)
+    M(TYPE_VARCHAR)                        \
+    M(TYPE_GERMAN_STRING)
 
 #define _TYPE_DISPATCH_CASE(type) \
     case type:                    \
