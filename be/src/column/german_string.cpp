@@ -86,7 +86,13 @@ uint32_t GermanString::fnv_hash(uint32_t seed) const {
     if (is_inline()) {
         return HashUtil::fnv_hash(short_rep.str, len, seed);
     } else {
-        // // NOLINTNEXTLINE(performance-no-int-to-ptr)
+        // Guard against stale long-rep entries with a null payload pointer,
+        // which would otherwise crash on read. Returning seed preserves the
+        // FNV identity for an empty input.
+        if (long_rep.ptr == 0) {
+            return seed;
+        }
+        // NOLINTNEXTLINE(performance-no-int-to-ptr)
         return HashUtil::fnv_hash(reinterpret_cast<const char*>(long_rep.ptr), len, seed);
     }
 }
@@ -94,6 +100,9 @@ uint32_t GermanString::crc32_hash(uint32_t seed) const {
     if (is_inline()) {
         return HashUtil::zlib_crc_hash(short_rep.str, len, seed);
     } else {
+        if (long_rep.ptr == 0) {
+            return seed;
+        }
         // NOLINTNEXTLINE(performance-no-int-to-ptr)
         return HashUtil::zlib_crc_hash(reinterpret_cast<const char*>(long_rep.ptr), len, seed);
     }
