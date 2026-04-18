@@ -239,6 +239,10 @@ public class SessionVariable implements Serializable, Writable, Cloneable {
     public static final String IS_REPORT_SUCCESS = "is_report_success";
     public static final String COLOR_EXPLAIN_OUTPUT = "enable_color_explain_output";
     public static final String ENABLE_PROFILE = "enable_profile";
+    // FE-only: when true, the plan-rewrite pass swaps VARCHAR slots/exprs for
+    // GERMAN_STRING at Thrift serialization time. Not propagated to TQueryOptions;
+    // the BE sees the rewritten types and does not read this flag.
+    public static final String ENABLE_GERMAN_STRING = "enable_german_string";
     public static final String BINARY_ENCODING_FORMAT = "binary_encoding_format";
     public static final String BINARY_ENCODING_LEVEL = "binary_encoding_level";
 
@@ -1329,6 +1333,11 @@ public class SessionVariable implements Serializable, Writable, Cloneable {
     // if true, need report to coordinator when plan fragment execute successfully.
     @VariableMgr.VarAttr(name = ENABLE_PROFILE, alias = IS_REPORT_SUCCESS)
     private boolean enableProfile = false;
+
+    // FE-only toggle consumed by the plan-rewrite pass that swaps VARCHAR slots
+    // for GERMAN_STRING before Thrift serialization. Not pushed to TQueryOptions.
+    @VariableMgr.VarAttr(name = ENABLE_GERMAN_STRING)
+    private boolean enableGermanString = false;
 
     @VariableMgr.VarAttr(name = BINARY_ENCODING_FORMAT)
     private String binaryEncodingFormat = BinaryEncodingFormat.HEX.sessionValue();
@@ -3828,6 +3837,14 @@ public class SessionVariable implements Serializable, Writable, Cloneable {
 
     public void setEnableProfile(boolean enableProfile) {
         this.enableProfile = enableProfile;
+    }
+
+    public boolean isEnableGermanString() {
+        return enableGermanString;
+    }
+
+    public void setEnableGermanString(boolean enableGermanString) {
+        this.enableGermanString = enableGermanString;
     }
 
     public boolean getColorExplainOutput() {
