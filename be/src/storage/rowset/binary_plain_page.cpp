@@ -28,7 +28,6 @@
 #include "column/append_with_mask.h"
 #include "column/binary_column.h"
 #include "column/column_helper.h"
-#include "column/german_string_column.h"
 #include "column/nullable_column.h"
 #include "column/vectorized_fwd.h"
 #include "common/config_rowset_fwd.h"
