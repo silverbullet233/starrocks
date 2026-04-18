@@ -116,6 +116,7 @@ import com.starrocks.persist.CreateInsertOverwriteJobLog;
 import com.starrocks.persist.gson.GsonUtils;
 import com.starrocks.planner.DataSink;
 import com.starrocks.planner.FileScanNode;
+import com.starrocks.planner.GermanStringRewriter;
 import com.starrocks.planner.HiveTableSink;
 import com.starrocks.planner.IcebergDeleteSink;
 import com.starrocks.planner.IcebergMetadataDeleteNode;
@@ -1863,6 +1864,15 @@ public class StmtExecutor {
 
         List<PlanFragment> fragments = execPlan.getFragments();
         List<ScanNode> scanNodes = execPlan.getScanNodes();
+        // D3: When enable_german_string is on, rewrite VARCHAR -> GERMAN_STRING
+        // on slots and exprs reachable from OLAP scan outputs. Must run before
+        // descTbl.toThrift() and before fragments.toThrift() so BE receives the
+        // rewritten types. ExecPlan.outputExprs (used for MySQL wire metadata
+        // via sendFields/getOriginType) is left untouched; only Expr.type is
+        // flipped so the client still sees VARCHAR column metadata.
+        if (GermanStringRewriter.shouldApply(context.getSessionVariable())) {
+            GermanStringRewriter.rewrite(execPlan);
+        }
         TDescriptorTable descTable = execPlan.getDescTbl().toThrift();
         List<String> colNames = execPlan.getColNames();
         List<Expr> outputExprs = execPlan.getOutputExprs();
