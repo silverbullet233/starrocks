@@ -1350,11 +1350,6 @@ Status Aggregator::_evaluate_group_by_exprs(Chunk* chunk) {
     for (size_t i = 0; i < _group_by_expr_ctxs.size(); i++) {
         ASSIGN_OR_RETURN(_group_by_columns[i], _group_by_expr_ctxs[i]->evaluate(chunk));
         DCHECK(_group_by_columns[i] != nullptr);
-        // TYPE_GERMAN_STRING keys currently route through the Slice-based
-        // `string` agg arm (see HashVariantResolver). Convert here so the arm
-        // receives a BinaryColumn. Tracked under the GermanString-native arm
-        // bug; this is a bridge until that is fixed.
-        _group_by_columns[i] = ColumnHelper::convert_german_string_to_binary_column(_group_by_columns[i]);
         if (_group_by_columns[i]->is_constant()) {
             // All hash table could handle only null, and we don't know the real data
             // type for only null column, so we don't unpack it.

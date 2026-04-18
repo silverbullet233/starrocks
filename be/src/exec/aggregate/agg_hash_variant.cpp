@@ -522,12 +522,9 @@ HashVariantResolver<HashVariantType>::HashVariantResolver() {
     ADD_VARIANT_PHASE1_TYPE(TYPE_LARGEINT, int128);
     ADD_VARIANT_PHASE1_TYPE(TYPE_CHAR, string);
     ADD_VARIANT_PHASE1_TYPE(TYPE_VARCHAR, string);
-    // Route TYPE_GERMAN_STRING through the proven Slice-based `string` arm.
-    // The GermanString-native arm has an unresolved memory corruption bug;
-    // Aggregator::_evaluate_group_by_exprs converts GermanStringColumn to
-    // BinaryColumn before this dispatcher runs, so the Slice arm sees a
-    // well-typed input. Revisit once the GermanString hashmap is fixed.
-    ADD_VARIANT_PHASE1_TYPE(TYPE_GERMAN_STRING, string);
+    // Route TYPE_GERMAN_STRING to the GermanString-native arm (distinct from
+    // the Slice arm so benchmarks measure GermanString hashing / comparison).
+    ADD_VARIANT_PHASE1_TYPE(TYPE_GERMAN_STRING, german_string);
 }
 
 template <typename HashVariantType>
