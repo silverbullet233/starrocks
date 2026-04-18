@@ -1659,6 +1659,7 @@ const FieldConverter* get_field_converter(LogicalType from_type, LogicalType to_
         case TYPE_FUNCTION:
         case TYPE_TIME:
         case TYPE_BINARY:
+        case TYPE_GERMAN_STRING:
         case TYPE_MAX_VALUE:
             return nullptr;
         }
