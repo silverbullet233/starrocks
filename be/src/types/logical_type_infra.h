@@ -63,7 +63,16 @@ namespace starrocks {
     M(TYPE_JSON)                     \
     M(TYPE_VARBINARY)                \
     M(TYPE_VARIANT)                  \
-    M(TYPE_BOOLEAN)                  \
+    M(TYPE_BOOLEAN)
+
+// Narrow macro used only by dispatchers that explicitly know how to build or
+// evaluate GermanStringColumn (column factory, scan predicate, chunk helper).
+// Kept separate from APPLY_FOR_ALL_SCALAR_TYPE so that generic aggregate,
+// runtime-filter, hash-util, etc. templates do not try to instantiate for
+// TYPE_GERMAN_STRING (those paths either assume trivially-copyable or Slice
+// semantics and would fail).
+#define APPLY_FOR_ALL_SCALAR_TYPE_AND_GERMAN_STRING(M) \
+    APPLY_FOR_ALL_SCALAR_TYPE(M)                       \
     M(TYPE_GERMAN_STRING)
 
 #define APPLY_FOR_COMPLEX_TYPE(M) \
@@ -214,6 +223,7 @@ template <class Functor, class... Args>
 auto type_dispatch_column(LogicalType ltype, Functor fun, const Args&... args) {
     switch (ltype) {
         APPLY_FOR_ALL_SCALAR_TYPE_WITH_NULL(_TYPE_DISPATCH_CASE)
+        _TYPE_DISPATCH_CASE(TYPE_GERMAN_STRING)
         _TYPE_DISPATCH_CASE(TYPE_HLL)
         _TYPE_DISPATCH_CASE(TYPE_OBJECT)
         _TYPE_DISPATCH_CASE(TYPE_PERCENTILE)
