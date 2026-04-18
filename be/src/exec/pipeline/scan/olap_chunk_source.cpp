@@ -24,6 +24,7 @@
 #include "cache/data_cache_hit_rate_counter.hpp"
 #include "column/column.h"
 #include "column/column_access_path.h"
+#include "column/column_helper.h"
 #include "column/field.h"
 #include "common/runtime_profile.h"
 #include "common/status.h"
@@ -628,6 +629,25 @@ Status OlapChunkSource::_read_chunk(RuntimeState* state, ChunkPtr* chunk) {
     ASSIGN_OR_RETURN(auto chunk_ptr,
                      ChunkHelper::new_chunk_pooled_checked(_prj_iter->output_schema(), _runtime_state->chunk_size()));
     chunk->reset(chunk_ptr);
+    // The scan chunk columns are allocated from the storage-side Schema, which
+    // only carries OLAP_FIELD_TYPE_VARCHAR. When the FE rewrites a varchar slot
+    // to TYPE_GERMAN_STRING, we must honour the slot type by swapping the
+    // freshly-allocated (empty) BinaryColumn for an empty GermanStringColumn so
+    // the storage decoder (which is Column*-polymorphic) materializes
+    // GermanStrings directly. The columns are still empty at this point — this
+    // is a type swap, not a BinaryColumn -> GermanStringColumn data conversion.
+    for (auto* slot : _query_slots) {
+        if (slot->type().type != TYPE_GERMAN_STRING) {
+            continue;
+        }
+        size_t column_index = (*chunk)->schema()->get_field_index_by_name(slot->col_name());
+        if (column_index == static_cast<size_t>(-1)) {
+            continue;
+        }
+        auto german_col = ColumnHelper::create_column(slot->type(), slot->is_nullable());
+        german_col->reserve(_runtime_state->chunk_size());
+        (*chunk)->update_column_by_index(std::move(german_col), column_index);
+    }
     auto scope = IOProfiler::scope(IOProfiler::TAG_QUERY, _tablet->tablet_id());
     return _read_chunk_from_storage(_runtime_state, (*chunk).get());
 }
