@@ -406,7 +406,11 @@ public:
         uint32_t offsets_count = offsets_size / sizeof(uint32_t);
         uint32_t num_rows = offsets_count - 1;
 
-        column->reserve(column->size() + num_rows);
+        // Match BinaryColumnBase's deserialize semantics: overwrite any rows
+        // the caller pre-allocated. `ColumnHelper::create_column(TYPE_GS, rows)`
+        // pre-creates `rows` default rows which must be dropped before append.
+        column->reset_column();
+        column->reserve(num_rows);
         uint32_t prev = 0;
         std::memcpy(&prev, buff, sizeof(uint32_t));
         buff += sizeof(uint32_t);
