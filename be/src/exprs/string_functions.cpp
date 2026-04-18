@@ -5719,6 +5719,517 @@ StatusOr<ColumnPtr> StringFunctions::concat_german_string(FunctionContext* conte
     return builder.build(ColumnHelper::is_all_const(columns));
 }
 
+// =============================================================================
+// TYPE_GERMAN_STRING overloads for string builtins — batch (b).
+//
+// Same pattern as batch (a): read `GermanString` via
+// `ColumnViewer<TYPE_GERMAN_STRING>` and write via
+// `ColumnBuilder<TYPE_GERMAN_STRING>` (or `TYPE_INT` for position-returning
+// functions). Shares fragment-local state with the VARCHAR overload where the
+// state is type-agnostic (TrimState/PadState/ReplaceState).
+// =============================================================================
+
+// --- trim / ltrim / rtrim (TYPE_GERMAN_STRING) ------------------------------
+
+namespace {
+
+template <TrimType trim_type>
+StatusOr<ColumnPtr> trim_german_string_impl(FunctionContext* context, const Columns& columns) {
+    auto* state = reinterpret_cast<TrimState*>(context->get_function_state(FunctionContext::FRAGMENT_LOCAL));
+    DCHECK(!!state);
+    const std::string& remove = state->remove_chars;
+    DCHECK(!remove.empty());
+    const bool is_utf8 = state->is_utf8;
+    const bool trim_single = !is_utf8 && remove.size() == 1;
+    const std::vector<size_t>& utf8_index = state->utf8_index;
+
+    ColumnViewer<TYPE_GERMAN_STRING> viewer(columns[0]);
+    const size_t num_rows = columns[0]->size();
+    ColumnBuilder<TYPE_GERMAN_STRING> builder(num_rows);
+
+    for (size_t row = 0; row < num_rows; ++row) {
+        if (viewer.is_null(row)) {
+            builder.append_null();
+            continue;
+        }
+        const auto gs = viewer.value(row);
+        if (gs.len == 0) {
+            (void)append_bytes_to_german_string_builder(builder, nullptr, 0);
+            continue;
+        }
+
+        const char* const begin = gs.get_data();
+        const char* const end = begin + gs.len;
+        const char* from_ptr = begin;
+        const char* to_ptr = end;
+
+        if constexpr (trim_type == TRIM_LEFT || trim_type == TRIM_BOTH) {
+            // Use the non-SIMD trim-path helpers — byte pointers into the
+            // arena are fine, but we do not own a BinaryColumn here.
+            if (trim_single) {
+                from_ptr = skip_leading_spaces<false, true, false>(from_ptr, end, remove, utf8_index);
+            } else if (!is_utf8) {
+                from_ptr = skip_leading_spaces<false, false, false>(from_ptr, end, remove, utf8_index);
+            } else {
+                from_ptr = skip_leading_spaces<false, false, true>(from_ptr, end, remove, utf8_index);
+            }
+        }
+        if constexpr (trim_type == TRIM_RIGHT || trim_type == TRIM_BOTH) {
+            if (trim_single) {
+                to_ptr = skip_trailing_spaces<false, true, false>(from_ptr, to_ptr, remove, utf8_index);
+            } else if (!is_utf8) {
+                to_ptr = skip_trailing_spaces<false, false, false>(from_ptr, to_ptr, remove, utf8_index);
+            } else {
+                to_ptr = skip_trailing_spaces<false, false, true>(from_ptr, to_ptr, remove, utf8_index);
+            }
+        }
+        const size_t trimmed_len = to_ptr > from_ptr ? static_cast<size_t>(to_ptr - from_ptr) : 0;
+        // The trimmed range aliases the input payload; `append_bytes` copies
+        // it into either inline storage (<=12 bytes) or the column arena.
+        (void)append_bytes_to_german_string_builder(builder, from_ptr, trimmed_len);
+    }
+    return builder.build(ColumnHelper::is_all_const(columns));
+}
+
+} // namespace
+
+StatusOr<ColumnPtr> StringFunctions::trim_german_string(FunctionContext* context, const Columns& columns) {
+    return trim_german_string_impl<TRIM_BOTH>(context, columns);
+}
+
+StatusOr<ColumnPtr> StringFunctions::ltrim_german_string(FunctionContext* context, const Columns& columns) {
+    return trim_german_string_impl<TRIM_LEFT>(context, columns);
+}
+
+StatusOr<ColumnPtr> StringFunctions::rtrim_german_string(FunctionContext* context, const Columns& columns) {
+    return trim_german_string_impl<TRIM_RIGHT>(context, columns);
+}
+
+// --- lpad / rpad (TYPE_GERMAN_STRING) ---------------------------------------
+
+namespace {
+
+template <PadType pad_type>
+StatusOr<ColumnPtr> pad_german_string_impl(FunctionContext* context, const Columns& columns) {
+    RETURN_IF_COLUMNS_ONLY_NULL(columns);
+
+    // `pad_prepare` may not have been invoked (e.g. unit tests invoking the
+    // overload directly); fall back to the non-const path in that case.
+    auto* state = reinterpret_cast<const PadState*>(context->get_function_state(FunctionContext::FRAGMENT_LOCAL));
+
+    ColumnViewer<TYPE_GERMAN_STRING> str_viewer(columns[0]);
+    ColumnViewer<TYPE_INT> len_viewer(columns[1]);
+    ColumnViewer<TYPE_GERMAN_STRING> fill_viewer(columns[2]);
+
+    const size_t num_rows = columns[0]->size();
+    ColumnBuilder<TYPE_GERMAN_STRING> builder(num_rows);
+
+    // Reusable scratch buffers. `non_const_fill_utf8_index` is populated
+    // per-row when the fill is not a constant column.
+    std::string scratch;
+    std::vector<size_t> non_const_fill_utf8_index;
+
+    for (size_t row = 0; row < num_rows; ++row) {
+        if (str_viewer.is_null(row) || len_viewer.is_null(row) || fill_viewer.is_null(row)) {
+            builder.append_null();
+            continue;
+        }
+        const auto str = str_viewer.value(row);
+        const int32_t target_len = len_viewer.value(row);
+        if (target_len < 0) {
+            builder.append_null();
+            continue;
+        }
+        if (target_len == 0) {
+            (void)append_bytes_to_german_string_builder(builder, nullptr, 0);
+            continue;
+        }
+
+        const Slice str_slice(str.get_data(), str.len);
+        const bool str_is_ascii = validate_ascii_fast(str_slice.data, str_slice.size);
+
+        // When str has at least `target_len` characters, return a prefix of
+        // str with that many characters.
+        size_t str_char_count = str_is_ascii ? str_slice.size : utf8_len(str_slice.data, str_slice.data + str_slice.size);
+        if (static_cast<size_t>(target_len) <= str_char_count) {
+            if (str_is_ascii) {
+                (void)append_bytes_to_german_string_builder(builder, str_slice.data, target_len);
+            } else {
+                const char* end = skip_leading_utf8(str_slice.data, str_slice.data + str_slice.size, target_len);
+                (void)append_bytes_to_german_string_builder(builder, str_slice.data, end - str_slice.data);
+            }
+            continue;
+        }
+
+        // Otherwise we need fill_chars characters from the fill string.
+        const auto fill = fill_viewer.value(row);
+        const Slice fill_slice(fill.get_data(), fill.len);
+        if (fill_slice.size == 0) {
+            // If no fill available, return str itself (matches VARCHAR pad path).
+            (void)append_bytes_to_german_string_builder(builder, str_slice.data, str_slice.size);
+            continue;
+        }
+
+        // Compute fill UTF-8 indexing. Prefer the prepared state if it is the
+        // fragment-constant fill; otherwise compute ad-hoc.
+        const std::vector<size_t>* fill_index = nullptr;
+        bool fill_is_utf8 = false;
+        if (state != nullptr && state->fill_is_const) {
+            fill_index = &state->fill_utf8_index;
+            fill_is_utf8 = state->fill_is_utf8;
+        } else {
+            non_const_fill_utf8_index.clear();
+            size_t ascii_chars = get_utf8_index(fill_slice, &non_const_fill_utf8_index);
+            fill_is_utf8 = fill_slice.size > ascii_chars;
+            fill_index = &non_const_fill_utf8_index;
+        }
+
+        const size_t fill_chars = target_len - str_char_count;
+        size_t fill_bytes;
+        if (!fill_is_utf8) {
+            // ASCII / raw-byte fill: fill_chars == fill_bytes_needed.
+            fill_bytes = fill_chars;
+        } else {
+            // UTF-8 fill: sum full-fill cycles plus tail.
+            const size_t fill_len_chars = fill_index->size();
+            const size_t full_cycles = fill_chars / fill_len_chars;
+            const size_t tail_chars = fill_chars % fill_len_chars;
+            const size_t tail_bytes = (*fill_index)[tail_chars];
+            fill_bytes = full_cycles * static_cast<size_t>(fill_slice.size) + tail_bytes;
+        }
+
+        const size_t total = static_cast<size_t>(str_slice.size) + fill_bytes;
+        if (total > get_olap_string_max_length()) {
+            builder.append_null();
+            continue;
+        }
+        scratch.resize(total);
+        char* dst = scratch.data();
+        auto emit_fill = [&](char* out) {
+            const size_t full_cycles = fill_bytes / fill_slice.size;
+            const size_t tail = fill_bytes - full_cycles * fill_slice.size;
+            if (full_cycles > 0) {
+                fast_repeat(reinterpret_cast<uint8_t*>(out), reinterpret_cast<const uint8_t*>(fill_slice.data),
+                            fill_slice.size, full_cycles);
+            }
+            if (tail > 0) {
+                strings::memcpy_inlined(out + full_cycles * fill_slice.size, fill_slice.data, tail);
+            }
+        };
+
+        if constexpr (pad_type == PAD_TYPE_LEFT) {
+            emit_fill(dst);
+            strings::memcpy_inlined(dst + fill_bytes, str_slice.data, str_slice.size);
+        } else {
+            strings::memcpy_inlined(dst, str_slice.data, str_slice.size);
+            emit_fill(dst + str_slice.size);
+        }
+        (void)append_bytes_to_german_string_builder(builder, dst, total);
+    }
+    return builder.build(ColumnHelper::is_all_const(columns));
+}
+
+} // namespace
+
+StatusOr<ColumnPtr> StringFunctions::lpad_german_string(FunctionContext* context, const Columns& columns) {
+    return pad_german_string_impl<PAD_TYPE_LEFT>(context, columns);
+}
+
+StatusOr<ColumnPtr> StringFunctions::rpad_german_string(FunctionContext* context, const Columns& columns) {
+    return pad_german_string_impl<PAD_TYPE_RIGHT>(context, columns);
+}
+
+// --- replace (TYPE_GERMAN_STRING) -------------------------------------------
+
+StatusOr<ColumnPtr> StringFunctions::replace_german_string(FunctionContext* context, const Columns& columns) {
+    const ColumnPtr& arg0 = columns[0];
+    if (arg0->only_null()) {
+        return arg0;
+    }
+    const auto* state =
+            reinterpret_cast<const ReplaceState*>(context->get_function_state(FunctionContext::FRAGMENT_LOCAL));
+    if (state != nullptr && state->const_pattern && state->pattern.empty()) {
+        return arg0;
+    }
+
+    const size_t num_rows = arg0->size();
+    if (state != nullptr && state->only_null) {
+        return ColumnHelper::create_const_null_column(num_rows);
+    }
+
+    ColumnViewer<TYPE_GERMAN_STRING> str_viewer(arg0);
+    ColumnViewer<TYPE_GERMAN_STRING> ptn_viewer(columns[1]);
+    ColumnViewer<TYPE_GERMAN_STRING> rpl_viewer(columns[2]);
+
+    ColumnBuilder<TYPE_GERMAN_STRING> builder(num_rows);
+    std::string scratch;
+    for (size_t row = 0; row < num_rows; ++row) {
+        const bool const_pattern = state != nullptr && state->const_pattern;
+        const bool const_repl = state != nullptr && state->const_repl;
+        if (str_viewer.is_null(row) || (!const_pattern && ptn_viewer.is_null(row)) ||
+            (!const_repl && rpl_viewer.is_null(row))) {
+            builder.append_null();
+            continue;
+        }
+        const auto str = str_viewer.value(row);
+        if (str.len == 0) {
+            (void)append_bytes_to_german_string_builder(builder, nullptr, 0);
+            continue;
+        }
+        scratch.assign(str.get_data(), str.len);
+        std::string ptn_buf;
+        std::string rpl_buf;
+        const std::string* ptn_str;
+        const std::string* rpl_str;
+        if (const_pattern) {
+            ptn_str = &state->pattern;
+        } else {
+            const auto ptn = ptn_viewer.value(row);
+            ptn_buf.assign(ptn.get_data(), ptn.len);
+            ptn_str = &ptn_buf;
+        }
+        if (const_repl) {
+            rpl_str = &state->repl;
+        } else {
+            const auto rpl = rpl_viewer.value(row);
+            rpl_buf.assign(rpl.get_data(), rpl.len);
+            rpl_str = &rpl_buf;
+        }
+        if (ptn_str->empty()) {
+            (void)append_bytes_to_german_string_builder(builder, scratch.data(), scratch.size());
+            continue;
+        }
+        replace_all(scratch, *ptn_str, *rpl_str);
+        (void)append_bytes_to_german_string_builder(builder, scratch.data(), scratch.size());
+    }
+    return builder.build(ColumnHelper::is_all_const(columns));
+}
+
+// --- split_part (TYPE_GERMAN_STRING) ----------------------------------------
+
+StatusOr<ColumnPtr> StringFunctions::split_part_german_string(FunctionContext* context, const Columns& columns) {
+    DCHECK_EQ(columns.size(), 3);
+
+    if (!columns[2]->only_null() && columns[2]->is_constant()) {
+        const int32_t part_number = ColumnHelper::get_const_value<TYPE_INT>(columns[2]);
+        if (part_number == 0) {
+            auto empty = GermanStringColumn::create();
+            empty->append_bytes(nullptr, 0);
+            return ConstColumn::create(std::move(empty), columns[0]->size());
+        }
+    }
+
+    ColumnViewer<TYPE_GERMAN_STRING> haystack_viewer(columns[0]);
+    ColumnViewer<TYPE_GERMAN_STRING> delimiter_viewer(columns[1]);
+    ColumnViewer<TYPE_INT> part_number_viewer(columns[2]);
+
+    const size_t num_rows = columns[0]->size();
+    ColumnBuilder<TYPE_GERMAN_STRING> builder(num_rows);
+    Slice result_slice;
+    for (size_t row = 0; row < num_rows; ++row) {
+        if (haystack_viewer.is_null(row) || delimiter_viewer.is_null(row) || part_number_viewer.is_null(row)) {
+            // Matches VARCHAR behavior: emit empty string, not NULL.
+            (void)append_bytes_to_german_string_builder(builder, nullptr, 0);
+            continue;
+        }
+        const int32_t part_number = part_number_viewer.value(row);
+        const auto hs_gs = haystack_viewer.value(row);
+        const auto dl_gs = delimiter_viewer.value(row);
+        const Slice haystack(hs_gs.get_data(), hs_gs.len);
+        const Slice delimiter(dl_gs.get_data(), dl_gs.len);
+        if (delimiter.size == 0) {
+            if (part_number > haystack.size) {
+                (void)append_bytes_to_german_string_builder(builder, nullptr, 0);
+            } else {
+                int char_size = 0, h = 0;
+                for (int32_t num = 0; h < haystack.size && num < part_number - 1; h += char_size) {
+                    char_size = UTF8_BYTE_LENGTH_TABLE[static_cast<unsigned char>(haystack.data[h])];
+                    ++num;
+                }
+                if (h >= haystack.size) {
+                    (void)append_bytes_to_german_string_builder(builder, nullptr, 0);
+                } else {
+                    char_size = UTF8_BYTE_LENGTH_TABLE[static_cast<unsigned char>(haystack.data[h])];
+                    (void)append_bytes_to_german_string_builder(builder, haystack.data + h, char_size);
+                }
+            }
+        } else {
+            // `split_index` is VARCHAR-specific (defined in split_part.cpp);
+            // reproduce its logic inline for GermanString.
+            bool found = false;
+            if (part_number > 0) {
+                if (delimiter.size == 1) {
+                    int32_t pre_offset = -1;
+                    int32_t offset = -1;
+                    int32_t num = 0;
+                    while (num < part_number) {
+                        pre_offset = offset;
+                        const size_t n = haystack.size - offset - 1;
+                        char* pos = reinterpret_cast<char*>(memchr(haystack.data + offset + 1, delimiter.data[0], n));
+                        if (pos != nullptr) {
+                            offset = pos - haystack.data;
+                            num++;
+                        } else {
+                            offset = haystack.size;
+                            num = (num == 0) ? 0 : num + 1;
+                            break;
+                        }
+                    }
+                    if (num == part_number) {
+                        result_slice.data = haystack.data + pre_offset + 1;
+                        result_slice.size = offset - pre_offset - 1;
+                        found = true;
+                    }
+                } else {
+                    int32_t pre_offset = -static_cast<int32_t>(delimiter.size);
+                    int32_t offset = -static_cast<int32_t>(delimiter.size);
+                    int32_t num = 0;
+                    while (num < part_number) {
+                        pre_offset = offset;
+                        const size_t n = haystack.size - offset - delimiter.size;
+                        char* pos = reinterpret_cast<char*>(
+                                memmem(haystack.data + offset + delimiter.size, n, delimiter.data, delimiter.size));
+                        if (pos != nullptr) {
+                            offset = pos - haystack.data;
+                            num++;
+                        } else {
+                            offset = haystack.size;
+                            num = (num == 0) ? 0 : num + 1;
+                            break;
+                        }
+                    }
+                    if (num == part_number) {
+                        result_slice.data = haystack.data + pre_offset + delimiter.size;
+                        result_slice.size = offset - pre_offset - delimiter.size;
+                        found = true;
+                    }
+                }
+            } else {
+                int32_t part_abs = -part_number;
+                const auto haystack_str = haystack.to_string();
+                int32_t offset = haystack.size;
+                int32_t pre_offset = offset;
+                int32_t num = 0;
+                auto substr = haystack_str;
+                const std::string delimiter_str(delimiter.data, delimiter.size);
+                while (num <= part_abs && offset >= 0) {
+                    offset = static_cast<int32_t>(substr.rfind(delimiter_str, offset));
+                    if (offset != -1) {
+                        if (++num == part_abs) {
+                            break;
+                        }
+                        pre_offset = offset;
+                        offset = offset - 1;
+                        substr = haystack_str.substr(0, pre_offset);
+                    } else {
+                        break;
+                    }
+                }
+                num = (offset == -1 && num != 0) ? num + 1 : num;
+                if (num == part_abs) {
+                    if (offset == -1) {
+                        result_slice.data = haystack.data;
+                        result_slice.size = pre_offset;
+                    } else {
+                        result_slice.data = haystack.data + offset + delimiter.size;
+                        result_slice.size = pre_offset - offset - delimiter.size;
+                    }
+                    found = true;
+                }
+            }
+            if (found) {
+                (void)append_bytes_to_german_string_builder(builder, result_slice.data, result_slice.size);
+            } else if (part_number == 1 || part_number == -1) {
+                (void)append_bytes_to_german_string_builder(builder, haystack.data, haystack.size);
+            } else {
+                (void)append_bytes_to_german_string_builder(builder, nullptr, 0);
+            }
+        }
+    }
+    return builder.build(ColumnHelper::is_all_const(columns));
+}
+
+// --- instr / locate (TYPE_GERMAN_STRING) ------------------------------------
+//
+// Position-returning functions. Output is TYPE_INT — no GermanString on the
+// write side. We operate on `GermanString::get_data()` byte buffers directly;
+// the long-rep prefix short-circuit is not a win here because the needle can
+// match anywhere in the payload.
+
+namespace {
+
+// Core locate primitive: search `needle` inside `haystack`, honoring the
+// caller-provided 1-based UTF-8 character start offset. Returns 1-based
+// character position of the first match, or 0 when no match.
+inline int32_t locate_in_german_string(const Slice& haystack, const Slice& needle, int32_t start) {
+    if (start <= 0) {
+        return 0;
+    }
+    if (needle.size == 0) {
+        if (start == 1) {
+            return 1;
+        }
+        if (start <= haystack.size) {
+            return start;
+        }
+        return 0;
+    }
+    if (start > haystack.size) {
+        return 0;
+    }
+    // `haystack.data + haystack.size - 1` mirrors the VARCHAR locate helper.
+    const char* beg = skip_leading_utf8(haystack.data, haystack.data + haystack.size - 1, start - 1);
+    const char* res = reinterpret_cast<const char*>(
+            memmem(beg, haystack.size - (beg - haystack.data), needle.data, needle.size));
+    if (res == nullptr) {
+        return 0;
+    }
+    return 1 + static_cast<int32_t>(utf8_len(haystack.data, res));
+}
+
+StatusOr<ColumnPtr> instr_or_locate_german_string_impl(const ColumnPtr& haystack_col, const ColumnPtr& needle_col,
+                                                       const ColumnPtr& start_pos_col) {
+    ColumnViewer<TYPE_GERMAN_STRING> hs_viewer(haystack_col);
+    ColumnViewer<TYPE_GERMAN_STRING> nd_viewer(needle_col);
+    ColumnViewer<TYPE_INT> sp_viewer(start_pos_col);
+
+    const size_t num_rows = haystack_col->size();
+    ColumnBuilder<TYPE_INT> builder(num_rows);
+    for (size_t row = 0; row < num_rows; ++row) {
+        if (hs_viewer.is_null(row) || nd_viewer.is_null(row) || sp_viewer.is_null(row)) {
+            builder.append_null();
+            continue;
+        }
+        const auto hs = hs_viewer.value(row);
+        const auto nd = nd_viewer.value(row);
+        const Slice haystack(hs.get_data(), hs.len);
+        const Slice needle(nd.get_data(), nd.len);
+        const int32_t start = sp_viewer.value(row);
+        builder.append(locate_in_german_string(haystack, needle, start));
+    }
+    return builder.build(ColumnHelper::is_all_const({haystack_col, needle_col, start_pos_col}));
+}
+
+} // namespace
+
+StatusOr<ColumnPtr> StringFunctions::instr_german_string(FunctionContext* context, const Columns& columns) {
+    RETURN_IF_COLUMNS_ONLY_NULL(columns);
+    ColumnPtr start_pos = ColumnHelper::create_const_column<TYPE_INT>(1, columns[0]->size());
+    return instr_or_locate_german_string_impl(columns[0], columns[1], start_pos);
+}
+
+StatusOr<ColumnPtr> StringFunctions::locate_german_string(FunctionContext* context, const Columns& columns) {
+    RETURN_IF_COLUMNS_ONLY_NULL(columns);
+    // `locate(needle, haystack)` — order is reversed relative to `instr`.
+    ColumnPtr start_pos = ColumnHelper::create_const_column<TYPE_INT>(1, columns[0]->size());
+    return instr_or_locate_german_string_impl(columns[1], columns[0], start_pos);
+}
+
+StatusOr<ColumnPtr> StringFunctions::locate_pos_german_string(FunctionContext* context, const Columns& columns) {
+    RETURN_IF_COLUMNS_ONLY_NULL(columns);
+    return instr_or_locate_german_string_impl(columns[1], columns[0], columns[2]);
+}
+
 } // namespace starrocks
 
 #include "gen_cpp/opcode/StringFunctions.inc"

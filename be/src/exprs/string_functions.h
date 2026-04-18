@@ -210,6 +210,12 @@ public:
     DEFINE_VECTORIZED_FN(lpad);
 
     /**
+     * TYPE_GERMAN_STRING overload of `lpad`. Shares `PadState` produced by
+     * `pad_prepare`.
+     */
+    DEFINE_VECTORIZED_FN(lpad_german_string);
+
+    /**
      * Append string the specified number of times
      *
      * @param: [string_value, repeat_number]
@@ -217,6 +223,11 @@ public:
      * @return: BinaryColumn
      */
     DEFINE_VECTORIZED_FN(rpad);
+
+    /**
+     * TYPE_GERMAN_STRING overload of `rpad`.
+     */
+    DEFINE_VECTORIZED_FN(rpad_german_string);
 
     /**
      * Append the character if the s string is non-empty and does not contain the character at the
@@ -313,6 +324,12 @@ public:
     DEFINE_VECTORIZED_FN(trim);
 
     /**
+     * TYPE_GERMAN_STRING overload of `trim`. Shares `TrimState` produced by
+     * `trim_prepare`.
+     */
+    DEFINE_VECTORIZED_FN(trim_german_string);
+
+    /**
      * @param: [string_value]
      * @paramType: [BinaryColumn]
      * @return: BinaryColumn
@@ -320,11 +337,21 @@ public:
     DEFINE_VECTORIZED_FN(ltrim);
 
     /**
+     * TYPE_GERMAN_STRING overload of `ltrim`.
+     */
+    DEFINE_VECTORIZED_FN(ltrim_german_string);
+
+    /**
      * @param: [string_value]
      * @paramType: [BinaryColumn]
      * @return: BinaryColumn
      */
     DEFINE_VECTORIZED_FN(rtrim);
+
+    /**
+     * TYPE_GERMAN_STRING overload of `rtrim`.
+     */
+    DEFINE_VECTORIZED_FN(rtrim_german_string);
 
     /**
      * Return numeric value of left-most character
@@ -359,6 +386,11 @@ public:
     DEFINE_VECTORIZED_FN(instr);
 
     /**
+     * TYPE_GERMAN_STRING overload of `instr`.
+     */
+    DEFINE_VECTORIZED_FN(instr_german_string);
+
+    /**
      * Return the position of the first occurrence of substring
      *
      * @param: [sub_string_value, string_value]
@@ -368,6 +400,11 @@ public:
     DEFINE_VECTORIZED_FN(locate);
 
     /**
+     * TYPE_GERMAN_STRING overload of `locate` (2-arg form).
+     */
+    DEFINE_VECTORIZED_FN(locate_german_string);
+
+    /**
      * Return the position of the first occurrence of substring start with start_position
      *
      * @param: [sub_string_value, string_value, start_position]
@@ -375,6 +412,11 @@ public:
      * @return: IntColumn
      */
     DEFINE_VECTORIZED_FN(locate_pos);
+
+    /**
+     * TYPE_GERMAN_STRING overload of `locate_pos` (3-arg form).
+     */
+    DEFINE_VECTORIZED_FN(locate_pos_german_string);
 
     /**
      * Return the position of the first occurrence of substring in string
@@ -468,6 +510,11 @@ public:
     DEFINE_VECTORIZED_FN(split_part);
 
     /**
+     * TYPE_GERMAN_STRING overload of `split_part`.
+     */
+    DEFINE_VECTORIZED_FN(split_part_german_string);
+
+    /**
      * @param: [string_value, delimiter, field]
      * @paramType: [BinaryColumn, BinaryColumn, IntColumn]
      * @return: BinaryColumn
@@ -536,6 +583,12 @@ public:
     DEFINE_VECTORIZED_FN(replace);
     static Status replace_prepare(FunctionContext* context, FunctionContext::FunctionStateScope scope);
     static Status replace_close(FunctionContext* context, FunctionContext::FunctionStateScope scope);
+
+    /**
+     * TYPE_GERMAN_STRING overload of `replace`. Shares `ReplaceState` produced
+     * by `replace_prepare`.
+     */
+    DEFINE_VECTORIZED_FN(replace_german_string);
 
     /**
      * @param: [string_value, from_value, to_value]
