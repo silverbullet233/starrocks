@@ -28,6 +28,7 @@
 #include "column/append_with_mask.h"
 #include "column/binary_column.h"
 #include "column/column_helper.h"
+#include "column/german_string_column.h"
 #include "column/nullable_column.h"
 #include "column/vectorized_fwd.h"
 #include "common/config_rowset_fwd.h"
@@ -36,6 +37,21 @@
 #include "types/logical_type.h"
 
 namespace starrocks {
+
+namespace {
+
+// Returns true iff `dst`'s underlying data column is a BinaryColumn (possibly
+// wrapped in a NullableColumn). GermanStringColumn shares `is_binary() == true`
+// with BinaryColumn, so a plain `is_binary()` check is not sufficient.
+inline bool dst_is_binary_column(const Column* dst) {
+    const Column* data_column = dst;
+    if (dst->is_nullable()) {
+        data_column = down_cast<const NullableColumn*>(dst)->data_column_raw_ptr();
+    }
+    return dynamic_cast<const BinaryColumn*>(data_column) != nullptr;
+}
+
+} // namespace
 
 void BinaryPlainPageBuilder::reset() {
     _offsets.clear();
@@ -182,17 +198,37 @@ Status BinaryPlainPageDecoder<Type>::next_batch(const SparseRange<>& range, Colu
             return Status::OK();
         }
     } else if constexpr (Type == TYPE_VARCHAR) {
-        bool append_status = true;
-        while (to_read > 0) {
-            _cur_idx = iter.begin();
-            Range<> r = iter.next(to_read);
-            size_t end = _cur_idx + r.span_size();
-            append_status &= append_range(_cur_idx, end, dst);
-            to_read -= r.span_size();
-            _cur_idx = end;
-        }
-        if (append_status) {
-            return Status::OK();
+        // The zero-copy `append_range` fast path only works when dst (or its
+        // underlying data column if nullable) is a BinaryColumn, since it
+        // manipulates BinaryColumn::_bytes/_offsets directly. When the caller
+        // passes a GermanStringColumn, we fall through to a generic slice-based
+        // append that GermanStringColumn's overridden append_strings handles.
+        if (dst_is_binary_column(dst)) {
+            bool append_status = true;
+            while (to_read > 0) {
+                _cur_idx = iter.begin();
+                Range<> r = iter.next(to_read);
+                size_t end = _cur_idx + r.span_size();
+                append_status &= append_range(_cur_idx, end, dst);
+                to_read -= r.span_size();
+                _cur_idx = end;
+            }
+            if (append_status) {
+                return Status::OK();
+            }
+        } else {
+            while (to_read > 0) {
+                _cur_idx = iter.begin();
+                Range<> r = iter.next(to_read);
+                size_t end = _cur_idx + r.span_size();
+                for (; _cur_idx < end; _cur_idx++) {
+                    strs.emplace_back(string_at_index(_cur_idx));
+                }
+                to_read -= r.span_size();
+            }
+            if (dst->append_strings(strs)) {
+                return Status::OK();
+            }
         }
     } else {
         // other types
@@ -394,8 +430,28 @@ Status BinaryPlainPageDecoder<Type>::next_range_with_filter(
             return Status::OK();
         }
 
-        auto data_column = ColumnHelper::get_data_column(dst);
-        RETURN_IF_ERROR(append_with_mask</*PositiveSelect=*/true>(data_column, *temp_data_column, selection, num_rows));
+        // Fast path: dst is a BinaryColumn — use zero-copy append_with_mask.
+        // Fallback path: dst is a GermanStringColumn — `append_with_mask` cannot
+        // bridge BinaryColumn → GermanStringColumn, so we iterate the selection
+        // and append the selected slices directly. The slices still point into
+        // the page-owned `temp_data_column`; GermanStringColumn::append_strings
+        // materializes long payloads into its arena, so lifetime is safe.
+        if (dst_is_binary_column(dst)) {
+            auto data_column = ColumnHelper::get_data_column(dst);
+            RETURN_IF_ERROR(
+                    append_with_mask</*PositiveSelect=*/true>(data_column, *temp_data_column, selection, num_rows));
+        } else {
+            auto data_column = ColumnHelper::get_data_column(dst);
+            std::vector<Slice> selected_slices;
+            selected_slices.reserve(selected_count);
+            for (uint32_t i = 0; i < num_rows; ++i) {
+                if (selection[i]) {
+                    selected_slices.emplace_back(temp_data_column->get_slice(i));
+                }
+            }
+            [[maybe_unused]] bool ok = data_column->append_strings(selected_slices.data(), selected_slices.size());
+            DCHECK(ok);
+        }
 
         if (dst->is_nullable()) {
             auto* nullable_column = down_cast<NullableColumn*>(dst);

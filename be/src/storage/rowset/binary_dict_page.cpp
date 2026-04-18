@@ -478,9 +478,13 @@ void BinaryDictPageDecoder<Type>::reserve_col(size_t n, Column* column) {
         data_col = column;
     }
 
-    if (data_col->is_binary()) {
-        BinaryColumn* binary_col = down_cast<BinaryColumn*>(data_col);
+    // Both BinaryColumn and GermanStringColumn report is_binary()==true. Only
+    // BinaryColumn has the two-arg reserve(n, bytes); fall back to the generic
+    // reserve(n) otherwise.
+    if (auto* binary_col = dynamic_cast<BinaryColumn*>(data_col); binary_col != nullptr) {
         binary_col->reserve(n, estimated_row_size * n);
+    } else if (data_col->is_binary()) {
+        data_col->reserve(n);
     }
 }
 

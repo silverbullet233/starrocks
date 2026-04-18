@@ -185,6 +185,14 @@ public:
 
     bool append_strings(const Slice* data, size_t size) override;
 
+    // GermanStringColumn cannot reuse BinaryColumn's fixed-stride overread trick
+    // because each row is materialized into an owned 16-byte GermanString (with
+    // long payloads copied into the arena). We simply forward to append_strings,
+    // which already copies per-row bytes.
+    bool append_strings_overflow(const Slice* data, size_t size, size_t /*max_length*/) override {
+        return append_strings(data, size);
+    }
+
     bool append_continuous_strings(const Slice* data, size_t size) override;
 
     size_t append_numbers(const void* buff, size_t length) override { return -1; }

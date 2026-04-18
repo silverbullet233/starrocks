@@ -326,9 +326,14 @@ private:
             data_col = column;
         }
 
-        if (data_col->is_binary() && data_col->capacity() == 0) {
-            BinaryColumn* binary_col = down_cast<BinaryColumn*>(data_col);
-            binary_col->reserve(n, n * _estimated_row_size);
+        // Both BinaryColumn and GermanStringColumn report is_binary()==true, so
+        // we must guard the BinaryColumn-only reserve(n, bytes) path by RTTI.
+        if (data_col->capacity() == 0) {
+            if (auto* binary_col = dynamic_cast<BinaryColumn*>(data_col); binary_col != nullptr) {
+                binary_col->reserve(n, n * _estimated_row_size);
+            } else if (data_col->is_binary()) {
+                data_col->reserve(n);
+            }
         }
     }
 
