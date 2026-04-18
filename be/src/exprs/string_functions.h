@@ -142,6 +142,13 @@ public:
     DEFINE_VECTORIZED_FN(substring);
 
     /**
+     * Dedicated TYPE_GERMAN_STRING overload of `substring`. Reads `GermanString`
+     * values directly from the input column and builds a `GermanStringColumn`
+     * output. Shares the `SubstrState` produced by `sub_str_prepare`.
+     */
+    DEFINE_VECTORIZED_FN(substring_german_string);
+
+    /**
      * @param: [string_value, length]
      * @paramType: [BinaryColumn, IntColumn]
      * @return: BinaryColumn
@@ -189,6 +196,11 @@ public:
     DEFINE_VECTORIZED_FN(repeat);
 
     /**
+     * Dedicated TYPE_GERMAN_STRING overload of `repeat`.
+     */
+    DEFINE_VECTORIZED_FN(repeat_german_string);
+
+    /**
      * Return the string argument, left-padded with the specified string
      *
      * @param: [string_value, repeat_number]
@@ -226,6 +238,12 @@ public:
     DEFINE_VECTORIZED_FN(length);
 
     /**
+     * TYPE_GERMAN_STRING overload of `length`. Reads `GermanString::len`
+     * directly — no payload-byte access needed.
+     */
+    DEFINE_VECTORIZED_FN(length_german_string);
+
+    /**
      * Return the length of a string in utf8
      *
      * @param: [string_value]
@@ -233,6 +251,11 @@ public:
      * @return: IntColumn
      */
     DEFINE_VECTORIZED_FN(utf8_length);
+
+    /**
+     * TYPE_GERMAN_STRING overload of `utf8_length` (a.k.a. `char_length`).
+     */
+    DEFINE_VECTORIZED_FN(utf8_length_german_string);
 
     /**
      * @param: [string_value]
@@ -244,6 +267,12 @@ public:
     static Status lower_close(FunctionContext* context, FunctionContext::FunctionStateScope scope);
 
     /**
+     * TYPE_GERMAN_STRING overload of `lower`. Uses the same fragment-local
+     * `LowerUpperState` produced by `lower_prepare`.
+     */
+    DEFINE_VECTORIZED_FN(lower_german_string);
+
+    /**
      * @param: [string_value]
      * @paramType: [BinaryColumn]
      * @return: BinaryColumn
@@ -253,11 +282,21 @@ public:
     static Status upper_close(FunctionContext* context, FunctionContext::FunctionStateScope scope);
 
     /**
+     * TYPE_GERMAN_STRING overload of `upper`.
+     */
+    DEFINE_VECTORIZED_FN(upper_german_string);
+
+    /**
      * @param: [string_value]
      * @paramType: [BinaryColumn]
      * @return: BinaryColumn
      */
     DEFINE_VECTORIZED_FN(reverse);
+
+    /**
+     * TYPE_GERMAN_STRING overload of `reverse`.
+     */
+    DEFINE_VECTORIZED_FN(reverse_german_string);
 
     /**
      * @param: [string_value]
@@ -362,6 +401,13 @@ public:
      * @return: BinaryColumn
      */
     DEFINE_VECTORIZED_FN(concat);
+
+    /**
+     * TYPE_GERMAN_STRING overload of `concat`. Reuses the `ConcatState`
+     * produced by `concat_prepare` (constant-tail optimization is
+     * type-agnostic).
+     */
+    DEFINE_VECTORIZED_FN(concat_german_string);
 
     /**
      * Return concatenate with separator

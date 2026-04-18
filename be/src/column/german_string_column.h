@@ -16,6 +16,7 @@
 
 #include <algorithm>
 #include <memory>
+#include <span>
 #include <sstream>
 #include <vector>
 
@@ -94,9 +95,10 @@ public:
     using ValueType = GermanString;
     using Container = Buffer<GermanString>;
     // `ImmContainer` is the read-only surface RunTimeTypeTraits exposes for batch
-    // code. GermanStringColumn stores values directly in `Buffer<GermanString>`,
-    // so we can reuse it as the immutable view.
-    using ImmContainer = Buffer<GermanString>;
+    // code (used e.g. by `ColumnViewer<TYPE_GERMAN_STRING>`). We expose a
+    // `std::span<const GermanString>` — a lightweight view that aliases the
+    // backing `Buffer<GermanString>`, so viewer construction does not copy data.
+    using ImmContainer = std::span<const GermanString>;
 
     GermanStringColumn() = default;
     explicit GermanStringColumn(size_t size) : _data(size) {}
@@ -221,6 +223,11 @@ public:
 
     Container& get_data() { return _data; }
     const Container& get_data() const { return _data; }
+
+    // Read-only view used by ColumnViewer<TYPE_GERMAN_STRING>. Returns a
+    // lightweight `std::span` over the underlying `Buffer<GermanString>` so
+    // viewer construction does not copy the container.
+    ImmContainer immutable_data() const { return ImmContainer(_data.data(), _data.size()); }
 
     Datum get(size_t n) const override;
 

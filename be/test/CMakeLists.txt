@@ -176,6 +176,7 @@ set(EXEC_FILES
         ./exprs/string_fn_space_test.cpp
         ./exprs/string_fn_substr_test.cpp
         ./exprs/string_fn_test.cpp
+        ./exprs/string_functions_german_string_test.cpp
         ./exprs/string_fn_trim_test.cpp
         ./exprs/string_fn_money_format_decimal_test.cpp
         ./exprs/string_fn_url_extract_parameter_test.cpp

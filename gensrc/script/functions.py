@@ -466,6 +466,42 @@ vectorized_functions = [
          ]
      }],
 
+    # ---- TYPE_GERMAN_STRING overloads for string builtins (batch a). ----
+    # FE has no catalog surface for GERMAN_STRING; these signatures exist so the
+    # FE->BE thrift rewrite pass (D3) can retarget VARCHAR function calls to
+    # their GermanString-native implementations. BE resolution is by function id.
+    # IDs use the 3800x range to stay separate from the VARCHAR line.
+    [38010, 'substr', True, False, 'GERMAN_STRING', ['GERMAN_STRING', 'INT'],
+     'StringFunctions::substring_german_string',
+     'StringFunctions::sub_str_prepare', 'StringFunctions::sub_str_close'],
+    [38011, 'substr', True, False, 'GERMAN_STRING', ['GERMAN_STRING', 'INT', 'INT'],
+     'StringFunctions::substring_german_string',
+     'StringFunctions::sub_str_prepare', 'StringFunctions::sub_str_close'],
+    [38012, 'substring', True, False, 'GERMAN_STRING', ['GERMAN_STRING', 'INT'],
+     'StringFunctions::substring_german_string',
+     'StringFunctions::sub_str_prepare', 'StringFunctions::sub_str_close'],
+    [38013, 'substring', True, False, 'GERMAN_STRING', ['GERMAN_STRING', 'INT', 'INT'],
+     'StringFunctions::substring_german_string',
+     'StringFunctions::sub_str_prepare', 'StringFunctions::sub_str_close'],
+    [38080, 'repeat', True, True, 'GERMAN_STRING', ['GERMAN_STRING', 'INT'],
+     'StringFunctions::repeat_german_string'],
+    [38120, 'length', True, False, 'INT', ['GERMAN_STRING'], 'StringFunctions::length_german_string'],
+    [38130, 'char_length', True, False, 'INT', ['GERMAN_STRING'], 'StringFunctions::utf8_length_german_string'],
+    [38131, 'character_length', True, False, 'INT', ['GERMAN_STRING'],
+     'StringFunctions::utf8_length_german_string'],
+    [38140, 'lower', True, False, 'GERMAN_STRING', ['GERMAN_STRING'], 'StringFunctions::lower_german_string',
+     'StringFunctions::lower_prepare', 'StringFunctions::lower_close'],
+    [38141, 'lcase', True, False, 'GERMAN_STRING', ['GERMAN_STRING'], 'StringFunctions::lower_german_string',
+     'StringFunctions::lower_prepare', 'StringFunctions::lower_close'],
+    [38150, 'upper', True, False, 'GERMAN_STRING', ['GERMAN_STRING'], 'StringFunctions::upper_german_string',
+     'StringFunctions::upper_prepare', 'StringFunctions::upper_close'],
+    [38151, 'ucase', True, False, 'GERMAN_STRING', ['GERMAN_STRING'], 'StringFunctions::upper_german_string',
+     'StringFunctions::upper_prepare', 'StringFunctions::upper_close'],
+    [38160, 'reverse', True, False, 'GERMAN_STRING', ['GERMAN_STRING'], 'StringFunctions::reverse_german_string'],
+    [38250, 'concat', True, True, 'GERMAN_STRING', ['GERMAN_STRING', '...'],
+     'StringFunctions::concat_german_string',
+     'StringFunctions::concat_prepare', 'StringFunctions::concat_close'],
+
     # Binary Functions
     # to_binary
     [30600, 'to_binary', True, True, 'VARBINARY', ['VARCHAR', 'VARCHAR'], 'BinaryFunctions::to_binary',

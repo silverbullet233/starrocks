@@ -113,6 +113,10 @@ import static com.starrocks.type.PercentileType.PERCENTILE;
 import static com.starrocks.type.VarbinaryType.VARBINARY;
 import static com.starrocks.type.VarcharType.VARCHAR;
 import static com.starrocks.type.VariantType.VARIANT;
+// `GermanStringType.GERMAN_STRING` is introduced by the FE-side D1 subtask of
+// the all-GermanString plan. Until D1 lands this import will resolve to a
+// missing symbol; the C++ backend generator is unaffected.
+import static com.starrocks.type.GermanStringType.GERMAN_STRING;
 
 public class VectorizedBuiltinFunctions {
     public static void initBuiltins(FunctionSet functionSet) {
