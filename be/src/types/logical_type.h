@@ -72,15 +72,17 @@ enum LogicalType {
     TYPE_JSON = 54,
     TYPE_VARIANT = 55,
 
+    TYPE_GERMAN_STRING = 57,
+
     // max value of LogicalType, newly-added type should not exceed this value.
     // used to create a fixed-size hash map.
-    TYPE_MAX_VALUE = 56
+    TYPE_MAX_VALUE = 58
 };
 
 // TODO(lism): support varbinary for zone map.
 inline bool is_zone_map_key_type(LogicalType type) {
-    return type != TYPE_CHAR && type != TYPE_VARCHAR && type != TYPE_JSON && type != TYPE_VARBINARY &&
-           type != TYPE_OBJECT && type != TYPE_HLL && type != TYPE_PERCENTILE;
+    return type != TYPE_CHAR && type != TYPE_VARCHAR && type != TYPE_GERMAN_STRING && type != TYPE_JSON &&
+           type != TYPE_VARBINARY && type != TYPE_OBJECT && type != TYPE_HLL && type != TYPE_PERCENTILE;
 }
 
 // The approximation of FLOAT/DOUBLE in a certain precision range, the binary of byte is not
@@ -127,7 +129,8 @@ inline bool is_float_type(LogicalType type) {
 }
 
 constexpr bool is_string_type(LogicalType type) {
-    return type == LogicalType::TYPE_CHAR || type == LogicalType::TYPE_VARCHAR;
+    return type == LogicalType::TYPE_CHAR || type == LogicalType::TYPE_VARCHAR ||
+           type == LogicalType::TYPE_GERMAN_STRING;
 }
 
 constexpr bool is_object_type(LogicalType type) {
@@ -205,7 +208,12 @@ inline bool is_type_compatible(LogicalType lhs, LogicalType rhs) {
     }
 
     if (lhs == TYPE_VARCHAR) {
-        return rhs == TYPE_CHAR || rhs == TYPE_VARCHAR || rhs == TYPE_HLL || rhs == TYPE_OBJECT;
+        return rhs == TYPE_CHAR || rhs == TYPE_VARCHAR || rhs == TYPE_HLL || rhs == TYPE_OBJECT ||
+               rhs == TYPE_GERMAN_STRING;
+    }
+
+    if (lhs == TYPE_GERMAN_STRING) {
+        return rhs == TYPE_CHAR || rhs == TYPE_VARCHAR || rhs == TYPE_GERMAN_STRING;
     }
 
     if (lhs == TYPE_OBJECT) {
@@ -213,7 +221,7 @@ inline bool is_type_compatible(LogicalType lhs, LogicalType rhs) {
     }
 
     if (lhs == TYPE_CHAR || lhs == TYPE_HLL) {
-        return rhs == TYPE_CHAR || rhs == TYPE_VARCHAR || rhs == TYPE_HLL;
+        return rhs == TYPE_CHAR || rhs == TYPE_VARCHAR || rhs == TYPE_HLL || rhs == TYPE_GERMAN_STRING;
     }
 
     return lhs == rhs;
@@ -245,6 +253,7 @@ constexpr bool is_scalar_logical_type(LogicalType ltype) {
     case TYPE_DECIMAL256: /* 27 */
     case TYPE_JSON:
     case TYPE_VARIANT:
+    case TYPE_GERMAN_STRING:
         return true;
     default:
         return false;
@@ -274,6 +283,7 @@ constexpr bool support_column_expr_predicate(LogicalType ltype) {
     case TYPE_DECIMAL128: /* 26 */
     case TYPE_DECIMAL256: /* 27 */
     case TYPE_STRUCT:
+    case TYPE_GERMAN_STRING:
         return true;
     default:
         return false;
@@ -284,6 +294,7 @@ constexpr size_t type_estimated_overhead_bytes(LogicalType ltype) {
     switch (ltype) {
     case TYPE_VARCHAR:
     case TYPE_CHAR:
+    case TYPE_GERMAN_STRING:
     case TYPE_ARRAY:
         return 128;
     case TYPE_JSON:
@@ -320,7 +331,7 @@ VALUE_GUARD(LogicalType, DecimalLTGuard, lt_is_decimal, TYPE_DECIMAL32, TYPE_DEC
 VALUE_GUARD(LogicalType, SumDecimal64LTGuard, lt_is_sum_decimal64, TYPE_DECIMAL32, TYPE_DECIMAL64)
 VALUE_GUARD(LogicalType, HllLTGuard, lt_is_hll, TYPE_HLL)
 VALUE_GUARD(LogicalType, ObjectLTGuard, lt_is_object, TYPE_OBJECT)
-VALUE_GUARD(LogicalType, StringLTGuard, lt_is_string, TYPE_CHAR, TYPE_VARCHAR)
+VALUE_GUARD(LogicalType, StringLTGuard, lt_is_string, TYPE_CHAR, TYPE_VARCHAR, TYPE_GERMAN_STRING)
 VALUE_GUARD(LogicalType, BinaryLTGuard, lt_is_binary, TYPE_BINARY, TYPE_VARBINARY)
 VALUE_GUARD(LogicalType, JsonGuard, lt_is_json, TYPE_JSON)
 VALUE_GUARD(LogicalType, VariantGuard, lt_is_variant, TYPE_VARIANT)

@@ -46,6 +46,7 @@ LogicalType string_to_logical_type(const std::string& type_str) {
     if (upper_type_str == "DECIMAL_V2") return TYPE_DECIMALV2;
     if (upper_type_str == "DECIMAL") return TYPE_DECIMAL;
     if (upper_type_str == "VARCHAR") return TYPE_VARCHAR;
+    if (upper_type_str == "GERMAN_STRING") return TYPE_GERMAN_STRING;
     if (upper_type_str == "BOOLEAN") return TYPE_BOOLEAN;
     if (upper_type_str == "HLL") return TYPE_HLL;
     if (upper_type_str == "STRUCT") return TYPE_STRUCT;
@@ -122,6 +123,8 @@ const char* logical_type_to_string(LogicalType type) {
         return "INT256";
     case TYPE_VARCHAR:
         return "VARCHAR";
+    case TYPE_GERMAN_STRING:
+        return "GERMAN_STRING";
     case TYPE_BOOLEAN:
         return "BOOLEAN";
     case TYPE_HLL:
@@ -276,6 +279,7 @@ public:
         _data[TYPE_DOUBLE] = TYPE_DOUBLE;
         _data[TYPE_CHAR] = TYPE_CHAR;
         _data[TYPE_VARCHAR] = TYPE_VARCHAR;
+        _data[TYPE_GERMAN_STRING] = TYPE_GERMAN_STRING;
         _data[TYPE_DATE_V1] = TYPE_DATE;
         _data[TYPE_DATE] = TYPE_DATE;
         _data[TYPE_DATETIME] = TYPE_DATETIME;
@@ -306,10 +310,10 @@ LogicalType scalar_field_type_to_logical_type(LogicalType field_type) {
 }
 
 const std::vector<LogicalType>& sortable_types() {
-    const static std::vector<LogicalType> kTypes{TYPE_BOOLEAN,   TYPE_TINYINT,   TYPE_SMALLINT,  TYPE_INT,
-                                                 TYPE_BIGINT,    TYPE_LARGEINT,  TYPE_FLOAT,     TYPE_DOUBLE,
-                                                 TYPE_VARCHAR,   TYPE_CHAR,      TYPE_DATE,      TYPE_DATETIME,
-                                                 TYPE_DECIMALV2, TYPE_DECIMAL32, TYPE_DECIMAL64, TYPE_DECIMAL128};
+    const static std::vector<LogicalType> kTypes{
+            TYPE_BOOLEAN,   TYPE_TINYINT,   TYPE_SMALLINT,      TYPE_INT,       TYPE_BIGINT,     TYPE_LARGEINT,
+            TYPE_FLOAT,     TYPE_DOUBLE,    TYPE_VARCHAR,       TYPE_CHAR,      TYPE_DATE,       TYPE_DATETIME,
+            TYPE_DECIMALV2, TYPE_DECIMAL32, TYPE_DECIMAL64,     TYPE_DECIMAL128, TYPE_GERMAN_STRING};
     return kTypes;
 }
 
