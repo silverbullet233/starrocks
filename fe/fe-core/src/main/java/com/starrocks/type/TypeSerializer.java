@@ -73,6 +73,8 @@ public class TypeSerializer {
                 return TPrimitiveType.CHAR;
             case VARCHAR:
                 return TPrimitiveType.VARCHAR;
+            case GERMAN_STRING:
+                return TPrimitiveType.GERMAN_STRING;
             case DECIMALV2:
                 return TPrimitiveType.DECIMALV2;
             case HLL:
@@ -176,6 +178,7 @@ public class TypeSerializer {
         switch (primitiveType) {
             case CHAR:
             case VARCHAR:
+            case GERMAN_STRING:
             case VARBINARY:
             case HLL: {
                 node.setType(TTypeNodeType.SCALAR);
@@ -219,6 +222,7 @@ public class TypeSerializer {
         switch (primitiveType) {
             case CHAR:
             case VARCHAR:
+            case GERMAN_STRING:
             case VARBINARY:
             case HLL:
                 scalarType.len = type.getLength();

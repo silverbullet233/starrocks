@@ -58,6 +58,7 @@ public class TypeDeserializer {
             case FLOAT -> PrimitiveType.FLOAT;
             case DOUBLE -> PrimitiveType.DOUBLE;
             case VARCHAR -> PrimitiveType.VARCHAR;
+            case GERMAN_STRING -> PrimitiveType.GERMAN_STRING;
             case CHAR -> PrimitiveType.CHAR;
             case HLL -> PrimitiveType.HLL;
             case OBJECT -> PrimitiveType.BITMAP;
@@ -139,6 +140,9 @@ public class TypeDeserializer {
         } else if (scalarType.getType() == TPrimitiveType.VARCHAR) {
             Preconditions.checkState(scalarType.isSetLen());
             return TypeFactory.createVarcharType(scalarType.getLen());
+        } else if (scalarType.getType() == TPrimitiveType.GERMAN_STRING) {
+            Preconditions.checkState(scalarType.isSetLen());
+            return TypeFactory.createGermanStringType(scalarType.getLen());
         } else if (scalarType.getType() == TPrimitiveType.VARBINARY) {
             return TypeFactory.createVarbinary(scalarType.getLen());
         } else if (scalarType.getType() == TPrimitiveType.HLL) {

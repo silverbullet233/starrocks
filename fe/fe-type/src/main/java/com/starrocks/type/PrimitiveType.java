@@ -60,6 +60,11 @@ public enum PrimitiveType {
     // 8-byte pointer and 4-byte length indicator (12 bytes total).
     // Aligning to 8 bytes so 16 total.
     VARCHAR("VARCHAR", 16),
+    // Query-path-only VARCHAR variant backed by GermanStringColumn (16-byte values,
+    // inline for <=12 bytes). Not exposed in DDL: users cannot declare this type;
+    // the FE rewrites VARCHAR -> GERMAN_STRING at Thrift serialization when
+    // enable_german_string is set. Metadata mirrors VARCHAR.
+    GERMAN_STRING("GERMAN_STRING", 16),
 
     DECIMALV2("DECIMALV2", 16),
 
@@ -104,7 +109,7 @@ public enum PrimitiveType {
                     .build();
 
     public static final ImmutableList<PrimitiveType> STRING_TYPE_LIST =
-            ImmutableList.of(CHAR, VARCHAR);
+            ImmutableList.of(CHAR, VARCHAR, GERMAN_STRING);
 
     public static final ImmutableList<PrimitiveType> JSON_COMPATIBLE_TYPE =
             new ImmutableList.Builder<PrimitiveType>()
@@ -172,6 +177,7 @@ public enum PrimitiveType {
         builder.putAll(DATETIME, BASIC_TYPE_LIST);
         builder.putAll(VARCHAR, BASIC_TYPE_LIST);
         builder.putAll(CHAR, BASIC_TYPE_LIST);
+        builder.putAll(GERMAN_STRING, BASIC_TYPE_LIST);
 
         // Decimal
         for (PrimitiveType decimalType : Arrays.asList(DECIMALV2, DECIMAL32, DECIMAL64, DECIMAL128, DECIMAL256)) {
@@ -379,6 +385,7 @@ public enum PrimitiveType {
                 break;
             case CHAR:
             case VARCHAR:
+            case GERMAN_STRING:
             case VARBINARY:
                 // use 16 as char type estimate size
                 typeSize = 16;
@@ -414,6 +421,7 @@ public enum PrimitiveType {
         switch (this) {
             case CHAR:
             case VARCHAR:
+            case GERMAN_STRING:
             case VARBINARY:
             case HLL:
                 return true;
@@ -454,7 +462,7 @@ public enum PrimitiveType {
     }
 
     public boolean isStringType() {
-        return (this == VARCHAR || this == CHAR || this == HLL);
+        return (this == VARCHAR || this == CHAR || this == GERMAN_STRING || this == HLL);
     }
 
     public boolean isJsonType() {
@@ -474,7 +482,7 @@ public enum PrimitiveType {
     }
 
     public boolean isCharFamily() {
-        return (this == VARCHAR || this == CHAR);
+        return (this == VARCHAR || this == CHAR || this == GERMAN_STRING);
     }
 
     public boolean isIntegerType() {
@@ -489,6 +497,7 @@ public enum PrimitiveType {
             case DATETIME:
                 return DATETIME_INDEX_LEN;
             case VARCHAR:
+            case GERMAN_STRING:
                 return VARCHAR_INDEX_LEN;
             case CHAR:
                 // char index size is length

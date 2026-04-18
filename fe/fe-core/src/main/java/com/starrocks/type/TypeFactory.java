@@ -57,6 +57,20 @@ public class TypeFactory {
     }
 
     /**
+     * Create a GERMAN_STRING type with specified length. Internal-only: callers
+     * should not build this from user-declared DDL; it is produced by the FE
+     * plan-rewrite pass when enable_german_string is set.
+     *
+     * @param len the length (VARCHAR semantics)
+     * @return the created GERMAN_STRING type
+     */
+    public static ScalarType createGermanStringType(int len) {
+        ScalarType type = new ScalarType(PrimitiveType.GERMAN_STRING);
+        type.setLength(len);
+        return type;
+    }
+
+    /**
      * Get the maximum varchar length for OLAP tables.
      *
      * @return the maximum varchar length
@@ -320,6 +334,7 @@ public class TypeFactory {
                     // String types
                     .add(CharType.CHAR)
                     .add(VarcharType.VARCHAR)
+                    .add(GermanStringType.GERMAN_STRING)
                     .add(VarbinaryType.VARBINARY)
                     // Date types
                     .add(DateType.DATE)

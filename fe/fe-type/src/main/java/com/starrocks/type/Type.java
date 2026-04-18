@@ -165,6 +165,10 @@ public abstract class Type implements Cloneable {
         return isScalarType(PrimitiveType.VARCHAR);
     }
 
+    public boolean isGermanString() {
+        return isScalarType(PrimitiveType.GERMAN_STRING);
+    }
+
     public boolean isWildcardDecimal() {
         return false;
     }
@@ -580,6 +584,7 @@ public abstract class Type implements Cloneable {
         switch (t.getPrimitiveType()) {
             case CHAR:
             case VARCHAR:
+            case GERMAN_STRING:
             case HLL:
                 return t.getLength();
             default:

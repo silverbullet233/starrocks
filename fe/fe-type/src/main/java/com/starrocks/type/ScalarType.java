@@ -105,6 +105,11 @@ public class ScalarType extends Type implements Cloneable {
                 return "VARCHAR";
             }
             return "VARCHAR(" + len + ")";
+        } else if (type == PrimitiveType.GERMAN_STRING) {
+            if (len == -1) {
+                return "GERMAN_STRING";
+            }
+            return "GERMAN_STRING(" + len + ")";
         } else if (type == PrimitiveType.VARBINARY) {
             if (len == -1) {
                 return "VARBINARY";
@@ -126,6 +131,15 @@ public class ScalarType extends Type implements Cloneable {
                 }
                 break;
             case VARCHAR:
+                if (len == -1) {
+                    stringBuilder.append("varchar");
+                } else {
+                    stringBuilder.append("varchar").append("(").append(len).append(")");
+                }
+                break;
+            case GERMAN_STRING:
+                // Display GERMAN_STRING as varchar: users never declare this type,
+                // so callers that stringify schemas for DDL/SHOW should see varchar.
                 if (len == -1) {
                     stringBuilder.append("varchar");
                 } else {
@@ -276,7 +290,8 @@ public class ScalarType extends Type implements Cloneable {
 
     @Override
     public boolean isWildcardVarchar() {
-        return (type == PrimitiveType.VARCHAR || type == PrimitiveType.HLL) && len == -1;
+        return (type == PrimitiveType.VARCHAR || type == PrimitiveType.GERMAN_STRING || type == PrimitiveType.HLL)
+                && len == -1;
     }
 
     @Override
@@ -376,6 +391,10 @@ public class ScalarType extends Type implements Cloneable {
             case DECIMAL256:
             case DECIMALV2:
                 return "decimal";
+            case GERMAN_STRING:
+                // GERMAN_STRING is a query-path rewrite target; report VARCHAR on the
+                // MySQL wire so JDBC/ODBC clients never see this internal type.
+                return "varchar";
             default:
                 return type.toString().toLowerCase();
         }
