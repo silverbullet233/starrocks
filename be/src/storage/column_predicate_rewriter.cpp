@@ -22,6 +22,7 @@
 #include "base/simd/simd.h"
 #include "column/binary_column.h"
 #include "column/column_helper.h"
+#include "column/german_string_column.h"
 #include "column/nullable_column.h"
 #include "column/vectorized_fwd.h"
 #include "common/object_pool.h"
@@ -30,6 +31,7 @@
 #include "exprs/expr_context.h"
 #include "exprs/in_const_predicate.hpp"
 #include "gutil/casts.h"
+#include "runtime/descriptors.h"
 #include "runtime/global_dict/config.h"
 #include "runtime/global_dict/miscs.h"
 #include "runtime/runtime_state.h"
@@ -316,7 +318,15 @@ StatusOr<ColumnPredicateRewriter::RewriteStatus> ColumnPredicateRewriter::_rewri
     }
 
     if (PredicateType::kExpr == pred->type()) {
-        ASSIGN_OR_RETURN(const auto* dict_and_codes_ptr, _get_or_load_segment_dict_vec(cid, field));
+        // If the FE has rewritten this slot to TYPE_GERMAN_STRING, the predicate
+        // evaluator reads the dict via ColumnViewer<TYPE_GERMAN_STRING>, which
+        // performs an unchecked down_cast. Produce the dict as a
+        // GermanStringColumn directly so no cross-type reinterpret happens.
+        const auto* expr_pred = down_cast<const ColumnExprPredicate*>(pred);
+        const bool want_german_string =
+                expr_pred->slot_desc() != nullptr && expr_pred->slot_desc()->type().type == TYPE_GERMAN_STRING;
+        ASSIGN_OR_RETURN(const auto* dict_and_codes_ptr,
+                         _get_or_load_segment_dict_vec(cid, field, want_german_string));
         const auto& [dict_column, code_column] = *dict_and_codes_ptr;
 
         return _rewrite_expr_predicate(pool, dict_column, code_column, field->is_nullable(), pred, dest_pred);
@@ -369,20 +379,21 @@ Status ColumnPredicateRewriter::_load_segment_dict(std::vector<std::pair<std::st
 }
 
 StatusOr<const ColumnPredicateRewriter::DictAndCodes*> ColumnPredicateRewriter::_get_or_load_segment_dict_vec(
-        ColumnId cid, const FieldPtr& field) {
+        ColumnId cid, const FieldPtr& field, bool want_german_string) {
     auto it = _cid_to_vec_sorted_dicts.find(cid);
     if (it == _cid_to_vec_sorted_dicts.end()) {
         it = _cid_to_vec_sorted_dicts.emplace(cid, std::make_pair(nullptr, nullptr)).first;
         auto& [dict_column, code_column] = it->second;
-        RETURN_IF_ERROR(
-                _load_segment_dict_vec(_column_iterators[cid].get(), &dict_column, &code_column, field->is_nullable()));
+        RETURN_IF_ERROR(_load_segment_dict_vec(_column_iterators[cid].get(), &dict_column, &code_column,
+                                               field->is_nullable(), want_german_string));
     }
 
     return &it->second;
 }
 
 Status ColumnPredicateRewriter::_load_segment_dict_vec(ColumnIterator* iter, ColumnPtr* dict_column,
-                                                       ColumnPtr* code_column, bool field_nullable) {
+                                                       ColumnPtr* code_column, bool field_nullable,
+                                                       bool want_german_string) {
     // NOTE: for JSON extended column, it might be a JsonColumnIterator, so we need to check it here.
     if (dynamic_cast<ScalarColumnIterator*>(iter) == nullptr) {
         return Status::NotSupported("not support dict predicate for non-string column");
@@ -392,7 +403,14 @@ Status ColumnPredicateRewriter::_load_segment_dict_vec(ColumnIterator* iter, Col
     int dict_codes[dict_size];
     std::iota(dict_codes, dict_codes + dict_size, 0);
 
-    auto dict_col = BinaryColumn::create();
+    // Produce the dict column directly in the type expected by the predicate's
+    // expression tree: GermanStringColumn when the slot has been rewritten by
+    // the FE to TYPE_GERMAN_STRING, otherwise BinaryColumn. decode_dict_codes
+    // dispatches through virtual Column::append_strings, so both types are
+    // filled correctly without any reinterpret.
+    MutableColumnPtr dict_col =
+            want_german_string ? static_cast<MutableColumnPtr>(GermanStringColumn::create())
+                               : static_cast<MutableColumnPtr>(BinaryColumn::create());
     RETURN_IF_ERROR(column_iterator->decode_dict_codes(dict_codes, dict_size, dict_col.get()));
 
     if (field_nullable) {
@@ -426,6 +444,10 @@ StatusOr<ColumnPredicateRewriter::RewriteStatus> ColumnPredicateRewriter::_rewri
     const auto* pred = down_cast<const ColumnExprPredicate*>(src_pred);
     size_t chunk_size = std::min<size_t>(pred->runtime_state()->chunk_size(), std::numeric_limits<uint16_t>::max());
 
+    // Dict column was produced in `_load_segment_dict_vec` with the type the
+    // predicate's SlotDescriptor expects (BinaryColumn for TYPE_VARCHAR/CHAR,
+    // GermanStringColumn for the FE-rewritten TYPE_GERMAN_STRING). Pass it to
+    // the predicate evaluator directly without any cross-type conversion.
     if (value_size <= chunk_size) {
         RETURN_IF_ERROR(pred->evaluate(raw_dict_column.get(), selection.data(), 0, value_size));
     } else {

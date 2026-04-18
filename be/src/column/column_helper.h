@@ -709,6 +709,17 @@ public:
     // lifetimes independent. See plan trade-off #1.
     static ColumnPtr convert_german_string_to_binary_column(const ColumnPtr& src);
 
+    // Convert a BinaryColumn (possibly wrapped in NullableColumn) into a
+    // GermanStringColumn. Used by the scan operator at the scan exit, which is
+    // the single decode-time materialization point where storage-side
+    // BinaryColumn output is promoted to the slot's TYPE_GERMAN_STRING column.
+    // If |src| is not a BinaryColumn (or a NullableColumn wrapping one), the
+    // returned pointer aliases |src| unchanged.
+    //
+    // Per-row copy is intentional: the returned GermanStringColumn owns its
+    // own bytes, so the source's lifetime is independent.
+    static ColumnPtr convert_binary_to_german_string_column(const ColumnPtr& src);
+
     static Status update_nested_has_null(Column* column);
 
     static ColumnPtr convert_time_column_from_double_to_str(const ColumnPtr& column);

@@ -629,25 +629,10 @@ Status OlapChunkSource::_read_chunk(RuntimeState* state, ChunkPtr* chunk) {
     ASSIGN_OR_RETURN(auto chunk_ptr,
                      ChunkHelper::new_chunk_pooled_checked(_prj_iter->output_schema(), _runtime_state->chunk_size()));
     chunk->reset(chunk_ptr);
-    // The scan chunk columns are allocated from the storage-side Schema, which
-    // only carries OLAP_FIELD_TYPE_VARCHAR. When the FE rewrites a varchar slot
-    // to TYPE_GERMAN_STRING, we must honour the slot type by swapping the
-    // freshly-allocated (empty) BinaryColumn for an empty GermanStringColumn so
-    // the storage decoder (which is Column*-polymorphic) materializes
-    // GermanStrings directly. The columns are still empty at this point — this
-    // is a type swap, not a BinaryColumn -> GermanStringColumn data conversion.
-    for (auto* slot : _query_slots) {
-        if (slot->type().type != TYPE_GERMAN_STRING) {
-            continue;
-        }
-        size_t column_index = (*chunk)->schema()->get_field_index_by_name(slot->col_name());
-        if (column_index == static_cast<size_t>(-1)) {
-            continue;
-        }
-        auto german_col = ColumnHelper::create_column(slot->type(), slot->is_nullable());
-        german_col->reserve(_runtime_state->chunk_size());
-        (*chunk)->update_column_by_index(std::move(german_col), column_index);
-    }
+    // The decode-time BinaryColumn -> GermanStringColumn materialization for
+    // FE-rewritten slots happens inside _read_chunk_from_storage right after
+    // the scan emits a chunk, so non-pushdown predicates and downstream
+    // operators see the slot's TYPE_GERMAN_STRING column type.
     auto scope = IOProfiler::scope(IOProfiler::TAG_QUERY, _tablet->tablet_id());
     return _read_chunk_from_storage(_runtime_state, (*chunk).get());
 }
@@ -715,6 +700,26 @@ Status OlapChunkSource::_read_chunk_from_storage(RuntimeState* state, Chunk* chu
         for (auto slot : _query_slots) {
             size_t column_index = chunk->schema()->get_field_index_by_name(slot->col_name());
             chunk->set_slot_id_to_index(slot->id(), column_index);
+        }
+
+        // Decode-time materialization: the storage layer emits BinaryColumn for
+        // varchar pages, but downstream non-pushdown predicates and the rest of
+        // the query pipeline expect TYPE_GERMAN_STRING columns when the FE has
+        // rewritten a varchar slot. Convert once here (per spec trade-off: the
+        // single decode-time materialization point).
+        for (auto* slot : _query_slots) {
+            if (slot->type().type != TYPE_GERMAN_STRING) {
+                continue;
+            }
+            size_t column_index = chunk->schema()->get_field_index_by_name(slot->col_name());
+            if (column_index == static_cast<size_t>(-1)) {
+                continue;
+            }
+            const ColumnPtr& existing = chunk->get_column_by_index(column_index);
+            ColumnPtr converted = ColumnHelper::convert_binary_to_german_string_column(existing);
+            if (converted.get() != existing.get()) {
+                chunk->update_column_by_index(std::move(converted), column_index);
+            }
         }
 
         if (!_non_pushdown_pred_tree.empty()) {

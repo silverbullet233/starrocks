@@ -72,9 +72,10 @@ private:
     StatusOr<const SortedDicts*> _get_or_load_segment_dict(ColumnId cid);
     Status _load_segment_dict(std::vector<std::pair<std::string, int>>* dicts, ColumnIterator* iter);
 
-    StatusOr<const DictAndCodes*> _get_or_load_segment_dict_vec(ColumnId cid, const FieldPtr& field);
+    StatusOr<const DictAndCodes*> _get_or_load_segment_dict_vec(ColumnId cid, const FieldPtr& field,
+                                                                bool want_german_string);
     Status _load_segment_dict_vec(ColumnIterator* iter, ColumnPtr* dict_column, ColumnPtr* code_column,
-                                  bool field_nullable);
+                                  bool field_nullable, bool want_german_string);
 
     const ColumnIterators& _column_iterators;
     const Schema& _schema;

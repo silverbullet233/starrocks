@@ -740,6 +740,8 @@ struct AggHashMapWithOneGermanStringKeyWithNullable
                                                          Func&& allocate_func, Buffer<AggDataPtr>* agg_states,
                                                          ExtraAggParam* extra) {
         DCHECK(key_column->is_binary());
+        CHECK(dynamic_cast<const GermanStringColumn*>(key_column) != nullptr)
+                << "GermanString agg hash map expected GermanStringColumn, got " << key_column->get_name();
         const auto* column = down_cast<const GermanStringColumn*>(key_column);
         if (this->hash_map.bucket_count() < prefetch_threhold) {
             this->template compute_agg_noprefetch<Func, HTBuildOp>(column, agg_states, pool,
@@ -765,6 +767,9 @@ struct AggHashMapWithOneGermanStringKeyWithNullable
         } else {
             DCHECK(key_column->is_nullable());
             const auto* nullable_column = down_cast<const NullableColumn*>(key_column);
+            CHECK(dynamic_cast<const GermanStringColumn*>(nullable_column->data_column().get()) != nullptr)
+                    << "GermanString agg hash map expected GermanStringColumn inside NullableColumn, got "
+                    << nullable_column->data_column()->get_name();
             const auto* data_column = down_cast<const GermanStringColumn*>(nullable_column->data_column().get());
             DCHECK(data_column->is_binary());
 

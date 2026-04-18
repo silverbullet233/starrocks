@@ -88,7 +88,9 @@ static void concat_chunks(ChunkPtr& dst_chunk, const std::vector<ChunkPtr>& src_
         auto* dst_col = dst_chunk->get_column_raw_ptr_by_index(i);
         auto* dst_data_col = ColumnHelper::get_data_column(dst_col);
         // Reserve memory room for bytes array in BinaryColumn here.
-        if (dst_data_col->is_binary()) {
+        // GermanStringColumn also reports is_binary()==true but has no
+        // contiguous bytes buffer to reserve; skip it.
+        if (dst_data_col->is_binary() && dynamic_cast<BinaryColumn*>(dst_data_col) != nullptr) {
             reserve_memory<BinaryColumn>(dst_data_col, src_chunks, i);
         } else if (dst_col->is_large_binary()) {
             reserve_memory<LargeBinaryColumn>(dst_data_col, src_chunks, i);

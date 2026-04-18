@@ -14,18 +14,24 @@
 
 package com.starrocks.planner;
 
+import com.starrocks.catalog.Function;
 import com.starrocks.catalog.Table;
 import com.starrocks.qe.SessionVariable;
 import com.starrocks.sql.ast.OrderByElement;
 import com.starrocks.sql.ast.expression.Expr;
+import com.starrocks.sql.ast.expression.ExprUtils;
+import com.starrocks.sql.ast.expression.FunctionCallExpr;
 import com.starrocks.sql.ast.expression.SlotRef;
 import com.starrocks.sql.plan.ExecPlan;
 import com.starrocks.type.PrimitiveType;
 import com.starrocks.type.ScalarType;
 import com.starrocks.type.Type;
 import com.starrocks.type.TypeFactory;
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
 
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collection;
 import java.util.List;
 import java.util.Map;
@@ -58,6 +64,8 @@ import java.util.Map;
  * plan object.
  */
 public final class GermanStringRewriter {
+
+    private static final Logger LOG = LogManager.getLogger(GermanStringRewriter.class);
 
     private GermanStringRewriter() {
     }
@@ -285,12 +293,18 @@ public final class GermanStringRewriter {
 
         if (expr instanceof SlotRef) {
             // Bind the SlotRef's type to its (possibly rewritten) descriptor
-            // type. We call the overridden setType which also writes back to
-            // desc, but that's idempotent: desc is already GERMAN_STRING for
-            // rewritable tuples and still VARCHAR for external ones.
+            // type. A SlotRef may point to a SlotDescriptor that was not
+            // reached via DescriptorTable.getTupleDescs() (e.g. exchange-local
+            // slots synthesised during planning). When the descriptor belongs
+            // to a rewritable tuple, make sure it has been rewritten before
+            // reading its type, so SlotRef stays in sync.
             SlotRef slotRef = (SlotRef) expr;
-            if (slotRef.getDesc() != null) {
-                Type descType = slotRef.getDesc().getType();
+            SlotDescriptor desc = slotRef.getDesc();
+            if (desc != null) {
+                if (desc.getParent() == null || isRewritableTuple(desc.getParent())) {
+                    rewriteSlotDescriptor(desc);
+                }
+                Type descType = desc.getType();
                 if (!expr.getType().equals(descType)) {
                     slotRef.setType(descType);
                 }
@@ -300,8 +314,55 @@ public final class GermanStringRewriter {
             return;
         }
 
+        // Re-bind FunctionCallExpr to its GermanString overload when any
+        // argument now has GERMAN_STRING type. Without this, the BE ends up
+        // invoking the VARCHAR implementation with a GermanStringColumn input
+        // (or vice versa) and crashes via the unchecked down_cast chain.
+        if (expr instanceof FunctionCallExpr) {
+            rebindGermanStringFunction((FunctionCallExpr) expr);
+            return;
+        }
+
         if (isScalarVarchar(expr.getType())) {
             expr.setType(rewriteType(expr.getType()));
+        }
+    }
+
+    /**
+     * If any child of a {@link FunctionCallExpr} has a {@code GERMAN_STRING}
+     * type after the rewrite, look up a matching builtin overload (GermanString
+     * counterpart) and rebind the call. Falls back to a VARCHAR rewrite of the
+     * return type if no specialized overload exists.
+     */
+    private static void rebindGermanStringFunction(FunctionCallExpr fnCall) {
+        List<Expr> children = fnCall.getChildren();
+        Type[] argTypes = new Type[children.size()];
+        boolean hasGermanString = false;
+        for (int i = 0; i < children.size(); ++i) {
+            argTypes[i] = children.get(i).getType();
+            if (argTypes[i] != null && argTypes[i].isScalarType()
+                    && argTypes[i].getPrimitiveType() == PrimitiveType.GERMAN_STRING) {
+                hasGermanString = true;
+            }
+        }
+
+        if (hasGermanString && fnCall.getFn() != null) {
+            String fnName = fnCall.getFn().getFunctionName().getFunction();
+            Function newFn = ExprUtils.getBuiltinFunction(fnName, argTypes, Function.CompareMode.IS_IDENTICAL);
+            if (newFn == null) {
+                newFn = ExprUtils.getBuiltinFunction(fnName, argTypes, Function.CompareMode.IS_SUPERTYPE_OF);
+            }
+            if (newFn != null && newFn != fnCall.getFn()) {
+                fnCall.setFn(newFn);
+                if (newFn.getReturnType() != null) {
+                    fnCall.setType(newFn.getReturnType());
+                    return;
+                }
+            }
+        }
+
+        if (isScalarVarchar(fnCall.getType())) {
+            fnCall.setType(rewriteType(fnCall.getType()));
         }
     }
 

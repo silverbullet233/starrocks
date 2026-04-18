@@ -404,6 +404,15 @@ LogicalType ColumnReader::_get_zone_map_parse_type(const ColumnPredicate* predic
         type = TYPE_CHAR;
     }
 
+    // Zone maps on disk are written by the VARCHAR/CHAR storage path and carry
+    // VARCHAR-shaped payloads. When the FE has rewritten the query slot to
+    // TYPE_GERMAN_STRING, the predicate arrives here typed as GERMAN_STRING;
+    // parse the zone map as the underlying storage type so the string-encoded
+    // min/max reconstruct correctly.
+    if (type == TYPE_GERMAN_STRING) {
+        type = (_column_type == TYPE_CHAR) ? TYPE_CHAR : TYPE_VARCHAR;
+    }
+
     return type;
 }
 
