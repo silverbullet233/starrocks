@@ -6230,6 +6230,185 @@ StatusOr<ColumnPtr> StringFunctions::locate_pos_german_string(FunctionContext* c
     return instr_or_locate_german_string_impl(columns[1], columns[0], columns[2]);
 }
 
+// =============================================================================
+// TYPE_GERMAN_STRING overloads for string builtins — batch (c).
+//
+// `starts_with`, `ends_with`, and the `regexp_*` family. Like batch (a)/(b)
+// we read `GermanString` values directly via ColumnViewer and write to a
+// `GermanStringColumn` for string-valued results.
+//
+// `starts_with` exploits the 4-byte `long_rep.prefix` that every long-rep
+// GermanString carries: when the test prefix is <=4 bytes, we answer the
+// predicate without dereferencing `long_rep.ptr`.
+// =============================================================================
+
+namespace {
+
+// Prefix-only compare against GermanString bytes. When the compared region is
+// entirely within the first 4 bytes (always inline in `long_rep.prefix` or
+// `short_rep.str`), we avoid the pointer load on the long-rep path.
+inline bool gs_prefix_eq(const GermanString& gs, const char* data, uint32_t size) {
+    if (size <= GermanString::PREFIX_LENGTH) {
+        return memcmp(gs.long_rep.prefix, data, size) == 0;
+    }
+    return memcmp(gs.get_data(), data, size) == 0;
+}
+
+} // namespace
+
+// --- starts_with / ends_with (TYPE_GERMAN_STRING) ---------------------------
+
+StatusOr<ColumnPtr> StringFunctions::starts_with_german_string(FunctionContext* context, const Columns& columns) {
+    RETURN_IF_COLUMNS_ONLY_NULL(columns);
+
+    ColumnViewer<TYPE_GERMAN_STRING> str_viewer(columns[0]);
+    ColumnViewer<TYPE_GERMAN_STRING> prefix_viewer(columns[1]);
+    const size_t num_rows = columns[0]->size();
+    ColumnBuilder<TYPE_BOOLEAN> builder(num_rows);
+    for (size_t row = 0; row < num_rows; ++row) {
+        if (str_viewer.is_null(row) || prefix_viewer.is_null(row)) {
+            builder.append_null();
+            continue;
+        }
+        const auto gs = str_viewer.value(row);
+        const auto prefix = prefix_viewer.value(row);
+        if (prefix.len > gs.len) {
+            builder.append(false);
+            continue;
+        }
+        builder.append(gs_prefix_eq(gs, prefix.get_data(), prefix.len));
+    }
+    return builder.build(ColumnHelper::is_all_const(columns));
+}
+
+StatusOr<ColumnPtr> StringFunctions::ends_with_german_string(FunctionContext* context, const Columns& columns) {
+    RETURN_IF_COLUMNS_ONLY_NULL(columns);
+
+    ColumnViewer<TYPE_GERMAN_STRING> str_viewer(columns[0]);
+    ColumnViewer<TYPE_GERMAN_STRING> suffix_viewer(columns[1]);
+    const size_t num_rows = columns[0]->size();
+    ColumnBuilder<TYPE_BOOLEAN> builder(num_rows);
+    for (size_t row = 0; row < num_rows; ++row) {
+        if (str_viewer.is_null(row) || suffix_viewer.is_null(row)) {
+            builder.append_null();
+            continue;
+        }
+        const auto gs = str_viewer.value(row);
+        const auto suffix = suffix_viewer.value(row);
+        if (suffix.len > gs.len) {
+            builder.append(false);
+            continue;
+        }
+        builder.append(memcmp(gs.get_data() + gs.len - suffix.len, suffix.get_data(), suffix.len) == 0);
+    }
+    return builder.build(ColumnHelper::is_all_const(columns));
+}
+
+// --- regexp_extract / regexp_replace (TYPE_GERMAN_STRING) -------------------
+
+StatusOr<ColumnPtr> StringFunctions::regexp_extract_german_string(FunctionContext* context, const Columns& columns) {
+    RETURN_IF_COLUMNS_ONLY_NULL(columns);
+    auto* state = reinterpret_cast<StringFunctionsState*>(context->get_function_state(FunctionContext::THREAD_LOCAL));
+
+    ColumnViewer<TYPE_GERMAN_STRING> content_viewer(columns[0]);
+    ColumnViewer<TYPE_VARCHAR> ptn_viewer(columns[1]);
+    ColumnViewer<TYPE_BIGINT> field_viewer(columns[2]);
+
+    const size_t num_rows = columns[0]->size();
+    ColumnBuilder<TYPE_GERMAN_STRING> builder(num_rows);
+
+    re2::RE2* const_re = (state != nullptr && state->const_pattern) ? state->get_or_prepare_regex() : nullptr;
+
+    for (size_t row = 0; row < num_rows; ++row) {
+        if (content_viewer.is_null(row) || (const_re == nullptr && ptn_viewer.is_null(row)) ||
+            field_viewer.is_null(row)) {
+            builder.append_null();
+            continue;
+        }
+
+        const auto field_value = field_viewer.value(row);
+        if (field_value < 0) {
+            (void)append_bytes_to_german_string_builder(builder, nullptr, 0);
+            continue;
+        }
+
+        re2::RE2* re_ptr = const_re;
+        std::unique_ptr<re2::RE2> local_re;
+        if (re_ptr == nullptr) {
+            auto ptn = ptn_viewer.value(row);
+            local_re = std::make_unique<re2::RE2>(re2::StringPiece(ptn.data, ptn.size), *(state->options));
+            if (!local_re->ok()) {
+                context->set_error(strings::Substitute("Invalid regex: $0", ptn.to_string()).c_str());
+                builder.append_null();
+                continue;
+            }
+            re_ptr = local_re.get();
+        }
+
+        int max_matches = 1 + re_ptr->NumberOfCapturingGroups();
+        if (field_value >= max_matches) {
+            (void)append_bytes_to_german_string_builder(builder, nullptr, 0);
+            continue;
+        }
+
+        const auto gs = content_viewer.value(row);
+        re2::StringPiece str_sp(gs.get_data(), gs.len);
+        std::vector<re2::StringPiece> matches(max_matches);
+        if (!re_ptr->Match(str_sp, 0, gs.len, re2::RE2::UNANCHORED, &matches[0], max_matches)) {
+            (void)append_bytes_to_german_string_builder(builder, nullptr, 0);
+            continue;
+        }
+        const re2::StringPiece& match = matches[field_value];
+        (void)append_bytes_to_german_string_builder(builder, match.data(), match.size());
+    }
+    return builder.build(ColumnHelper::is_all_const(columns));
+}
+
+StatusOr<ColumnPtr> StringFunctions::regexp_replace_german_string(FunctionContext* context, const Columns& columns) {
+    auto* state = reinterpret_cast<StringFunctionsState*>(context->get_function_state(FunctionContext::THREAD_LOCAL));
+
+    ColumnViewer<TYPE_GERMAN_STRING> str_viewer(columns[0]);
+    ColumnViewer<TYPE_VARCHAR> ptn_viewer(columns[1]);
+    ColumnViewer<TYPE_VARCHAR> rpl_viewer(columns[2]);
+
+    const size_t num_rows = columns[0]->size();
+    ColumnBuilder<TYPE_GERMAN_STRING> builder(num_rows);
+
+    re2::RE2* const_re = (state != nullptr && state->const_pattern && !state->use_hyperscan)
+                                 ? state->get_or_prepare_regex()
+                                 : nullptr;
+
+    std::string result_str;
+    for (size_t row = 0; row < num_rows; ++row) {
+        if (str_viewer.is_null(row) || (const_re == nullptr && !state->const_pattern && ptn_viewer.is_null(row)) ||
+            rpl_viewer.is_null(row)) {
+            builder.append_null();
+            continue;
+        }
+
+        const auto gs = str_viewer.value(row);
+        re2::RE2* re_ptr = const_re;
+        std::unique_ptr<re2::RE2> local_re;
+        if (re_ptr == nullptr) {
+            const Slice ptn = ptn_viewer.value(row);
+            local_re = std::make_unique<re2::RE2>(re2::StringPiece(ptn.data, ptn.size), *(state->options));
+            if (!local_re->ok()) {
+                context->set_error(strings::Substitute("Invalid regex: $0", ptn.to_string()).c_str());
+                builder.append_null();
+                continue;
+            }
+            re_ptr = local_re.get();
+        }
+
+        const Slice rpl = rpl_viewer.value(row);
+        re2::StringPiece rpl_sp(rpl.data, rpl.size);
+        result_str.assign(gs.get_data(), gs.len);
+        re2::RE2::GlobalReplace(&result_str, *re_ptr, rpl_sp);
+        (void)append_bytes_to_german_string_builder(builder, result_str.data(), result_str.size());
+    }
+    return builder.build(ColumnHelper::is_all_const(columns));
+}
+
 } // namespace starrocks
 
 #include "gen_cpp/opcode/StringFunctions.inc"

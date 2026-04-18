@@ -22,6 +22,7 @@
 #include "column/column_helper.h"
 #include "column/german_string_column.h"
 #include "column/nullable_column.h"
+#include "exprs/like_predicate.h"
 #include "exprs/string_functions.h"
 
 namespace starrocks {
@@ -355,6 +356,144 @@ TEST(GermanStringBuiltinsTest, Locate) {
         // After position 5, only "ab" at pos 5 left.
         ASSERT_EQ(5, col->get_data()[1]);
     }
+}
+
+// =============================================================================
+// Batch (c): starts_with / ends_with / like / regexp_replace / regexp_extract.
+// =============================================================================
+
+TEST(GermanStringBuiltinsTest, StartsWith) {
+    std::unique_ptr<FunctionContext> ctx(FunctionContext::create_test_context());
+    Columns columns;
+    // Row 0: inline haystack + inline prefix.
+    // Row 1: long-rep haystack + prefix <=4 bytes (4-byte-prefix fast path).
+    // Row 2: long-rep haystack + prefix that spans past the 4-byte prefix
+    //        window (forces pointer load).
+    // Row 3: prefix longer than haystack.
+    columns.emplace_back(
+            make_gs_column({"hello", "hello world longer than 12", "hello world longer than 12", "hi"}));
+    columns.emplace_back(make_gs_column({"hel", "hell", "hello world", "hello"}));
+    auto result = StringFunctions::starts_with_german_string(ctx.get(), columns).value();
+    auto col = ColumnHelper::cast_to<TYPE_BOOLEAN>(result);
+    ASSERT_TRUE(col->get_data()[0]);
+    ASSERT_TRUE(col->get_data()[1]);
+    ASSERT_TRUE(col->get_data()[2]);
+    ASSERT_FALSE(col->get_data()[3]);
+}
+
+TEST(GermanStringBuiltinsTest, EndsWith) {
+    std::unique_ptr<FunctionContext> ctx(FunctionContext::create_test_context());
+    Columns columns;
+    columns.emplace_back(make_gs_column({"hello", "hello world longer than 12", "foo"}));
+    columns.emplace_back(make_gs_column({"llo", "than 12", "bar"}));
+    auto result = StringFunctions::ends_with_german_string(ctx.get(), columns).value();
+    auto col = ColumnHelper::cast_to<TYPE_BOOLEAN>(result);
+    ASSERT_TRUE(col->get_data()[0]);
+    ASSERT_TRUE(col->get_data()[1]);
+    ASSERT_FALSE(col->get_data()[2]);
+}
+
+// Helper that runs `LIKE` against a GermanString haystack column and a
+// VARCHAR constant pattern, exercising the full prepare/close lifecycle so
+// the fast-path dispatch in `like_german_string` is actually hit.
+static std::vector<bool> run_like_gs(const std::vector<std::string>& rows, const std::string& pattern) {
+    auto ctx = std::unique_ptr<FunctionContext>(FunctionContext::create_test_context());
+    Columns columns;
+    columns.emplace_back(make_gs_column(rows));
+    columns.emplace_back(ColumnHelper::create_const_column<TYPE_VARCHAR>(pattern, rows.size()));
+    ctx->set_constant_columns(columns);
+    CHECK(LikePredicate::like_prepare(ctx.get(), FunctionContext::THREAD_LOCAL).ok());
+    auto result = LikePredicate::like_german_string(ctx.get(), columns).value();
+    auto out = ColumnHelper::cast_to<TYPE_BOOLEAN>(result);
+    std::vector<bool> vals(rows.size());
+    for (size_t i = 0; i < rows.size(); ++i) {
+        vals[i] = static_cast<bool>(out->get_data()[i]);
+    }
+    CHECK(LikePredicate::like_close(ctx.get(), FunctionContext::THREAD_LOCAL).ok());
+    return vals;
+}
+
+TEST(GermanStringBuiltinsTest, LikeStartsWith) {
+    auto vals = run_like_gs({"abcdef", "abXXXXX long tail longer than 12", "xabc", "ab"}, "ab%");
+    ASSERT_TRUE(vals[0]);
+    ASSERT_TRUE(vals[1]);
+    ASSERT_FALSE(vals[2]);
+    ASSERT_TRUE(vals[3]);
+}
+
+TEST(GermanStringBuiltinsTest, LikeEndsWith) {
+    auto vals = run_like_gs({"foo bar", "long string ends with bar", "bar tail", "bar"}, "%bar");
+    ASSERT_TRUE(vals[0]);
+    ASSERT_TRUE(vals[1]);
+    ASSERT_FALSE(vals[2]);
+    ASSERT_TRUE(vals[3]);
+}
+
+TEST(GermanStringBuiltinsTest, LikeSubstring) {
+    auto vals = run_like_gs({"foo bar baz", "a long string containing bar in the middle", "nope", "bar"}, "%bar%");
+    ASSERT_TRUE(vals[0]);
+    ASSERT_TRUE(vals[1]);
+    ASSERT_FALSE(vals[2]);
+    ASSERT_TRUE(vals[3]);
+}
+
+TEST(GermanStringBuiltinsTest, LikeEquals) {
+    // Constant equality pattern (no wildcard characters).
+    auto vals = run_like_gs({"abc", "abcd", "abc", "long string longer than 12 bytes"}, "abc");
+    ASSERT_TRUE(vals[0]);
+    ASSERT_FALSE(vals[1]);
+    ASSERT_TRUE(vals[2]);
+    ASSERT_FALSE(vals[3]);
+}
+
+TEST(GermanStringBuiltinsTest, RegexpReplaceConstPattern) {
+    auto ctx = std::unique_ptr<FunctionContext>(FunctionContext::create_test_context());
+    Columns columns;
+    columns.emplace_back(make_gs_column({"hello world", "a longer string with digits 1234 in it"}));
+    columns.emplace_back(ColumnHelper::create_const_column<TYPE_VARCHAR>("[0-9]+", 2));
+    columns.emplace_back(ColumnHelper::create_const_column<TYPE_VARCHAR>("#", 2));
+    ctx->set_constant_columns(columns);
+    CHECK(StringFunctions::regexp_replace_prepare(ctx.get(), FunctionContext::THREAD_LOCAL).ok());
+    auto result = StringFunctions::regexp_replace_german_string(ctx.get(), columns).value();
+    auto vals = dump_gs_column(result);
+    ASSERT_EQ("hello world", vals[0]);
+    ASSERT_EQ("a longer string with digits # in it", vals[1]);
+    CHECK(StringFunctions::regexp_close(ctx.get(), FunctionContext::THREAD_LOCAL).ok());
+}
+
+TEST(GermanStringBuiltinsTest, RegexpExtractConstPattern) {
+    auto ctx = std::unique_ptr<FunctionContext>(FunctionContext::create_test_context());
+    Columns columns;
+    // Second row is long-rep (>12 bytes) to exercise pointer-backed input.
+    columns.emplace_back(make_gs_column({"abc123", "the longer string abc42 inside"}));
+    columns.emplace_back(ColumnHelper::create_const_column<TYPE_VARCHAR>("([a-z]+)([0-9]+)", 2));
+    auto field = Int64Column::create();
+    field->append(2);
+    field->append(1);
+    columns.emplace_back(std::move(field));
+    ctx->set_constant_columns(columns);
+    CHECK(StringFunctions::regexp_extract_prepare(ctx.get(), FunctionContext::THREAD_LOCAL).ok());
+    auto result = StringFunctions::regexp_extract_german_string(ctx.get(), columns).value();
+    auto vals = dump_gs_column(result);
+    ASSERT_EQ("123", vals[0]);
+    ASSERT_EQ("abc", vals[1]);
+    CHECK(StringFunctions::regexp_close(ctx.get(), FunctionContext::THREAD_LOCAL).ok());
+}
+
+TEST(GermanStringBuiltinsTest, RegexpMatch) {
+    // REGEXP: use the regex_german_string entry point with a constant pattern.
+    auto ctx = std::unique_ptr<FunctionContext>(FunctionContext::create_test_context());
+    Columns columns;
+    columns.emplace_back(make_gs_column({"abc123", "hello world", "the longer string abc42 inside"}));
+    columns.emplace_back(ColumnHelper::create_const_column<TYPE_VARCHAR>("[a-z]+[0-9]+", 3));
+    ctx->set_constant_columns(columns);
+    CHECK(LikePredicate::regex_prepare(ctx.get(), FunctionContext::THREAD_LOCAL).ok());
+    auto result = LikePredicate::regex_german_string(ctx.get(), columns).value();
+    auto col = ColumnHelper::cast_to<TYPE_BOOLEAN>(result);
+    ASSERT_TRUE(col->get_data()[0]);
+    ASSERT_FALSE(col->get_data()[1]);
+    ASSERT_TRUE(col->get_data()[2]);
+    CHECK(LikePredicate::regex_close(ctx.get(), FunctionContext::THREAD_LOCAL).ok());
 }
 
 } // namespace starrocks

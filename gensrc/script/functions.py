@@ -532,6 +532,21 @@ vectorized_functions = [
     [38260, 'locate', True, False, 'INT', ['VARCHAR', 'GERMAN_STRING'], 'StringFunctions::locate_german_string'],
     [38261, 'locate', True, False, 'INT', ['VARCHAR', 'GERMAN_STRING', 'INT'],
      'StringFunctions::locate_pos_german_string'],
+    # ---- TYPE_GERMAN_STRING overloads for string builtins (batch c). ----
+    [38270, 'starts_with', True, False, 'BOOLEAN', ['GERMAN_STRING', 'VARCHAR'],
+     'StringFunctions::starts_with_german_string'],
+    [38280, 'ends_with', True, False, 'BOOLEAN', ['GERMAN_STRING', 'VARCHAR'],
+     'StringFunctions::ends_with_german_string'],
+    [38290, 'regexp_extract', True, False, 'GERMAN_STRING', ['GERMAN_STRING', 'VARCHAR', 'BIGINT'],
+     'StringFunctions::regexp_extract_german_string',
+     'StringFunctions::regexp_extract_prepare', 'StringFunctions::regexp_close'],
+    [38300, 'regexp_replace', True, True, 'GERMAN_STRING', ['GERMAN_STRING', 'VARCHAR', 'VARCHAR'],
+     'StringFunctions::regexp_replace_german_string',
+     'StringFunctions::regexp_replace_prepare', 'StringFunctions::regexp_close'],
+    [38310, 'LIKE', True, False, 'BOOLEAN', ['GERMAN_STRING', 'VARCHAR'], 'LikePredicate::like_german_string',
+     'LikePredicate::like_prepare', 'LikePredicate::like_close'],
+    [38311, 'REGEXP', True, False, 'BOOLEAN', ['GERMAN_STRING', 'VARCHAR'], 'LikePredicate::regex_german_string',
+     'LikePredicate::regex_prepare', 'LikePredicate::regex_close'],
 
     # Binary Functions
     # to_binary

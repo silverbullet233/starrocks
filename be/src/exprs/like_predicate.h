@@ -44,6 +44,15 @@ public:
      */
     DEFINE_VECTORIZED_FN(like);
 
+    /**
+     * TYPE_GERMAN_STRING overload of `like`. Reuses the `LikePredicateState`
+     * produced by `like_prepare`; only the per-row loop changes to read
+     * `GermanString` values. Constant-pattern fast paths (starts_with /
+     * ends_with / equals / substring) get dedicated GermanString
+     * implementations.
+     */
+    DEFINE_VECTORIZED_FN(like_german_string);
+
     // regex method
     static Status regex_prepare(FunctionContext* context, FunctionContext::FunctionStateScope scope);
 
@@ -57,6 +66,12 @@ public:
      * @return: BooleanColumn
      */
     DEFINE_VECTORIZED_FN(regex);
+
+    /**
+     * TYPE_GERMAN_STRING overload of `regex` (a.k.a. `regexp_match`). Shares
+     * the `LikePredicateState` produced by `regex_prepare`.
+     */
+    DEFINE_VECTORIZED_FN(regex_german_string);
 
 private:
     /**
@@ -81,6 +96,17 @@ private:
 
     DEFINE_VECTORIZED_FN(regex_fn_with_long_constant_pattern);
     DEFINE_VECTORIZED_FN(like_fn_with_long_constant_pattern);
+
+    // GermanString-typed row loops. They mirror the corresponding VARCHAR
+    // variants but read values through `ColumnViewer<TYPE_GERMAN_STRING>`.
+    DEFINE_VECTORIZED_FN(like_fn_german_string);
+    DEFINE_VECTORIZED_FN(regex_fn_german_string);
+    DEFINE_VECTORIZED_FN(regex_fn_with_long_constant_pattern_german_string);
+    DEFINE_VECTORIZED_FN(like_fn_with_long_constant_pattern_german_string);
+    DEFINE_VECTORIZED_FN(constant_ends_with_fn_german_string);
+    DEFINE_VECTORIZED_FN(constant_starts_with_fn_german_string);
+    DEFINE_VECTORIZED_FN(constant_equals_fn_german_string);
+    DEFINE_VECTORIZED_FN(constant_substring_fn_german_string);
     /**
      * use for:
      *  a like "xxxx%"
@@ -153,6 +179,18 @@ private:
 
     static void remove_escape_character(std::string* search_string);
 
+    // GermanString row-loop helpers. Defined in like_predicate.cpp; declared
+    // here (private) so they can reach the class-private helpers
+    // (`convert_like_pattern`, `remove_escape_character`).
+    template <bool full_match>
+    static StatusOr<ColumnPtr> match_fn_with_long_constant_pattern_gs(FunctionContext* context,
+                                                                      const Columns& columns);
+    static StatusOr<ColumnPtr> predicate_const_hs_gs(FunctionContext* context, ColumnBuilder<TYPE_BOOLEAN>* result,
+                                                     const ColumnViewer<TYPE_GERMAN_STRING>& value_viewer,
+                                                     const ColumnPtr& value_column);
+    template <bool is_like_pattern>
+    static StatusOr<ColumnPtr> regex_match_gs(FunctionContext* context, const Columns& columns);
+
 private:
     static StatusOr<ColumnPtr> _predicate_const_regex(FunctionContext* context, ColumnBuilder<TYPE_BOOLEAN>* result,
                                                       const ColumnViewer<TYPE_VARCHAR>& value_viewer,
@@ -168,8 +206,24 @@ private:
     template <bool full_match>
     static Status compile_with_hyperscan_or_re2(const std::string& pattern, LikePredicateState* state,
                                                 FunctionContext* context, const Slice& slice);
+    // Discriminator used by the TYPE_GERMAN_STRING entry points to pick the
+    // correct row loop. Set alongside `LikePredicateState::function` during
+    // `like_prepare` / `regex_prepare`. The VARCHAR path ignores this field.
+    enum class DispatchKind : uint8_t {
+        GENERAL_LIKE,       // &like_fn
+        GENERAL_REGEX,      // &regex_fn
+        CONST_STARTS_WITH,  // &constant_starts_with_fn
+        CONST_ENDS_WITH,    // &constant_ends_with_fn
+        CONST_EQUALS,       // &constant_equals_fn
+        CONST_SUBSTRING,    // &constant_substring_fn
+        LIKE_LONG_RE2,      // &like_fn_with_long_constant_pattern
+        REGEX_LONG_RE2,     // &regex_fn_with_long_constant_pattern
+    };
+
     struct LikePredicateState {
         char escape_char{'\\'};
+
+        DispatchKind dispatch_kind{DispatchKind::GENERAL_LIKE};
 
         std::shared_ptr<re2::RE2> re2 = nullptr;
         /// This is the function, set in the prepare function, that will be used to determine

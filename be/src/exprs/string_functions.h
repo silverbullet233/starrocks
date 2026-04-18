@@ -170,11 +170,24 @@ public:
     DEFINE_VECTORIZED_FN(starts_with);
 
     /**
+     * TYPE_GERMAN_STRING overload of `starts_with`. When the prefix fits in the
+     * 4-byte `long_rep.prefix` that every GermanString carries, we answer the
+     * predicate without dereferencing `long_rep.ptr`.
+     */
+    DEFINE_VECTORIZED_FN(starts_with_german_string);
+
+    /**
      * @param: [string_value, subffix]
      * @paramType: [BinaryColumn, BinaryColumn]
      * @return: BooleanColumn
      */
     DEFINE_VECTORIZED_FN(ends_with);
+
+    /**
+     * TYPE_GERMAN_STRING overload of `ends_with`. Compares against the tail of
+     * the stored bytes via `GermanString::get_data()`.
+     */
+    DEFINE_VECTORIZED_FN(ends_with_german_string);
 
     /**
      * Return a string of the specified number of spaces
@@ -535,6 +548,12 @@ public:
     DEFINE_VECTORIZED_FN(regexp_extract);
 
     /**
+     * TYPE_GERMAN_STRING overload of `regexp_extract`. Shares the
+     * `StringFunctionsState` produced by `regexp_extract_prepare`.
+     */
+    DEFINE_VECTORIZED_FN(regexp_extract_german_string);
+
+    /**
      * return all match sub-string
      * @param: [string_value, pattern_value]
      * @paramType: [BinaryColumn, BinaryColumn]
@@ -548,6 +567,12 @@ public:
      * @return: BinaryColumn
      */
     DEFINE_VECTORIZED_FN(regexp_replace);
+
+    /**
+     * TYPE_GERMAN_STRING overload of `regexp_replace`. Shares the
+     * `StringFunctionsState` produced by `regexp_replace_prepare`.
+     */
+    DEFINE_VECTORIZED_FN(regexp_replace_german_string);
 
     static StatusOr<ColumnPtr> regexp_replace_use_hyperscan(StringFunctionsState* state, const Columns& columns);
     static StatusOr<ColumnPtr> regexp_replace_use_hyperscan_vec(StringFunctionsState* state, const Columns& columns);
