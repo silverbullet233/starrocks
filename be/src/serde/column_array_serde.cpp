@@ -348,42 +348,75 @@ public:
     }
 };
 
-// Simple per-row length-prefixed serialization for GermanStringColumn.
-// Format: [row_count:u32][for each row: len:u32 + bytes[len]].
+// Serialize a GermanStringColumn using the SAME wire format as
+// BinaryColumnBase<uint32_t>:
+//   [bytes_size:u32] [bytes] [offsets_size:u32] [offsets]
+// This lets a sender GermanStringColumn interop with a receiver BinaryColumn
+// (or vice versa) when the two sides of a shuffle / sort / exchange
+// disagree on the concrete column type.
 class GermanStringColumnSerde {
 public:
     static int64_t max_serialized_size(const GermanStringColumn& column) {
-        int64_t total = sizeof(uint32_t); // row count
         const auto& data = column.get_data();
-        total += data.size() * sizeof(uint32_t); // per-row length
+        int64_t bytes_total = 0;
         for (const auto& gs : data) {
-            total += gs.len;
+            bytes_total += gs.len;
         }
-        return total;
+        int64_t offsets_count = static_cast<int64_t>(data.size()) + 1;
+        return sizeof(uint32_t) + bytes_total + sizeof(uint32_t) + offsets_count * sizeof(uint32_t);
     }
 
     static uint8_t* serialize(const GermanStringColumn& column, uint8_t* buff) {
         const auto& data = column.get_data();
-        buff = write_little_endian_32(static_cast<uint32_t>(data.size()), buff);
+        uint32_t bytes_size = 0;
         for (const auto& gs : data) {
-            buff = write_little_endian_32(static_cast<uint32_t>(gs.len), buff);
+            bytes_size += gs.len;
+        }
+        buff = write_little_endian_32(bytes_size, buff);
+        for (const auto& gs : data) {
             if (gs.len > 0) {
                 buff = write_raw(gs.get_data(), gs.len, buff);
             }
+        }
+        uint32_t offsets_count = static_cast<uint32_t>(data.size()) + 1;
+        uint32_t offsets_size = offsets_count * sizeof(uint32_t);
+        buff = write_little_endian_32(offsets_size, buff);
+        uint32_t offset = 0;
+        buff = write_little_endian_32(offset, buff);
+        for (const auto& gs : data) {
+            offset += gs.len;
+            buff = write_little_endian_32(offset, buff);
         }
         return buff;
     }
 
     static StatusOr<const uint8_t*> deserialize(const uint8_t* buff, const uint8_t* end, GermanStringColumn* column) {
-        uint32_t row_count = 0;
-        ASSIGN_OR_RETURN(buff, read_little_endian_32(buff, end, &row_count));
-        column->reserve(column->size() + row_count);
-        for (uint32_t i = 0; i < row_count; ++i) {
-            uint32_t len = 0;
-            ASSIGN_OR_RETURN(buff, read_little_endian_32(buff, end, &len));
-            RETURN_IF_ERROR(check_remaining_size(buff, end, len));
-            column->append_bytes(reinterpret_cast<const char*>(buff), len);
-            buff += len;
+        uint32_t bytes_size = 0;
+        ASSIGN_OR_RETURN(buff, read_little_endian_32(buff, end, &bytes_size));
+        RETURN_IF_ERROR(check_remaining_size(buff, end, bytes_size));
+        const uint8_t* bytes_ptr = buff;
+        buff += bytes_size;
+
+        uint32_t offsets_size = 0;
+        ASSIGN_OR_RETURN(buff, read_little_endian_32(buff, end, &offsets_size));
+        RETURN_IF_ERROR(check_remaining_size(buff, end, offsets_size));
+        if (offsets_size < sizeof(uint32_t) || (offsets_size % sizeof(uint32_t)) != 0) {
+            return Status::Corruption(fmt::format("invalid offsets size {} for GermanStringColumn", offsets_size));
+        }
+        uint32_t offsets_count = offsets_size / sizeof(uint32_t);
+        uint32_t num_rows = offsets_count - 1;
+
+        column->reserve(column->size() + num_rows);
+        uint32_t prev = 0;
+        std::memcpy(&prev, buff, sizeof(uint32_t));
+        buff += sizeof(uint32_t);
+        for (uint32_t i = 0; i < num_rows; ++i) {
+            uint32_t cur = 0;
+            std::memcpy(&cur, buff, sizeof(uint32_t));
+            buff += sizeof(uint32_t);
+            uint32_t row_len = cur - prev;
+            column->append_bytes(reinterpret_cast<const char*>(bytes_ptr) + prev, row_len);
+            prev = cur;
         }
         return buff;
     }
