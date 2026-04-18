@@ -119,7 +119,6 @@ Status GlobalDictDecoderBase<Dict>::decode_string(const Column* in, Column* out)
     }
 
     if (!in->is_nullable()) {
-        auto* res_column = down_cast<StringColumnType*>(out);
         const auto* column = down_cast<const DictColumnType*>(in);
         const auto& dict_data = column->immutable_data();
 
@@ -133,7 +132,10 @@ Status GlobalDictDecoderBase<Dict>::decode_string(const Column* in, Column* out)
             }
             res_slices[i] = iter->second;
         }
-        res_column->append_strings(res_slices.data(), num_rows);
+        // `out` may be either BinaryColumn (default) or GermanStringColumn
+        // when the query path is running under enable_german_string=true.
+        // Both expose append_strings(const Slice*, size_t) via virtual.
+        [[maybe_unused]] bool ok = out->append_strings(res_slices.data(), num_rows);
 
         return Status::OK();
     }
@@ -142,7 +144,6 @@ Status GlobalDictDecoderBase<Dict>::decode_string(const Column* in, Column* out)
     auto* res_column = down_cast<NullableColumn*>(out);
     res_column->null_column_data().resize(in->size());
 
-    auto* res_data_column = down_cast<StringColumnType*>(res_column->data_column_raw_ptr());
     const auto* data_column = down_cast<const DictColumnType*>(column->data_column().get());
     const auto& dict_data = data_column->immutable_data();
 
@@ -160,7 +161,8 @@ Status GlobalDictDecoderBase<Dict>::decode_string(const Column* in, Column* out)
             // res_slices[i] is an empty slice which is done by constructor, so do nothing here.
         }
     }
-    res_data_column->append_strings(res_slices.data(), num_rows);
+    // `out`'s data column may be BinaryColumn or GermanStringColumn.
+    [[maybe_unused]] bool ok = res_column->data_column_raw_ptr()->append_strings(res_slices.data(), num_rows);
     strings::memcpy_inlined(res_column->null_column_data().data(), column->null_column_data().data(),
                             num_rows * sizeof(NullColumn::ValueType));
     res_column->set_has_null(column->has_null());
