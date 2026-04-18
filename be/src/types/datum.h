@@ -35,6 +35,7 @@ class HyperLogLog;
 class PercentileValue;
 class JsonValue;
 class VariantRowValue;
+class GermanString;
 } // namespace starrocks
 
 namespace starrocks {
@@ -79,6 +80,11 @@ public:
     TimestampValue get_timestamp() const { return get<TimestampValue>(); }
     DateValue get_date() const { return get<DateValue>(); }
     const Slice& get_slice() const { return get<Slice>(); }
+    // Build a GermanString view over the Slice variant's bytes. The returned
+    // value's long_rep.ptr (when len > 12) points into the source Slice's
+    // storage, so the caller must keep the backing bytes alive for the lifetime
+    // of the returned GermanString.
+    GermanString get_german_string() const;
     const int128_t& get_int128() const { return get<int128_t>(); }
     const int256_t& get_int256() const { return get<int256_t>(); }
     const decimal12_t& get_decimal12() const { return get<decimal12_t>(); }
@@ -109,6 +115,10 @@ public:
     void set_int128(const int128_t& v) { set<decltype(v)>(v); }
     void set_int256(const int256_t& v) { set<decltype(v)>(v); }
     void set_slice(const Slice& v) { set<decltype(v)>(v); }
+    // Store a GermanString via the existing Slice variant: no new variant slot.
+    // The Datum borrows the GermanString's bytes; the caller must keep them
+    // alive for the Datum's lifetime.
+    void set_german_string(const GermanString& v);
     void set_decimal12(const decimal12_t& v) { set<decltype(v)>(v); }
     void set_decimal(const DecimalV2Value& v) { set<decltype(v)>(v); }
     void set_array(const DatumArray& v) { set<decltype(v)>(v); }

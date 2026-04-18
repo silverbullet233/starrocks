@@ -16,10 +16,13 @@
 
 #include <gtest/gtest.h>
 
+#include <cstring>
 #include <string>
 #include <vector>
 
+#include "column/german_string.h"
 #include "column/vectorized_fwd.h"
+#include "types/datum.h"
 
 namespace starrocks {
 namespace {
@@ -188,6 +191,36 @@ TEST(GermanStringColumnTest, UpdateRowsInPlace) {
     // Replacement column dropped; col must still resolve its own long-rep bytes.
     replacement.reset();
     EXPECT_EQ("R1 brand new long string value", slice_to_string(col->get_slice(1)));
+}
+
+TEST(GermanStringColumnTest, AppendDatumAndGetRoundTrip) {
+    auto col = GermanStringColumn::create();
+    // append_datum now routes through Datum's Slice variant; long-rep bytes end
+    // up copied into the column's arena.
+    Datum short_d(Slice("dshort"));
+    Datum long_d(Slice("datum long string long string"));
+    col->append_datum(short_d);
+    col->append_datum(long_d);
+
+    ASSERT_EQ(2, col->size());
+    // Datum get() still returns a Slice-backed Datum aliasing the stored bytes.
+    EXPECT_EQ("dshort", slice_to_string(col->get(0).get_slice()));
+    EXPECT_EQ("datum long string long string", slice_to_string(col->get(1).get_slice()));
+}
+
+TEST(GermanStringColumnTest, DatumGetGermanStringWrapsSliceBytes) {
+    // Datum::get_german_string() is a thin view over the stored Slice bytes.
+    const char* long_bytes = "long payload owned by the caller";
+    Datum d(Slice(long_bytes, strlen(long_bytes)));
+    GermanString gs = d.get_german_string();
+    EXPECT_EQ(strlen(long_bytes), gs.len);
+    EXPECT_EQ(0, std::memcmp(gs.get_data(), long_bytes, gs.len));
+
+    // set_german_string stores bytes as a Slice aliasing the GermanString's payload.
+    Datum d2;
+    d2.set_german_string(gs);
+    EXPECT_EQ(gs.len, d2.get_slice().size);
+    EXPECT_EQ(gs.get_data(), d2.get_slice().data);
 }
 
 } // namespace starrocks

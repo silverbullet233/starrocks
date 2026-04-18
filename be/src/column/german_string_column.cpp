@@ -65,7 +65,9 @@ void GermanStringColumn::append_bytes(const char* data, size_t len) {
 }
 
 void GermanStringColumn::append_datum(const Datum& datum) {
-    // TODO(A3): switch to datum.get_german_string() once Datum carries GermanString.
+    // Datum stores strings as `Slice`; `Datum::get_german_string()` is just a
+    // thin wrapper over the same bytes, so we route through `get_slice()` and
+    // copy into this column's arena for long strings.
     const Slice& s = datum.get_slice();
     _append_raw(s.data, s.size);
 }
@@ -297,7 +299,10 @@ void GermanStringColumn::put_mysql_row_buffer(MysqlRowBuffer* buf, size_t idx, b
 }
 
 Datum GermanStringColumn::get(size_t n) const {
-    // Datum does not yet carry a GermanString variant (lands in A3); expose as Slice.
+    // Canonical storage for a string-valued Datum is `Slice`. The bytes are
+    // owned by this column's arena (for long strings) or live inline inside the
+    // GermanString row, so the Slice borrows into memory that outlives the
+    // caller's use of the Datum.
     return Datum(Slice(_data[n].get_data(), _data[n].len));
 }
 

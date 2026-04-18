@@ -93,6 +93,10 @@ class GermanStringColumn final : public CowFactory<ColumnFactory<Column, GermanS
 public:
     using ValueType = GermanString;
     using Container = Buffer<GermanString>;
+    // `ImmContainer` is the read-only surface RunTimeTypeTraits exposes for batch
+    // code. GermanStringColumn stores values directly in `Buffer<GermanString>`,
+    // so we can reuse it as the immutable view.
+    using ImmContainer = Buffer<GermanString>;
 
     GermanStringColumn() = default;
     explicit GermanStringColumn(size_t size) : _data(size) {}
@@ -156,8 +160,8 @@ public:
 
     // --- Appends ------------------------------------------------------------
 
-    // Accept a Slice by value from Datum. Full Datum::get_german_string() support
-    // lands with A3; until then we fall back to treating the Datum as a Slice.
+    // Accept a string-valued Datum (canonical storage is `Slice`). Long strings
+    // are copied into this column's arena.
     void append_datum(const Datum& datum) override;
 
     void append(const Column& src, size_t offset, size_t count) override;

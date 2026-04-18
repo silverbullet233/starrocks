@@ -19,6 +19,7 @@
 #include "base/types/int256.h"
 #include "column/binary_column.h"
 #include "column/decimalv3_column.h"
+#include "column/german_string_column.h"
 #include "column/json_column.h"
 #include "column/nullable_column.h"
 #include "column/object_column.h"
@@ -88,6 +89,8 @@ template <>
 inline constexpr bool isArithmeticLT<TYPE_VARBINARY> = false;
 template <>
 inline constexpr bool isArithmeticLT<TYPE_VARIANT> = false;
+template <>
+inline constexpr bool isArithmeticLT<TYPE_GERMAN_STRING> = false;
 
 template <LogicalType logical_type>
 constexpr bool isSliceLT = false;
@@ -100,6 +103,11 @@ inline constexpr bool isSliceLT<TYPE_VARCHAR> = true;
 
 template <>
 inline constexpr bool isSliceLT<TYPE_VARBINARY> = true;
+
+// TYPE_GERMAN_STRING is intentionally NOT a Slice type: generic Slice-based
+// paths must not pick it up, so the code paths can be benchmarked distinctly.
+template <>
+inline constexpr bool isSliceLT<TYPE_GERMAN_STRING> = false;
 
 template <LogicalType logical_type>
 struct RunTimeTypeTraits {};
@@ -250,6 +258,14 @@ struct RunTimeTypeTraits<TYPE_VARCHAR> {
     using CppType = Slice;
     using ColumnType = BinaryColumn;
     using LargeColumnType = LargeBinaryColumn;
+    using ImmContainerType = ColumnType::ImmContainer;
+};
+
+template <>
+struct RunTimeTypeTraits<TYPE_GERMAN_STRING> {
+    using CppType = GermanString;
+    using ColumnType = GermanStringColumn;
+    using LargeColumnType = GermanStringColumn;
     using ImmContainerType = ColumnType::ImmContainer;
 };
 

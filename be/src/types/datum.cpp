@@ -16,10 +16,21 @@
 
 #include <variant>
 
+#include "column/german_string.h"
+
 namespace starrocks {
 
 Datum convert2Datum(const DatumKey& key) {
     return std::visit([](auto&& arg) -> Datum { return arg; }, key);
+}
+
+GermanString Datum::get_german_string() const {
+    const Slice& s = get_slice();
+    return GermanString(s.data, s.size);
+}
+
+void Datum::set_german_string(const GermanString& v) {
+    set_slice(Slice(v.get_data(), v.len));
 }
 
 } // namespace starrocks
