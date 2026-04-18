@@ -61,7 +61,7 @@ TEST_F(CastExprGermanStringTest, VarcharInlineToGermanString) {
     child_node.type = gen_type_desc(TPrimitiveType::VARCHAR);
     const std::string s = "hi";
     MockVectorizedExpr<TYPE_VARCHAR> col(child_node, 5, Slice(s));
-    expr->_children.push_back(&col);
+    expr->add_child(&col);
 
     ColumnPtr out = expr->evaluate(nullptr, nullptr);
     ASSERT_NE(nullptr, out.get());
@@ -88,7 +88,7 @@ TEST_F(CastExprGermanStringTest, VarcharLongToGermanString) {
     const std::string s = "this is a long-ish german string payload";
     ASSERT_GT(s.size(), 12u);
     MockVectorizedExpr<TYPE_VARCHAR> col(child_node, 4, Slice(s));
-    expr->_children.push_back(&col);
+    expr->add_child(&col);
 
     ColumnPtr out = expr->evaluate(nullptr, nullptr);
     ASSERT_NE(nullptr, out.get());
@@ -120,7 +120,7 @@ TEST_F(CastExprGermanStringTest, GermanStringToVarcharRoundTrip) {
     TExprNode child_node = expr_node;
     child_node.type = gen_type_desc(TPrimitiveType::GERMAN_STRING);
     MockColumnExpr child(child_node, std::move(src));
-    expr->_children.push_back(&child);
+    expr->add_child(&child);
 
     ColumnPtr out = expr->evaluate(nullptr, nullptr);
     ASSERT_NE(nullptr, out.get());
@@ -146,7 +146,7 @@ TEST_F(CastExprGermanStringTest, IntToGermanString) {
     TExprNode child_node = expr_node;
     child_node.type = gen_type_desc(TPrimitiveType::INT);
     MockVectorizedExpr<TYPE_INT> col(child_node, 3, 1234567);
-    expr->_children.push_back(&col);
+    expr->add_child(&col);
 
     ColumnPtr out = expr->evaluate(nullptr, nullptr);
     ASSERT_NE(nullptr, out.get());
@@ -174,7 +174,7 @@ TEST_F(CastExprGermanStringTest, GermanStringToInt) {
     TExprNode child_node = expr_node;
     child_node.type = gen_type_desc(TPrimitiveType::GERMAN_STRING);
     MockColumnExpr child(child_node, std::move(src));
-    expr->_children.push_back(&child);
+    expr->add_child(&child);
 
     ColumnPtr out = expr->evaluate(nullptr, nullptr);
     ASSERT_NE(nullptr, out.get());
@@ -205,7 +205,7 @@ TEST_F(CastExprGermanStringTest, GermanStringToBoolean) {
     TExprNode child_node = expr_node;
     child_node.type = gen_type_desc(TPrimitiveType::GERMAN_STRING);
     MockColumnExpr child(child_node, std::move(src));
-    expr->_children.push_back(&child);
+    expr->add_child(&child);
 
     ColumnPtr out = expr->evaluate(nullptr, nullptr);
     ASSERT_NE(nullptr, out.get());
@@ -234,7 +234,7 @@ TEST_F(CastExprGermanStringTest, NullVarcharToGermanString) {
     // MockNullVectorizedExpr marks row i as null if ((flag + i) % 2) != 0;
     // default flag == 0 so odd rows are null and even rows carry "abc".
     MockNullVectorizedExpr<TYPE_VARCHAR> col(child_node, 6, Slice("abc"));
-    expr->_children.push_back(&col);
+    expr->add_child(&col);
 
     ColumnPtr out = expr->evaluate(nullptr, nullptr);
     ASSERT_NE(nullptr, out.get());
@@ -264,7 +264,7 @@ TEST_F(CastExprGermanStringTest, OnlyNullGermanStringToInt) {
     TExprNode child_node = expr_node;
     child_node.type = gen_type_desc(TPrimitiveType::GERMAN_STRING);
     MockNullVectorizedExpr<TYPE_GERMAN_STRING> col(child_node, 4, GermanString(), /*only_null=*/true);
-    expr->_children.push_back(&col);
+    expr->add_child(&col);
 
     ColumnPtr out = expr->evaluate(nullptr, nullptr);
     ASSERT_NE(nullptr, out.get());
