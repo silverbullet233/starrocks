@@ -95,14 +95,17 @@ public:
 
     StatusOr<ColumnPtr> evaluate_checked(ExprContext* context, Chunk* ptr) override {
         if (_input_type != LogicalType::TYPE_ARRAY && _input_type != LogicalType::TYPE_VARCHAR &&
-            _input_type != LogicalType::TYPE_GERMAN_STRING) {
-            return Status::InternalError(fmt::format("dictFuncExpr can't resolve type: {}", _dict_opt_ctx->slot_id));
+            _input_type != LogicalType::TYPE_CHAR && _input_type != LogicalType::TYPE_GERMAN_STRING) {
+            return Status::InternalError(fmt::format(
+                    "dictFuncExpr can't resolve type: {} (slot_id={})", static_cast<int>(_input_type),
+                    _dict_opt_ctx->slot_id));
         }
 
         auto& input = ptr->get_column_by_slot_id(_dict_opt_ctx->slot_id);
         size_t num_rows = ptr->num_rows();
 
-        if (_input_type == LogicalType::TYPE_VARCHAR || _input_type == LogicalType::TYPE_GERMAN_STRING) {
+        if (_input_type == LogicalType::TYPE_VARCHAR || _input_type == LogicalType::TYPE_CHAR ||
+            _input_type == LogicalType::TYPE_GERMAN_STRING) {
             return _translate_string(input, num_rows);
         } else {
             return _translate_array(input, num_rows);
