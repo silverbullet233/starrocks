@@ -387,6 +387,71 @@ private:
     std::vector<int> _source_field_indices;
 };
 
+// Cast a TYPE_GERMAN_STRING column to any non-string target.
+//
+// The implementation materializes the GermanString column into a transient
+// BinaryColumn view (bytes are copied once) and delegates to the stored inner
+// VARCHAR-source cast. This is cold-path cost per the plan: explicit CAST is
+// not the silent VARCHAR <-> GERMAN_STRING conversion the plan forbids.
+// TODO: optimize if this path becomes hot.
+class CastFromGermanStringExpr final : public Expr {
+public:
+    CastFromGermanStringExpr(const TExprNode& node, Expr* inner_cast)
+            : Expr(node), _inner_cast(inner_cast) {}
+
+    ~CastFromGermanStringExpr() override = default;
+
+    StatusOr<ColumnPtr> evaluate_checked(ExprContext* context, Chunk* ptr) override;
+
+    Expr* clone(ObjectPool* pool) const override {
+        auto cloned = std::unique_ptr<CastFromGermanStringExpr>(new CastFromGermanStringExpr(*this));
+        if (_inner_cast != nullptr) {
+            cloned->_inner_cast = Expr::copy(pool, _inner_cast);
+        }
+        return pool->add(cloned.release());
+    }
+
+private:
+    // Invoked only by clone.
+    CastFromGermanStringExpr(const CastFromGermanStringExpr& rhs) : Expr(rhs) {}
+
+    Expr* _inner_cast = nullptr;
+};
+
+// Cast any source to TYPE_GERMAN_STRING.
+//
+// When the source is already a string type (VARCHAR / CHAR), the implementation
+// iterates the BinaryColumn and appends into a GermanStringColumn directly.
+// Otherwise it invokes the stored inner source->VARCHAR cast and translates the
+// resulting BinaryColumn to a GermanStringColumn. This routes through an
+// intermediate BinaryColumn on the cold CAST path.
+// TODO: optimize if this path becomes hot.
+class CastToGermanStringExpr final : public Expr {
+public:
+    CastToGermanStringExpr(const TExprNode& node, Expr* inner_cast, bool source_is_string)
+            : Expr(node), _inner_cast(inner_cast), _source_is_string(source_is_string) {}
+
+    ~CastToGermanStringExpr() override = default;
+
+    StatusOr<ColumnPtr> evaluate_checked(ExprContext* context, Chunk* ptr) override;
+
+    Expr* clone(ObjectPool* pool) const override {
+        auto cloned = std::unique_ptr<CastToGermanStringExpr>(new CastToGermanStringExpr(*this));
+        if (_inner_cast != nullptr) {
+            cloned->_inner_cast = Expr::copy(pool, _inner_cast);
+        }
+        return pool->add(cloned.release());
+    }
+
+private:
+    // Invoked only by clone.
+    CastToGermanStringExpr(const CastToGermanStringExpr& rhs)
+            : Expr(rhs), _source_is_string(rhs._source_is_string) {}
+
+    Expr* _inner_cast = nullptr;
+    bool _source_is_string = false;
+};
+
 // cast NULL OR Boolean to ComplexType
 // For example.
 //  cast map{1: NULL} to map<int, ARRAY<int>>

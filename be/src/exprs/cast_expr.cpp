@@ -35,9 +35,12 @@
 #include "base/types/int128.h"
 #include "base/types/numeric_types.h"
 #include "base/utility/mysql_global.h"
+#include "column/binary_column.h"
 #include "column/column_builder.h"
 #include "column/column_helper.h"
 #include "column/column_viewer.h"
+#include "column/const_column.h"
+#include "column/german_string_column.h"
 #include "column/json_converter.h"
 #include "column/nullable_column.h"
 #include "column/runtime_type_traits.h"
@@ -1742,6 +1745,160 @@ StatusOr<ColumnPtr> CastToVariantExpr::evaluate_checked(ExprContext* context, Ch
     return builder.build(column->is_constant());
 }
 
+namespace {
+
+// Copy every row of a BinaryColumn into a fresh GermanStringColumn. Bytes are
+// copied so the resulting column owns its own arena. This is the cold-path
+// translator used by CastToGermanStringExpr.
+MutableColumnPtr binary_column_to_german_string_column(const BinaryColumn& src) {
+    auto out = GermanStringColumn::create();
+    const size_t n = src.size();
+    out->reserve(n);
+    for (size_t i = 0; i < n; ++i) {
+        out->append(src.get_slice(i));
+    }
+    return out;
+}
+
+// Copy every row of a GermanStringColumn into a fresh BinaryColumn.
+MutableColumnPtr german_string_column_to_binary_column(const GermanStringColumn& src) {
+    auto out = BinaryColumn::create();
+    const size_t n = src.size();
+    out->reserve(n);
+    Buffer<Slice> slices;
+    slices.reserve(n);
+    for (size_t i = 0; i < n; ++i) {
+        slices.emplace_back(src.get_slice(i));
+    }
+    out->append_strings(slices.data(), slices.size());
+    return out;
+}
+
+// Translate a column whose data is GermanStringColumn (possibly wrapped in
+// NullableColumn or ConstColumn) into the equivalent BinaryColumn-backed
+// column. This is the inverse of ColumnHelper::convert_german_string_to_binary_column's
+// nullable handling but written at the cast-expression layer.
+ColumnPtr german_column_to_binary_column(const ColumnPtr& src) {
+    if (src == nullptr) {
+        return src;
+    }
+    if (src->is_constant()) {
+        const auto* const_col = down_cast<const ConstColumn*>(src.get());
+        auto inner = german_column_to_binary_column(const_col->data_column());
+        if (inner == nullptr) {
+            return src;
+        }
+        return ConstColumn::create(std::move(*inner).mutate(), src->size());
+    }
+    if (src->is_nullable()) {
+        const auto* nullable = down_cast<const NullableColumn*>(src.get());
+        const auto* gs = dynamic_cast<const GermanStringColumn*>(nullable->data_column().get());
+        if (gs == nullptr) {
+            return src;
+        }
+        auto binary_data = german_string_column_to_binary_column(*gs);
+        auto null_clone = NullColumn::static_pointer_cast(nullable->null_column()->clone());
+        return NullableColumn::create(std::move(binary_data), std::move(null_clone));
+    }
+    const auto* gs = dynamic_cast<const GermanStringColumn*>(src.get());
+    if (gs == nullptr) {
+        return src;
+    }
+    return german_string_column_to_binary_column(*gs);
+}
+
+// Translate a column whose data is BinaryColumn (possibly wrapped in
+// NullableColumn or ConstColumn) into the equivalent GermanStringColumn-backed
+// column. If the inner data column is already a GermanStringColumn (identity
+// cast path), the input is returned unchanged.
+ColumnPtr binary_column_to_german_column(const ColumnPtr& src) {
+    if (src == nullptr) {
+        return src;
+    }
+    if (src->is_constant()) {
+        const auto* const_col = down_cast<const ConstColumn*>(src.get());
+        auto inner = binary_column_to_german_column(const_col->data_column());
+        if (inner.get() == const_col->data_column().get()) {
+            return src;
+        }
+        return ConstColumn::create(std::move(*inner).mutate(), src->size());
+    }
+    if (src->is_nullable()) {
+        const auto* nullable = down_cast<const NullableColumn*>(src.get());
+        if (dynamic_cast<const GermanStringColumn*>(nullable->data_column().get()) != nullptr) {
+            return src;
+        }
+        const auto* bin = dynamic_cast<const BinaryColumn*>(nullable->data_column().get());
+        if (bin == nullptr) {
+            return src;
+        }
+        auto gs_data = binary_column_to_german_string_column(*bin);
+        auto null_clone = NullColumn::static_pointer_cast(nullable->null_column()->clone());
+        return NullableColumn::create(std::move(gs_data), std::move(null_clone));
+    }
+    if (dynamic_cast<const GermanStringColumn*>(src.get()) != nullptr) {
+        return src;
+    }
+    const auto* bin = dynamic_cast<const BinaryColumn*>(src.get());
+    if (bin == nullptr) {
+        return src;
+    }
+    return binary_column_to_german_string_column(*bin);
+}
+
+} // namespace
+
+StatusOr<ColumnPtr> CastFromGermanStringExpr::evaluate_checked(ExprContext* context, Chunk* ptr) {
+    DCHECK_EQ(_children.size(), 1);
+    ASSIGN_OR_RETURN(ColumnPtr src_column, _children[0]->evaluate_checked(context, ptr));
+
+    const size_t num_rows = src_column->size();
+    if (num_rows != 0 && ColumnHelper::count_nulls(src_column) == num_rows) {
+        return ColumnHelper::create_const_null_column(num_rows);
+    }
+
+    // Translate GermanString bytes into a transient BinaryColumn. This is a
+    // cold-path copy; see plan trade-off. Bytes are duplicated so the resulting
+    // column is self-contained.
+    ColumnPtr binary_column = german_column_to_binary_column(src_column);
+
+    if (_inner_cast == nullptr) {
+        // Target is TYPE_VARCHAR: the translated BinaryColumn is the result.
+        return binary_column;
+    }
+
+    // Feed the translated column into the inner VARCHAR-source cast through a
+    // transient chunk. The inner cast's child is a ColumnRef at slot_id 0.
+    Chunk inner_chunk;
+    inner_chunk.append_column(std::move(binary_column), 0);
+    return _inner_cast->evaluate_checked(context, &inner_chunk);
+}
+
+StatusOr<ColumnPtr> CastToGermanStringExpr::evaluate_checked(ExprContext* context, Chunk* ptr) {
+    DCHECK_EQ(_children.size(), 1);
+    ColumnPtr varchar_column;
+    if (_source_is_string) {
+        // Child produces VARCHAR / CHAR (BinaryColumn) already.
+        ASSIGN_OR_RETURN(varchar_column, _children[0]->evaluate_checked(context, ptr));
+    } else {
+        // Evaluate the real source, then route its output into the inner
+        // source->VARCHAR cast via a transient chunk whose slot_id 0 matches
+        // the ColumnRef wired into the inner cast.
+        DCHECK(_inner_cast != nullptr);
+        ASSIGN_OR_RETURN(ColumnPtr source_column, _children[0]->evaluate_checked(context, ptr));
+        Chunk inner_chunk;
+        inner_chunk.append_column(std::move(source_column), 0);
+        ASSIGN_OR_RETURN(varchar_column, _inner_cast->evaluate_checked(context, &inner_chunk));
+    }
+
+    const size_t num_rows = varchar_column->size();
+    if (num_rows != 0 && ColumnHelper::count_nulls(varchar_column) == num_rows) {
+        return ColumnHelper::create_const_null_column(num_rows);
+    }
+
+    return binary_column_to_german_column(varchar_column);
+}
+
 // Check whether JSON can be cast to complex types (ARRAY / MAP / STRUCT)
 inline bool json_to_complex_type(LogicalType from_type, LogicalType to_type) {
     switch (from_type) {
@@ -1978,6 +2135,67 @@ Expr* VectorizedCastExprFactory::create_primitive_cast(ObjectPool* pool, const T
         // NULL TO OTHER TYPE, direct return
         from_type = to_type;
     }
+
+    // ----- TYPE_GERMAN_STRING casts --------------------------------------
+    // GermanString casts are materialized through the existing VARCHAR-based
+    // casts. String <-> GermanString is a direct per-row copy; any other
+    // direction routes through an intermediate BinaryColumn. This is fine
+    // because CAST is a cold path: the plan forbids silent VARCHAR<->GS
+    // conversions, not explicit CAST.
+    // TODO: optimize if these paths become hot.
+    if (from_type == TYPE_GERMAN_STRING && to_type == TYPE_GERMAN_STRING) {
+        // Identity cast: pass the column through unchanged. The wrapper checks
+        // whether the evaluated input is already a GermanStringColumn.
+        return new CastToGermanStringExpr(node, /*inner_cast=*/nullptr, /*source_is_string=*/true);
+    }
+
+    if (from_type == TYPE_GERMAN_STRING) {
+        if (to_type == TYPE_VARCHAR) {
+            // Direct GERMAN_STRING -> VARCHAR per-row copy; no inner cast.
+            return new CastFromGermanStringExpr(node, /*inner_cast=*/nullptr);
+        }
+        // Rewrite from GERMAN_STRING to a source-VARCHAR cast and wrap.
+        TypeDescriptor varchar_desc(TYPE_VARCHAR);
+        TExprNode inner_node = node;
+        inner_node.__set_child_type(to_thrift(TYPE_VARCHAR));
+        inner_node.__set_child_type_desc(varchar_desc.to_thrift());
+        Expr* inner_cast = create_primitive_cast(pool, inner_node, TYPE_VARCHAR, to_type, allow_throw_exception);
+        if (inner_cast == nullptr) {
+            return nullptr;
+        }
+        pool->add(inner_cast);
+        auto inner_child = create_slot_ref(varchar_desc);
+        inner_cast->add_child(inner_child.get());
+        pool->add(inner_child.release());
+        return new CastFromGermanStringExpr(node, inner_cast);
+    }
+
+    if (to_type == TYPE_GERMAN_STRING) {
+        const bool source_is_string = is_string_type(from_type);
+        Expr* inner_cast = nullptr;
+        if (!source_is_string) {
+            // Build a VARCHAR-target cast tree with its own ColumnRef at
+            // slot_id 0; CastToGermanStringExpr::evaluate_checked feeds the
+            // real child's output into a transient chunk at slot 0.
+            TypeDescriptor varchar_desc(TYPE_VARCHAR);
+            TExprNode inner_node = node;
+            inner_node.__set_type(varchar_desc.to_thrift());
+            inner_cast = create_primitive_cast(pool, inner_node, from_type, TYPE_VARCHAR, allow_throw_exception);
+            if (inner_cast == nullptr) {
+                return nullptr;
+            }
+            pool->add(inner_cast);
+            TypeDescriptor from_desc(from_type);
+            if (node.__isset.child_type_desc) {
+                from_desc = TypeDescriptor::from_thrift(node.child_type_desc);
+            }
+            auto inner_child = create_slot_ref(from_desc);
+            inner_cast->add_child(inner_child.get());
+            pool->add(inner_child.release());
+        }
+        return new CastToGermanStringExpr(node, inner_cast, source_is_string);
+    }
+
     if (from_type == TYPE_VARCHAR && to_type == TYPE_HLL) {
         return dispatch_throw_exception<CastVarcharToHll>(allow_throw_exception, node);
     }
