@@ -39,6 +39,7 @@
 #include "column/column_builder.h"
 #include "column/column_helper.h"
 #include "column/column_viewer.h"
+#include "column/german_string_column.h"
 #include "column/vectorized_fwd.h"
 #include "common/config_network_fwd.h"
 #include "common/system/backend_options.h"

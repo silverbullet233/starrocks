@@ -20,6 +20,7 @@
 #include "column/column.h"
 #include "column/const_column.h"
 #include "column/decimalv3_column.h"
+#include "column/german_string_column.h"
 #include "column/json_column.h"
 #include "column/map_column.h"
 #include "column/object_column.h"

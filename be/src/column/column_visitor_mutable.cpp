@@ -27,6 +27,8 @@ VISIT_IMPL(MapColumn)
 VISIT_IMPL(StructColumn)
 VISIT_IMPL(BinaryColumn)
 VISIT_IMPL(LargeBinaryColumn)
+// GermanStringColumn default visit returns NotSupported; visitors that care
+// must override do_visit(GermanStringColumn*) explicitly.
 VISIT_IMPL(GermanStringColumn)
 VISIT_IMPL(Int8Column)
 VISIT_IMPL(UInt8Column)

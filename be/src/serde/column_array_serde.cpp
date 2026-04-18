@@ -30,6 +30,7 @@
 #include "column/column_visitor_adapter.h"
 #include "column/const_column.h"
 #include "column/fixed_length_column.h"
+#include "column/german_string_column.h"
 #include "column/json_column.h"
 #include "column/map_column.h"
 #include "column/nullable_column.h"
@@ -342,6 +343,47 @@ public:
             ASSIGN_OR_RETURN(buff, decode_integers<is_i32>(buff, end, column->get_offset().data(), offset_bytes_size));
         } else {
             ASSIGN_OR_RETURN(buff, read_raw(buff, end, column->get_offset().data(), offset_bytes_size));
+        }
+        return buff;
+    }
+};
+
+// Simple per-row length-prefixed serialization for GermanStringColumn.
+// Format: [row_count:u32][for each row: len:u32 + bytes[len]].
+class GermanStringColumnSerde {
+public:
+    static int64_t max_serialized_size(const GermanStringColumn& column) {
+        int64_t total = sizeof(uint32_t); // row count
+        const auto& data = column.get_data();
+        total += data.size() * sizeof(uint32_t); // per-row length
+        for (const auto& gs : data) {
+            total += gs.len;
+        }
+        return total;
+    }
+
+    static uint8_t* serialize(const GermanStringColumn& column, uint8_t* buff) {
+        const auto& data = column.get_data();
+        buff = write_little_endian_32(static_cast<uint32_t>(data.size()), buff);
+        for (const auto& gs : data) {
+            buff = write_little_endian_32(static_cast<uint32_t>(gs.len), buff);
+            if (gs.len > 0) {
+                buff = write_raw(gs.get_data(), gs.len, buff);
+            }
+        }
+        return buff;
+    }
+
+    static StatusOr<const uint8_t*> deserialize(const uint8_t* buff, const uint8_t* end, GermanStringColumn* column) {
+        uint32_t row_count = 0;
+        ASSIGN_OR_RETURN(buff, read_little_endian_32(buff, end, &row_count));
+        column->reserve(column->size() + row_count);
+        for (uint32_t i = 0; i < row_count; ++i) {
+            uint32_t len = 0;
+            ASSIGN_OR_RETURN(buff, read_little_endian_32(buff, end, &len));
+            RETURN_IF_ERROR(check_remaining_size(buff, end, len));
+            column->append_bytes(reinterpret_cast<const char*>(buff), len);
+            buff += len;
         }
         return buff;
     }
@@ -909,6 +951,11 @@ public:
         return Status::OK();
     }
 
+    Status do_visit(const GermanStringColumn& column) {
+        _size += GermanStringColumnSerde::max_serialized_size(column);
+        return Status::OK();
+    }
+
     template <typename T>
     Status do_visit(const FixedLengthColumnBase<T>& column) {
         _size += FixedLengthColumnSerde<T, false>::max_serialized_size(column, _encode_level);
@@ -976,6 +1023,11 @@ public:
     template <typename T>
     Status do_visit(const BinaryColumnBase<T>& column) {
         _cur = BinaryColumnSerde::serialize(column, _cur, _encode_level);
+        return Status::OK();
+    }
+
+    Status do_visit(const GermanStringColumn& column) {
+        _cur = GermanStringColumnSerde::serialize(column, _cur);
         return Status::OK();
     }
 
@@ -1059,6 +1111,11 @@ public:
     template <typename T>
     Status do_visit(BinaryColumnBase<T>* column) {
         ASSIGN_OR_RETURN(_cur, BinaryColumnSerde::deserialize(_cur, _end, column, _encode_level));
+        return Status::OK();
+    }
+
+    Status do_visit(GermanStringColumn* column) {
+        ASSIGN_OR_RETURN(_cur, GermanStringColumnSerde::deserialize(_cur, _end, column));
         return Status::OK();
     }
 

@@ -19,6 +19,7 @@
 #include "column/column_helper.h"
 #include "column/column_visitor_adapter.h"
 #include "column/const_column.h"
+#include "column/german_string_column.h"
 #include "column/json_column.h"
 #include "column/map_column.h"
 #include "column/nullable_column.h"
@@ -206,6 +207,20 @@ public:
         return Status::OK();
     }
 
+    Status do_visit(const GermanStringColumn& column) {
+        Slice rhs_data = _rhs_value.get<Slice>();
+        if (_sort_order == 1) {
+            auto cmp = [&](int lhs_row) { return SorterComparator<Slice>::compare(column.get_slice(lhs_row), rhs_data); };
+            _equal_count = compare_column_helper(_cmp_vector, cmp);
+        } else {
+            auto cmp = [&](int lhs_row) {
+                return -1 * SorterComparator<Slice>::compare(column.get_slice(lhs_row), rhs_data);
+            };
+            _equal_count = compare_column_helper(_cmp_vector, cmp);
+        }
+        return Status::OK();
+    }
+
     template <typename T>
     Status do_visit(const FixedLengthColumnBase<T>& column) {
         T rhs_data = _rhs_value.get<T>();
@@ -295,6 +310,19 @@ public:
         for (size_t i = 1; i < column.size(); i++) {
             if ((null_data.empty()) || (null_data[i - 1] != 1 && null_data[i] != 1)) {
                 (*_tie)[i] &= SorterComparator<Slice>::compare(data[i - 1], data[i]) == 0;
+            }
+        }
+        return Status::OK();
+    }
+
+    Status do_visit(const GermanStringColumn& column) {
+        ImmutableNullData null_data;
+        if (_nullable_column != nullptr) {
+            null_data = _nullable_column->immutable_data();
+        }
+        for (size_t i = 1; i < column.size(); i++) {
+            if ((null_data.empty()) || (null_data[i - 1] != 1 && null_data[i] != 1)) {
+                (*_tie)[i] &= SorterComparator<Slice>::compare(column.get_slice(i - 1), column.get_slice(i)) == 0;
             }
         }
         return Status::OK();

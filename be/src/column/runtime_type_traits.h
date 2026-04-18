@@ -501,8 +501,20 @@ template <LogicalType ltype>
 struct RunTimeTypeLimits<ltype, StringLTGuard<ltype>> {
     using value_type = RunTimeCppType<ltype>;
 
-    static constexpr value_type min_value() { return Slice(&_min, 0); }
-    static constexpr value_type max_value() { return Slice(&_max, 1); }
+    static value_type min_value() {
+        if constexpr (std::is_same_v<value_type, Slice>) {
+            return Slice(&_min, 0);
+        } else {
+            return value_type(&_min, 0);
+        }
+    }
+    static value_type max_value() {
+        if constexpr (std::is_same_v<value_type, Slice>) {
+            return Slice(&_max, 1);
+        } else {
+            return value_type(&_max, 1);
+        }
+    }
 
 private:
     static inline char _min = 0x00;

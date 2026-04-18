@@ -17,6 +17,7 @@
 #include "column/array_column.h"
 #include "column/column_builder.h"
 #include "column/column_visitor_adapter.h"
+#include "column/german_string_column.h"
 #include "column/json_column.h"
 #include "column/map_column.h"
 #include "column/runtime_type_traits.h"

@@ -347,6 +347,8 @@ public:
     Status do_visit(BinaryColumnBase<T>* column) {
         return Status::OK();
     }
+
+    Status do_visit(GermanStringColumn* column) { return Status::OK(); }
 };
 
 Status ColumnHelper::update_nested_has_null(Column* column) {

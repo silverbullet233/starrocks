@@ -24,6 +24,7 @@
 #include "column/const_column.h"
 #include "column/decimalv3_column.h"
 #include "column/fixed_length_column_base.h"
+#include "column/german_string_column.h"
 #include "column/json_column.h"
 #include "column/map_column.h"
 #include "column/nullable_column.h"
@@ -207,6 +208,8 @@ public:
     Status do_visit(ObjectColumn<T>* dst) {
         return generic_visit(dst);
     }
+
+    Status do_visit(GermanStringColumn* dst) { return generic_visit(dst); }
 
     Status do_visit(JsonColumn* dst) { return generic_visit(dst); }
 

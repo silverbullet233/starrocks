@@ -24,6 +24,7 @@
 #include "column/column_helper.h"
 #include "column/const_column.h"
 #include "column/fixed_length_column.h"
+#include "column/german_string_column.h"
 #include "column/map_column.h"
 #include "column/nullable_column.h"
 #include "column/runtime_type_traits.h"

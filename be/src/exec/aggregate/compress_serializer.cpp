@@ -19,6 +19,7 @@
 #include "column/column_helper.h"
 #include "column/column_visitor_adapter.h"
 #include "column/decimalv3_column.h"
+#include "column/german_string_column.h"
 #include "column/nullable_column.h"
 #include "common/status.h"
 #include "exprs/literal.h"

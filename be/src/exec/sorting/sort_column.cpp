@@ -25,6 +25,7 @@
 #include "column/column_visitor_adapter.h"
 #include "column/const_column.h"
 #include "column/fixed_length_column_base.h"
+#include "column/german_string_column.h"
 #include "column/json_column.h"
 #include "column/map_column.h"
 #include "column/nullable_column.h"
@@ -198,6 +199,23 @@ public:
         return Status::OK();
     }
 
+    Status do_visit(const GermanStringColumn& column) {
+        if constexpr (!IS_RANGES) {
+            DCHECK_GE(column.size(), _permutation.size());
+        }
+
+        using ItemType = InlinePermuteItem<GermanString>;
+        auto cmp = [&](const ItemType& lhs, const ItemType& rhs) -> int {
+            return lhs.inline_value.compare(rhs.inline_value);
+        };
+
+        auto inlined = create_inline_permutation<GermanString, IS_RANGES>(_permutation, column.get_data());
+        RETURN_IF_ERROR(sort_and_tie_helper(_cancel, &column, _sort_desc.asc_order(), inlined, _tie, cmp,
+                                            _range_or_ranges, _build_tie));
+        restore_inline_permutation(inlined, _permutation);
+        return Status::OK();
+    }
+
     template <typename T>
     Status do_visit(const FixedLengthColumnBase<T>& column) {
         if constexpr (!IS_RANGES) {
@@ -335,6 +353,20 @@ public:
             RETURN_IF_ERROR(sort_and_tie_helper(_cancel, &column, _sort_desc.asc_order(), _permutation, _tie, cmp,
                                                 _range, _build_tie, _limit, &_pruned_limit));
         }
+        _prune_limit();
+        return Status::OK();
+    }
+
+    Status do_visit(const GermanStringColumn& column) {
+        auto cmp = [&](const PermutationItem& lhs, const PermutationItem& rhs) {
+            auto left_column = down_cast<const GermanStringColumn*>(_vertical_columns[lhs.chunk_index].get());
+            auto right_column = down_cast<const GermanStringColumn*>(_vertical_columns[rhs.chunk_index].get());
+            return SorterComparator<Slice>::compare(left_column->get_slice(lhs.index_in_chunk),
+                                                    right_column->get_slice(rhs.index_in_chunk));
+        };
+
+        RETURN_IF_ERROR(sort_and_tie_helper(_cancel, &column, _sort_desc.asc_order(), _permutation, _tie, cmp, _range,
+                                            _build_tie, _limit, &_pruned_limit));
         _prune_limit();
         return Status::OK();
     }

@@ -21,6 +21,7 @@
 #include "column/column.h"
 #include "column/column_helper.h"
 #include "column/column_visitor_adapter.h"
+#include "column/german_string_column.h"
 #include "column/map_column.h"
 #include "column/nullable_column.h"
 #include "column/vectorized_fwd.h"
