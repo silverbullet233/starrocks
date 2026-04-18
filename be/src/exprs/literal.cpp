@@ -104,6 +104,14 @@ VectorizedLiteral::VectorizedLiteral(const TExprNode& node) : Expr(node) {
         _value = ColumnHelper::create_const_column<TYPE_VARCHAR>(Slice(node.string_literal.value), 1);
         break;
     }
+    case TYPE_GERMAN_STRING: {
+        // Wrap the literal's bytes as a Slice and build a TYPE_VARCHAR const
+        // column. Downstream paths that consume a GermanString slot get a
+        // const Slice with identical bytes; no GermanString-specific const
+        // column is needed for a literal (it materializes at evaluation).
+        _value = ColumnHelper::create_const_column<TYPE_VARCHAR>(Slice(node.string_literal.value), 1);
+        break;
+    }
     case TYPE_TIME: {
         _value = ColumnHelper::create_const_column<TYPE_TIME>(node.float_literal.value, 1);
         break;
