@@ -4761,6 +4761,14 @@ public class SessionVariable implements Serializable, Writable, Cloneable {
     }
 
     public boolean isEnableLowCardinalityOptimize() {
+        // Global dict / low-cardinality optimization relies on VARCHAR-typed
+        // SlotDescriptors and DictFuncExpr inputs; with enable_german_string
+        // the query slots are rewritten to TYPE_GERMAN_STRING, which breaks
+        // the dict func-expr evaluator. Force it off so the non-dict path is
+        // exercised instead.
+        if (enableGermanString) {
+            return false;
+        }
         return enableLowCardinalityOptimize;
     }
 
