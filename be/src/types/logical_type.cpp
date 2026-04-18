@@ -310,10 +310,15 @@ LogicalType scalar_field_type_to_logical_type(LogicalType field_type) {
 }
 
 const std::vector<LogicalType>& sortable_types() {
+    // NOTE: TYPE_GERMAN_STRING intentionally excluded. sortable_types() feeds
+    // into generic aggregate registration (PercentileDisc etc.) whose
+    // template instantiations assume Slice APIs; exposing GermanString there
+    // aborts at runtime. GermanString comparison still flows through its own
+    // specialized predicate / agg / join paths added elsewhere.
     const static std::vector<LogicalType> kTypes{
             TYPE_BOOLEAN,   TYPE_TINYINT,   TYPE_SMALLINT,      TYPE_INT,       TYPE_BIGINT,     TYPE_LARGEINT,
             TYPE_FLOAT,     TYPE_DOUBLE,    TYPE_VARCHAR,       TYPE_CHAR,      TYPE_DATE,       TYPE_DATETIME,
-            TYPE_DECIMALV2, TYPE_DECIMAL32, TYPE_DECIMAL64,     TYPE_DECIMAL128, TYPE_GERMAN_STRING};
+            TYPE_DECIMALV2, TYPE_DECIMAL32, TYPE_DECIMAL64,     TYPE_DECIMAL128};
     return kTypes;
 }
 
