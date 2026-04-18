@@ -34,6 +34,9 @@ namespace starrocks {
 struct AggInRuntimeFilterBuilderImpl {
     template <LogicalType ltype>
     RuntimeFilter* operator()(ObjectPool* pool, Aggregator* aggregator, size_t build_expr_order) {
+        if constexpr (ltype == TYPE_GERMAN_STRING) {
+            return nullptr;
+        } else {
         auto runtime_filter = InRuntimeFilter<ltype>::create(pool);
         auto& hash_map_variant = aggregator->hash_map_variant();
         hash_map_variant.visit([&](auto& variant_value) {
@@ -67,6 +70,7 @@ struct AggInRuntimeFilterBuilderImpl {
         });
 
         return runtime_filter;
+        }
     }
 };
 
@@ -112,6 +116,9 @@ struct AggTopRuntimeFilterBuilderImpl {
     std::pair<RuntimeFilter*, HeapBuilder*> operator()(ObjectPool* pool, Aggregator* aggregator,
                                                        size_t build_expr_order, size_t limit, bool asc,
                                                        bool is_nulls_first) {
+        if constexpr (ltype == TYPE_GERMAN_STRING) {
+            return {nullptr, nullptr};
+        } else {
         using CppType = RunTimeCppType<ltype>;
         if (asc) {
             // for ascending order, we use max heap to build the topn runtime filter
@@ -120,6 +127,7 @@ struct AggTopRuntimeFilterBuilderImpl {
         } else {
             return build<ltype, std::greater<CppType>, false>(pool, aggregator, build_expr_order, limit, asc,
                                                               is_nulls_first);
+        }
         }
     }
 
@@ -208,6 +216,9 @@ struct AggTopNRuntimeFilterUpdaterImpl {
     template <LogicalType ltype>
     void operator()(HeapBuilder* heap, RuntimeFilter* rf, const Columns& group_by_columns, const Filter& selection,
                     size_t build_expr_order, size_t limit, bool asc, bool is_nulls_first) {
+        if constexpr (ltype == TYPE_GERMAN_STRING) {
+            return;
+        } else {
         using CppType = RunTimeCppType<ltype>;
         if (asc) {
             // for ascending order, we use max heap to build the topn runtime filter
@@ -216,6 +227,7 @@ struct AggTopNRuntimeFilterUpdaterImpl {
         } else {
             update_runtime_filter_with_selection<ltype, std::greater<CppType>, false>(
                     heap, rf, group_by_columns[build_expr_order].get(), limit, selection);
+        }
         }
     }
 

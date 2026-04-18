@@ -136,4 +136,11 @@ static inline std::string to_string(const starrocks::GermanString& gs) {
     return static_cast<std::string>(gs);
 }
 
+template <>
+struct hash<starrocks::GermanString> {
+    std::size_t operator()(const starrocks::GermanString& gs) const {
+        return gs.fnv_hash(0x811C9DC5u);
+    }
+};
+
 } // namespace std
