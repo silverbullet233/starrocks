@@ -101,6 +101,7 @@ uint32_t TabletColumn::get_field_length_by_type(LogicalType type, uint32_t strin
     case TYPE_CHAR:
         return string_length;
     case TYPE_VARCHAR:
+    case TYPE_GERMAN_STRING:
     case TYPE_HLL:
     case TYPE_PERCENTILE:
     case TYPE_JSON:
