@@ -1,0 +1,193 @@
+// Copyright 2021-present StarRocks, Inc. All rights reserved.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     https://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+#include "column/german_string_column.h"
+
+#include <gtest/gtest.h>
+
+#include <string>
+#include <vector>
+
+#include "column/vectorized_fwd.h"
+
+namespace starrocks {
+namespace {
+
+std::string slice_to_string(const Slice& s) {
+    return std::string(s.data, s.size);
+}
+
+} // namespace
+
+TEST(GermanStringColumnTest, AppendInlineAndLong) {
+    auto col = GermanStringColumn::create();
+    col->append(Slice("hi"));                                   // inline len=2
+    col->append(Slice("twelve char0"));                         // inline len=12
+    col->append(Slice("this is a long string payload"));        // long > 12
+    col->append_string(std::string("another long one for arena"));
+
+    ASSERT_EQ(4, col->size());
+    EXPECT_EQ("hi", slice_to_string(col->get_slice(0)));
+    EXPECT_EQ("twelve char0", slice_to_string(col->get_slice(1)));
+    EXPECT_EQ("this is a long string payload", slice_to_string(col->get_slice(2)));
+    EXPECT_EQ("another long one for arena", slice_to_string(col->get_slice(3)));
+
+    // inline-ness classification matches 12-byte threshold.
+    EXPECT_TRUE(col->get_german_string(0).is_inline());
+    EXPECT_TRUE(col->get_german_string(1).is_inline());
+    EXPECT_FALSE(col->get_german_string(2).is_inline());
+    EXPECT_FALSE(col->get_german_string(3).is_inline());
+}
+
+TEST(GermanStringColumnTest, GetSliceReflectsInlineAndLong) {
+    auto col = GermanStringColumn::create();
+    col->append(Slice(""));
+    col->append(Slice("abc"));
+    col->append(Slice("0123456789ABCDEF")); // 16 bytes, long form
+
+    EXPECT_EQ(0u, col->get_slice(0).size);
+    EXPECT_EQ("abc", slice_to_string(col->get_slice(1)));
+    EXPECT_EQ("0123456789ABCDEF", slice_to_string(col->get_slice(2)));
+}
+
+TEST(GermanStringColumnTest, CompareAtAcrossColumns) {
+    auto a = GermanStringColumn::create();
+    auto b = GermanStringColumn::create();
+    a->append(Slice("alpha"));
+    a->append(Slice("this is a longer string value"));
+    b->append(Slice("beta"));
+    b->append(Slice("this is a longer string zzzzz"));
+
+    EXPECT_LT(a->compare_at(0, 0, *b, -1), 0);                    // alpha < beta
+    EXPECT_GT(b->compare_at(0, 0, *a, -1), 0);                    // beta > alpha
+    EXPECT_EQ(0, a->compare_at(0, 0, *a, -1));                    // alpha == alpha
+    EXPECT_LT(a->compare_at(1, 1, *b, -1), 0);                    // long rep prefix path
+}
+
+TEST(GermanStringColumnTest, FilterRetainsLongPayloadAfterSourceFreed) {
+    auto src = GermanStringColumn::create();
+    src->append(Slice("keep me arooound"));  // 16 bytes -> long
+    src->append(Slice("drop this one please!"));
+    src->append(Slice("also keep this one!!!"));
+
+    Filter f = {1, 0, 1};
+    src->filter_range(f, 0, 3);
+    ASSERT_EQ(2, src->size());
+
+    // After filter, the survivors still resolve to the same bytes via the column's own arena.
+    EXPECT_EQ("keep me arooound", slice_to_string(src->get_slice(0)));
+    EXPECT_EQ("also keep this one!!!", slice_to_string(src->get_slice(1)));
+}
+
+TEST(GermanStringColumnTest, SerializeDeserializeRoundTrip) {
+    auto src = GermanStringColumn::create();
+    src->append(Slice("short"));
+    src->append(Slice("a very long string of bytes to force long rep path"));
+    src->append(Slice(""));
+
+    // Use max_one_element_serialize_size for buffer size.
+    auto restored = GermanStringColumn::create();
+    std::vector<uint8_t> buffer(src->max_one_element_serialize_size());
+    for (size_t i = 0; i < src->size(); ++i) {
+        std::fill(buffer.begin(), buffer.end(), 0);
+        uint32_t written = src->serialize(i, buffer.data());
+        ASSERT_GE(buffer.size(), written);
+        restored->deserialize_and_append(buffer.data());
+    }
+    ASSERT_EQ(src->size(), restored->size());
+    for (size_t i = 0; i < src->size(); ++i) {
+        EXPECT_EQ(slice_to_string(src->get_slice(i)), slice_to_string(restored->get_slice(i)));
+    }
+}
+
+TEST(GermanStringColumnTest, CloneIsIndependent) {
+    auto src = GermanStringColumn::create();
+    src->append(Slice("one tiny"));
+    src->append(Slice("long string needing own arena"));
+    auto cloned = src->clone();
+
+    // Mutate the clone.
+    down_cast<GermanStringColumn*>(cloned.get())->append(Slice("added on clone only"));
+    ASSERT_EQ(2, src->size());
+    ASSERT_EQ(3, cloned->size());
+    EXPECT_EQ("one tiny", slice_to_string(src->get_slice(0)));
+    EXPECT_EQ("long string needing own arena", slice_to_string(src->get_slice(1)));
+
+    auto* gcloned = down_cast<GermanStringColumn*>(cloned.get());
+    EXPECT_EQ("long string needing own arena", slice_to_string(gcloned->get_slice(1)));
+    EXPECT_EQ("added on clone only", slice_to_string(gcloned->get_slice(2)));
+
+    // Drop the source entirely; cloned must still be usable because it owns its own arena.
+    src.reset();
+    EXPECT_EQ("long string needing own arena", slice_to_string(gcloned->get_slice(1)));
+}
+
+TEST(GermanStringColumnTest, AppendSelectiveCopiesLongRepBytes) {
+    auto src = GermanStringColumn::create();
+    src->append(Slice("inline"));
+    src->append(Slice("this long one must be copied into dst arena"));
+    src->append(Slice("another reasonably long string goes here"));
+
+    auto dst = GermanStringColumn::create();
+    const uint32_t indexes[] = {2, 0, 1};
+    dst->append_selective(*src, indexes, 0, 3);
+    ASSERT_EQ(3, dst->size());
+    EXPECT_EQ("another reasonably long string goes here", slice_to_string(dst->get_slice(0)));
+    EXPECT_EQ("inline", slice_to_string(dst->get_slice(1)));
+    EXPECT_EQ("this long one must be copied into dst arena", slice_to_string(dst->get_slice(2)));
+
+    // Free the source column; destination must remain valid because long-rep bytes
+    // were copied into its own arena.
+    src.reset();
+    EXPECT_EQ("another reasonably long string goes here", slice_to_string(dst->get_slice(0)));
+    EXPECT_EQ("inline", slice_to_string(dst->get_slice(1)));
+    EXPECT_EQ("this long one must be copied into dst arena", slice_to_string(dst->get_slice(2)));
+}
+
+TEST(GermanStringColumnTest, ResetColumnReleasesArenaAndRowBuffer) {
+    auto col = GermanStringColumn::create();
+    col->append(Slice("some long-enough text"));
+    col->append(Slice("another long-enough text"));
+    ASSERT_EQ(2, col->size());
+    col->reset_column();
+    EXPECT_EQ(0, col->size());
+
+    // After reset, the column must be usable again.
+    col->append(Slice("fresh start goes here"));
+    ASSERT_EQ(1, col->size());
+    EXPECT_EQ("fresh start goes here", slice_to_string(col->get_slice(0)));
+}
+
+TEST(GermanStringColumnTest, UpdateRowsInPlace) {
+    auto col = GermanStringColumn::create();
+    col->append(Slice("row0 inline"));
+    col->append(Slice("row1 long string value goes here"));
+    col->append(Slice("row2 inline"));
+
+    auto replacement = GermanStringColumn::create();
+    replacement->append(Slice("R0 new"));
+    replacement->append(Slice("R1 brand new long string value"));
+    const uint32_t indexes[] = {0, 1};
+    col->update_rows(*replacement, indexes);
+
+    EXPECT_EQ("R0 new", slice_to_string(col->get_slice(0)));
+    EXPECT_EQ("R1 brand new long string value", slice_to_string(col->get_slice(1)));
+    EXPECT_EQ("row2 inline", slice_to_string(col->get_slice(2)));
+
+    // Replacement column dropped; col must still resolve its own long-rep bytes.
+    replacement.reset();
+    EXPECT_EQ("R1 brand new long string value", slice_to_string(col->get_slice(1)));
+}
+
+} // namespace starrocks

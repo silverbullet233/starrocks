@@ -32,6 +32,7 @@ ADD_BE_LIB(ColumnCore
         fixed_length_column_base.cpp
         fixed_length_column.cpp
         binary_column.cpp
+        german_string_column.cpp
         const_column.cpp
         nullable_column.cpp
         decimalv3_column.cpp

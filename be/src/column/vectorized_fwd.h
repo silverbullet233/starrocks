@@ -70,6 +70,8 @@ class DecimalV3Column;
 template <typename T>
 class BinaryColumnBase;
 
+class GermanStringColumn;
+
 using Int8Column = FixedLengthColumn<int8_t>;
 using UInt8Column = FixedLengthColumn<uint8_t>;
 using BooleanColumn = UInt8Column;
