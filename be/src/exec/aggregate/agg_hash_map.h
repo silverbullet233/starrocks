@@ -25,6 +25,8 @@
 #include "base/utility/defer_op.h"
 #include "column/column.h"
 #include "column/column_hash.h"
+#include "column/german_string.h"
+#include "column/german_string_column.h"
 #include "column/hash_set.h"
 #include "column/runtime_type_traits.h"
 #include "column/vectorized_fwd.h"
@@ -76,6 +78,14 @@ using TimeStampAggHashMap = phmap::flat_hash_map<TimestampValue, AggDataPtr, Std
 template <PhmapSeed seed>
 using SliceAggHashMap = phmap::flat_hash_map<Slice, AggDataPtr, SliceHashWithSeed<seed>, SliceEqual>;
 
+// GermanString-keyed agg hash map. Hash / Equal live in agg_hash_set.h so the
+// set arm can share them. We purposely do NOT reuse the Slice-based arm: the
+// benchmark for TYPE_GERMAN_STRING is meant to measure GermanString-native
+// hashing / comparison, so this arm is kept distinct.
+template <PhmapSeed seed>
+using GermanStringAggHashMap =
+        phmap::flat_hash_map<GermanString, AggDataPtr, GermanStringHashWithSeed<seed>, GermanStringEqual>;
+
 // ==================
 // one level fixed size slice hash map
 template <PhmapSeed seed>
@@ -98,6 +108,14 @@ template <PhmapSeed seed>
 using SliceAggTwoLevelHashMap =
         phmap::parallel_flat_hash_map<Slice, AggDataPtr, SliceHashWithSeed<seed>, SliceEqual,
                                       phmap::priv::Allocator<phmap::priv::Pair<const Slice, AggDataPtr>>, PHMAPN>;
+
+// Two-level counterpart to GermanStringAggHashMap. Declared alongside to keep
+// the GermanString arm a drop-in substitute for the Slice arm.
+template <PhmapSeed seed>
+using GermanStringAggTwoLevelHashMap =
+        phmap::parallel_flat_hash_map<GermanString, AggDataPtr, GermanStringHashWithSeed<seed>, GermanStringEqual,
+                                      phmap::priv::Allocator<phmap::priv::Pair<const GermanString, AggDataPtr>>,
+                                      PHMAPN>;
 
 template <typename T>
 auto get_immutable_data(T* obj) {
@@ -670,6 +688,271 @@ template <typename HashMap>
 using AggHashMapWithOneStringKey = AggHashMapWithOneStringKeyWithNullable<HashMap, false>;
 template <typename HashMap>
 using AggHashMapWithOneNullableStringKey = AggHashMapWithOneStringKeyWithNullable<HashMap, true>;
+
+// ==============================================================
+// GermanString-keyed one-column agg hash map.
+//
+// Keeps the same `compute_agg_states` shape as the Slice arm but reads
+// `GermanString` values from a `GermanStringColumn` and stores them by value in
+// the hash map. Long-rep payloads (len > 12) are copied into the caller's
+// MemPool on insert so `long_rep.ptr` stays valid after the source chunk is
+// released (Option A in the plan). Inline keys (len <= 12) already carry their
+// bytes inside the 16-byte value, so no extra allocation is needed.
+//
+// This arm intentionally does NOT share code with AggHashMapWithOneStringKey:
+// the plan wants to benchmark GermanString-native hashing / comparison against
+// the Slice arm.
+template <typename HashMap, bool is_nullable>
+struct AggHashMapWithOneGermanStringKeyWithNullable
+        : public AggHashMapWithKey<HashMap, AggHashMapWithOneGermanStringKeyWithNullable<HashMap, is_nullable>> {
+    using Self = AggHashMapWithOneGermanStringKeyWithNullable<HashMap, is_nullable>;
+    using Base = AggHashMapWithKey<HashMap, Self>;
+    using KeyType = typename HashMap::key_type;
+    using Iterator = typename HashMap::iterator;
+    using ResultVector = Buffer<GermanString>;
+
+    static_assert(std::is_same_v<KeyType, GermanString>,
+                  "GermanString agg hash map must be keyed on GermanString");
+
+    template <class... Args>
+    AggHashMapWithOneGermanStringKeyWithNullable(Args&&... args) : Base(std::forward<Args>(args)...) {}
+
+    AggDataPtr get_null_key_data() { return null_key_data; }
+
+    void set_null_key_data(AggDataPtr data) { null_key_data = data; }
+
+    template <AllocFunc<Self> Func, typename HTBuildOp>
+    void compute_agg_states(size_t chunk_size, const Columns& key_columns, MemPool* pool, Func&& allocate_func,
+                            Buffer<AggDataPtr>* agg_states, ExtraAggParam* extra) {
+        const auto* key_column = key_columns[0].get();
+        if constexpr (is_nullable) {
+            return this->template compute_agg_states_nullable<Func, HTBuildOp>(
+                    chunk_size, key_column, pool, std::forward<Func>(allocate_func), agg_states, extra);
+        } else {
+            return this->template compute_agg_states_non_nullable<Func, HTBuildOp>(
+                    chunk_size, key_column, pool, std::forward<Func>(allocate_func), agg_states, extra);
+        }
+    }
+
+    // Non Nullable
+    template <AllocFunc<Self> Func, typename HTBuildOp>
+    ALWAYS_NOINLINE void compute_agg_states_non_nullable(size_t chunk_size, const Column* key_column, MemPool* pool,
+                                                         Func&& allocate_func, Buffer<AggDataPtr>* agg_states,
+                                                         ExtraAggParam* extra) {
+        DCHECK(key_column->is_binary());
+        const auto* column = down_cast<const GermanStringColumn*>(key_column);
+        if (this->hash_map.bucket_count() < prefetch_threhold) {
+            this->template compute_agg_noprefetch<Func, HTBuildOp>(column, agg_states, pool,
+                                                                   std::forward<Func>(allocate_func), extra);
+        } else {
+            this->template compute_agg_prefetch<Func, HTBuildOp>(column, agg_states, pool,
+                                                                 std::forward<Func>(allocate_func), extra);
+        }
+    }
+
+    // Nullable
+    template <AllocFunc<Self> Func, typename HTBuildOp>
+    ALWAYS_NOINLINE void compute_agg_states_nullable(size_t chunk_size, const Column* key_column, MemPool* pool,
+                                                     Func&& allocate_func, Buffer<AggDataPtr>* agg_states,
+                                                     ExtraAggParam* extra) {
+        if (key_column->only_null()) {
+            if (null_key_data == nullptr) {
+                null_key_data = allocate_func(nullptr);
+            }
+            for (size_t i = 0; i < chunk_size; i++) {
+                (*agg_states)[i] = null_key_data;
+            }
+        } else {
+            DCHECK(key_column->is_nullable());
+            const auto* nullable_column = down_cast<const NullableColumn*>(key_column);
+            const auto* data_column = down_cast<const GermanStringColumn*>(nullable_column->data_column().get());
+            DCHECK(data_column->is_binary());
+
+            if (!nullable_column->has_null()) {
+                this->template compute_agg_states_non_nullable<Func, HTBuildOp>(
+                        chunk_size, data_column, pool, std::forward<Func>(allocate_func), agg_states, extra);
+            } else {
+                this->template compute_agg_through_null_data<Func, HTBuildOp>(
+                        chunk_size, nullable_column, agg_states, pool, std::forward<Func>(allocate_func), extra);
+            }
+        }
+    }
+
+    template <AllocFunc<Self> Func, typename HTBuildOp>
+    ALWAYS_NOINLINE void compute_agg_prefetch(const GermanStringColumn* column, Buffer<AggDataPtr>* agg_states,
+                                              MemPool* pool, Func&& allocate_func, ExtraAggParam* extra) {
+        [[maybe_unused]] size_t hash_table_size = this->hash_map.size();
+        auto* __restrict not_founds = extra->not_founds;
+        const size_t column_size = column->size();
+        const auto& container = column->get_data();
+        // Precompute hash values into the agg_states scratch slot (same trick the
+        // Slice arm uses via AGG_HASH_MAP_PRECOMPUTE_HASH_VALUES).
+        size_t* hash_values = reinterpret_cast<size_t*>(agg_states->data());
+        for (size_t i = 0; i < column_size; i++) {
+            hash_values[i] = this->hash_map.hash_function()(container[i]);
+        }
+        size_t __prefetch_index = AGG_HASH_MAP_DEFAULT_PREFETCH_DIST;
+        for (size_t i = 0; i < column_size; i++) {
+            if (__prefetch_index < column_size) {
+                this->hash_map.prefetch_hash(hash_values[__prefetch_index++]);
+            }
+            const auto& key = container[i];
+            if constexpr (HTBuildOp::process_limit) {
+                if (hash_table_size < extra->limits) {
+                    this->template _emplace_key_with_hash<Func>(key, hash_values[i], pool,
+                                                                std::forward<Func>(allocate_func), (*agg_states)[i],
+                                                                [&]() { hash_table_size++; });
+                } else {
+                    _find_key((*agg_states)[i], (*not_founds)[i], key, hash_values[i]);
+                }
+            } else if constexpr (HTBuildOp::allocate) {
+                this->template _emplace_key_with_hash<Func>(key, hash_values[i], pool,
+                                                            std::forward<Func>(allocate_func), (*agg_states)[i],
+                                                            FillNotFounds<HTBuildOp::fill_not_found>(not_founds, i));
+            } else if constexpr (HTBuildOp::fill_not_found) {
+                _find_key((*agg_states)[i], (*not_founds)[i], key, hash_values[i]);
+            }
+        }
+    }
+
+    template <AllocFunc<Self> Func, typename HTBuildOp>
+    ALWAYS_NOINLINE void compute_agg_noprefetch(const GermanStringColumn* column, Buffer<AggDataPtr>* agg_states,
+                                                MemPool* pool, Func&& allocate_func, ExtraAggParam* extra) {
+        [[maybe_unused]] size_t hash_table_size = this->hash_map.size();
+        auto* __restrict not_founds = extra->not_founds;
+        const size_t num_rows = column->size();
+        const auto& container = column->get_data();
+        for (size_t i = 0; i < num_rows; i++) {
+            const auto& key = container[i];
+            if constexpr (HTBuildOp::process_limit) {
+                if (hash_table_size < extra->limits) {
+                    this->template _emplace_key<Func>(key, pool, std::forward<Func>(allocate_func), (*agg_states)[i],
+                                                      [&]() { hash_table_size++; });
+                } else {
+                    _find_key((*agg_states)[i], (*not_founds)[i], key);
+                }
+            } else if constexpr (HTBuildOp::allocate) {
+                this->template _emplace_key<Func>(key, pool, std::forward<Func>(allocate_func), (*agg_states)[i],
+                                                  FillNotFounds<HTBuildOp::fill_not_found>(not_founds, i));
+            } else if constexpr (HTBuildOp::fill_not_found) {
+                _find_key((*agg_states)[i], (*not_founds)[i], key);
+            }
+        }
+    }
+
+    template <AllocFunc<Self> Func, typename HTBuildOp>
+    ALWAYS_NOINLINE void compute_agg_through_null_data(size_t chunk_size, const NullableColumn* nullable_column,
+                                                       Buffer<AggDataPtr>* agg_states, MemPool* pool,
+                                                       Func&& allocate_func, ExtraAggParam* extra) {
+        [[maybe_unused]] size_t hash_table_size = this->hash_map.size();
+        auto* __restrict not_founds = extra->not_founds;
+        const auto* data_column = down_cast<const GermanStringColumn*>(nullable_column->data_column().get());
+        const auto& container = data_column->get_data();
+        const auto& null_data = nullable_column->null_column_data();
+        for (size_t i = 0; i < chunk_size; i++) {
+            if (null_data[i]) {
+                if (UNLIKELY(null_key_data == nullptr)) {
+                    null_key_data = allocate_func(nullptr);
+                }
+                (*agg_states)[i] = null_key_data;
+            } else {
+                const auto& key = container[i];
+                if constexpr (HTBuildOp::process_limit) {
+                    if (hash_table_size < extra->limits) {
+                        this->template _emplace_key<Func>(key, pool, std::forward<Func>(allocate_func),
+                                                          (*agg_states)[i], [&]() { hash_table_size++; });
+                    } else {
+                        _find_key((*agg_states)[i], (*not_founds)[i], key);
+                    }
+                } else if constexpr (HTBuildOp::allocate) {
+                    this->template _emplace_key<Func>(key, pool, std::forward<Func>(allocate_func), (*agg_states)[i],
+                                                      FillNotFounds<HTBuildOp::fill_not_found>(not_founds, i));
+                } else if constexpr (HTBuildOp::fill_not_found) {
+                    DCHECK(not_founds);
+                    _find_key((*agg_states)[i], (*not_founds)[i], key);
+                }
+            }
+        }
+    }
+
+    // Copy long-rep payload into |pool| so the stored key is self-contained.
+    // Inline keys (len <= 12) are already self-contained — we just return the
+    // 16-byte value as-is.
+    //
+    // The `GermanString(const GermanString&, void*)` constructor memcpys |src|
+    // bytes into |pos| and rewrites `long_rep.ptr` on the result, which is
+    // exactly what we need here.
+    ALWAYS_INLINE GermanString _persist_key(const GermanString& src, MemPool* pool) {
+        if (src.is_inline()) {
+            return src;
+        }
+        uint8_t* pos = pool->allocate_with_reserve(src.len, SLICE_MEMEQUAL_OVERFLOW_PADDING);
+        return GermanString(src, pos);
+    }
+
+    template <AllocFunc<Self> Func, typename EmplaceCallBack>
+    void _emplace_key_with_hash(const KeyType& key, size_t hash_val, MemPool* pool, Func&& allocate_func,
+                                AggDataPtr& target_state, EmplaceCallBack&& callback) {
+        auto iter = this->hash_map.lazy_emplace_with_hash(key, hash_val, [&](const auto& ctor) {
+            callback();
+            GermanString pk = _persist_key(key, pool);
+            AggDataPtr pv = allocate_func(pk);
+            ctor(pk, pv);
+        });
+        target_state = iter->second;
+    }
+
+    template <AllocFunc<Self> Func, typename EmplaceCallBack>
+    void _emplace_key(const KeyType& key, MemPool* pool, Func&& allocate_func, AggDataPtr& target_state,
+                      EmplaceCallBack&& callback) {
+        auto iter = this->hash_map.lazy_emplace(key, [&](const auto& ctor) {
+            callback();
+            GermanString pk = _persist_key(key, pool);
+            AggDataPtr pv = allocate_func(pk);
+            ctor(pk, pv);
+        });
+        target_state = iter->second;
+    }
+
+    template <typename... Args>
+    ALWAYS_INLINE void _find_key(AggDataPtr& target_state, uint8_t& not_found, Args&&... args) {
+        if (auto iter = this->hash_map.find(std::forward<Args>(args)...); iter != this->hash_map.end()) {
+            target_state = iter->second;
+        } else {
+            not_found = 1;
+        }
+    }
+
+    void insert_keys_to_columns(ResultVector& keys, MutableColumns& key_columns, size_t chunk_size) {
+        if constexpr (is_nullable) {
+            DCHECK(key_columns[0]->is_nullable());
+            auto* nullable_column = down_cast<NullableColumn*>(key_columns[0].get());
+            auto* column = down_cast<GermanStringColumn*>(nullable_column->data_column_raw_ptr());
+            keys.resize(chunk_size);
+            for (size_t i = 0; i < chunk_size; ++i) {
+                column->append(keys[i]);
+            }
+            nullable_column->null_column_data().resize(chunk_size);
+        } else {
+            DCHECK(!null_key_data);
+            auto* column = down_cast<GermanStringColumn*>(key_columns[0].get());
+            keys.resize(chunk_size);
+            for (size_t i = 0; i < chunk_size; ++i) {
+                column->append(keys[i]);
+            }
+        }
+    }
+
+    static constexpr bool has_single_null_key = is_nullable;
+
+    AggDataPtr null_key_data = nullptr;
+    ResultVector results;
+};
+
+template <typename HashMap>
+using AggHashMapWithOneGermanStringKey = AggHashMapWithOneGermanStringKeyWithNullable<HashMap, false>;
+template <typename HashMap>
+using AggHashMapWithOneNullableGermanStringKey = AggHashMapWithOneGermanStringKeyWithNullable<HashMap, true>;
 
 template <typename HashMap>
 struct AggHashMapWithSerializedKey : public AggHashMapWithKey<HashMap, AggHashMapWithSerializedKey<HashMap>> {

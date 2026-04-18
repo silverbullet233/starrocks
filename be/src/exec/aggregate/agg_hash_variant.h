@@ -94,6 +94,19 @@ template <PhmapSeed seed>
 using OneStringTwoLevelAggHashMap = AggHashMapWithOneStringKey<SliceAggTwoLevelHashMap<seed>>;
 template <PhmapSeed seed>
 using NullOneStringTwoLevelAggHashMap = AggHashMapWithOneNullableStringKey<SliceAggTwoLevelHashMap<seed>>;
+
+// For TYPE_GERMAN_STRING, use the GermanString-native one-key map. Distinct
+// from the Slice-based arm on purpose (benchmark measures GermanString
+// hashing / comparison directly).
+template <PhmapSeed seed>
+using OneGermanStringAggHashMap = AggHashMapWithOneGermanStringKey<GermanStringAggHashMap<seed>>;
+template <PhmapSeed seed>
+using NullOneGermanStringAggHashMap = AggHashMapWithOneNullableGermanStringKey<GermanStringAggHashMap<seed>>;
+template <PhmapSeed seed>
+using OneGermanStringTwoLevelAggHashMap = AggHashMapWithOneGermanStringKey<GermanStringAggTwoLevelHashMap<seed>>;
+template <PhmapSeed seed>
+using NullOneGermanStringTwoLevelAggHashMap =
+        AggHashMapWithOneNullableGermanStringKey<GermanStringAggTwoLevelHashMap<seed>>;
 template <PhmapSeed seed>
 using SerializedKeyAggHashMap = AggHashMapWithSerializedKey<SliceAggHashMap<seed>>;
 template <PhmapSeed seed>
@@ -185,6 +198,17 @@ template <PhmapSeed seed>
 using NullOneStringTwoLevelAggHashSet = AggHashSetOfOneNullableStringKey<SliceAggTwoLevelHashSet<seed>>;
 template <PhmapSeed seed>
 using OneStringTwoLevelAggHashSet = AggHashSetOfOneStringKey<SliceAggTwoLevelHashSet<seed>>;
+
+// For TYPE_GERMAN_STRING: DISTINCT / one-key aggregation sets.
+template <PhmapSeed seed>
+using OneGermanStringAggHashSet = AggHashSetOfOneGermanStringKey<GermanStringAggHashSet<seed>>;
+template <PhmapSeed seed>
+using NullOneGermanStringAggHashSet = AggHashSetOfOneNullableGermanStringKey<GermanStringAggHashSet<seed>>;
+template <PhmapSeed seed>
+using OneGermanStringTwoLevelAggHashSet = AggHashSetOfOneGermanStringKey<GermanStringAggTwoLevelHashSet<seed>>;
+template <PhmapSeed seed>
+using NullOneGermanStringTwoLevelAggHashSet =
+        AggHashSetOfOneNullableGermanStringKey<GermanStringAggTwoLevelHashSet<seed>>;
 template <PhmapSeed seed>
 using SerializedKeyAggHashSet = AggHashSetOfSerializedKey<SliceAggHashSet<seed>>;
 template <PhmapSeed seed>
@@ -340,7 +364,16 @@ using AggHashMapWithKeyPtr = std::variant<
         std::unique_ptr<CompressedFixedSize1AggHashMap<PhmapSeed2>>,
         std::unique_ptr<CompressedFixedSize4AggHashMap<PhmapSeed2>>,
         std::unique_ptr<CompressedFixedSize8AggHashMap<PhmapSeed2>>,
-        std::unique_ptr<CompressedFixedSize16AggHashMap<PhmapSeed2>>>;
+        std::unique_ptr<CompressedFixedSize16AggHashMap<PhmapSeed2>>,
+
+        std::unique_ptr<OneGermanStringAggHashMap<PhmapSeed1>>,
+        std::unique_ptr<NullOneGermanStringAggHashMap<PhmapSeed1>>,
+        std::unique_ptr<OneGermanStringTwoLevelAggHashMap<PhmapSeed1>>,
+        std::unique_ptr<NullOneGermanStringTwoLevelAggHashMap<PhmapSeed1>>,
+        std::unique_ptr<OneGermanStringAggHashMap<PhmapSeed2>>,
+        std::unique_ptr<NullOneGermanStringAggHashMap<PhmapSeed2>>,
+        std::unique_ptr<OneGermanStringTwoLevelAggHashMap<PhmapSeed2>>,
+        std::unique_ptr<NullOneGermanStringTwoLevelAggHashMap<PhmapSeed2>>>;
 
 using AggHashSetWithKeyPtr = std::variant<
         std::unique_ptr<UInt8AggHashSetOfOneNumberKey<PhmapSeed1>>,
@@ -417,7 +450,16 @@ using AggHashSetWithKeyPtr = std::variant<
         std::unique_ptr<CompressedAggHashSetFixedSize1<PhmapSeed2>>,
         std::unique_ptr<CompressedAggHashSetFixedSize4<PhmapSeed2>>,
         std::unique_ptr<CompressedAggHashSetFixedSize8<PhmapSeed2>>,
-        std::unique_ptr<CompressedAggHashSetFixedSize16<PhmapSeed2>>>;
+        std::unique_ptr<CompressedAggHashSetFixedSize16<PhmapSeed2>>,
+
+        std::unique_ptr<OneGermanStringAggHashSet<PhmapSeed1>>,
+        std::unique_ptr<NullOneGermanStringAggHashSet<PhmapSeed1>>,
+        std::unique_ptr<OneGermanStringTwoLevelAggHashSet<PhmapSeed1>>,
+        std::unique_ptr<NullOneGermanStringTwoLevelAggHashSet<PhmapSeed1>>,
+        std::unique_ptr<OneGermanStringAggHashSet<PhmapSeed2>>,
+        std::unique_ptr<NullOneGermanStringAggHashSet<PhmapSeed2>>,
+        std::unique_ptr<OneGermanStringTwoLevelAggHashSet<PhmapSeed2>>,
+        std::unique_ptr<NullOneGermanStringTwoLevelAggHashSet<PhmapSeed2>>>;
 } // namespace detail
 struct AggHashMapVariant {
     enum class Type {
@@ -462,6 +504,11 @@ struct AggHashMapVariant {
         phase1_slice_cx8,
         phase1_slice_cx16,
 
+        phase1_german_string,
+        phase1_null_german_string,
+        phase1_german_string_two_level,
+        phase1_null_german_string_two_level,
+
         phase2_uint8,
         phase2_int8,
         phase2_int16,
@@ -502,6 +549,11 @@ struct AggHashMapVariant {
         phase2_slice_cx4,
         phase2_slice_cx8,
         phase2_slice_cx16,
+
+        phase2_german_string,
+        phase2_null_german_string,
+        phase2_german_string_two_level,
+        phase2_null_german_string_two_level,
     };
 
     detail::AggHashMapWithKeyPtr hash_map_with_key;
@@ -628,6 +680,15 @@ struct AggHashSetVariant {
         phase2_slice_cx4,
         phase2_slice_cx8,
         phase2_slice_cx16,
+
+        phase1_german_string,
+        phase1_null_german_string,
+        phase1_german_string_two_level,
+        phase1_null_german_string_two_level,
+        phase2_german_string,
+        phase2_null_german_string,
+        phase2_german_string_two_level,
+        phase2_null_german_string_two_level,
     };
 
     detail::AggHashSetWithKeyPtr hash_set_with_key;

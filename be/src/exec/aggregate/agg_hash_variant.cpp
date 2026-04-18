@@ -98,7 +98,16 @@
     M(phase2_slice_cx1)              \
     M(phase2_slice_cx4)              \
     M(phase2_slice_cx8)              \
-    M(phase2_slice_cx16)
+    M(phase2_slice_cx16)             \
+                                     \
+    M(phase1_german_string)              \
+    M(phase1_null_german_string)         \
+    M(phase1_german_string_two_level)    \
+    M(phase1_null_german_string_two_level) \
+    M(phase2_german_string)              \
+    M(phase2_null_german_string)         \
+    M(phase2_german_string_two_level)    \
+    M(phase2_null_german_string_two_level)
 
 namespace starrocks {
 namespace detail {
@@ -187,6 +196,17 @@ DEFINE_MAP_TYPE(AggHashMapVariant::Type::phase2_slice_cx1, CompressedFixedSize1A
 DEFINE_MAP_TYPE(AggHashMapVariant::Type::phase2_slice_cx4, CompressedFixedSize4AggHashMap<PhmapSeed2>);
 DEFINE_MAP_TYPE(AggHashMapVariant::Type::phase2_slice_cx8, CompressedFixedSize8AggHashMap<PhmapSeed2>);
 DEFINE_MAP_TYPE(AggHashMapVariant::Type::phase2_slice_cx16, CompressedFixedSize16AggHashMap<PhmapSeed2>);
+
+DEFINE_MAP_TYPE(AggHashMapVariant::Type::phase1_german_string, OneGermanStringAggHashMap<PhmapSeed1>);
+DEFINE_MAP_TYPE(AggHashMapVariant::Type::phase1_null_german_string, NullOneGermanStringAggHashMap<PhmapSeed1>);
+DEFINE_MAP_TYPE(AggHashMapVariant::Type::phase1_german_string_two_level, OneGermanStringTwoLevelAggHashMap<PhmapSeed1>);
+DEFINE_MAP_TYPE(AggHashMapVariant::Type::phase1_null_german_string_two_level,
+                NullOneGermanStringTwoLevelAggHashMap<PhmapSeed1>);
+DEFINE_MAP_TYPE(AggHashMapVariant::Type::phase2_german_string, OneGermanStringAggHashMap<PhmapSeed2>);
+DEFINE_MAP_TYPE(AggHashMapVariant::Type::phase2_null_german_string, NullOneGermanStringAggHashMap<PhmapSeed2>);
+DEFINE_MAP_TYPE(AggHashMapVariant::Type::phase2_german_string_two_level, OneGermanStringTwoLevelAggHashMap<PhmapSeed2>);
+DEFINE_MAP_TYPE(AggHashMapVariant::Type::phase2_null_german_string_two_level,
+                NullOneGermanStringTwoLevelAggHashMap<PhmapSeed2>);
 
 template <AggHashSetVariant::Type>
 struct AggHashSetVariantTypeTraits;
@@ -277,6 +297,17 @@ DEFINE_SET_TYPE(AggHashSetVariant::Type::phase2_slice_cx4, CompressedAggHashSetF
 DEFINE_SET_TYPE(AggHashSetVariant::Type::phase2_slice_cx8, CompressedAggHashSetFixedSize8<PhmapSeed2>);
 DEFINE_SET_TYPE(AggHashSetVariant::Type::phase2_slice_cx16, CompressedAggHashSetFixedSize16<PhmapSeed2>);
 
+DEFINE_SET_TYPE(AggHashSetVariant::Type::phase1_german_string, OneGermanStringAggHashSet<PhmapSeed1>);
+DEFINE_SET_TYPE(AggHashSetVariant::Type::phase1_null_german_string, NullOneGermanStringAggHashSet<PhmapSeed1>);
+DEFINE_SET_TYPE(AggHashSetVariant::Type::phase1_german_string_two_level, OneGermanStringTwoLevelAggHashSet<PhmapSeed1>);
+DEFINE_SET_TYPE(AggHashSetVariant::Type::phase1_null_german_string_two_level,
+                NullOneGermanStringTwoLevelAggHashSet<PhmapSeed1>);
+DEFINE_SET_TYPE(AggHashSetVariant::Type::phase2_german_string, OneGermanStringAggHashSet<PhmapSeed2>);
+DEFINE_SET_TYPE(AggHashSetVariant::Type::phase2_null_german_string, NullOneGermanStringAggHashSet<PhmapSeed2>);
+DEFINE_SET_TYPE(AggHashSetVariant::Type::phase2_german_string_two_level, OneGermanStringTwoLevelAggHashSet<PhmapSeed2>);
+DEFINE_SET_TYPE(AggHashSetVariant::Type::phase2_null_german_string_two_level,
+                NullOneGermanStringTwoLevelAggHashSet<PhmapSeed2>);
+
 } // namespace detail
 void AggHashMapVariant::init(RuntimeState* state, Type type, AggStatistics* agg_stat) {
     _type = type;
@@ -324,6 +355,12 @@ void AggHashMapVariant::convert_to_two_level(RuntimeState* state) {
 
     CONVERT_TO_TWO_LEVEL_MAP(phase1_null_string_two_level, phase1_null_string);
     CONVERT_TO_TWO_LEVEL_MAP(phase2_null_string_two_level, phase2_null_string);
+
+    CONVERT_TO_TWO_LEVEL_MAP(phase1_german_string_two_level, phase1_german_string);
+    CONVERT_TO_TWO_LEVEL_MAP(phase2_german_string_two_level, phase2_german_string);
+
+    CONVERT_TO_TWO_LEVEL_MAP(phase1_null_german_string_two_level, phase1_null_german_string);
+    CONVERT_TO_TWO_LEVEL_MAP(phase2_null_german_string_two_level, phase2_null_german_string);
 }
 
 void AggHashMapVariant::reset() {
@@ -410,6 +447,12 @@ void AggHashSetVariant::convert_to_two_level(RuntimeState* state) {
 
     CONVERT_TO_TWO_LEVEL_SET(phase1_null_string_two_level, phase1_null_string);
     CONVERT_TO_TWO_LEVEL_SET(phase2_null_string_two_level, phase2_null_string);
+
+    CONVERT_TO_TWO_LEVEL_SET(phase1_german_string_two_level, phase1_german_string);
+    CONVERT_TO_TWO_LEVEL_SET(phase2_german_string_two_level, phase2_german_string);
+
+    CONVERT_TO_TWO_LEVEL_SET(phase1_null_german_string_two_level, phase1_null_german_string);
+    CONVERT_TO_TWO_LEVEL_SET(phase2_null_german_string_two_level, phase2_null_german_string);
 }
 
 void AggHashSetVariant::reset() {
@@ -479,6 +522,9 @@ HashVariantResolver<HashVariantType>::HashVariantResolver() {
     ADD_VARIANT_PHASE1_TYPE(TYPE_LARGEINT, int128);
     ADD_VARIANT_PHASE1_TYPE(TYPE_CHAR, string);
     ADD_VARIANT_PHASE1_TYPE(TYPE_VARCHAR, string);
+    // Route TYPE_GERMAN_STRING to the GermanString-native arm (distinct from
+    // the Slice arm so benchmarks measure GermanString hashing / comparison).
+    ADD_VARIANT_PHASE1_TYPE(TYPE_GERMAN_STRING, german_string);
 }
 
 template <typename HashVariantType>
