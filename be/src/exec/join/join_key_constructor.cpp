@@ -173,6 +173,7 @@ template class ProbeKeyConstructorForOneKey<TYPE_DECIMAL32>;
 template class ProbeKeyConstructorForOneKey<TYPE_DECIMAL64>;
 template class ProbeKeyConstructorForOneKey<TYPE_DECIMAL128>;
 template class ProbeKeyConstructorForOneKey<TYPE_VARCHAR>;
+template class ProbeKeyConstructorForOneKey<TYPE_GERMAN_STRING>;
 
 template class BuildKeyConstructorForOneKey<TYPE_BOOLEAN>;
 template class BuildKeyConstructorForOneKey<TYPE_TINYINT>;
@@ -189,6 +190,7 @@ template class BuildKeyConstructorForOneKey<TYPE_DECIMAL32>;
 template class BuildKeyConstructorForOneKey<TYPE_DECIMAL64>;
 template class BuildKeyConstructorForOneKey<TYPE_DECIMAL128>;
 template class BuildKeyConstructorForOneKey<TYPE_VARCHAR>;
+template class BuildKeyConstructorForOneKey<TYPE_GERMAN_STRING>;
 
 template class BuildKeyConstructorForSerializedFixedSize<TYPE_BOOLEAN>;
 template class BuildKeyConstructorForSerializedFixedSize<TYPE_TINYINT>;

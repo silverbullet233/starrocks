@@ -118,6 +118,8 @@ private:
             std::unique_ptr<JoinHashMap<TYPE_DECIMAL64, JoinKeyConstructorType::ONE_KEY, JoinHashMapMethodType::MT>>,  \
             std::unique_ptr<JoinHashMap<TYPE_DECIMAL128, JoinKeyConstructorType::ONE_KEY, JoinHashMapMethodType::MT>>, \
             std::unique_ptr<JoinHashMap<TYPE_VARCHAR, JoinKeyConstructorType::ONE_KEY, JoinHashMapMethodType::MT>>,    \
+            std::unique_ptr<                                                                                           \
+                    JoinHashMap<TYPE_GERMAN_STRING, JoinKeyConstructorType::ONE_KEY, JoinHashMapMethodType::MT>>,      \
                                                                                                                        \
             std::unique_ptr<                                                                                           \
                     JoinHashMap<TYPE_INT, JoinKeyConstructorType::SERIALIZED_FIXED_SIZE, JoinHashMapMethodType::MT>>,  \

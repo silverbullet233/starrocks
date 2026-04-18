@@ -30,7 +30,12 @@ void BuildKeyConstructorForOneKey<LT>::build_key(RuntimeState* state, JoinHashTa
     // TODO: Going forward, if system testing verifies that the slice cache has no impact on join performance
     // in all scenarios, we will ultimately avoid building the slice cache. According to current simple benchmark
     // results, it provides only minor performance benefits in medium-cardinality scenarios.
-    if constexpr (lt_is_string<LT>) {
+    if constexpr (LT == TYPE_GERMAN_STRING) {
+        // GermanStringColumn already stores Buffer<GermanString> directly; no slice cache needed.
+        // Long-rep payload bytes live in the column's arena, which is held by
+        // `build_chunk` for the full probe phase, so keys remain valid without
+        // copying.
+    } else if constexpr (lt_is_string<LT>) {
         const auto* data_column = ColumnHelper::get_data_column(table_items->key_columns[0]);
         if (UNLIKELY(data_column->is_large_binary())) {
             ColumnHelper::as_raw_column<LargeBinaryColumn>(data_column)->build_slices(table_items->build_slice);
@@ -42,7 +47,10 @@ void BuildKeyConstructorForOneKey<LT>::build_key(RuntimeState* state, JoinHashTa
 
 template <LogicalType LT>
 auto BuildKeyConstructorForOneKey<LT>::get_key_data(const JoinHashTableItems& table_items) -> const ImmBuffer<CppType> {
-    if constexpr (lt_is_string<LT>) {
+    if constexpr (LT == TYPE_GERMAN_STRING) {
+        const auto* data_column = ColumnHelper::get_data_column(table_items.key_columns[0]);
+        return ColumnHelper::as_raw_column<ColumnType>(data_column)->get_data();
+    } else if constexpr (lt_is_string<LT>) {
         return table_items.build_slice;
     } else {
         const auto* data_column = ColumnHelper::get_data_column(table_items.key_columns[0]);
@@ -71,7 +79,10 @@ void ProbeKeyConstructorForOneKey<LT>::build_key(const JoinHashTableItems& table
     } else {
         probe_state->null_array = std::nullopt;
     }
-    if constexpr (lt_is_string<LT>) {
+    if constexpr (LT == TYPE_GERMAN_STRING) {
+        // GermanStringColumn already stores Buffer<GermanString>; the probe-side
+        // chunk owns the underlying arena for its lifetime, so no slice cache.
+    } else if constexpr (lt_is_string<LT>) {
         const auto* data_column = ColumnHelper::get_data_column_by_type<LT>((*probe_state->key_columns)[0]);
         data_column->build_slices(probe_state->probe_slice);
     }
@@ -80,7 +91,10 @@ void ProbeKeyConstructorForOneKey<LT>::build_key(const JoinHashTableItems& table
 template <LogicalType LT>
 auto ProbeKeyConstructorForOneKey<LT>::get_key_data(const HashTableProbeState& probe_state)
         -> const ImmBuffer<CppType> {
-    if constexpr (lt_is_string<LT>) {
+    if constexpr (LT == TYPE_GERMAN_STRING) {
+        const auto* data_column = ColumnHelper::get_data_column_by_type<LT>((*probe_state.key_columns)[0]);
+        return data_column->get_data();
+    } else if constexpr (lt_is_string<LT>) {
         return probe_state.probe_slice;
     } else {
         const auto* data_column = ColumnHelper::get_data_column_by_type<LT>((*probe_state.key_columns)[0]);

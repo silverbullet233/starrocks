@@ -15,6 +15,7 @@
 #pragma once
 
 #include "base/phmap/phmap.h"
+#include "column/german_string.h"
 #include "exec/join/join_hash_map_helper.h"
 #include "exec/join/join_hash_table_descriptor.h"
 
@@ -58,6 +59,22 @@ struct JoinKeyHash<Slice> {
     static const uint32_t CRC_SEED = 0x811C9DC5;
     uint32_t operator()(const Slice& slice, uint32_t num_buckets, uint32_t num_log_buckets) const {
         const size_t hash = crc_hash_32(slice.data, slice.size, CRC_SEED);
+        return hash & (num_buckets - 1);
+    }
+};
+
+// GermanString hash specialization.
+// The generic primary template would hash the 16-byte struct by value, which is
+// incorrect for long-rep strings because two equal strings backed by different
+// arenas would have different pointer bytes. Instead, delegate to
+// `GermanString::fnv_hash` / `crc32_hash` which hashes the logical string
+// payload (inline bytes or the out-of-line payload) and is the same primitive
+// C1 uses for the GermanString-keyed aggregation hash set.
+template <>
+struct JoinKeyHash<GermanString> {
+    static constexpr uint32_t CRC_SEED = 0x811C9DC5;
+    uint32_t operator()(const GermanString& gs, uint32_t num_buckets, uint32_t num_log_buckets) const {
+        const uint32_t hash = gs.fnv_hash(CRC_SEED);
         return hash & (num_buckets - 1);
     }
 };
