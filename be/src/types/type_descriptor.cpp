@@ -341,6 +341,7 @@ int TypeDescriptor::get_slot_size() const {
     case TYPE_LARGEINT:
     case TYPE_DECIMALV2:
     case TYPE_DECIMAL128:
+    case TYPE_GERMAN_STRING:
         return 16;
     case TYPE_DECIMAL256:
     case TYPE_INT256:
