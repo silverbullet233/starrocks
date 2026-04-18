@@ -20,7 +20,10 @@
 #include <string>
 #include <vector>
 
+#include "column/binary_column.h"
 #include "column/german_string.h"
+#include "column/mysql_row_buffer.h"
+#include "column/nullable_column.h"
 #include "column/vectorized_fwd.h"
 #include "types/datum.h"
 
@@ -221,6 +224,93 @@ TEST(GermanStringColumnTest, DatumGetGermanStringWrapsSliceBytes) {
     d2.set_german_string(gs);
     EXPECT_EQ(gs.len, d2.get_slice().size);
     EXPECT_EQ(gs.get_data(), d2.get_slice().data);
+}
+
+// ---------------------------------------------------------------------------
+// MySQL wire emission
+// ---------------------------------------------------------------------------
+//
+// The final MySQL result sink dispatches row-wise through the polymorphic
+// `Column::put_mysql_row_buffer`. GermanStringColumn must emit the exact
+// same bytes onto the wire as a BinaryColumn with the same logical content,
+// so JDBC / MySQL clients see identical VARCHAR rows regardless of which
+// column representation the fragment produces.
+
+TEST(GermanStringColumnTest, PutMysqlRowBufferMatchesBinaryColumn) {
+    // Mix of empty, short inline, exactly-12 boundary and >12 long-rep rows.
+    const std::vector<std::string> rows = {
+            "",
+            "abc",
+            "twelve char0",                              // 12 bytes: boundary, still inline
+            "0123456789ABCDEF",                          // 16 bytes: long rep
+            "a very long string of bytes for long rep",  // long rep
+            "contains \" and \\ escapes",                // ensures escape path equality
+    };
+
+    auto gs_col = GermanStringColumn::create();
+    auto bin_col = BinaryColumn::create();
+    for (const auto& s : rows) {
+        gs_col->append(Slice(s));
+        bin_col->append(Slice(s));
+    }
+
+    // Text protocol
+    {
+        MysqlRowBuffer gs_buf;
+        MysqlRowBuffer bin_buf;
+        for (size_t i = 0; i < rows.size(); ++i) {
+            gs_col->put_mysql_row_buffer(&gs_buf, i, /*is_binary_protocol=*/false);
+            bin_col->put_mysql_row_buffer(&bin_buf, i, /*is_binary_protocol=*/false);
+        }
+        EXPECT_EQ(bin_buf.data(), gs_buf.data());
+    }
+
+    // Binary protocol (prepared statements). For VARCHAR the wire format is
+    // the same length-prefixed string blob.
+    {
+        MysqlRowBuffer gs_buf(/*is_binary_format=*/true);
+        MysqlRowBuffer bin_buf(/*is_binary_format=*/true);
+        for (size_t i = 0; i < rows.size(); ++i) {
+            gs_col->put_mysql_row_buffer(&gs_buf, i, /*is_binary_protocol=*/true);
+            bin_col->put_mysql_row_buffer(&bin_buf, i, /*is_binary_protocol=*/true);
+        }
+        EXPECT_EQ(bin_buf.data(), gs_buf.data());
+    }
+}
+
+TEST(GermanStringColumnTest, PutMysqlRowBufferInsideNullableMatchesBinary) {
+    // Nullable wrappers should dispatch through to the underlying column's
+    // put_mysql_row_buffer, so a nullable GermanStringColumn with the same
+    // null mask must produce identical bytes to a nullable BinaryColumn.
+    auto gs_data = GermanStringColumn::create();
+    auto gs_nulls = NullColumn::create();
+    auto bin_data = BinaryColumn::create();
+    auto bin_nulls = NullColumn::create();
+
+    const std::vector<std::pair<std::string, bool>> rows = {
+            {"", false},
+            {"short", false},
+            {"irrelevant because null", true},
+            {"another long one for arena path", false},
+            {"hidden too", true},
+    };
+    for (const auto& [s, is_null] : rows) {
+        gs_data->append(Slice(s));
+        bin_data->append(Slice(s));
+        gs_nulls->append(is_null ? 1 : 0);
+        bin_nulls->append(is_null ? 1 : 0);
+    }
+
+    auto gs_nullable = NullableColumn::create(std::move(gs_data), std::move(gs_nulls));
+    auto bin_nullable = NullableColumn::create(std::move(bin_data), std::move(bin_nulls));
+
+    MysqlRowBuffer gs_buf;
+    MysqlRowBuffer bin_buf;
+    for (size_t i = 0; i < rows.size(); ++i) {
+        gs_nullable->put_mysql_row_buffer(&gs_buf, i);
+        bin_nullable->put_mysql_row_buffer(&bin_buf, i);
+    }
+    EXPECT_EQ(bin_buf.data(), gs_buf.data());
 }
 
 } // namespace starrocks
