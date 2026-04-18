@@ -22,6 +22,7 @@
 #include "column/chunk.h"
 #include "column/column_helper.h"
 #include "column/column_visitor_adapter.h"
+#include "column/german_string_column.h"
 #include "column/json_column.h"
 #include "column/map_column.h"
 #include "column/runtime_type_traits.h"
@@ -327,6 +328,15 @@ struct ColumnBuilder {
 };
 
 MutableColumnPtr ChunkHelper::column_from_field_type(LogicalType type, bool nullable) {
+    // TYPE_GERMAN_STRING is not part of the storage-layer field_type_dispatch_column
+    // macro coverage; storage integration lands in a later phase. Route it to
+    // GermanStringColumn here so runtime-side callers (chunk builders outside the
+    // storage read path) materialize the right column type.
+    if (type == TYPE_GERMAN_STRING) {
+        MutableColumnPtr col = GermanStringColumn::create();
+        return nullable ? MutableColumnPtr(NullableColumn::create(std::move(col), NullColumn::create()))
+                        : std::move(col);
+    }
     return field_type_dispatch_column(type, ColumnBuilder(), nullable);
 }
 
