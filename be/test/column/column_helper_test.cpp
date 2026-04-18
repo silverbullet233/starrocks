@@ -15,6 +15,7 @@
 #include "column/column_helper.h"
 
 #include "column/column_builder.h"
+#include "column/german_string_column.h"
 #include "gtest/gtest.h"
 #include "testutil/column_test_helper.h"
 
@@ -319,6 +320,95 @@ TEST_F(ColumnHelperTest, get_storage_container_get_data_with_row_nullable) {
     EXPECT_EQ(GetStorageContainer<TYPE_INT>::get_data(col.get(), 0), 10);
     EXPECT_EQ(GetStorageContainer<TYPE_INT>::get_data(col.get(), 1), 20);
     EXPECT_EQ(GetStorageContainer<TYPE_INT>::get_data(col.get(), 2), 30);
+}
+
+// convert_german_string_to_binary_column
+
+TEST_F(ColumnHelperTest, convert_german_string_to_binary_column_basic) {
+    auto gs = GermanStringColumn::create();
+    gs->append(Slice("tiny"));                                                    // inline, len=4
+    gs->append(Slice(""));                                                        // empty inline
+    gs->append(Slice("abcdefghijkl"));                                            // inline, len=12 (boundary)
+    gs->append(Slice("this-is-a-long-string-forced-out-of-line-representation")); // long (> 12)
+
+    ColumnPtr src = std::move(gs);
+    ColumnPtr converted = ColumnHelper::convert_german_string_to_binary_column(src);
+
+    ASSERT_NE(converted.get(), src.get()) << "GermanStringColumn must be materialized into a fresh BinaryColumn";
+    ASSERT_TRUE(converted->is_binary());
+    ASSERT_FALSE(converted->is_nullable());
+    const auto* bin = down_cast<const BinaryColumn*>(converted.get());
+    ASSERT_EQ(bin->size(), 4);
+    EXPECT_EQ(bin->get_slice(0).to_string(), "tiny");
+    EXPECT_EQ(bin->get_slice(1).to_string(), "");
+    EXPECT_EQ(bin->get_slice(2).to_string(), "abcdefghijkl");
+    EXPECT_EQ(bin->get_slice(3).to_string(), "this-is-a-long-string-forced-out-of-line-representation");
+}
+
+TEST_F(ColumnHelperTest, convert_german_string_to_binary_column_nullable) {
+    auto gs = GermanStringColumn::create();
+    gs->append(Slice("row0"));
+    gs->append(Slice("row1-long-payload-goes-here"));
+    gs->append(Slice("row2"));
+
+    auto null = NullColumn::create();
+    null->append(0);
+    null->append(1); // null row
+    null->append(0);
+
+    ColumnPtr src = NullableColumn::create(std::move(gs), std::move(null));
+    ColumnPtr converted = ColumnHelper::convert_german_string_to_binary_column(src);
+
+    ASSERT_NE(converted.get(), src.get());
+    ASSERT_TRUE(converted->is_nullable());
+    const auto* nullable = down_cast<const NullableColumn*>(converted.get());
+    const auto* bin = down_cast<const BinaryColumn*>(nullable->data_column().get());
+    ASSERT_EQ(bin->size(), 3);
+    EXPECT_EQ(bin->get_slice(0).to_string(), "row0");
+    EXPECT_EQ(bin->get_slice(2).to_string(), "row2");
+    EXPECT_TRUE(nullable->is_null(1));
+    EXPECT_FALSE(nullable->is_null(0));
+    EXPECT_FALSE(nullable->is_null(2));
+}
+
+TEST_F(ColumnHelperTest, convert_german_string_to_binary_column_passthrough) {
+    // BinaryColumn input: returned alias, no conversion performed.
+    auto bin_src = BinaryColumn::create();
+    bin_src->append_string("hello");
+    bin_src->append_string("world");
+    ColumnPtr src = std::move(bin_src);
+    ColumnPtr converted = ColumnHelper::convert_german_string_to_binary_column(src);
+    EXPECT_EQ(converted.get(), src.get());
+
+    // Non-string column: returned alias.
+    auto int_src = ColumnTestHelper::build_column<int32_t>({1, 2, 3});
+    ColumnPtr int_ptr = std::move(int_src);
+    ColumnPtr int_conv = ColumnHelper::convert_german_string_to_binary_column(int_ptr);
+    EXPECT_EQ(int_conv.get(), int_ptr.get());
+
+    // Nullable(BinaryColumn): returned alias.
+    auto bin_data = BinaryColumn::create();
+    bin_data->append_string("abc");
+    auto null_col = NullColumn::create();
+    null_col->append(0);
+    ColumnPtr nullable_bin = NullableColumn::create(std::move(bin_data), std::move(null_col));
+    ColumnPtr nullable_conv = ColumnHelper::convert_german_string_to_binary_column(nullable_bin);
+    EXPECT_EQ(nullable_conv.get(), nullable_bin.get());
+}
+
+TEST_F(ColumnHelperTest, convert_german_string_to_binary_column_owns_bytes) {
+    // Ensure converted bytes are independent of the source arena.
+    auto gs = GermanStringColumn::create();
+    std::string long_str(128, 'z'); // out-of-line
+    gs->append(Slice(long_str));
+
+    ColumnPtr src = std::move(gs);
+    ColumnPtr converted = ColumnHelper::convert_german_string_to_binary_column(src);
+    src.reset(); // drop the source column and its arena
+
+    const auto* bin = down_cast<const BinaryColumn*>(converted.get());
+    ASSERT_EQ(bin->size(), 1);
+    EXPECT_EQ(bin->get_slice(0).to_string(), long_str);
 }
 
 } // namespace starrocks

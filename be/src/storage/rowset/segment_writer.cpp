@@ -41,6 +41,7 @@
 #include "base/string/faststring.h"
 #include "column/binary_column.h"
 #include "column/chunk.h"
+#include "column/column_helper.h"
 #include "column/datum_tuple.h"
 #include "column/nullable_column.h"
 #include "column/schema.h"
@@ -413,8 +414,15 @@ Status SegmentWriter::append_chunk(const Chunk& chunk) {
     size_t chunk_num_rows = chunk.num_rows();
     size_t chunk_num_columns = chunk.num_columns();
     for (size_t i = 0; i < chunk_num_columns; ++i) {
-        const Column* col = chunk.get_column_raw_ptr_by_index(i);
-        RETURN_IF_ERROR(_column_writers[i]->append(*col));
+        const ColumnPtr& col_ptr = chunk.get_column_by_index(i);
+        // Storage writers (plain / prefix / dict string encoders, zone map,
+        // bloom filter, inverted index) all consume BinaryColumn. If the query
+        // path produced a GermanStringColumn (enable_german_string=true), we
+        // materialize a transient BinaryColumn with copied bytes here. Returned
+        // pointer aliases |col_ptr| when no conversion is needed (non-string
+        // columns and already-BinaryColumn string columns).
+        ColumnPtr converted = ColumnHelper::convert_german_string_to_binary_column(col_ptr);
+        RETURN_IF_ERROR(_column_writers[i]->append(*converted));
     }
 
     // TODO(cbl): put the fill full row column logic here is a bit hacky, this segment writer is used in many other

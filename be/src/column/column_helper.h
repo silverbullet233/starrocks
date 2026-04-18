@@ -699,6 +699,16 @@ public:
 
     static MutableColumnPtr create_const_null_column(size_t chunk_size);
 
+    // Convert a GermanStringColumn (possibly wrapped in NullableColumn) into a
+    // BinaryColumn. Used by the storage write path, which only understands
+    // BinaryColumn. If |src| is not a GermanStringColumn (or a NullableColumn
+    // wrapping one), the returned pointer aliases |src| unchanged.
+    //
+    // Per-row copy is intentional: the returned BinaryColumn owns its own bytes
+    // so it does not share pointers with the source column's arena, keeping
+    // lifetimes independent. See plan trade-off #1.
+    static ColumnPtr convert_german_string_to_binary_column(const ColumnPtr& src);
+
     static Status update_nested_has_null(Column* column);
 
     static ColumnPtr convert_time_column_from_double_to_str(const ColumnPtr& column);

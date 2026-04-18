@@ -20,6 +20,7 @@
 #include "column/binary_column.h"
 #include "column/column_view/column_view_helper.h"
 #include "column/column_visitor_adapter.h"
+#include "column/german_string_column.h"
 #include "column/map_column.h"
 #include "column/struct_column.h"
 #include "column/vectorized_fwd.h"
@@ -254,6 +255,50 @@ MutableColumnPtr ColumnHelper::create_const_null_column(size_t chunk_size) {
     auto nullable_column = NullableColumn::create(Int8Column::create(), NullColumn::create());
     nullable_column->append_nulls(1);
     return ConstColumn::create(std::move(nullable_column), chunk_size);
+}
+
+namespace {
+
+// Build a BinaryColumn with the same rows as |src|. Bytes are copied so the
+// resulting column does not alias the source's arena.
+MutableColumnPtr german_to_binary(const GermanStringColumn& src) {
+    auto out = BinaryColumn::create();
+    const size_t n = src.size();
+    out->reserve(n);
+    // Batched Slice view -> BinaryColumn::append_strings copies bytes once.
+    Buffer<Slice> slices;
+    slices.reserve(n);
+    for (size_t i = 0; i < n; ++i) {
+        slices.emplace_back(src.get_slice(i));
+    }
+    out->append_strings(slices.data(), slices.size());
+    return out;
+}
+
+} // namespace
+
+ColumnPtr ColumnHelper::convert_german_string_to_binary_column(const ColumnPtr& src) {
+    if (src == nullptr) {
+        return src;
+    }
+    // Unwrap NullableColumn: convert the data column only, keep the null column
+    // as-is (cloned into a fresh NullableColumn).
+    if (src->is_nullable()) {
+        const auto* nullable = down_cast<const NullableColumn*>(src.get());
+        const auto* gs = dynamic_cast<const GermanStringColumn*>(nullable->data_column().get());
+        if (gs == nullptr) {
+            return src;
+        }
+        auto binary_data = german_to_binary(*gs);
+        // Clone null column to keep the new NullableColumn independent of |src|.
+        auto null_clone = NullColumn::static_pointer_cast(nullable->null_column()->clone());
+        return NullableColumn::create(std::move(binary_data), std::move(null_clone));
+    }
+    const auto* gs = dynamic_cast<const GermanStringColumn*>(src.get());
+    if (gs == nullptr) {
+        return src;
+    }
+    return german_to_binary(*gs);
 }
 
 class UpdateColumnNullInfoVisitor : public ColumnVisitorMutableAdapter<UpdateColumnNullInfoVisitor> {
