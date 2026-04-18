@@ -23,7 +23,6 @@
 #include "column/column.h"
 #include "column/german_string.h"
 #include "column/vectorized_fwd.h"
-#include "common/statusor.h"
 
 namespace starrocks {
 

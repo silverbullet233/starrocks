@@ -17,7 +17,6 @@
 #include "column/mysql_row_buffer.h"
 #include "column/vectorized_fwd.h"
 #include "gutil/casts.h"
-#include "gutil/strings/fastmem.h"
 #include "gutil/strings/substitute.h"
 #include "types/datum.h"
 
