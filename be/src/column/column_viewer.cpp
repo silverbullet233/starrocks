@@ -76,5 +76,6 @@ APPLY_FOR_ALL_SCALAR_TYPE_WITH_NULL(M);
 template class ColumnViewer<TYPE_HLL>;
 template class ColumnViewer<TYPE_OBJECT>;
 template class ColumnViewer<TYPE_PERCENTILE>;
+template class ColumnViewer<TYPE_GERMAN_STRING>;
 
 } // namespace starrocks
