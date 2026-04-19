@@ -385,7 +385,9 @@ Status StringFunctions::concat_prepare(FunctionContext* context, FunctionContext
 
     for (auto i = 1; i < num_args; ++i) {
         auto const_arg = context->get_constant_column(i);
-        auto s = ColumnHelper::get_const_value<TYPE_VARCHAR>(const_arg);
+        // Read through Datum::get_slice() so the same prepare works for both
+        // the VARCHAR builtin (30250) and the GERMAN_STRING builtin (38250).
+        const Slice s = const_arg->get(0).get_slice();
         if (tail_off + s.size > get_olap_string_max_length()) {
             //oversize
             state->is_oversize = true;
@@ -3311,7 +3313,11 @@ Status StringFunctions::regexp_extract_prepare(FunctionContext* context, Functio
 
     state->const_pattern = true;
     auto column = context->get_constant_column(1);
-    auto pattern = ColumnHelper::get_const_value<TYPE_VARCHAR>(column);
+    // Read through Datum::get_slice() so the same prepare works for both the
+    // VARCHAR builtin (30320) and the GERMAN_STRING builtin (38290). A direct
+    // get_const_value<TYPE_VARCHAR> silently yields empty bytes when the
+    // literal is materialized as a GermanStringColumn.
+    const Slice pattern = column->get(0).get_slice();
     state->pattern = pattern.to_string();
     state->regex = std::make_unique<re2::RE2>(state->pattern, *(state->options));
 
@@ -3345,7 +3351,9 @@ Status StringFunctions::regexp_replace_prepare(FunctionContext* context, Functio
 
     state->const_pattern = true;
     auto column = context->get_constant_column(1);
-    auto pattern = ColumnHelper::get_const_value<TYPE_VARCHAR>(column);
+    // Use Datum::get_slice() for BinaryColumn/GermanStringColumn symmetry
+    // (regexp_replace is registered both as VARCHAR 30330 and GS 38300).
+    const Slice pattern = column->get(0).get_slice();
     std::string pattern_str = pattern.to_string();
     state->pattern = pattern_str;
 
@@ -3372,8 +3380,7 @@ Status StringFunctions::regexp_replace_prepare(FunctionContext* context, Functio
     state->global_mode = pattern_str.empty() || (!pattern_str.starts_with("^") && !pattern_str.ends_with("$"));
     if (context->is_notnull_constant_column(2)) {
         const auto rpl_column = context->get_constant_column(2);
-        const auto rpl_slice = ColumnHelper::get_const_value<TYPE_VARCHAR>(rpl_column);
-        state->opt_const_rpl = rpl_slice.to_string();
+        state->opt_const_rpl = rpl_column->get(0).get_slice().to_string();
     }
     return Status::OK();
 }
@@ -6314,7 +6321,7 @@ StatusOr<ColumnPtr> StringFunctions::regexp_extract_german_string(FunctionContex
     auto* state = reinterpret_cast<StringFunctionsState*>(context->get_function_state(FunctionContext::THREAD_LOCAL));
 
     ColumnViewer<TYPE_GERMAN_STRING> content_viewer(columns[0]);
-    ColumnViewer<TYPE_VARCHAR> ptn_viewer(columns[1]);
+    ColumnViewer<TYPE_GERMAN_STRING> ptn_viewer(columns[1]);
     ColumnViewer<TYPE_BIGINT> field_viewer(columns[2]);
 
     const size_t num_rows = columns[0]->size();
@@ -6338,10 +6345,11 @@ StatusOr<ColumnPtr> StringFunctions::regexp_extract_german_string(FunctionContex
         re2::RE2* re_ptr = const_re;
         std::unique_ptr<re2::RE2> local_re;
         if (re_ptr == nullptr) {
-            auto ptn = ptn_viewer.value(row);
-            local_re = std::make_unique<re2::RE2>(re2::StringPiece(ptn.data, ptn.size), *(state->options));
+            const auto ptn = ptn_viewer.value(row);
+            local_re = std::make_unique<re2::RE2>(re2::StringPiece(ptn.get_data(), ptn.len), *(state->options));
             if (!local_re->ok()) {
-                context->set_error(strings::Substitute("Invalid regex: $0", ptn.to_string()).c_str());
+                context->set_error(
+                        strings::Substitute("Invalid regex: $0", std::string(ptn.get_data(), ptn.len)).c_str());
                 builder.append_null();
                 continue;
             }
@@ -6371,8 +6379,8 @@ StatusOr<ColumnPtr> StringFunctions::regexp_replace_german_string(FunctionContex
     auto* state = reinterpret_cast<StringFunctionsState*>(context->get_function_state(FunctionContext::THREAD_LOCAL));
 
     ColumnViewer<TYPE_GERMAN_STRING> str_viewer(columns[0]);
-    ColumnViewer<TYPE_VARCHAR> ptn_viewer(columns[1]);
-    ColumnViewer<TYPE_VARCHAR> rpl_viewer(columns[2]);
+    ColumnViewer<TYPE_GERMAN_STRING> ptn_viewer(columns[1]);
+    ColumnViewer<TYPE_GERMAN_STRING> rpl_viewer(columns[2]);
 
     const size_t num_rows = columns[0]->size();
     ColumnBuilder<TYPE_GERMAN_STRING> builder(num_rows);
@@ -6393,18 +6401,19 @@ StatusOr<ColumnPtr> StringFunctions::regexp_replace_german_string(FunctionContex
         re2::RE2* re_ptr = const_re;
         std::unique_ptr<re2::RE2> local_re;
         if (re_ptr == nullptr) {
-            const Slice ptn = ptn_viewer.value(row);
-            local_re = std::make_unique<re2::RE2>(re2::StringPiece(ptn.data, ptn.size), *(state->options));
+            const auto ptn = ptn_viewer.value(row);
+            local_re = std::make_unique<re2::RE2>(re2::StringPiece(ptn.get_data(), ptn.len), *(state->options));
             if (!local_re->ok()) {
-                context->set_error(strings::Substitute("Invalid regex: $0", ptn.to_string()).c_str());
+                context->set_error(
+                        strings::Substitute("Invalid regex: $0", std::string(ptn.get_data(), ptn.len)).c_str());
                 builder.append_null();
                 continue;
             }
             re_ptr = local_re.get();
         }
 
-        const Slice rpl = rpl_viewer.value(row);
-        re2::StringPiece rpl_sp(rpl.data, rpl.size);
+        const auto rpl = rpl_viewer.value(row);
+        re2::StringPiece rpl_sp(rpl.get_data(), rpl.len);
         result_str.assign(gs.get_data(), gs.len);
         re2::RE2::GlobalReplace(&result_str, *re_ptr, rpl_sp);
         (void)append_bytes_to_german_string_builder(builder, result_str.data(), result_str.size());

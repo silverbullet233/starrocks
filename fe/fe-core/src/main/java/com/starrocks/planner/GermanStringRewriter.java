@@ -224,6 +224,23 @@ public final class GermanStringRewriter {
     private static void rewritePlanNodeExprs(PlanNode node) {
         rewriteExprList(node.getConjuncts());
 
+        if (node instanceof ScanNode) {
+            ScanNode scanNode = (ScanNode) node;
+            // `heavy exprs` hold scan-side projections that ExprToThrift
+            // serializes through `TPlanNodeCommon.heavy_exprs` (see
+            // OlapScanNode.toThrift). These are not reachable through
+            // getConjuncts() and must be rewritten explicitly so GS children
+            // and fn_ids flow to the BE for scan-pushed expressions.
+            rewriteExprMap(scanNode.getHeavyExprs());
+        }
+        if (node instanceof OlapScanNode) {
+            OlapScanNode olapScanNode = (OlapScanNode) node;
+            // Bucket exprs are serialized as `bucket_exprs` and feed into the
+            // scan-side bucket-pruning predicates. Keep them aligned with
+            // rewritten slot types.
+            rewriteExprList(olapScanNode.getBucketExprs());
+        }
+
         if (node instanceof JoinNode) {
             JoinNode joinNode = (JoinNode) node;
             rewriteExprList(joinNode.getEqJoinConjuncts());
@@ -381,15 +398,28 @@ public final class GermanStringRewriter {
             fnCall.setFn(gsFn);
             fnCall.setType(newRetType);
 
-            // Children may be VARCHAR literals (not rewritten because they
-            // carry no fn_id). Flip them to GS so the GS-dispatched builtin
-            // sees uniformly typed columns. Non-literal VARCHAR children stay
-            // on VARCHAR; a CAST is inserted below only if the original arg
-            // slot called for GERMAN_STRING.
+            // Every child of a GS-mapped function must produce a
+            // GermanStringColumn at runtime, otherwise the GS viewer hits a
+            // BinaryColumn and crashes. Flip VARCHAR literals in place (BE's
+            // literal.cpp materialises a GermanStringColumn) and flip
+            // CastExpr targets from VARCHAR to GS (BE's cast_expr routes the
+            // corresponding GS variant). Any other non-GS child — rare, but
+            // e.g. a FunctionCallExpr with no GS variant — gets wrapped in
+            // CAST(... AS GERMAN_STRING) so the evaluation still produces a
+            // GermanStringColumn at the GS builtin's boundary.
             for (int i = 0; i < fnCall.getChildren().size(); ++i) {
                 Expr child = fnCall.getChild(i);
-                if (child instanceof LiteralExpr && isScalarVarchar(child.getType())) {
+                if (!isScalarVarchar(child.getType())) {
+                    continue;
+                }
+                if (child instanceof LiteralExpr) {
                     child.setType(rewriteType(child.getType()));
+                } else if (child instanceof CastExpr) {
+                    child.setType(rewriteType(child.getType()));
+                } else {
+                    int length = ((ScalarType) child.getType()).getLength();
+                    Type gsType = TypeFactory.createGermanStringType(length);
+                    fnCall.setChild(i, new CastExpr(gsType, child));
                 }
             }
             return;
