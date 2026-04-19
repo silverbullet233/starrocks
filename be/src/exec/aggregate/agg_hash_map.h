@@ -891,14 +891,6 @@ struct AggHashMapWithOneGermanStringKeyWithNullable
         if (src.is_inline()) {
             return src;
         }
-        // Guard against a long-rep key whose payload pointer is null. This can
-        // happen transiently if the hash map is probed with a stale value
-        // during rehash; returning an empty inline key is safe here since the
-        // caller will overwrite the slot on actual insert.
-        if (src.long_rep.ptr == 0 || src.len == 0) {
-            GermanString empty;
-            return empty;
-        }
         uint8_t* pos = pool->allocate_with_reserve(src.len, SLICE_MEMEQUAL_OVERFLOW_PADDING);
         return GermanString(src, pos);
     }
