@@ -324,16 +324,6 @@ public class ScalarType extends Type implements Cloneable {
             return true;
         }
         if (this.isStringType() && t.isStringType()) {
-            // GERMAN_STRING is a distinct type used by the FE query-path
-            // rewrite; it must not blanket-match VARCHAR/CHAR during function
-            // overload resolution, otherwise the rewriter (and the
-            // addBuiltInFunction dedup check) would collapse it onto the
-            // VARCHAR overload.
-            boolean thisIsGs = this.getPrimitiveType() == PrimitiveType.GERMAN_STRING;
-            boolean thatIsGs = t.getPrimitiveType() == PrimitiveType.GERMAN_STRING;
-            if (thisIsGs != thatIsGs) {
-                return false;
-            }
             return true;
         }
         if (this.getPrimitiveType() == t.getPrimitiveType()) {

@@ -155,8 +155,17 @@ Status ColumnExprPredicate::evaluate_or(const Column* column, uint8_t* sel, uint
 bool ColumnExprPredicate::zone_map_filter(const ZoneMapDetail& detail) const {
     // if expr does not satisfy monotonicity, we can not apply zone map.
     if (!_monotonic) return true;
-    // construct column and chunk by zone map
+    // Construct the column in the type the expression tree expects. The
+    // predicate's `_type_info` tracks the *storage* type (VARCHAR for string
+    // pages), but when the FE has rewritten the slot to TYPE_GERMAN_STRING
+    // the expression reads via ColumnViewer<TYPE_GERMAN_STRING>; feeding a
+    // BinaryColumn would trigger a reinterpret down_cast. Prefer the slot's
+    // type when it differs, so the zone-map probe uses GermanStringColumn.
     TypeDescriptor type_desc = TypeDescriptor::from_storage_type_info(_type_info.get());
+    if (_slot_desc != nullptr && _slot_desc->type().type == TYPE_GERMAN_STRING &&
+        (type_desc.type == TYPE_VARCHAR || type_desc.type == TYPE_CHAR)) {
+        type_desc = _slot_desc->type();
+    }
     MutableColumnPtr col = ColumnHelper::create_column(type_desc, detail.has_null());
     // null, min, max
     uint16_t size = 0;

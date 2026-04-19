@@ -14,24 +14,29 @@
 
 package com.starrocks.planner;
 
+import com.starrocks.builtins.VectorizedGermanStringFunctionMap;
 import com.starrocks.catalog.Function;
+import com.starrocks.catalog.ScalarFunction;
 import com.starrocks.catalog.Table;
 import com.starrocks.qe.SessionVariable;
 import com.starrocks.sql.ast.OrderByElement;
+import com.starrocks.sql.ast.expression.BinaryPredicate;
+import com.starrocks.sql.ast.expression.CastExpr;
 import com.starrocks.sql.ast.expression.Expr;
-import com.starrocks.sql.ast.expression.ExprUtils;
 import com.starrocks.sql.ast.expression.FunctionCallExpr;
+import com.starrocks.sql.ast.expression.InPredicate;
+import com.starrocks.sql.ast.expression.LiteralExpr;
 import com.starrocks.sql.ast.expression.SlotRef;
 import com.starrocks.sql.plan.ExecPlan;
 import com.starrocks.type.PrimitiveType;
 import com.starrocks.type.ScalarType;
 import com.starrocks.type.Type;
 import com.starrocks.type.TypeFactory;
+import com.starrocks.type.VarcharType;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.Collection;
 import java.util.List;
 import java.util.Map;
@@ -40,6 +45,21 @@ import java.util.Map;
  * Late-stage plan rewriter that converts {@code TYPE_VARCHAR} to
  * {@code TYPE_GERMAN_STRING} on slots and expressions reachable from OLAP scan
  * outputs when {@code enable_german_string} is on.
+ *
+ * <p>Design principle: {@code TYPE_GERMAN_STRING} is a BE-only optimization
+ * type — it never appears in SQL, DDL, or FE's {@code FunctionSet}. FE
+ * resolves function overloads purely on VARCHAR. This pass performs a pure
+ * substitution right before Thrift serialization:
+ * <ol>
+ *   <li>Flip slot and expression types from VARCHAR to GERMAN_STRING on
+ *       everything reachable from OLAP scan outputs.</li>
+ *   <li>For each {@link FunctionCallExpr} whose VARCHAR fn_id has a GS
+ *       counterpart (see
+ *       {@link VectorizedGermanStringFunctionMap}), swap the fn_id and
+ *       rebuild the {@link ScalarFunction} signature with GERMAN_STRING
+ *       arg/return types. Functions without a GS counterpart keep their
+ *       VARCHAR fn_id; their subtree types are NOT flipped to GS.</li>
+ * </ol>
  *
  * <p>Invariants preserved by this pass:
  * <ul>
@@ -54,14 +74,6 @@ import java.util.Map;
  *       elements are left intact (out of scope for the first cut).</li>
  *   <li>CHAR is left as-is; only VARCHAR is converted.</li>
  * </ul>
- *
- * <p><b>Mutation model.</b> The pass mutates the {@code ExecPlan} in place.
- * Because plan objects are not reused across queries in this path, and because
- * the analyzer's cached {@code ScalarType.VARCHAR} singleton is never mutated
- * (we always replace references with a freshly constructed
- * {@link com.starrocks.type.GermanStringType}), the rewrite is safe for the
- * benchmark-oriented prototype. Do NOT invoke this pass on a shared/cached
- * plan object.
  */
 public final class GermanStringRewriter {
 
@@ -280,8 +292,8 @@ public final class GermanStringRewriter {
     /**
      * Recursively rewrite every expression in the subtree rooted at
      * {@code expr}. Children are visited first so parent function signatures
-     * see the rewritten child types, matching how cast/coercion exprs derive
-     * their own type from child types at analysis time.
+     * see the rewritten child types; function fn_id substitution happens on
+     * the parent only when the builtin has a GS counterpart.
      */
     private static void rewriteExprTree(Expr expr) {
         if (expr == null) {
@@ -314,56 +326,132 @@ public final class GermanStringRewriter {
             return;
         }
 
-        // Re-bind FunctionCallExpr to its GermanString overload when any
-        // argument now has GERMAN_STRING type. Without this, the BE ends up
-        // invoking the VARCHAR implementation with a GermanStringColumn input
-        // (or vice versa) and crashes via the unchecked down_cast chain.
         if (expr instanceof FunctionCallExpr) {
-            rebindGermanStringFunction((FunctionCallExpr) expr);
+            swapGermanStringFunction((FunctionCallExpr) expr);
             return;
         }
 
-        if (isScalarVarchar(expr.getType())) {
-            expr.setType(rewriteType(expr.getType()));
+        // BinaryPredicate / InPredicate are not FunctionCallExprs and have no
+        // fn_id to swap; BE dispatches them on {@code child_type}. When one
+        // side is already GERMAN_STRING (typically a SlotRef into a rewritten
+        // tuple), make every sibling consistent with GS: literals get a pure
+        // type flip (BE's literal.cpp TYPE_GERMAN_STRING branch materializes a
+        // GermanStringColumn from the stored value with no conversion); any
+        // other VARCHAR child (e.g. a constant-folded CastExpr) gets an
+        // explicit CAST(... AS GERMAN_STRING) wrapper so the predicate
+        // dispatcher sees uniformly-typed inputs.
+        if (expr instanceof BinaryPredicate || expr instanceof InPredicate) {
+            coerceSiblingsToGermanString(expr);
         }
     }
 
     /**
-     * If any child of a {@link FunctionCallExpr} has a {@code GERMAN_STRING}
-     * type after the rewrite, look up a matching builtin overload (GermanString
-     * counterpart) and rebind the call. Falls back to a VARCHAR rewrite of the
-     * return type if no specialized overload exists.
+     * Swap a {@link FunctionCallExpr}'s VARCHAR builtin fn_id to its
+     * GERMAN_STRING counterpart when one is registered in
+     * {@link VectorizedGermanStringFunctionMap}. Also rebuild the
+     * {@link ScalarFunction} with GERMAN_STRING arg/return types so the
+     * resulting {@code TFunction} carries GS types end-to-end on the wire.
+     *
+     * <p>If no GS counterpart exists, the call is left on the VARCHAR fn_id
+     * and the expression's return type is NOT flipped to GS. Callers of this
+     * expression are expected to see a VARCHAR result; downstream consumers
+     * built on {@link SlotRef}s bound to rewritten SlotDescriptors will still
+     * advertise GS, which is fine because the column plumbing is column-type
+     * driven at runtime.
      */
-    private static void rebindGermanStringFunction(FunctionCallExpr fnCall) {
-        List<Expr> children = fnCall.getChildren();
-        Type[] argTypes = new Type[children.size()];
-        boolean hasGermanString = false;
-        for (int i = 0; i < children.size(); ++i) {
-            argTypes[i] = children.get(i).getType();
-            if (argTypes[i] != null && argTypes[i].isScalarType()
-                    && argTypes[i].getPrimitiveType() == PrimitiveType.GERMAN_STRING) {
-                hasGermanString = true;
-            }
+    private static void swapGermanStringFunction(FunctionCallExpr fnCall) {
+        Function fn = fnCall.getFn();
+        if (fn == null) {
+            return;
         }
-
-        if (hasGermanString && fnCall.getFn() != null) {
-            String fnName = fnCall.getFn().getFunctionName().getFunction();
-            Function newFn = ExprUtils.getBuiltinFunction(fnName, argTypes, Function.CompareMode.IS_IDENTICAL);
-            if (newFn == null) {
-                newFn = ExprUtils.getBuiltinFunction(fnName, argTypes, Function.CompareMode.IS_SUPERTYPE_OF);
-            }
-            if (newFn != null && newFn != fnCall.getFn()) {
-                fnCall.setFn(newFn);
-                if (newFn.getReturnType() != null) {
-                    fnCall.setType(newFn.getReturnType());
-                    return;
+        Long gsFnId = VectorizedGermanStringFunctionMap.getGermanStringId(fn.getFunctionId());
+        if (gsFnId != null) {
+            String fnName = fn.getFunctionName().getFunction();
+            Type[] originalArgs = fn.getArgs();
+            List<Type> newArgTypes = new ArrayList<>(originalArgs == null ? 0 : originalArgs.length);
+            if (originalArgs != null) {
+                for (Type t : originalArgs) {
+                    newArgTypes.add(rewriteStringType(t));
                 }
             }
+            Type newRetType = rewriteStringType(fn.getReturnType());
+
+            ScalarFunction gsFn = ScalarFunction.createVectorizedBuiltin(
+                    gsFnId, fnName, newArgTypes, fn.hasVarArgs(), newRetType);
+            fnCall.setFn(gsFn);
+            fnCall.setType(newRetType);
+
+            // Children may be VARCHAR literals (not rewritten because they
+            // carry no fn_id). Flip them to GS so the GS-dispatched builtin
+            // sees uniformly typed columns. Non-literal VARCHAR children stay
+            // on VARCHAR; a CAST is inserted below only if the original arg
+            // slot called for GERMAN_STRING.
+            for (int i = 0; i < fnCall.getChildren().size(); ++i) {
+                Expr child = fnCall.getChild(i);
+                if (child instanceof LiteralExpr && isScalarVarchar(child.getType())) {
+                    child.setType(rewriteType(child.getType()));
+                }
+            }
+            return;
         }
 
-        if (isScalarVarchar(fnCall.getType())) {
-            fnCall.setType(rewriteType(fnCall.getType()));
+        // No GS counterpart: the function keeps its VARCHAR fn_id. Any GS
+        // children now flowing in (e.g. SlotRef into a rewritten slot) must
+        // be converted back to VARCHAR because BE's VARCHAR builtin expects
+        // BinaryColumn input. This is the single compatibility shim for
+        // string builtins that lack a GS variant yet.
+        for (int i = 0; i < fnCall.getChildren().size(); ++i) {
+            Expr child = fnCall.getChild(i);
+            if (!isScalarGermanString(child.getType())) {
+                continue;
+            }
+            int length = ((ScalarType) child.getType()).getLength();
+            Type varchar = length > 0 ? TypeFactory.createVarcharType(length) : VarcharType.VARCHAR;
+            fnCall.setChild(i, new CastExpr(varchar, child));
         }
+    }
+
+    /**
+     * If any child of {@code expr} is already {@code GERMAN_STRING}, make
+     * every sibling consistent:
+     * <ul>
+     *   <li>{@link LiteralExpr} with VARCHAR type → in-place type flip to GS
+     *       (BE's literal.cpp materializes a GermanStringColumn directly).</li>
+     *   <li>Any other child with VARCHAR type (CastExpr, FunctionCallExpr with
+     *       no GS variant, ...) → wrap in {@code CAST(... AS GERMAN_STRING)}
+     *       so BE's predicate dispatcher sees a uniform child_type.</li>
+     * </ul>
+     */
+    private static void coerceSiblingsToGermanString(Expr expr) {
+        boolean hasGermanString = false;
+        for (Expr child : expr.getChildren()) {
+            if (isScalarGermanString(child.getType())) {
+                hasGermanString = true;
+                break;
+            }
+        }
+        if (!hasGermanString) {
+            return;
+        }
+        for (int i = 0; i < expr.getChildren().size(); ++i) {
+            Expr child = expr.getChild(i);
+            Type t = child.getType();
+            if (!isScalarVarchar(t)) {
+                continue;
+            }
+            if (child instanceof LiteralExpr) {
+                child.setType(rewriteType(t));
+            } else {
+                int length = ((ScalarType) t).getLength();
+                Type gsType = TypeFactory.createGermanStringType(length);
+                expr.setChild(i, new CastExpr(gsType, child));
+            }
+        }
+    }
+
+    private static boolean isScalarGermanString(Type t) {
+        return t != null && t.isScalarType()
+                && t.getPrimitiveType() == PrimitiveType.GERMAN_STRING;
     }
 
     /**
@@ -376,6 +464,24 @@ public final class GermanStringRewriter {
         }
         ScalarType scalarType = (ScalarType) t;
         return TypeFactory.createGermanStringType(scalarType.getLength());
+    }
+
+    /**
+     * Returns a GERMAN_STRING replacement for VARCHAR/CHAR scalar types; any
+     * other type (INT, BIGINT, BOOLEAN, already-GS, ...) is returned as-is.
+     * Used when reconstructing a {@link ScalarFunction}'s signature from the
+     * VARCHAR builtin.
+     */
+    private static Type rewriteStringType(Type t) {
+        if (t == null || !t.isScalarType()) {
+            return t;
+        }
+        PrimitiveType pt = t.getPrimitiveType();
+        if (pt == PrimitiveType.VARCHAR || pt == PrimitiveType.CHAR) {
+            int length = ((ScalarType) t).getLength();
+            return TypeFactory.createGermanStringType(length);
+        }
+        return t;
     }
 
     private static boolean isScalarVarchar(Type t) {

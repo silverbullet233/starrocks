@@ -552,6 +552,14 @@ Expr* VectorizedBinaryPredicateFactory::from_thrift(const TExprNode& node) {
         } else {
             return nullptr;
         }
+    } else if (type == TYPE_GERMAN_STRING) {
+        // TYPE_GERMAN_STRING is intentionally excluded from APPLY_FOR_ALL_SCALAR_TYPE
+        // (which `type_dispatch_predicate` uses) to avoid pulling GermanString
+        // through every generic predicate/runtime-filter/hash template. The
+        // binary predicate template itself does instantiate cleanly for
+        // GermanString (Eval* functors map to std::equal_to<GermanString>
+        // etc., and the column viewer routes through ColumnViewer<TYPE_GERMAN_STRING>).
+        return BinaryPredicateBuilder().template operator()<TYPE_GERMAN_STRING>(node);
     } else {
         return type_dispatch_predicate<Expr*>(type, true, BinaryPredicateBuilder(), node);
     }

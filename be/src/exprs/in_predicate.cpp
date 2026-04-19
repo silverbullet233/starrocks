@@ -48,6 +48,14 @@ Expr* VectorizedInPredicateFactory::from_thrift(const TExprNode& node) {
     switch (node.opcode) {
     case TExprOpcode::FILTER_IN:
     case TExprOpcode::FILTER_NOT_IN:
+        if (child_type == TYPE_GERMAN_STRING) {
+            // TYPE_GERMAN_STRING is not part of the APPLY_FOR_ALL_SCALAR_TYPE
+            // macro used by `type_dispatch_basic_and_complex_types`. The in-
+            // predicate template itself instantiates cleanly for GermanString
+            // (equality uses std::equal_to<GermanString>, hash routes through
+            // GermanString's std::hash specialization).
+            return InConstPredicateBuilder().template operator()<TYPE_GERMAN_STRING>(node);
+        }
         return type_dispatch_basic_and_complex_types(child_type, InConstPredicateBuilder(), node);
     case TExprOpcode::FILTER_NEW_IN:
     case TExprOpcode::FILTER_NEW_NOT_IN:

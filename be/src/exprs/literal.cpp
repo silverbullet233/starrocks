@@ -17,6 +17,7 @@
 #include "column/chunk.h"
 #include "column/column_helper.h"
 #include "column/const_column.h"
+#include "column/german_string_column.h"
 #include "column/vectorized_fwd.h"
 #include "common/statusor.h"
 #include "gutil/port.h"
@@ -105,11 +106,12 @@ VectorizedLiteral::VectorizedLiteral(const TExprNode& node) : Expr(node) {
         break;
     }
     case TYPE_GERMAN_STRING: {
-        // Wrap the literal's bytes as a Slice and build a TYPE_VARCHAR const
-        // column. Downstream paths that consume a GermanString slot get a
-        // const Slice with identical bytes; no GermanString-specific const
-        // column is needed for a literal (it materializes at evaluation).
-        _value = ColumnHelper::create_const_column<TYPE_VARCHAR>(Slice(node.string_literal.value), 1);
+        // Build a const column whose data column is a GermanStringColumn with
+        // one row, so expression operators that consume a GERMAN_STRING slot
+        // see the literal through the correctly-typed column viewer.
+        auto gs = GermanStringColumn::create();
+        gs->append_bytes(node.string_literal.value.data(), node.string_literal.value.size());
+        _value = ConstColumn::create(std::move(gs), 1);
         break;
     }
     case TYPE_TIME: {

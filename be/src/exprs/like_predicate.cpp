@@ -122,7 +122,10 @@ Status LikePredicate::like_prepare(FunctionContext* context, FunctionContext::Fu
     }
 
     auto column = context->get_constant_column(1);
-    auto pattern = ColumnHelper::get_const_value<TYPE_VARCHAR>(column);
+    // Read the constant pattern through ConstColumn::get() so we transparently
+    // handle both BinaryColumn (VARCHAR literal) and GermanStringColumn
+    // (GermanString literal) without a typed down_cast.
+    Slice pattern = column->get(0).get_slice();
     std::string pattern_str = pattern.to_string();
     std::string search_string;
 
@@ -186,7 +189,9 @@ Status LikePredicate::regex_prepare(FunctionContext* context, FunctionContext::F
     }
 
     auto column = context->get_constant_column(1);
-    auto pattern = ColumnHelper::get_const_value<TYPE_VARCHAR>(column);
+    // Read through ConstColumn::get() so the pattern is retrieved correctly
+    // whether the literal resolved to BinaryColumn or GermanStringColumn.
+    Slice pattern = column->get(0).get_slice();
     std::string pattern_str = pattern.to_string();
     std::string search_string;
 
