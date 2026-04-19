@@ -21,6 +21,7 @@ import com.starrocks.catalog.Table;
 import com.starrocks.qe.SessionVariable;
 import com.starrocks.sql.ast.OrderByElement;
 import com.starrocks.sql.ast.expression.BinaryPredicate;
+import com.starrocks.sql.ast.expression.CaseExpr;
 import com.starrocks.sql.ast.expression.CastExpr;
 import com.starrocks.sql.ast.expression.Expr;
 import com.starrocks.sql.ast.expression.FunctionCallExpr;
@@ -360,6 +361,112 @@ public final class GermanStringRewriter {
         if (expr instanceof BinaryPredicate || expr instanceof InPredicate) {
             coerceSiblingsToGermanString(expr);
         }
+
+        if (expr instanceof CaseExpr) {
+            unifyCaseBranchTypes((CaseExpr) expr);
+        }
+    }
+
+    /**
+     * Unify the result type of a {@link CaseExpr} when some THEN/ELSE branches
+     * have been rewritten to {@code GERMAN_STRING} and others are still
+     * {@code VARCHAR}. BE's CaseExpr dispatcher requires all result branches
+     * to share the same LogicalType: a branch returning GermanStringColumn
+     * adjacent to one returning BinaryColumn crashes in the column-copy path.
+     *
+     * <p>When at least one result branch is {@code GERMAN_STRING}, flip
+     * sibling VARCHAR {@link LiteralExpr} branches in place and wrap
+     * non-literal VARCHAR branches in {@code CAST(... AS GERMAN_STRING)}.
+     * The CaseExpr's own type is then set to {@code GERMAN_STRING}.
+     *
+     * <p>CaseExpr child layout (see CaseExpr docstring):
+     * [caseExpr?, when1, then1, when2, then2, ..., whenN, thenN, elseExpr?]
+     * Only THEN and ELSE branches contribute to the result type.
+     */
+    private static void unifyCaseBranchTypes(CaseExpr caseExpr) {
+        List<Integer> resultIndices = collectCaseResultIndices(caseExpr);
+        boolean resultHasGs = false;
+        for (int idx : resultIndices) {
+            if (isScalarGermanString(caseExpr.getChild(idx).getType())) {
+                resultHasGs = true;
+                break;
+            }
+        }
+        if (resultHasGs) {
+            for (int idx : resultIndices) {
+                coerceCaseBranchToGermanString(caseExpr, idx);
+            }
+            if (isScalarVarchar(caseExpr.getType())) {
+                caseExpr.setType(rewriteType(caseExpr.getType()));
+            }
+        }
+
+        // If the leading CASE expr (children[0]) is GERMAN_STRING, the BE
+        // dispatches the WHEN comparisons as TYPE_GERMAN_STRING (child_type
+        // is taken from children[0]). The WHEN branches must therefore also
+        // be GS-typed; BE viewers would otherwise mismatch.
+        if (caseExpr.hasCaseExpr()
+                && isScalarGermanString(caseExpr.getChild(0).getType())) {
+            List<Integer> whenIndices = collectCaseWhenIndices(caseExpr);
+            for (int idx : whenIndices) {
+                coerceCaseBranchToGermanString(caseExpr, idx);
+            }
+        }
+    }
+
+    /**
+     * If the CaseExpr child at {@code idx} is scalar VARCHAR, promote it to
+     * GERMAN_STRING: LiteralExpr gets an in-place type flip, anything else
+     * gets wrapped in CAST(... AS GERMAN_STRING).
+     */
+    private static void coerceCaseBranchToGermanString(CaseExpr caseExpr, int idx) {
+        Expr branch = caseExpr.getChild(idx);
+        Type t = branch.getType();
+        if (!isScalarVarchar(t)) {
+            return;
+        }
+        if (branch instanceof LiteralExpr) {
+            branch.setType(rewriteType(t));
+        } else {
+            int length = ((ScalarType) t).getLength();
+            Type gsType = TypeFactory.createGermanStringType(length);
+            caseExpr.setChild(idx, new CastExpr(gsType, branch));
+        }
+    }
+
+    /**
+     * Indices of the THEN/ELSE result branches of a {@link CaseExpr}, computed
+     * from the child layout {@code [caseExpr?, when1, then1, ..., elseExpr?]}.
+     * WHEN conditions and the optional leading caseExpr are excluded because
+     * they do not participate in the result type.
+     */
+    private static List<Integer> collectCaseResultIndices(CaseExpr caseExpr) {
+        int start = caseExpr.hasCaseExpr() ? 1 : 0;
+        int end = caseExpr.hasElseExpr() ? caseExpr.getChildren().size() - 1 : caseExpr.getChildren().size();
+        List<Integer> indices = new ArrayList<>();
+        for (int i = start + 1; i < end; i += 2) {
+            indices.add(i);
+        }
+        if (caseExpr.hasElseExpr()) {
+            indices.add(caseExpr.getChildren().size() - 1);
+        }
+        return indices;
+    }
+
+    /**
+     * Indices of the WHEN comparison branches of a CASE expression that has a
+     * leading case expr (form {@code CASE expr WHEN ... THEN ...}). WHEN
+     * branches are compared against {@code children[0]} and must therefore
+     * match its type in the BE dispatcher.
+     */
+    private static List<Integer> collectCaseWhenIndices(CaseExpr caseExpr) {
+        int start = caseExpr.hasCaseExpr() ? 1 : 0;
+        int end = caseExpr.hasElseExpr() ? caseExpr.getChildren().size() - 1 : caseExpr.getChildren().size();
+        List<Integer> indices = new ArrayList<>();
+        for (int i = start; i < end; i += 2) {
+            indices.add(i);
+        }
+        return indices;
     }
 
     /**

@@ -436,6 +436,44 @@ select /*+SET_VAR(enable_german_string=true,cbo_enable_low_cardinality_optimize=
 from t_main group by 1;
 
 -- ---------------------------------------------------------------
+-- Position 9b: CASE WHEN with mixed VARCHAR literal + GS function branches
+--
+-- The rewriter unifies branches (VARCHAR literals flip to GS; non-literal
+-- VARCHAR branches wrap in CAST(... AS GERMAN_STRING)) and flips the
+-- CaseExpr's own result type to GS. BE's VectorizedCaseExprFactory has a
+-- TYPE_GERMAN_STRING result-type arm.
+-- ---------------------------------------------------------------
+select /*+SET_VAR(enable_german_string=false,cbo_enable_low_cardinality_optimize=false)*/ 0 as grp,
+  sum(murmur_hash3_32(
+    case when length(short_s) = 0 then 'empty'
+         when length(short_s) <= 12 then concat('inline:', short_s)
+         else concat('long:', substr(short_s, 1, 4)) end
+  )) as fp
+from t_main group by 1;
+select /*+SET_VAR(enable_german_string=true,cbo_enable_low_cardinality_optimize=false)*/ 0 as grp,
+  sum(murmur_hash3_32(
+    case when length(short_s) = 0 then 'empty'
+         when length(short_s) <= 12 then concat('inline:', short_s)
+         else concat('long:', substr(short_s, 1, 4)) end
+  )) as fp
+from t_main group by 1;
+
+select /*+SET_VAR(enable_german_string=false,cbo_enable_low_cardinality_optimize=false)*/ 0 as grp,
+  sum(murmur_hash3_32(
+    case short_s when 'apple' then 'fruit-a'
+                 when 'banana' then 'fruit-b'
+                 else concat('other:', substr(short_s, 1, 3)) end
+  )) as fp
+from t_main group by 1;
+select /*+SET_VAR(enable_german_string=true,cbo_enable_low_cardinality_optimize=false)*/ 0 as grp,
+  sum(murmur_hash3_32(
+    case short_s when 'apple' then 'fruit-a'
+                 when 'banana' then 'fruit-b'
+                 else concat('other:', substr(short_s, 1, 3)) end
+  )) as fp
+from t_main group by 1;
+
+-- ---------------------------------------------------------------
 -- Position 10: Comprehensive string functions (column, literal, nested)
 -- ---------------------------------------------------------------
 select /*+SET_VAR(enable_german_string=false,cbo_enable_low_cardinality_optimize=false)*/ 0 as grp,

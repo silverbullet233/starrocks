@@ -562,6 +562,46 @@ from t_main group by 1;
 0	-2201052615
 -- !result
 select /*+SET_VAR(enable_german_string=false,cbo_enable_low_cardinality_optimize=false)*/ 0 as grp,
+  sum(murmur_hash3_32(
+    case when length(short_s) = 0 then 'empty'
+         when length(short_s) <= 12 then concat('inline:', short_s)
+         else concat('long:', substr(short_s, 1, 4)) end
+  )) as fp
+from t_main group by 1;
+-- result:
+0	-3821132307
+-- !result
+select /*+SET_VAR(enable_german_string=true,cbo_enable_low_cardinality_optimize=false)*/ 0 as grp,
+  sum(murmur_hash3_32(
+    case when length(short_s) = 0 then 'empty'
+         when length(short_s) <= 12 then concat('inline:', short_s)
+         else concat('long:', substr(short_s, 1, 4)) end
+  )) as fp
+from t_main group by 1;
+-- result:
+0	-3821132307
+-- !result
+select /*+SET_VAR(enable_german_string=false,cbo_enable_low_cardinality_optimize=false)*/ 0 as grp,
+  sum(murmur_hash3_32(
+    case short_s when 'apple' then 'fruit-a'
+                 when 'banana' then 'fruit-b'
+                 else concat('other:', substr(short_s, 1, 3)) end
+  )) as fp
+from t_main group by 1;
+-- result:
+0	4366865661
+-- !result
+select /*+SET_VAR(enable_german_string=true,cbo_enable_low_cardinality_optimize=false)*/ 0 as grp,
+  sum(murmur_hash3_32(
+    case short_s when 'apple' then 'fruit-a'
+                 when 'banana' then 'fruit-b'
+                 else concat('other:', substr(short_s, 1, 3)) end
+  )) as fp
+from t_main group by 1;
+-- result:
+0	4366865661
+-- !result
+select /*+SET_VAR(enable_german_string=false,cbo_enable_low_cardinality_optimize=false)*/ 0 as grp,
   sum(murmur_hash3_32(id,
     trim(short_s), ltrim(short_s), rtrim(short_s),
     lpad(short_s, 12, '*'), rpad(short_s, 12, '*'),

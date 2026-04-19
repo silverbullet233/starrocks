@@ -692,6 +692,7 @@ private:
         CASE_WHEN_RESULT_TYPE(TYPE_ARRAY, RESULT_TYPE);                                   \
         CASE_WHEN_RESULT_TYPE(TYPE_MAP, RESULT_TYPE);                                     \
         CASE_WHEN_RESULT_TYPE(TYPE_STRUCT, RESULT_TYPE);                                  \
+        CASE_WHEN_RESULT_TYPE(TYPE_GERMAN_STRING, RESULT_TYPE);                           \
     default: {                                                                            \
         LOG(WARNING) << "vectorized engine case expr no support when type: " << whenType; \
         return nullptr;                                                                   \
@@ -717,6 +718,11 @@ Expr* VectorizedCaseExprFactory::from_thrift(const starrocks::TExprNode& node) {
         CASE_RESULT_TYPE(TYPE_OBJECT)
         CASE_RESULT_TYPE(TYPE_HLL)
         CASE_RESULT_TYPE(TYPE_PERCENTILE)
+        // TYPE_GERMAN_STRING is intentionally excluded from
+        // APPLY_FOR_ALL_SCALAR_TYPE; the CaseExpr template instantiates
+        // cleanly for GermanString (result construction routes through
+        // ColumnBuilder<TYPE_GERMAN_STRING>).
+        CASE_RESULT_TYPE(TYPE_GERMAN_STRING)
     default: {
         LOG(WARNING) << "vectorized engine case expr no support result type: " << resultType;
         return nullptr;
@@ -736,6 +742,7 @@ Expr* VectorizedCaseExprFactory::from_thrift(const starrocks::TExprNode& node, L
         CASE_RESULT_TYPE(TYPE_OBJECT)
         CASE_RESULT_TYPE(TYPE_HLL)
         CASE_RESULT_TYPE(TYPE_PERCENTILE)
+        CASE_RESULT_TYPE(TYPE_GERMAN_STRING)
     default: {
         LOG(WARNING) << "vectorized engine case expr no support result type: " << resultType;
         return nullptr;
