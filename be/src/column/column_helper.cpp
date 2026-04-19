@@ -275,41 +275,7 @@ MutableColumnPtr german_to_binary(const GermanStringColumn& src) {
     return out;
 }
 
-MutableColumnPtr binary_to_german(const BinaryColumn& src) {
-    auto out = GermanStringColumn::create();
-    const size_t n = src.size();
-    out->reserve(n);
-    Buffer<Slice> slices;
-    slices.reserve(n);
-    for (size_t i = 0; i < n; ++i) {
-        slices.emplace_back(src.get_slice(i));
-    }
-    out->append_strings(slices.data(), slices.size());
-    return out;
-}
-
 } // namespace
-
-ColumnPtr ColumnHelper::convert_binary_to_german_string_column(const ColumnPtr& src) {
-    if (src == nullptr) {
-        return src;
-    }
-    if (src->is_nullable()) {
-        const auto* nullable = down_cast<const NullableColumn*>(src.get());
-        const auto* binary = dynamic_cast<const BinaryColumn*>(nullable->data_column().get());
-        if (binary == nullptr) {
-            return src;
-        }
-        auto german_data = binary_to_german(*binary);
-        auto null_clone = NullColumn::static_pointer_cast(nullable->null_column()->clone());
-        return NullableColumn::create(std::move(german_data), std::move(null_clone));
-    }
-    const auto* binary = dynamic_cast<const BinaryColumn*>(src.get());
-    if (binary == nullptr) {
-        return src;
-    }
-    return binary_to_german(*binary);
-}
 
 ColumnPtr ColumnHelper::convert_german_string_to_binary_column(const ColumnPtr& src) {
     if (src == nullptr) {

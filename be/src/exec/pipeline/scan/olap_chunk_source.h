@@ -71,6 +71,10 @@ private:
     Status _init_column_access_paths(Schema* schema);
     Status _prune_schema_by_access_paths(Schema* schema);
     Status _extend_schema_by_access_paths();
+    // Rewrite the storage Schema's VARCHAR/CHAR fields to TYPE_GERMAN_STRING
+    // for slots the FE has rewritten to TYPE_GERMAN_STRING, so every chunk
+    // downstream storage iterators allocate will carry GermanStringColumn.
+    void _override_schema_to_german_string(Schema& schema);
 
 private:
     TabletReaderParams _params{};

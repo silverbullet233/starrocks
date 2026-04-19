@@ -361,6 +361,24 @@ Status OlapChunkSource::_init_reader_params(const std::vector<std::unique_ptr<Ol
     return Status::OK();
 }
 
+void OlapChunkSource::_override_schema_to_german_string(Schema& schema) {
+    for (auto* slot : _query_slots) {
+        if (slot->type().type != TYPE_GERMAN_STRING) {
+            continue;
+        }
+        const auto& existing = schema.get_field_by_name(std::string(slot->col_name()));
+        if (existing == nullptr) {
+            continue;
+        }
+        LogicalType storage_type = existing->type()->type();
+        if (storage_type != TYPE_VARCHAR && storage_type != TYPE_CHAR) {
+            continue;
+        }
+        auto new_field = existing->with_type(get_type_info(TYPE_GERMAN_STRING));
+        schema.set_field_by_name(std::move(new_field), std::string(slot->col_name()));
+    }
+}
+
 Status OlapChunkSource::_init_scanner_columns(std::vector<uint32_t>& scanner_columns,
                                               std::vector<uint32_t>& reader_columns) {
     for (auto slot : *_slots) {
@@ -582,6 +600,14 @@ Status OlapChunkSource::_init_olap_reader(RuntimeState* runtime_state) {
     RETURN_IF_ERROR(_init_column_access_paths(&child_schema));
     // will modify schema field, need to copy schema
     RETURN_IF_ERROR(_prune_schema_by_access_paths(&child_schema));
+    // When the FE has rewritten a varchar slot to TYPE_GERMAN_STRING, rewrite
+    // the corresponding storage Schema fields so every chunk allocated by
+    // downstream iterators (SegmentIterator::_read_chunk, _final_chunk, etc.)
+    // already carries a GermanStringColumn. The page decoder's virtual
+    // Column::append_strings then materialises GermanString entries directly
+    // into that column — this is the single decode-time materialisation the
+    // spec permits, with no post-scan BinaryColumn→GermanStringColumn copy.
+    _override_schema_to_german_string(child_schema);
 
     std::vector<RowsetSharedPtr> rowsets;
     for (auto& rowset : _morsel->rowsets()) {
@@ -595,6 +621,7 @@ Status OlapChunkSource::_init_olap_reader(RuntimeState* runtime_state) {
         _prj_iter = _reader;
     } else {
         starrocks::Schema output_schema = ChunkHelper::convert_schema(_tablet_schema, scanner_columns);
+        _override_schema_to_german_string(output_schema);
         _prj_iter = new_projection_iterator(output_schema, _reader);
     }
 
@@ -700,26 +727,6 @@ Status OlapChunkSource::_read_chunk_from_storage(RuntimeState* state, Chunk* chu
         for (auto slot : _query_slots) {
             size_t column_index = chunk->schema()->get_field_index_by_name(slot->col_name());
             chunk->set_slot_id_to_index(slot->id(), column_index);
-        }
-
-        // Decode-time materialization: the storage layer emits BinaryColumn for
-        // varchar pages, but downstream non-pushdown predicates and the rest of
-        // the query pipeline expect TYPE_GERMAN_STRING columns when the FE has
-        // rewritten a varchar slot. Convert once here (per spec trade-off: the
-        // single decode-time materialization point).
-        for (auto* slot : _query_slots) {
-            if (slot->type().type != TYPE_GERMAN_STRING) {
-                continue;
-            }
-            size_t column_index = chunk->schema()->get_field_index_by_name(slot->col_name());
-            if (column_index == static_cast<size_t>(-1)) {
-                continue;
-            }
-            const ColumnPtr& existing = chunk->get_column_by_index(column_index);
-            ColumnPtr converted = ColumnHelper::convert_binary_to_german_string_column(existing);
-            if (converted.get() != existing.get()) {
-                chunk->update_column_by_index(std::move(converted), column_index);
-            }
         }
 
         if (!_non_pushdown_pred_tree.empty()) {
