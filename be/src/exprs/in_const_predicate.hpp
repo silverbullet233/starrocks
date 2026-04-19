@@ -170,6 +170,19 @@ public:
                     continue;
                 }
 
+                if constexpr (Type == TYPE_GERMAN_STRING) {
+                    // GermanStrings longer than 12 bytes carry an arena
+                    // pointer into the originating GermanStringColumn. The
+                    // hash set stores GermanString values by shallow copy,
+                    // so we must retain the ColumnPtr holding that arena
+                    // for the lifetime of the predicate (same rationale as
+                    // the isSliceLT branch).
+                    if (_hash_set.emplace(viewer.value(0)).second) {
+                        _string_values.emplace_back(value);
+                    }
+                    continue;
+                }
+
                 if (use_array) {
                     if constexpr (can_use_array()) {
                         _set_array_index(viewer.value(0));

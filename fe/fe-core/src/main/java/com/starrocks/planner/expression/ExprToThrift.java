@@ -16,9 +16,11 @@ package com.starrocks.planner.expression;
 
 import com.google.common.base.Preconditions;
 import com.google.common.collect.Lists;
+import com.starrocks.builtins.VectorizedGermanStringFunctionMap;
 import com.starrocks.catalog.Function;
 import com.starrocks.catalog.FunctionName;
 import com.starrocks.catalog.FunctionSet;
+import com.starrocks.catalog.ScalarFunction;
 import com.starrocks.planner.SlotDescriptor;
 import com.starrocks.sql.analyzer.AnalyzerUtils;
 import com.starrocks.sql.ast.AssertNumRowsElement;
@@ -109,7 +111,10 @@ import com.starrocks.thrift.TStringLiteral;
 import com.starrocks.thrift.TVarType;
 import com.starrocks.type.BooleanType;
 import com.starrocks.type.InvalidType;
+import com.starrocks.type.PrimitiveType;
+import com.starrocks.type.ScalarType;
 import com.starrocks.type.Type;
+import com.starrocks.type.TypeFactory;
 import com.starrocks.type.TypeSerializer;
 
 import java.nio.ByteBuffer;
@@ -381,10 +386,28 @@ public final class ExprToThrift {
         @Override
         public Void visitLikePredicate(LikePredicate node, TExprNode msg) {
             msg.node_type = TExprNodeType.FUNCTION_CALL;
+            // LikePredicate resolves its builtin at Thrift time (not analysis
+            // time). To keep the GermanStringRewriter out of ExprUtils paths,
+            // look up the VARCHAR overload by normalizing GERMAN_STRING child
+            // types back to VARCHAR, then swap the fn_id to its GS counterpart
+            // if the rewriter has flipped children to GS.
+            Type lhsType = node.getChild(0).getType();
+            Type rhsType = node.getChild(1).getType();
+            Type lhsVarchar = normalizeGermanStringToVarchar(lhsType);
+            Type rhsVarchar = normalizeGermanStringToVarchar(rhsType);
             Function fn = ExprUtils.getBuiltinFunction(node.getOp().name(),
-                    new Type[] {node.getChild(0).getType(), node.getChild(1).getType()},
+                    new Type[] {lhsVarchar, rhsVarchar},
                     Function.CompareMode.IS_NONSTRICT_SUPERTYPE_OF);
             if (fn != null) {
+                Long gsFnId = VectorizedGermanStringFunctionMap.getGermanStringId(fn.getFunctionId());
+                if (gsFnId != null && (isGermanString(lhsType) || isGermanString(rhsType))) {
+                    fn = ScalarFunction.createVectorizedBuiltin(
+                            gsFnId,
+                            fn.getFunctionName().getFunction(),
+                            Lists.newArrayList(lhsType, rhsType),
+                            fn.hasVarArgs(),
+                            fn.getReturnType());
+                }
                 TFunction tfn = fn.toThrift();
                 tfn.setIgnore_nulls(node.getIgnoreNulls());
                 msg.setFn(tfn);
@@ -393,6 +416,19 @@ public final class ExprToThrift {
                 }
             }
             return null;
+        }
+
+        private static boolean isGermanString(Type t) {
+            return t != null && t.isScalarType()
+                    && t.getPrimitiveType() == PrimitiveType.GERMAN_STRING;
+        }
+
+        private static Type normalizeGermanStringToVarchar(Type t) {
+            if (!isGermanString(t)) {
+                return t;
+            }
+            int length = ((ScalarType) t).getLength();
+            return TypeFactory.createVarcharType(length);
         }
 
         @Override

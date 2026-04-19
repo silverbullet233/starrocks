@@ -4682,8 +4682,12 @@ Status StringFunctions::replace_prepare(FunctionContext* context, FunctionContex
     }
 
     state->const_pattern = true;
-    const auto pattern = ColumnHelper::get_const_value<TYPE_VARCHAR>(pattern_col);
-    state->pattern = pattern.to_string();
+    // Read through ConstColumn::get().get_slice() so the const value is
+    // retrieved correctly whether the underlying column resolved to a
+    // BinaryColumn (VARCHAR literal) or GermanStringColumn (GERMAN_STRING
+    // literal). An unchecked get_const_value<TYPE_VARCHAR> would down_cast
+    // incorrectly for the GS fn_id (38220).
+    state->pattern = pattern_col->get(0).get_slice().to_string();
 
     if (!context->is_constant_column(2)) {
         return Status::OK();
@@ -4696,8 +4700,7 @@ Status StringFunctions::replace_prepare(FunctionContext* context, FunctionContex
     }
 
     state->const_repl = true;
-    const auto repl = ColumnHelper::get_const_value<TYPE_VARCHAR>(replace_col);
-    state->repl = repl.to_string();
+    state->repl = replace_col->get(0).get_slice().to_string();
 
     return Status::OK();
 }
