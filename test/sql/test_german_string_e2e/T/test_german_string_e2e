@@ -9,15 +9,14 @@
 -- them and validate-mode (`run.py -v`) fails if GS ever drifts.
 --
 -- Grouping on a constant column (`SELECT 0 AS grp, sum(...) GROUP BY 1`)
--- keeps the aggregation on the grouped codepath, which is the intended
--- production shape; the scalar-aggregate codepath hits latent arena-lifetime
--- bugs on GS builtins (tracked separately) that are orthogonal to the
--- position-coverage we want from this test.
+-- keeps the aggregation on the grouped codepath, which matches the
+-- production shape exercised by real GROUP BY queries. Scalar aggregate
+-- over GS-returning expressions is also correct after the rewriter's
+-- idempotency fix (see task #32).
 --
--- Coverage: each position fingerprints a different row-level expression;
--- aggregates over GS columns are avoided here (no min/max/group_concat on
--- string columns) because those need additional arena-lifetime work in BE
--- (tasks #22, #32, #33 track the known rewriter/BE gaps).
+-- Coverage: each position fingerprints a different row-level expression.
+-- Aggregates over GS columns (min/max/group_concat) are still avoided
+-- pending additional arena-copy work in BE's aggregate state encoders.
 --
 -- Cluster hint: disable the low-cardinality dict optimizer -- a pre-existing
 -- (VARCHAR-side) bug around UNION ALL dict decoding can corrupt the baseline
@@ -365,14 +364,23 @@ from (
 ) q group by 1;
 
 -- ---------------------------------------------------------------
--- Position 8: Set operations -- UNION / INTERSECT / EXCEPT
---
--- UNION ALL is skipped. Under GS, the union's output GermanStringColumn
--- carries dangling long_rep.ptr into the downstream aggregator, so the
--- hash of long-rep values varies per run. Task #34 tracks the arena-copy
--- fix needed in BE's UnionPassthroughOperator / UnionChunkSource.
--- UNION / INTERSECT / EXCEPT dedupe via grouping which already arena-copies.
+-- Position 8: Set operations -- UNION ALL / UNION / INTERSECT / EXCEPT
 -- ---------------------------------------------------------------
+select /*+SET_VAR(enable_german_string=false,cbo_enable_low_cardinality_optimize=false)*/ 0 as grp,
+  sum(murmur_hash3_32(s, length(s))) as fp
+from (
+  select short_s as s from t_main where length(short_s) > 0
+  union all
+  select long_s from t_main where long_s = '' or length(long_s) > 20
+) q group by 1;
+select /*+SET_VAR(enable_german_string=true,cbo_enable_low_cardinality_optimize=false)*/ 0 as grp,
+  sum(murmur_hash3_32(s, length(s))) as fp
+from (
+  select short_s as s from t_main where length(short_s) > 0
+  union all
+  select long_s from t_main where long_s = '' or length(long_s) > 20
+) q group by 1;
+
 select /*+SET_VAR(enable_german_string=false,cbo_enable_low_cardinality_optimize=false)*/ 0 as grp,
   sum(murmur_hash3_32(s)) as fp
 from (
