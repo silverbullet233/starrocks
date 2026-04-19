@@ -38,8 +38,19 @@ void GermanStringColumn::build_german_string(GermanString* dst, const char* data
 }
 
 void GermanStringColumn::_append_raw(const char* data, size_t len) {
-    _data.emplace_back();
-    build_german_string(&_data.back(), data, len, _get_arena());
+    // Construct the new element directly at the back of `_data` instead of
+    // emplacing a default-zeroed GermanString and then re-constructing over
+    // it via placement new. The default ctor zero-fills 16 bytes, and the
+    // inline ctor zero-fills again before memcpy-ing the payload -- skipping
+    // the default step halves the memory traffic of the hot scan/build path
+    // (measured ~20% scan overhead on 500K row short-string columns vs the
+    // BinaryColumn baseline; this is where most of it sits).
+    if (len <= GermanString::INLINE_MAX_LENGTH) {
+        _data.emplace_back(data, len);
+    } else {
+        void* buf = _get_arena()->allocate(len);
+        _data.emplace_back(data, len, buf);
+    }
 }
 
 void GermanStringColumn::_append_from(const GermanString& gs) {

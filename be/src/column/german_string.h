@@ -23,6 +23,7 @@
 #include <vector>
 
 #include "base/container/raw_container.h"
+#include "base/hash/hash.h"
 #include "base/string/memcmp.h"
 #include "base/string/slice.h"
 #include "common/memory/column_allocator.h"
@@ -138,8 +139,15 @@ static inline std::string to_string(const starrocks::GermanString& gs) {
 
 template <>
 struct hash<starrocks::GermanString> {
+    // Mirror SliceHash: use SSE4.2 crc_hash_64 on the payload bytes
+    // (`get_data()` is branchless-cheap for inline strings since it just
+    // returns the in-struct address). This keeps GS hashing on parity with
+    // Slice hashing, which is critical for grouped aggregation and hash
+    // joins on string keys. The seed matches SliceHashWithSeed<PhmapSeed1>
+    // to keep the two tables interchangeable if they ever collide.
     std::size_t operator()(const starrocks::GermanString& gs) const {
-        return gs.fnv_hash(0x811C9DC5u);
+        return starrocks::crc_hash_64(gs.get_data(), static_cast<int32_t>(gs.len),
+                                      starrocks::CRC_HASH_SEEDS::CRC_HASH_SEED1);
     }
 };
 

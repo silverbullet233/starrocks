@@ -1426,7 +1426,13 @@ Status StringFunctions::pad_prepare(FunctionContext* context, FunctionContext::F
     auto pad_column = context->get_constant_column(2);
 
     state->fill_is_const = true;
-    state->fill = ColumnHelper::get_const_value<TYPE_VARCHAR>(pad_column);
+    // Read via Datum::get_slice() so the shared prepare handles both the
+    // VARCHAR pad (BinaryColumn) and the GERMAN_STRING pad (GermanStringColumn
+    // after the FE rewriter flips the lpad/rpad fn_id to 38200/38210); an
+    // unchecked get_const_value<TYPE_VARCHAR> would down_cast a
+    // ConstColumn<GermanStringColumn> and segfault in pad_prepare at
+    // FRAGMENT_LOCAL scope.
+    state->fill = pad_column->get(0).get_slice();
     state->fill_is_utf8 = state->fill.size > get_utf8_index(state->fill, &state->fill_utf8_index);
 
     // const null case is handled by non_const implementation.
