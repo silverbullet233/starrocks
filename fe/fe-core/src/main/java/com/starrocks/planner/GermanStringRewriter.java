@@ -39,8 +39,11 @@ import org.apache.logging.log4j.Logger;
 
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.Collections;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 /**
  * Late-stage plan rewriter that converts {@code TYPE_VARCHAR} to
@@ -80,6 +83,18 @@ public final class GermanStringRewriter {
 
     private static final Logger LOG = LogManager.getLogger(GermanStringRewriter.class);
 
+    // Per-query context: slots that host an aggregate VALUE (i.e. an
+    // aggregateExprs[i] output, not a grouping key). Their types must stay
+    // on whatever the BE aggregate actually writes to them, because unmapped
+    // string aggregates (min / max / group_concat / count_distinct on
+    // string) produce BinaryColumn at runtime; flipping the slot to GS
+    // would make the downstream consumer read through a
+    // ColumnViewer<TYPE_GERMAN_STRING> and crash. Grouping-key slots are
+    // NOT in this set -- those may legitimately pass through as GS when
+    // the grouping column came from a GS-rewritten scan output.
+    private static final ThreadLocal<Set<SlotId>> AGG_VALUE_SLOTS =
+            ThreadLocal.withInitial(Collections::emptySet);
+
     private GermanStringRewriter() {
     }
 
@@ -102,19 +117,83 @@ public final class GermanStringRewriter {
             return;
         }
         DescriptorTable descTbl = execPlan.getDescTbl();
-        if (descTbl != null) {
-            for (TupleDescriptor tupleDesc : descTbl.getTupleDescs()) {
-                if (!isRewritableTuple(tupleDesc)) {
-                    continue;
-                }
-                for (SlotDescriptor slot : tupleDesc.getSlots()) {
-                    rewriteSlotDescriptor(slot);
+        Set<SlotId> aggValueSlots = collectAggregateValueSlotIds(execPlan, descTbl);
+        AGG_VALUE_SLOTS.set(aggValueSlots);
+        try {
+            if (descTbl != null) {
+                for (TupleDescriptor tupleDesc : descTbl.getTupleDescs()) {
+                    if (!isRewritableTuple(tupleDesc)) {
+                        continue;
+                    }
+                    for (SlotDescriptor slot : tupleDesc.getSlots()) {
+                        rewriteSlotDescriptor(slot);
+                    }
                 }
             }
-        }
 
+            for (PlanFragment fragment : execPlan.getFragments()) {
+                rewriteFragment(fragment, descTbl);
+            }
+        } finally {
+            AGG_VALUE_SLOTS.remove();
+        }
+    }
+
+    /**
+     * Collect every SlotId that hosts an aggregate VALUE (i.e. an
+     * aggregateExprs[i] output) in any AggregationNode of the plan. Grouping
+     * key slots are intentionally excluded -- they may keep the grouping
+     * column's GS type.
+     *
+     * <p>The slot layout on the aggregate's output / intermediate tuples is
+     * {@code [groupingExprs..., aggregateExprs...]}, so agg-value slots are
+     * at indices {@code groupingCount + i}.
+     */
+    private static Set<SlotId> collectAggregateValueSlotIds(ExecPlan execPlan, DescriptorTable descTbl) {
+        Set<SlotId> slotIds = new HashSet<>();
+        if (descTbl == null) {
+            return slotIds;
+        }
         for (PlanFragment fragment : execPlan.getFragments()) {
-            rewriteFragment(fragment);
+            PlanNode root = fragment.getPlanRoot();
+            if (root != null) {
+                collectAggregateValueSlotIds(root, descTbl, slotIds);
+            }
+        }
+        return slotIds;
+    }
+
+    private static void collectAggregateValueSlotIds(PlanNode node, DescriptorTable descTbl, Set<SlotId> slotIds) {
+        if (node instanceof AggregationNode) {
+            AggregateInfo aggInfo = ((AggregationNode) node).getAggInfo();
+            if (aggInfo != null) {
+                addAggValueSlotIds(aggInfo, descTbl.getTupleDesc(aggInfo.getOutputTupleId()), slotIds);
+                addAggValueSlotIds(aggInfo, descTbl.getTupleDesc(aggInfo.getIntermediateTupleId()), slotIds);
+            }
+        }
+        if (node instanceof ExchangeNode) {
+            return;
+        }
+        for (PlanNode child : node.getChildren()) {
+            collectAggregateValueSlotIds(child, descTbl, slotIds);
+        }
+    }
+
+    private static void addAggValueSlotIds(AggregateInfo aggInfo, TupleDescriptor tupleDesc, Set<SlotId> slotIds) {
+        if (tupleDesc == null) {
+            return;
+        }
+        List<SlotDescriptor> slots = tupleDesc.getSlots();
+        int groupingCount = aggInfo.getGroupingExprs() != null ? aggInfo.getGroupingExprs().size() : 0;
+        List<FunctionCallExpr> aggregateExprs = aggInfo.getAggregateExprs();
+        if (aggregateExprs == null) {
+            return;
+        }
+        for (int i = 0; i < aggregateExprs.size(); ++i) {
+            int slotIdx = groupingCount + i;
+            if (slotIdx < slots.size()) {
+                slotIds.add(slots.get(slotIdx).getId());
+            }
         }
     }
 
@@ -141,6 +220,13 @@ public final class GermanStringRewriter {
      * {@code originType} when set.
      */
     private static void rewriteSlotDescriptor(SlotDescriptor slot) {
+        // Aggregate VALUE slots (min / max / group_concat / count_distinct
+        // outputs) must stay on the BE aggregate's actual column type
+        // (usually VARCHAR / BinaryColumn). Grouping-key slots are allowed
+        // to keep their GS type because they pass through from the input.
+        if (AGG_VALUE_SLOTS.get().contains(slot.getId())) {
+            return;
+        }
         Type newType = rewriteType(slot.getType());
         if (newType != slot.getType()) {
             slot.setType(newType);
@@ -158,12 +244,12 @@ public final class GermanStringRewriter {
      * rewritten so BE receives GERMAN_STRING while the client still sees
      * VARCHAR.
      */
-    private static void rewriteFragment(PlanFragment fragment) {
+    private static void rewriteFragment(PlanFragment fragment, DescriptorTable descTbl) {
         if (fragment == null) {
             return;
         }
         if (fragment.getPlanRoot() != null) {
-            walkPlanTree(fragment.getPlanRoot(), fragment);
+            walkPlanTree(fragment.getPlanRoot(), fragment, descTbl);
         }
         rewriteExprList(fragment.getOutputExprs());
 
@@ -203,16 +289,16 @@ public final class GermanStringRewriter {
      * (ExchangeNode children belong to upstream fragments and are handled
      * when those fragments are visited).
      */
-    private static void walkPlanTree(PlanNode node, PlanFragment fragment) {
+    private static void walkPlanTree(PlanNode node, PlanFragment fragment, DescriptorTable descTbl) {
         if (node == null) {
             return;
         }
-        rewritePlanNodeExprs(node);
+        rewritePlanNodeExprs(node, descTbl);
         if (node instanceof ExchangeNode) {
             return;
         }
         for (PlanNode child : node.getChildren()) {
-            walkPlanTree(child, fragment);
+            walkPlanTree(child, fragment, descTbl);
         }
     }
 
@@ -222,7 +308,7 @@ public final class GermanStringRewriter {
      * containers (join conjuncts, agg/sort/project/analytic exprs) are
      * enumerated explicitly so we catch them without reflection.
      */
-    private static void rewritePlanNodeExprs(PlanNode node) {
+    private static void rewritePlanNodeExprs(PlanNode node, DescriptorTable descTbl) {
         rewriteExprList(node.getConjuncts());
 
         if (node instanceof ScanNode) {

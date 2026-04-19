@@ -686,6 +686,51 @@ from (
 ) q group by 1;
 
 -- ---------------------------------------------------------------
+-- Position 18a: Aggregate over string columns: min / max / COUNT(DISTINCT)
+-- Unblocked by the agg-value-slot fix (task #35): the rewriter no longer
+-- flips slots that host aggregate VALUES (min/max/count_distinct on
+-- string), so the BE aggregate's BinaryColumn output agrees with the
+-- slot's declared VARCHAR type. Downstream consumers with GS expectations
+-- get an explicit CAST(VARCHAR -> GS) from the rewriter's fallback.
+-- ---------------------------------------------------------------
+select /*+SET_VAR(enable_german_string=false,cbo_enable_low_cardinality_optimize=false)*/
+  length(min(short_s)) lmn, length(max(short_s)) lmx,
+  length(min(long_s)) lmnl, length(max(long_s)) lmxl,
+  count(distinct short_s) nds
+from t_main;
+select /*+SET_VAR(enable_german_string=true,cbo_enable_low_cardinality_optimize=false)*/
+  length(min(short_s)) lmn, length(max(short_s)) lmx,
+  length(min(long_s)) lmnl, length(max(long_s)) lmxl,
+  count(distinct short_s) nds
+from t_main;
+
+select /*+SET_VAR(enable_german_string=false,cbo_enable_low_cardinality_optimize=false)*/ 0 as grp,
+  sum(murmur_hash3_32(opt_s, mn, mx)) as fp
+from (
+  select opt_s, min(short_s) mn, max(short_s) mx
+  from t_main group by opt_s
+) q group by 1;
+select /*+SET_VAR(enable_german_string=true,cbo_enable_low_cardinality_optimize=false)*/ 0 as grp,
+  sum(murmur_hash3_32(opt_s, mn, mx)) as fp
+from (
+  select opt_s, min(short_s) mn, max(short_s) mx
+  from t_main group by opt_s
+) q group by 1;
+
+select /*+SET_VAR(enable_german_string=false,cbo_enable_low_cardinality_optimize=false)*/ 0 as grp,
+  sum(murmur_hash3_32(l, gc)) as fp
+from (
+  select length(short_s) l, group_concat(short_s order by id) gc
+  from t_main group by length(short_s)
+) q group by 1;
+select /*+SET_VAR(enable_german_string=true,cbo_enable_low_cardinality_optimize=false)*/ 0 as grp,
+  sum(murmur_hash3_32(l, gc)) as fp
+from (
+  select length(short_s) l, group_concat(short_s order by id) gc
+  from t_main group by length(short_s)
+) q group by 1;
+
+-- ---------------------------------------------------------------
 -- Position 18: Scalar aggregates over GS-derived expressions
 -- (covers the idempotency-fix path -- see task #32 for context)
 -- ---------------------------------------------------------------

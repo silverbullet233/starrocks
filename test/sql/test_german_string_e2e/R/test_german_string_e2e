@@ -862,6 +862,58 @@ from (
 0	2202014684
 -- !result
 select /*+SET_VAR(enable_german_string=false,cbo_enable_low_cardinality_optimize=false)*/
+  length(min(short_s)) lmn, length(max(short_s)) lmx,
+  length(min(long_s)) lmnl, length(max(long_s)) lmxl,
+  count(distinct short_s) nds
+from t_main;
+-- result:
+0	6	0	48	9
+-- !result
+select /*+SET_VAR(enable_german_string=true,cbo_enable_low_cardinality_optimize=false)*/
+  length(min(short_s)) lmn, length(max(short_s)) lmx,
+  length(min(long_s)) lmnl, length(max(long_s)) lmxl,
+  count(distinct short_s) nds
+from t_main;
+-- result:
+0	6	0	48	9
+-- !result
+select /*+SET_VAR(enable_german_string=false,cbo_enable_low_cardinality_optimize=false)*/ 0 as grp,
+  sum(murmur_hash3_32(opt_s, mn, mx)) as fp
+from (
+  select opt_s, min(short_s) mn, max(short_s) mx
+  from t_main group by opt_s
+) q group by 1;
+-- result:
+0	-4652708223
+-- !result
+select /*+SET_VAR(enable_german_string=true,cbo_enable_low_cardinality_optimize=false)*/ 0 as grp,
+  sum(murmur_hash3_32(opt_s, mn, mx)) as fp
+from (
+  select opt_s, min(short_s) mn, max(short_s) mx
+  from t_main group by opt_s
+) q group by 1;
+-- result:
+0	-4652708223
+-- !result
+select /*+SET_VAR(enable_german_string=false,cbo_enable_low_cardinality_optimize=false)*/ 0 as grp,
+  sum(murmur_hash3_32(l, gc)) as fp
+from (
+  select length(short_s) l, group_concat(short_s order by id) gc
+  from t_main group by length(short_s)
+) q group by 1;
+-- result:
+0	5082033373
+-- !result
+select /*+SET_VAR(enable_german_string=true,cbo_enable_low_cardinality_optimize=false)*/ 0 as grp,
+  sum(murmur_hash3_32(l, gc)) as fp
+from (
+  select length(short_s) l, group_concat(short_s order by id) gc
+  from t_main group by length(short_s)
+) q group by 1;
+-- result:
+0	5082033373
+-- !result
+select /*+SET_VAR(enable_german_string=false,cbo_enable_low_cardinality_optimize=false)*/
   sum(length(lower(long_s))) as fp from t_main;
 -- result:
 241
