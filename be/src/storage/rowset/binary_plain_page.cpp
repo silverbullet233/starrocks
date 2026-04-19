@@ -28,6 +28,7 @@
 #include "column/append_with_mask.h"
 #include "column/binary_column.h"
 #include "column/column_helper.h"
+#include "column/german_string_column.h"
 #include "column/nullable_column.h"
 #include "column/vectorized_fwd.h"
 #include "common/config_rowset_fwd.h"
@@ -408,16 +409,37 @@ Status BinaryPlainPageDecoder<Type>::next_range_with_filter(
         ContainerResource container(_page_handle, data_ptr, data_length);
         auto temp_data_column = BinaryColumn::create(container, std::move(temp_offsets));
 
+        // When `dst` is a GermanStringColumn, the pushed-down predicates may be
+        // GS-native (e.g. `LikePredicate::like_german_string` after the FE
+        // rewriter's fn_id swap). Those predicates read their input via
+        // `ColumnViewer<TYPE_GERMAN_STRING>` and crash on a BinaryColumn.
+        // Materialize the page into a GermanStringColumn once so the predicate
+        // sees a matching column type; `get_slice(i)` on the eventual dst
+        // stays zero-copy because GermanStringColumn inlines payloads ≤12 B
+        // and arena-copies longer ones.
+        ColumnPtr temp_eval_data_column;
+        if (dst_is_binary_column(dst)) {
+            temp_eval_data_column = temp_data_column;
+        } else {
+            auto gs_column = GermanStringColumn::create();
+            gs_column->reserve(num_rows);
+            for (uint32_t i = 0; i < num_rows; ++i) {
+                Slice s = temp_data_column->get_slice(i);
+                gs_column->append_bytes(s.data, s.size);
+            }
+            temp_eval_data_column = std::move(gs_column);
+        }
+
         // Create temporary column for predicate evaluation
         ColumnPtr temp_eval_column;
         if (null != nullptr) {
             // If null data is provided, create a NullableColumn for predicate evaluation
             auto temp_null_column = NullColumn::create();
             temp_null_column->append_numbers(null, num_rows);
-            temp_eval_column = NullableColumn::create(temp_data_column, temp_null_column);
+            temp_eval_column = NullableColumn::create(temp_eval_data_column, temp_null_column);
         } else {
             // No null data, use data column directly
-            temp_eval_column = temp_data_column;
+            temp_eval_column = temp_eval_data_column;
         }
 
         // Evaluate predicates on the temporary column
