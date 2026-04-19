@@ -1,0 +1,698 @@
+-- name: test_german_string_e2e
+create database test_gs_${uuid0};
+-- result:
+-- !result
+use test_gs_${uuid0};
+-- result:
+-- !result
+set cbo_enable_low_cardinality_optimize = false;
+-- result:
+-- !result
+create table t_main (
+    id      int,
+    short_s varchar(32),
+    long_s  varchar(256),
+    opt_s   varchar(128)
+) duplicate key(id) distributed by hash(id) buckets 3
+properties ("replication_num" = "1");
+-- result:
+-- !result
+insert into t_main values
+    (1,  'apple',          'the-quick-brown-fox-jumps-over',     'apple'),
+    (2,  'banana',         'loooooooooong_string_value_here',    NULL),
+    (3,  'cherry',         'cherry-chain-test-payload-xyzzy',    'apple'),
+    (4,  'apple',          'apple-second-row-payload-123456',    'pear'),
+    (5,  '',               '',                                   ''),
+    (6,  'twelvecharss',   'twelvecharss',                       'twelvecharss'),
+    (7,  'thirteenchars!', 'thirteenchars!',                     NULL),
+    (8,  '你好',           '你好世界这是一段较长的中文字符串',    '你好'),
+    (9,  'BANANA',         'BANANA-UPPER-CASE-PAYLOAD-ABCDE',    'BANANA'),
+    (10, 'pear',           'pear-is-short',                      'pear');
+-- result:
+-- !result
+create table t_other (
+    id    int,
+    key_s varchar(32),
+    val_s varchar(128)
+) duplicate key(id) distributed by hash(id) buckets 3
+properties ("replication_num" = "1");
+-- result:
+-- !result
+insert into t_other values
+    (100, 'apple',          'fruit-apple'),
+    (101, 'banana',         'fruit-banana'),
+    (102, 'pear',           'fruit-pear'),
+    (103, 'twelvecharss',   'twelve-charss'),
+    (104, 'thirteenchars!', 'thirteen-chars-bang'),
+    (105, '你好',           'hello-zh'),
+    (106, 'BANANA',         'upper-banana'),
+    (107, 'nomatch',        'dangling-row');
+-- result:
+-- !result
+select /*+SET_VAR(enable_german_string=false,cbo_enable_low_cardinality_optimize=false)*/ 0 as grp,
+  sum(murmur_hash3_32(short_s, long_s, coalesce(opt_s, '__NULL__'), cast(id as varchar))) as fp
+from t_main group by 1;
+-- result:
+0	-7210513
+-- !result
+select /*+SET_VAR(enable_german_string=true,cbo_enable_low_cardinality_optimize=false)*/ 0 as grp,
+  sum(murmur_hash3_32(short_s, long_s, coalesce(opt_s, '__NULL__'), cast(id as varchar))) as fp
+from t_main group by 1;
+-- result:
+0	-7210513
+-- !result
+select /*+SET_VAR(enable_german_string=false,cbo_enable_low_cardinality_optimize=false)*/ 0 as grp,
+  sum(murmur_hash3_32(
+    concat(short_s, '::', coalesce(opt_s, '?')),
+    substr(long_s, 1, 8),
+    lower(short_s),
+    upper(short_s),
+    reverse(short_s),
+    cast(length(short_s) as varchar)
+  )) as fp
+from t_main group by 1;
+-- result:
+0	233490165
+-- !result
+select /*+SET_VAR(enable_german_string=true,cbo_enable_low_cardinality_optimize=false)*/ 0 as grp,
+  sum(murmur_hash3_32(
+    concat(short_s, '::', coalesce(opt_s, '?')),
+    substr(long_s, 1, 8),
+    lower(short_s),
+    upper(short_s),
+    reverse(short_s),
+    cast(length(short_s) as varchar)
+  )) as fp
+from t_main group by 1;
+-- result:
+0	233490165
+-- !result
+select /*+SET_VAR(enable_german_string=false,cbo_enable_low_cardinality_optimize=false)*/ 0 as grp,
+  sum(murmur_hash3_32(id, short_s)) as fp
+from t_main where short_s = 'apple' group by 1;
+-- result:
+0	-512262210
+-- !result
+select /*+SET_VAR(enable_german_string=true,cbo_enable_low_cardinality_optimize=false)*/ 0 as grp,
+  sum(murmur_hash3_32(id, short_s)) as fp
+from t_main where short_s = 'apple' group by 1;
+-- result:
+0	-512262210
+-- !result
+select /*+SET_VAR(enable_german_string=false,cbo_enable_low_cardinality_optimize=false)*/ 0 as grp,
+  sum(murmur_hash3_32(id, short_s)) as fp
+from t_main where short_s <> 'apple' and short_s <> '' group by 1;
+-- result:
+0	-4027636059
+-- !result
+select /*+SET_VAR(enable_german_string=true,cbo_enable_low_cardinality_optimize=false)*/ 0 as grp,
+  sum(murmur_hash3_32(id, short_s)) as fp
+from t_main where short_s <> 'apple' and short_s <> '' group by 1;
+-- result:
+0	-4027636059
+-- !result
+select /*+SET_VAR(enable_german_string=false,cbo_enable_low_cardinality_optimize=false)*/ 0 as grp,
+  sum(murmur_hash3_32(id)) as fp
+from t_main where short_s like 'a%' group by 1;
+-- result:
+0	-212473131
+-- !result
+select /*+SET_VAR(enable_german_string=true,cbo_enable_low_cardinality_optimize=false)*/ 0 as grp,
+  sum(murmur_hash3_32(id)) as fp
+from t_main where short_s like 'a%' group by 1;
+-- result:
+0	-212473131
+-- !result
+select /*+SET_VAR(enable_german_string=false,cbo_enable_low_cardinality_optimize=false)*/ 0 as grp,
+  sum(murmur_hash3_32(id)) as fp
+from t_main where short_s like '%na' group by 1;
+-- result:
+0	1682587453
+-- !result
+select /*+SET_VAR(enable_german_string=true,cbo_enable_low_cardinality_optimize=false)*/ 0 as grp,
+  sum(murmur_hash3_32(id)) as fp
+from t_main where short_s like '%na' group by 1;
+-- result:
+0	1682587453
+-- !result
+select /*+SET_VAR(enable_german_string=false,cbo_enable_low_cardinality_optimize=false)*/ 0 as grp,
+  sum(murmur_hash3_32(id)) as fp
+from t_main where long_s like '%brown%' group by 1;
+-- result:
+0	-1848669458
+-- !result
+select /*+SET_VAR(enable_german_string=true,cbo_enable_low_cardinality_optimize=false)*/ 0 as grp,
+  sum(murmur_hash3_32(id)) as fp
+from t_main where long_s like '%brown%' group by 1;
+-- result:
+0	-1848669458
+-- !result
+select /*+SET_VAR(enable_german_string=false,cbo_enable_low_cardinality_optimize=false)*/ 0 as grp,
+  sum(murmur_hash3_32(id)) as fp
+from t_main where short_s in ('apple', 'pear', 'thirteenchars!', '你好') group by 1;
+-- result:
+0	-2035018191
+-- !result
+select /*+SET_VAR(enable_german_string=true,cbo_enable_low_cardinality_optimize=false)*/ 0 as grp,
+  sum(murmur_hash3_32(id)) as fp
+from t_main where short_s in ('apple', 'pear', 'thirteenchars!', '你好') group by 1;
+-- result:
+0	-2035018191
+-- !result
+select /*+SET_VAR(enable_german_string=false,cbo_enable_low_cardinality_optimize=false)*/ 0 as grp,
+  sum(murmur_hash3_32(id)) as fp
+from t_main where short_s not in ('apple', 'pear', 'thirteenchars!', '你好') group by 1;
+-- result:
+0	2958548021
+-- !result
+select /*+SET_VAR(enable_german_string=true,cbo_enable_low_cardinality_optimize=false)*/ 0 as grp,
+  sum(murmur_hash3_32(id)) as fp
+from t_main where short_s not in ('apple', 'pear', 'thirteenchars!', '你好') group by 1;
+-- result:
+0	2958548021
+-- !result
+select /*+SET_VAR(enable_german_string=false,cbo_enable_low_cardinality_optimize=false)*/ 0 as grp,
+  sum(murmur_hash3_32(id)) as fp
+from t_main where short_s between 'a' and 'c' group by 1;
+-- result:
+0	1470114322
+-- !result
+select /*+SET_VAR(enable_german_string=true,cbo_enable_low_cardinality_optimize=false)*/ 0 as grp,
+  sum(murmur_hash3_32(id)) as fp
+from t_main where short_s between 'a' and 'c' group by 1;
+-- result:
+0	1470114322
+-- !result
+select /*+SET_VAR(enable_german_string=false,cbo_enable_low_cardinality_optimize=false)*/ 0 as grp,
+  sum(murmur_hash3_32(id)) as fp
+from t_main where opt_s is null group by 1;
+-- result:
+0	155427379
+-- !result
+select /*+SET_VAR(enable_german_string=true,cbo_enable_low_cardinality_optimize=false)*/ 0 as grp,
+  sum(murmur_hash3_32(id)) as fp
+from t_main where opt_s is null group by 1;
+-- result:
+0	155427379
+-- !result
+select /*+SET_VAR(enable_german_string=false,cbo_enable_low_cardinality_optimize=false)*/ 0 as grp,
+  sum(murmur_hash3_32(id)) as fp
+from t_main where length(short_s) > 5 and upper(short_s) like 'B%' group by 1;
+-- result:
+0	2073724599
+-- !result
+select /*+SET_VAR(enable_german_string=true,cbo_enable_low_cardinality_optimize=false)*/ 0 as grp,
+  sum(murmur_hash3_32(id)) as fp
+from t_main where length(short_s) > 5 and upper(short_s) like 'B%' group by 1;
+-- result:
+0	2073724599
+-- !result
+select /*+SET_VAR(enable_german_string=false,cbo_enable_low_cardinality_optimize=false)*/ 0 as grp,
+  sum(murmur_hash3_32(a.id, b.id, a.short_s, b.val_s)) as fp
+from t_main a join t_other b on a.short_s = b.key_s group by 1;
+-- result:
+0	-1630609059
+-- !result
+select /*+SET_VAR(enable_german_string=true,cbo_enable_low_cardinality_optimize=false)*/ 0 as grp,
+  sum(murmur_hash3_32(a.id, b.id, a.short_s, b.val_s)) as fp
+from t_main a join t_other b on a.short_s = b.key_s group by 1;
+-- result:
+0	-1630609059
+-- !result
+select /*+SET_VAR(enable_german_string=false,cbo_enable_low_cardinality_optimize=false)*/ 0 as grp,
+  sum(murmur_hash3_32(a.id, coalesce(b.id, -1), a.short_s, coalesce(b.val_s, '__N__'))) as fp
+from t_main a left join t_other b on a.short_s = b.key_s group by 1;
+-- result:
+0	-1953240351
+-- !result
+select /*+SET_VAR(enable_german_string=true,cbo_enable_low_cardinality_optimize=false)*/ 0 as grp,
+  sum(murmur_hash3_32(a.id, coalesce(b.id, -1), a.short_s, coalesce(b.val_s, '__N__'))) as fp
+from t_main a left join t_other b on a.short_s = b.key_s group by 1;
+-- result:
+0	-1953240351
+-- !result
+select /*+SET_VAR(enable_german_string=false,cbo_enable_low_cardinality_optimize=false)*/ 0 as grp,
+  sum(murmur_hash3_32(coalesce(a.id, -1), b.id, coalesce(a.short_s, '__N__'), b.key_s)) as fp
+from t_main a right join t_other b on a.short_s = b.key_s group by 1;
+-- result:
+0	-1060812824
+-- !result
+select /*+SET_VAR(enable_german_string=true,cbo_enable_low_cardinality_optimize=false)*/ 0 as grp,
+  sum(murmur_hash3_32(coalesce(a.id, -1), b.id, coalesce(a.short_s, '__N__'), b.key_s)) as fp
+from t_main a right join t_other b on a.short_s = b.key_s group by 1;
+-- result:
+0	-1060812824
+-- !result
+select /*+SET_VAR(enable_german_string=false,cbo_enable_low_cardinality_optimize=false)*/ 0 as grp,
+  sum(murmur_hash3_32(a.id, b.id)) as fp
+from t_main a join t_other b on lower(a.short_s) = lower(b.key_s) group by 1;
+-- result:
+0	3709993673
+-- !result
+select /*+SET_VAR(enable_german_string=true,cbo_enable_low_cardinality_optimize=false)*/ 0 as grp,
+  sum(murmur_hash3_32(a.id, b.id)) as fp
+from t_main a join t_other b on lower(a.short_s) = lower(b.key_s) group by 1;
+-- result:
+0	3709993673
+-- !result
+select /*+SET_VAR(enable_german_string=false,cbo_enable_low_cardinality_optimize=false)*/ 0 as grp,
+  sum(murmur_hash3_32(a.id, b.id, a.short_s, a.opt_s)) as fp
+from t_main a join t_main b on a.short_s = b.short_s and a.id <> b.id group by 1;
+-- result:
+0	-464345544
+-- !result
+select /*+SET_VAR(enable_german_string=true,cbo_enable_low_cardinality_optimize=false)*/ 0 as grp,
+  sum(murmur_hash3_32(a.id, b.id, a.short_s, a.opt_s)) as fp
+from t_main a join t_main b on a.short_s = b.short_s and a.id <> b.id group by 1;
+-- result:
+0	-464345544
+-- !result
+select /*+SET_VAR(enable_german_string=false,cbo_enable_low_cardinality_optimize=false)*/ 0 as grp,
+  sum(murmur_hash3_32(short_s, cnt)) as fp
+from (select short_s, count(*) cnt from t_main group by short_s) q group by 1;
+-- result:
+0	-6677739926
+-- !result
+select /*+SET_VAR(enable_german_string=true,cbo_enable_low_cardinality_optimize=false)*/ 0 as grp,
+  sum(murmur_hash3_32(short_s, cnt)) as fp
+from (select short_s, count(*) cnt from t_main group by short_s) q group by 1;
+-- result:
+0	-6677739926
+-- !result
+select /*+SET_VAR(enable_german_string=false,cbo_enable_low_cardinality_optimize=false)*/ 0 as grp,
+  sum(murmur_hash3_32(coalesce(opt_s, '__N__'), cnt)) as fp
+from (select opt_s, count(*) cnt from t_main group by opt_s) q group by 1;
+-- result:
+0	-6330516351
+-- !result
+select /*+SET_VAR(enable_german_string=true,cbo_enable_low_cardinality_optimize=false)*/ 0 as grp,
+  sum(murmur_hash3_32(coalesce(opt_s, '__N__'), cnt)) as fp
+from (select opt_s, count(*) cnt from t_main group by opt_s) q group by 1;
+-- result:
+0	-6330516351
+-- !result
+select /*+SET_VAR(enable_german_string=false,cbo_enable_low_cardinality_optimize=false)*/ 0 as grp,
+  sum(murmur_hash3_32(pfx, cnt)) as fp
+from (select substr(long_s, 1, 6) pfx, count(*) cnt
+      from t_main group by substr(long_s, 1, 6)) q group by 1;
+-- result:
+0	-2088581314
+-- !result
+select /*+SET_VAR(enable_german_string=true,cbo_enable_low_cardinality_optimize=false)*/ 0 as grp,
+  sum(murmur_hash3_32(pfx, cnt)) as fp
+from (select substr(long_s, 1, 6) pfx, count(*) cnt
+      from t_main group by substr(long_s, 1, 6)) q group by 1;
+-- result:
+0	-2088581314
+-- !result
+select /*+SET_VAR(enable_german_string=false,cbo_enable_low_cardinality_optimize=false)*/ 0 as grp,
+  sum(murmur_hash3_32(coalesce(opt_s, '__N__'), short_s, cnt)) as fp
+from (select opt_s, short_s, count(*) cnt from t_main group by opt_s, short_s) q group by 1;
+-- result:
+0	-5461355062
+-- !result
+select /*+SET_VAR(enable_german_string=true,cbo_enable_low_cardinality_optimize=false)*/ 0 as grp,
+  sum(murmur_hash3_32(coalesce(opt_s, '__N__'), short_s, cnt)) as fp
+from (select opt_s, short_s, count(*) cnt from t_main group by opt_s, short_s) q group by 1;
+-- result:
+0	-5461355062
+-- !result
+select /*+SET_VAR(enable_german_string=false,cbo_enable_low_cardinality_optimize=false)*/ 0 as grp,
+  count(distinct short_s) as nd
+from t_main group by 1;
+-- result:
+0	9
+-- !result
+select /*+SET_VAR(enable_german_string=true,cbo_enable_low_cardinality_optimize=false)*/ 0 as grp,
+  count(distinct short_s) as nd
+from t_main group by 1;
+-- result:
+0	9
+-- !result
+select /*+SET_VAR(enable_german_string=false,cbo_enable_low_cardinality_optimize=false)*/ 0 as grp,
+  sum(murmur_hash3_32(rn, id, short_s)) as fp
+from (select id, short_s, row_number() over (order by short_s, id) rn from t_main) q
+group by 1;
+-- result:
+0	-2073597976
+-- !result
+select /*+SET_VAR(enable_german_string=true,cbo_enable_low_cardinality_optimize=false)*/ 0 as grp,
+  sum(murmur_hash3_32(rn, id, short_s)) as fp
+from (select id, short_s, row_number() over (order by short_s, id) rn from t_main) q
+group by 1;
+-- result:
+0	-2073597976
+-- !result
+select /*+SET_VAR(enable_german_string=false,cbo_enable_low_cardinality_optimize=false)*/ 0 as grp,
+  sum(murmur_hash3_32(rn, id)) as fp
+from (select id, row_number() over (order by length(short_s), short_s) rn from t_main) q
+group by 1;
+-- result:
+0	4142121701
+-- !result
+select /*+SET_VAR(enable_german_string=true,cbo_enable_low_cardinality_optimize=false)*/ 0 as grp,
+  sum(murmur_hash3_32(rn, id)) as fp
+from (select id, row_number() over (order by length(short_s), short_s) rn from t_main) q
+group by 1;
+-- result:
+0	4142121701
+-- !result
+select /*+SET_VAR(enable_german_string=false,cbo_enable_low_cardinality_optimize=false)*/ 0 as grp,
+  sum(murmur_hash3_32(id, short_s, cnt_in_grp)) as fp
+from (select id, short_s, count(*) over (partition by short_s) cnt_in_grp from t_main) q group by 1;
+-- result:
+0	6055144762
+-- !result
+select /*+SET_VAR(enable_german_string=true,cbo_enable_low_cardinality_optimize=false)*/ 0 as grp,
+  sum(murmur_hash3_32(id, short_s, cnt_in_grp)) as fp
+from (select id, short_s, count(*) over (partition by short_s) cnt_in_grp from t_main) q group by 1;
+-- result:
+0	6055144762
+-- !result
+select /*+SET_VAR(enable_german_string=false,cbo_enable_low_cardinality_optimize=false)*/ 0 as grp,
+  sum(murmur_hash3_32(id, coalesce(prev_s, '__N__'), coalesce(next_s, '__N__'))) as fp
+from (
+  select id,
+    lag(short_s) over (order by id) prev_s,
+    lead(short_s) over (order by id) next_s
+  from t_main
+) q group by 1;
+-- result:
+0	7957406461
+-- !result
+select /*+SET_VAR(enable_german_string=true,cbo_enable_low_cardinality_optimize=false)*/ 0 as grp,
+  sum(murmur_hash3_32(id, coalesce(prev_s, '__N__'), coalesce(next_s, '__N__'))) as fp
+from (
+  select id,
+    lag(short_s) over (order by id) prev_s,
+    lead(short_s) over (order by id) next_s
+  from t_main
+) q group by 1;
+-- result:
+0	7957406461
+-- !result
+select /*+SET_VAR(enable_german_string=false,cbo_enable_low_cardinality_optimize=false)*/ 0 as grp,
+  sum(murmur_hash3_32(id, rk, short_s)) as fp
+from (
+  select id, short_s,
+    rank() over (partition by length(short_s) order by short_s, id) rk
+  from t_main
+) q group by 1;
+-- result:
+0	-4455870905
+-- !result
+select /*+SET_VAR(enable_german_string=true,cbo_enable_low_cardinality_optimize=false)*/ 0 as grp,
+  sum(murmur_hash3_32(id, rk, short_s)) as fp
+from (
+  select id, short_s,
+    rank() over (partition by length(short_s) order by short_s, id) rk
+  from t_main
+) q group by 1;
+-- result:
+0	-4455870905
+-- !result
+select /*+SET_VAR(enable_german_string=false,cbo_enable_low_cardinality_optimize=false)*/ 0 as grp,
+  sum(murmur_hash3_32(id, short_s, cnt)) as fp
+from (
+  select id, short_s,
+    (select count(*) from t_main b where b.short_s = a.short_s) cnt
+  from t_main a
+) q group by 1;
+-- result:
+0	6055144762
+-- !result
+select /*+SET_VAR(enable_german_string=true,cbo_enable_low_cardinality_optimize=false)*/ 0 as grp,
+  sum(murmur_hash3_32(id, short_s, cnt)) as fp
+from (
+  select id, short_s,
+    (select count(*) from t_main b where b.short_s = a.short_s) cnt
+  from t_main a
+) q group by 1;
+-- result:
+0	6055144762
+-- !result
+select /*+SET_VAR(enable_german_string=false,cbo_enable_low_cardinality_optimize=false)*/ 0 as grp,
+  sum(murmur_hash3_32(id, short_s)) as fp
+from t_main a
+where a.short_s in (select key_s from t_other) group by 1;
+-- result:
+0	-5794670625
+-- !result
+select /*+SET_VAR(enable_german_string=true,cbo_enable_low_cardinality_optimize=false)*/ 0 as grp,
+  sum(murmur_hash3_32(id, short_s)) as fp
+from t_main a
+where a.short_s in (select key_s from t_other) group by 1;
+-- result:
+0	-5794670625
+-- !result
+select /*+SET_VAR(enable_german_string=false,cbo_enable_low_cardinality_optimize=false)*/ 0 as grp,
+  sum(murmur_hash3_32(id, short_s)) as fp
+from t_main a
+where exists (select 1 from t_other b where b.key_s = a.short_s) group by 1;
+-- result:
+0	-5794670625
+-- !result
+select /*+SET_VAR(enable_german_string=true,cbo_enable_low_cardinality_optimize=false)*/ 0 as grp,
+  sum(murmur_hash3_32(id, short_s)) as fp
+from t_main a
+where exists (select 1 from t_other b where b.key_s = a.short_s) group by 1;
+-- result:
+0	-5794670625
+-- !result
+select /*+SET_VAR(enable_german_string=false,cbo_enable_low_cardinality_optimize=false)*/ 0 as grp,
+  sum(murmur_hash3_32(short_s, n)) as fp
+from (
+  with cte as (select short_s, count(*) n from t_main group by short_s)
+  select short_s, n from cte where n >= 1
+) q group by 1;
+-- result:
+0	-6677739926
+-- !result
+select /*+SET_VAR(enable_german_string=true,cbo_enable_low_cardinality_optimize=false)*/ 0 as grp,
+  sum(murmur_hash3_32(short_s, n)) as fp
+from (
+  with cte as (select short_s, count(*) n from t_main group by short_s)
+  select short_s, n from cte where n >= 1
+) q group by 1;
+-- result:
+0	-6677739926
+-- !result
+select /*+SET_VAR(enable_german_string=false,cbo_enable_low_cardinality_optimize=false)*/ 0 as grp,
+  sum(murmur_hash3_32(s)) as fp
+from (
+  select short_s as s from t_main where length(short_s) > 0
+  union
+  select key_s from t_other
+) q group by 1;
+-- result:
+0	-1704870280
+-- !result
+select /*+SET_VAR(enable_german_string=true,cbo_enable_low_cardinality_optimize=false)*/ 0 as grp,
+  sum(murmur_hash3_32(s)) as fp
+from (
+  select short_s as s from t_main where length(short_s) > 0
+  union
+  select key_s from t_other
+) q group by 1;
+-- result:
+0	-1704870280
+-- !result
+select /*+SET_VAR(enable_german_string=false,cbo_enable_low_cardinality_optimize=false)*/ 0 as grp,
+  sum(murmur_hash3_32(s)) as fp
+from (
+  select short_s as s from t_main
+  intersect
+  select key_s from t_other
+) q group by 1;
+-- result:
+0	-943977501
+-- !result
+select /*+SET_VAR(enable_german_string=true,cbo_enable_low_cardinality_optimize=false)*/ 0 as grp,
+  sum(murmur_hash3_32(s)) as fp
+from (
+  select short_s as s from t_main
+  intersect
+  select key_s from t_other
+) q group by 1;
+-- result:
+0	-943977501
+-- !result
+select /*+SET_VAR(enable_german_string=false,cbo_enable_low_cardinality_optimize=false)*/ 0 as grp,
+  sum(murmur_hash3_32(s)) as fp
+from (
+  select short_s as s from t_main where length(short_s) > 0
+  except
+  select key_s from t_other
+) q group by 1;
+-- result:
+0	-1325850422
+-- !result
+select /*+SET_VAR(enable_german_string=true,cbo_enable_low_cardinality_optimize=false)*/ 0 as grp,
+  sum(murmur_hash3_32(s)) as fp
+from (
+  select short_s as s from t_main where length(short_s) > 0
+  except
+  select key_s from t_other
+) q group by 1;
+-- result:
+0	-1325850422
+-- !result
+select /*+SET_VAR(enable_german_string=false,cbo_enable_low_cardinality_optimize=false)*/ 0 as grp,
+  sum(murmur_hash3_32(id, cast(id as varchar), cast(cast(id as varchar) as int))) as fp
+from t_main group by 1;
+-- result:
+0	-589934627
+-- !result
+select /*+SET_VAR(enable_german_string=true,cbo_enable_low_cardinality_optimize=false)*/ 0 as grp,
+  sum(murmur_hash3_32(id, cast(id as varchar), cast(cast(id as varchar) as int))) as fp
+from t_main group by 1;
+-- result:
+0	-589934627
+-- !result
+select /*+SET_VAR(enable_german_string=false,cbo_enable_low_cardinality_optimize=false)*/ 0 as grp,
+  sum(murmur_hash3_32(id, cast(short_s as char(8)), cast(length(short_s) as varchar))) as fp
+from t_main group by 1;
+-- result:
+0	-2201052615
+-- !result
+select /*+SET_VAR(enable_german_string=true,cbo_enable_low_cardinality_optimize=false)*/ 0 as grp,
+  sum(murmur_hash3_32(id, cast(short_s as char(8)), cast(length(short_s) as varchar))) as fp
+from t_main group by 1;
+-- result:
+0	-2201052615
+-- !result
+select /*+SET_VAR(enable_german_string=false,cbo_enable_low_cardinality_optimize=false)*/ 0 as grp,
+  sum(murmur_hash3_32(id,
+    trim(short_s), ltrim(short_s), rtrim(short_s),
+    lpad(short_s, 12, '*'), rpad(short_s, 12, '*'),
+    replace(short_s, 'a', 'A'),
+    repeat(short_s, 2),
+    split_part(long_s, '-', 2),
+    cast(instr(long_s, 'brown') as varchar),
+    cast(locate('fox', long_s) as varchar),
+    cast(starts_with(short_s, 'ap') as varchar),
+    cast(ends_with(short_s, 'na') as varchar),
+    cast(ascii(short_s) as varchar),
+    cast(char_length(long_s) as varchar)
+  )) as fp
+from t_main group by 1;
+-- result:
+0	744427891
+-- !result
+select /*+SET_VAR(enable_german_string=true,cbo_enable_low_cardinality_optimize=false)*/ 0 as grp,
+  sum(murmur_hash3_32(id,
+    trim(short_s), ltrim(short_s), rtrim(short_s),
+    lpad(short_s, 12, '*'), rpad(short_s, 12, '*'),
+    replace(short_s, 'a', 'A'),
+    repeat(short_s, 2),
+    split_part(long_s, '-', 2),
+    cast(instr(long_s, 'brown') as varchar),
+    cast(locate('fox', long_s) as varchar),
+    cast(starts_with(short_s, 'ap') as varchar),
+    cast(ends_with(short_s, 'na') as varchar),
+    cast(ascii(short_s) as varchar),
+    cast(char_length(long_s) as varchar)
+  )) as fp
+from t_main group by 1;
+-- result:
+0	744427891
+-- !result
+select /*+SET_VAR(enable_german_string=false,cbo_enable_low_cardinality_optimize=false)*/ 0 as grp,
+  sum(murmur_hash3_32(id,
+    regexp_extract(long_s, '[a-z]+', 0),
+    regexp_replace(long_s, '[aeiou]', 'X'),
+    regexp_replace(short_s, '(.)(.)', '$2$1')
+  )) as fp
+from t_main group by 1;
+-- result:
+0	-1336398262
+-- !result
+select /*+SET_VAR(enable_german_string=true,cbo_enable_low_cardinality_optimize=false)*/ 0 as grp,
+  sum(murmur_hash3_32(id,
+    regexp_extract(long_s, '[a-z]+', 0),
+    regexp_replace(long_s, '[aeiou]', 'X'),
+    regexp_replace(short_s, '(.)(.)', '$2$1')
+  )) as fp
+from t_main group by 1;
+-- result:
+0	-1336398262
+-- !result
+select /*+SET_VAR(enable_german_string=false,cbo_enable_low_cardinality_optimize=false)*/ 0 as grp,
+  sum(murmur_hash3_32(id,
+    coalesce(opt_s, 'DFLT'),
+    ifnull(opt_s, short_s),
+    nullif(short_s, 'apple'),
+    greatest(short_s, coalesce(opt_s, '')),
+    least(short_s, coalesce(opt_s, 'zzz'))
+  )) as fp
+from t_main group by 1;
+-- result:
+0	1277348696
+-- !result
+select /*+SET_VAR(enable_german_string=true,cbo_enable_low_cardinality_optimize=false)*/ 0 as grp,
+  sum(murmur_hash3_32(id,
+    coalesce(opt_s, 'DFLT'),
+    ifnull(opt_s, short_s),
+    nullif(short_s, 'apple'),
+    greatest(short_s, coalesce(opt_s, '')),
+    least(short_s, coalesce(opt_s, 'zzz'))
+  )) as fp
+from t_main group by 1;
+-- result:
+0	1277348696
+-- !result
+create table t_sink (
+    id int,
+    s  varchar(128)
+) duplicate key(id) distributed by hash(id) buckets 3
+properties ("replication_num" = "1");
+-- result:
+-- !result
+insert /*+SET_VAR(enable_german_string=false,cbo_enable_low_cardinality_optimize=false)*/ into t_sink
+  select id, upper(concat(short_s, '::', coalesce(opt_s, 'N'))) from t_main;
+-- result:
+-- !result
+select /*+SET_VAR(enable_german_string=false,cbo_enable_low_cardinality_optimize=false)*/ 0 as grp,
+  sum(murmur_hash3_32(id, s)) as fp from t_sink group by 1;
+-- result:
+0	1206796604
+-- !result
+truncate table t_sink;
+-- result:
+-- !result
+insert /*+SET_VAR(enable_german_string=true,cbo_enable_low_cardinality_optimize=false)*/ into t_sink
+  select id, upper(concat(short_s, '::', coalesce(opt_s, 'N'))) from t_main;
+-- result:
+-- !result
+select /*+SET_VAR(enable_german_string=false,cbo_enable_low_cardinality_optimize=false)*/ 0 as grp,
+  sum(murmur_hash3_32(id, s)) as fp from t_sink group by 1;
+-- result:
+0	1206796604
+-- !result
+select /*+SET_VAR(enable_german_string=false,cbo_enable_low_cardinality_optimize=false)*/ 0 as grp,
+  sum(murmur_hash3_32(id, short_s, length(short_s), char_length(short_s))) as fp
+from t_main where id in (5, 6, 7, 8) group by 1;
+-- result:
+0	-2467317141
+-- !result
+select /*+SET_VAR(enable_german_string=true,cbo_enable_low_cardinality_optimize=false)*/ 0 as grp,
+  sum(murmur_hash3_32(id, short_s, length(short_s), char_length(short_s))) as fp
+from t_main where id in (5, 6, 7, 8) group by 1;
+-- result:
+0	-2467317141
+-- !result
+select /*+SET_VAR(enable_german_string=false,cbo_enable_low_cardinality_optimize=false)*/ 0 as grp,
+  sum(murmur_hash3_32(id, long_s, length(long_s), char_length(long_s))) as fp
+from t_main where id = 8 group by 1;
+-- result:
+0	-1599567320
+-- !result
+select /*+SET_VAR(enable_german_string=true,cbo_enable_low_cardinality_optimize=false)*/ 0 as grp,
+  sum(murmur_hash3_32(id, long_s, length(long_s), char_length(long_s))) as fp
+from t_main where id = 8 group by 1;
+-- result:
+0	-1599567320
+-- !result
+drop database test_gs_${uuid0};
+-- result:
+-- !result
