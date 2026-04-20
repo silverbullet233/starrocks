@@ -119,6 +119,15 @@ void GermanStringColumn::append_value_multiple_times(const void* value, size_t c
 
 bool GermanStringColumn::append_strings(const Slice* data, size_t size) {
     _data.reserve(_data.size() + size);
+    size_t long_total = 0;
+    for (size_t i = 0; i < size; ++i) {
+        if (data[i].size > GermanString::INLINE_MAX_LENGTH) {
+            long_total += data[i].size;
+        }
+    }
+    if (long_total > 0) {
+        _get_arena()->reserve(long_total);
+    }
     for (size_t i = 0; i < size; ++i) {
         _append_raw(data[i].data, data[i].size);
     }

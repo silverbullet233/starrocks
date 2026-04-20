@@ -20,6 +20,7 @@
 #include <sstream>
 #include <vector>
 
+#include "base/container/raw_container.h"
 #include "base/string/slice.h"
 #include "column/column.h"
 #include "column/german_string.h"
@@ -42,6 +43,8 @@ public:
     GermanStringArena& operator=(const GermanStringArena&) = delete;
 
     // Allocate |size| bytes. Returned pointer is valid until clear() / dtor.
+    // Uses resize_uninitialized on the backing chunk so the caller's memcpy
+    // is not shadowed by a zero-fill (hot path for long-rep scan decode).
     char* allocate(size_t size) {
         if (size == 0) {
             return nullptr;
@@ -50,7 +53,7 @@ public:
         if (size > kChunkSize / 2) {
             _chunks.emplace_back();
             auto& chunk = _chunks.back();
-            chunk.resize(size);
+            raw::stl_vector_resize_uninitialized(&chunk, size);
             return reinterpret_cast<char*>(chunk.data());
         }
         if (_chunks.empty() || _chunks.back().size() + size > _chunks.back().capacity()) {
@@ -59,8 +62,28 @@ public:
         }
         auto& chunk = _chunks.back();
         const size_t offset = chunk.size();
-        chunk.resize(offset + size);
+        raw::stl_vector_resize_uninitialized(&chunk, offset + size);
         return reinterpret_cast<char*>(chunk.data() + offset);
+    }
+
+    // Pre-reserve enough contiguous capacity for a bulk sequence of small
+    // allocations totalling |total| bytes. Subsequent allocate() calls with
+    // size <= kChunkSize/2 skip the chunk-growth branch until the reserved
+    // capacity is exhausted. Oversized allocations bypass this path.
+    void reserve(size_t total) {
+        if (total == 0) return;
+        if (total > kChunkSize / 2) {
+            // For bulk totals larger than a normal chunk, start a dedicated
+            // chunk sized to the full request so per-row allocate() has a
+            // single straight-line path.
+            _chunks.emplace_back();
+            _chunks.back().reserve(total);
+            return;
+        }
+        if (_chunks.empty() || _chunks.back().capacity() - _chunks.back().size() < total) {
+            _chunks.emplace_back();
+            _chunks.back().reserve(kChunkSize);
+        }
     }
 
     size_t allocated_bytes() const {
