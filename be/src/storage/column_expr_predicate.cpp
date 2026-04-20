@@ -2,7 +2,10 @@
 
 #include <utility>
 
+#include "column/binary_column.h"
 #include "column/column_helper.h"
+#include "column/german_string_column.h"
+#include "column/nullable_column.h"
 #include "common/status.h"
 #include "common/statusor.h"
 #include "exprs/binary_predicate.h"
@@ -81,6 +84,39 @@ Status ColumnExprPredicate::evaluate(const Column* column, uint8_t* selection, u
     // `column` is owned by storage layer
     // we don't have ownership
     ColumnPtr bits = column->get_ptr();
+
+    // When the slot type is TYPE_GERMAN_STRING (FE rewrote VARCHAR slot to GS),
+    // the inner expression tree reads through ColumnViewer<TYPE_GERMAN_STRING>
+    // and downcasts to GermanStringColumn. Callers on the dict-filter and
+    // global-dict rewrite paths hand us a BinaryColumn over the dict entries —
+    // the downcast would SIGSEGV. Materialize once into a transient
+    // GermanStringColumn before entering the expression context. Ownership
+    // of the original BinaryColumn stays with the caller.
+    if (_slot_desc != nullptr && _slot_desc->type().type == TYPE_GERMAN_STRING) {
+        const Column* data_column = bits.get();
+        const NullableColumn* nullable = nullptr;
+        if (data_column->is_nullable()) {
+            nullable = down_cast<const NullableColumn*>(data_column);
+            data_column = nullable->data_column_raw_ptr();
+        }
+        if (dynamic_cast<const BinaryColumn*>(data_column) != nullptr) {
+            auto* binary = down_cast<const BinaryColumn*>(data_column);
+            auto gs = GermanStringColumn::create();
+            const size_t n = binary->size();
+            gs->reserve(n);
+            for (size_t i = 0; i < n; ++i) {
+                Slice s = binary->get_slice(i);
+                gs->append_bytes(s.data, s.size);
+            }
+            if (nullable != nullptr) {
+                auto cloned_null = NullColumn::static_pointer_cast(nullable->null_column()->clone());
+                bits = NullableColumn::create(std::move(gs), std::move(cloned_null));
+            } else {
+                bits = std::move(gs);
+            }
+        }
+    }
+
     chunk.append_column(bits, _slot_desc->id());
 
     // theoretically there will be a chain of expr contexts.
